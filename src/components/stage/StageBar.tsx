@@ -1,7 +1,7 @@
 'use client'
 
 import { useProjectStore } from '@/store/project'
-import { STAGES, type StageCode, type StageStatus } from '@/types'
+import { STAGES, type StageCode, type StageStatus, type ActivityCode } from '@/types'
 import { cn } from '@/lib/utils'
 
 const STAGE_COLOR: Record<StageCode, { chip: string; chipText: string; done: string; doneText: string }> = {
@@ -110,16 +110,23 @@ export function StageBar() {
 
   function getStageStatus(stageCode: StageCode): StageStatus {
     const info = STAGES.find(s => s.code === stageCode)!
-    const statuses = info.activities.map(a => activityStatus[a] ?? 'not_started')
-    if (statuses.every(s => s === 'completed')) return 'completed'
+    if (info.activities.every(a => isEffectivelyDone(a))) return 'completed'
     if (stageCode === currentStage) return 'in_progress'
-    if (statuses.some(s => s !== 'not_started')) return 'in_progress'
+    if (info.activities.some(a => (activityStatus[a] ?? 'not_started') !== 'not_started')) return 'in_progress'
     return 'not_started'
+  }
+
+  // 산출물이 있는 warning도 완료로 간주 (ActivitySidebar와 동일 로직)
+  function isEffectivelyDone(code: ActivityCode) {
+    const s = activityStatus[code]
+    if (s === 'completed') return true
+    if (s === 'warning' && project?.artifacts?.[code]) return true
+    return false
   }
 
   function getCompletedCount(stageCode: StageCode) {
     return STAGES.find(s => s.code === stageCode)!.activities
-      .filter(a => activityStatus[a] === 'completed').length
+      .filter(a => isEffectivelyDone(a)).length
   }
 
   return (
