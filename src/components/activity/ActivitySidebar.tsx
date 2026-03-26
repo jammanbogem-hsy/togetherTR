@@ -36,16 +36,19 @@ const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
   },
 }
 
-function ActivityItem({ code, isCurrent, status, index, onClick }: {
-  code: ActivityCode; isCurrent: boolean; status: StageStatus; index: number; onClick: () => void
+function ActivityItem({ code, isCurrent, status, hasArtifact, index, onClick }: {
+  code: ActivityCode; isCurrent: boolean; status: StageStatus; hasArtifact: boolean; index: number; onClick: () => void
 }) {
   const meta = ACTIVITY_META[code]
 
+  // 산출물이 있으면 건너뜀(warning)도 완료로 간주
+  const effectiveStatus: StageStatus = (status === 'warning' && hasArtifact) ? 'completed' : status
+
   let statusIcon = ''
   let statusColor = 'text-[#9AA0A6]'
-  if (status === 'completed') { statusIcon = 'check_circle'; statusColor = 'text-[#34A853]' }
-  else if (status === 'warning') { statusIcon = 'warning'; statusColor = 'text-[#F9AB00]' }
-  else if (status === 'in_progress' || status === 'active_return' || isCurrent) { statusIcon = 'pending'; statusColor = 'text-[#1A73E8]' }
+  if (effectiveStatus === 'completed') { statusIcon = 'check_circle'; statusColor = 'text-[#34A853]' }
+  else if (effectiveStatus === 'warning') { statusIcon = 'warning'; statusColor = 'text-[#F9AB00]' }
+  else if (effectiveStatus === 'in_progress' || effectiveStatus === 'active_return' || isCurrent) { statusIcon = 'pending'; statusColor = 'text-[#1A73E8]' }
 
   return (
     <button
@@ -70,7 +73,7 @@ function ActivityItem({ code, isCurrent, status, index, onClick }: {
         )}>
           {meta.label}
         </p>
-        {!isCurrent && status === 'warning' && (
+        {!isCurrent && effectiveStatus === 'warning' && (
           <p className="text-[10px] text-[#F9AB00] mt-0.5">건너뜀</p>
         )}
       </div>
@@ -101,7 +104,14 @@ export function ActivitySidebar() {
   const currentStageInfo = STAGES.find(s => s.code === currentStage)!
   const guide = STAGE_GUIDE[currentStage]
   const color = STAGE_COLOR[currentStage]
-  const completedCount = currentStageInfo.activities.filter(a => activityStatus[a] === 'completed').length
+  // 산출물이 있는 경우 warning도 완료로 간주하여 진행률 계산
+  function isEffectivelyDone(code: ActivityCode) {
+    const s = activityStatus[code]
+    if (s === 'completed') return true
+    if (s === 'warning' && project?.artifacts?.[code]) return true
+    return false
+  }
+  const completedCount = currentStageInfo.activities.filter(a => isEffectivelyDone(a)).length
   const totalCount = currentStageInfo.activities.length
   const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
 
@@ -158,6 +168,7 @@ export function ActivitySidebar() {
               index={idx}
               isCurrent={code === currentActivity}
               status={activityStatus[code] ?? 'not_started'}
+              hasArtifact={!!project?.artifacts?.[code]}
               onClick={() => handleActivityClick(code)}
             />
           ))}
