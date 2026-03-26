@@ -217,13 +217,16 @@ export async function advanceActivity(
 // 이전 활동으로 되돌아가기 (해당 활동을 active_return 으로 표시)
 export async function returnToActivity(
   projectId: string,
-  toActivity: ActivityCode
+  toActivity: ActivityCode,
+  newStage?: import('@/types').StageCode
 ): Promise<void> {
-  await updateDoc(doc(db, 'projects', projectId), {
+  const updates: Record<string, unknown> = {
     currentActivity: toActivity,
     [`activityStatuses.${toActivity}`]: 'active_return',
     updatedAt: serverTimestamp(),
-  })
+  }
+  if (newStage) updates.currentStage = newStage
+  await updateDoc(doc(db, 'projects', projectId), updates)
 }
 
 // ─── 활동 산출물 확정 저장 ────────────────────────────

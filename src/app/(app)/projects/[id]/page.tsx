@@ -15,7 +15,6 @@ import { ActivitySidebar } from '@/components/activity/ActivitySidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { StageMoveModal } from '@/components/modals/StageMoveModal'
-import { Loader2, Crown, Users, Play, Copy, Check, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── 대기실 ──────────────────────────────────────────
@@ -97,29 +96,29 @@ function WaitingRoom({
         <div className="space-y-4">
           {/* 초대코드 카드 */}
           {project.inviteCode && (
-            <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <p className="text-xs font-semibold text-gray-500 mb-1">이 방의 초대코드</p>
+            <div className="bg-white rounded-2xl border border-[#DADCE0] p-6">
+              <p className="text-xs font-semibold text-[#5F6368] mb-1">이 방의 초대코드</p>
               <div className="flex items-center justify-between">
-                <p className="text-3xl font-black text-blue-700 tracking-wide">{project.inviteCode}</p>
+                <p className="text-3xl font-black text-[#1A73E8] tracking-wide">{project.inviteCode}</p>
                 <button
                   onClick={handleCopy}
-                  className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-700 transition-colors px-3 py-1.5 rounded-xl hover:bg-blue-50"
+                  className="flex items-center gap-1.5 text-sm text-[#1A73E8] hover:text-[#1557b0] transition-colors px-3 py-1.5 rounded-full hover:bg-[#E8F0FE]"
                 >
-                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied ? <span className="material-symbols-rounded ms-sm">check</span> : <span className="material-symbols-rounded ms-sm">content_copy</span>}
                   {copied ? '복사됨' : '복사'}
                 </button>
               </div>
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-[#9AA0A6] mt-2">
                 팀원에게 공유하면 대시보드 "방 참여하기"에서 입장할 수 있어요
               </p>
             </div>
           )}
 
           {/* 참여 인원 카드 */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+          <div className="bg-white rounded-2xl border border-[#DADCE0] p-5">
             <div className="flex items-center gap-2 mb-4">
-              <Users className="w-4 h-4 text-gray-500" />
-              <span className="text-sm font-bold text-gray-800">참여 중 · {memberCount}명</span>
+              <span className="material-symbols-rounded ms-sm text-[#5F6368]">group</span>
+              <span className="text-sm font-bold text-[#202124]">참여 중 · {memberCount}명</span>
             </div>
             <div className="space-y-2">
               {memberUids.map(mUid => {
@@ -136,14 +135,14 @@ function WaitingRoom({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-gray-800 truncate">
+                        <span className="text-sm font-medium text-[#202124] truncate">
                           {info?.displayName ?? mUid.slice(0, 8)}
                         </span>
                         {isSelf && (
-                          <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">나</span>
+                          <span className="text-[10px] bg-[#F1F3F4] text-[#5F6368] px-1.5 py-0.5 rounded-full">나</span>
                         )}
                         {isThisHost && (
-                          <Crown className="w-3 h-3 text-amber-500" />
+                          <span className="material-symbols-rounded msf text-[#F9AB00]" style={{ fontSize: 13 }}>workspace_premium</span>
                         )}
                       </div>
                     </div>
@@ -158,24 +157,24 @@ function WaitingRoom({
             <button
               onClick={handleStart}
               disabled={starting}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-blue-500 text-white font-bold text-base hover:bg-blue-600 transition-colors disabled:opacity-50 shadow-lg shadow-blue-200"
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#1A73E8] text-white font-bold text-base hover:bg-[#1557b0] transition-colors disabled:opacity-50 shadow-md"
             >
               {starting ? (
-                <><Loader2 className="w-5 h-5 animate-spin" />시작 중...</>
+                <><span className="material-symbols-rounded" style={{ fontSize: 20, animation: 'spin 1s linear infinite' }}>progress_activity</span>시작 중...</>
               ) : (
-                <><Play className="w-5 h-5" />수업설계 시작하기</>
+                <><span className="material-symbols-rounded msf" style={{ fontSize: 20 }}>play_circle</span>수업설계 시작하기</>
               )}
             </button>
           ) : (
             <div className="space-y-2">
-              <div className="w-full py-4 rounded-2xl bg-gray-100 text-gray-400 text-sm text-center font-medium">
+              <div className="w-full py-4 rounded-2xl bg-[#F1F3F4] text-[#9AA0A6] text-sm text-center font-medium">
                 방장이 시작 버튼을 누를 때까지 기다려주세요
               </div>
               <button
                 onClick={onBecomeHost}
-                className="w-full py-2.5 rounded-xl border border-amber-300 text-amber-600 text-sm font-medium hover:bg-amber-50 transition-colors flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 rounded-full border border-[#FFCC80] text-[#E65100] text-sm font-medium hover:bg-[#FFF3E0] transition-colors flex items-center justify-center gap-1.5"
               >
-                <Crown className="w-3.5 h-3.5" />
+                <span className="material-symbols-rounded msf" style={{ fontSize: 15 }}>workspace_premium</span>
                 방장 권한 받기
               </button>
             </div>
@@ -183,10 +182,10 @@ function WaitingRoom({
         </div>
 
         {/* 오른쪽: 대기실 채팅 */}
-        <div className="bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden" style={{ height: '460px' }}>
-          <div className="px-4 py-3 border-b bg-gray-50 flex-shrink-0">
-            <h3 className="text-sm font-bold text-gray-800">대기실 채팅</h3>
-            <p className="text-[11px] text-gray-500">팀원과 미리 대화해보세요</p>
+        <div className="bg-white rounded-2xl border border-[#DADCE0] flex flex-col overflow-hidden" style={{ height: '460px' }}>
+          <div className="px-4 py-3 border-b border-[#DADCE0] bg-[#F8F9FA] flex-shrink-0">
+            <h3 className="text-sm font-bold text-[#202124]">대기실 채팅</h3>
+            <p className="text-[11px] text-[#5F6368]">팀원과 미리 대화해보세요</p>
           </div>
 
           {/* 메시지 목록 */}
@@ -214,8 +213,8 @@ function WaitingRoom({
                     )}
                     <div
                       className={cn(
-                        'px-3 py-2 rounded-xl text-sm',
-                        isSelf ? 'text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm'
+                        'px-3 py-2 rounded-2xl text-sm',
+                        isSelf ? 'text-white rounded-tr-sm' : 'bg-[#F1F3F4] text-[#202124] rounded-tl-sm'
                       )}
                       style={isSelf ? { backgroundColor: msg.color } : undefined}
                     >
@@ -229,7 +228,7 @@ function WaitingRoom({
           </div>
 
           {/* 입력창 */}
-          <div className="px-3 py-3 border-t bg-gray-50 flex-shrink-0 flex gap-2">
+          <div className="px-3 py-3 border-t border-[#DADCE0] bg-[#F8F9FA] flex-shrink-0 flex gap-2">
             <input
               type="text"
               value={lobbyInput}
@@ -238,14 +237,14 @@ function WaitingRoom({
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSendLobby()
               }}
               placeholder="메시지 입력..."
-              className="flex-1 rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+              className="flex-1 rounded-2xl border border-[#DADCE0] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8] bg-white text-[#202124]"
             />
             <button
               onClick={handleSendLobby}
               disabled={!lobbyInput.trim()}
-              className="w-9 h-9 rounded-xl bg-blue-500 text-white flex items-center justify-center hover:bg-blue-600 disabled:opacity-40 transition-colors flex-shrink-0"
+              className="w-9 h-9 rounded-full bg-[#1A73E8] text-white flex items-center justify-center hover:bg-[#1557b0] disabled:opacity-40 transition-colors flex-shrink-0"
             >
-              <Send className="w-4 h-4" />
+              <span className="material-symbols-rounded msf" style={{ fontSize: 18 }}>send</span>
             </button>
           </div>
         </div>
@@ -348,10 +347,10 @@ export default function ProjectPage() {
 
   if (!project) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="flex flex-col items-center gap-3 text-gray-500">
-          <Loader2 className="w-8 h-8 animate-spin" />
-          <p className="text-sm">프로젝트 불러오는 중...</p>
+      <div className="flex items-center justify-center h-screen bg-[#F8F9FA]">
+        <div className="flex flex-col items-center gap-4 text-[#5F6368]">
+          <span className="material-symbols-rounded text-[#1A73E8]" style={{ fontSize: 32, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+          <p className="text-sm font-medium">프로젝트 불러오는 중...</p>
         </div>
       </div>
     )
@@ -382,40 +381,50 @@ export default function ProjectPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
-      <header className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div className="flex flex-col h-screen bg-[#F8F9FA] overflow-hidden">
+      {/* MD3 Top App Bar */}
+      <header className="flex-shrink-0 bg-white border-b border-[#DADCE0] px-5 py-0 h-14 flex items-center justify-between">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => router.push('/dashboard')}
-            className="text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            className="flex items-center gap-1 text-[#5F6368] hover:text-[#202124] hover:bg-[#F1F3F4]
+              rounded-full px-3 py-1.5 text-[13px] font-medium transition-all"
           >
-            ← 대시보드
+            <span className="material-symbols-rounded ms-sm">arrow_back</span>
+            대시보드
           </button>
-          <div className="h-4 w-px bg-gray-200" />
-          <h1 className="text-sm font-semibold text-gray-900 truncate max-w-xs">{project.title}</h1>
+          <div className="h-4 w-px bg-[#DADCE0]" />
+          <h1 className="text-[14px] font-semibold text-[#202124] truncate max-w-xs">{project.title}</h1>
           {isHost ? (
-            <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-              <Crown className="w-3 h-3" />방장
+            <span className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
+              px-2.5 py-1 rounded-full font-semibold">
+              <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">workspace_premium</span>
+              방장
             </span>
           ) : (
             <button
               onClick={handleClaimHost}
               disabled={claimingHost}
-              className="flex items-center gap-1 text-[10px] border border-amber-300 text-amber-600 px-2 py-0.5 rounded-full font-medium hover:bg-amber-50 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 text-[11px] border border-[#FBBC04] text-[#B06000]
+                px-2.5 py-1 rounded-full font-medium hover:bg-[#FEF7E0] transition-all disabled:opacity-50"
             >
-              <Crown className="w-3 h-3" />
+              <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">workspace_premium</span>
               {claimingHost ? '처리 중...' : '방장 되기'}
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-gray-500">
+        <div className="flex items-center gap-2">
           {project.inviteCode && (
-            <span className="bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-medium">
+            <span className="flex items-center gap-1.5 text-[12px] bg-[#E8F0FE] text-[#1A73E8]
+              px-3 py-1.5 rounded-full font-semibold">
+              <span className="material-symbols-rounded ms-sm">key</span>
               {project.inviteCode}
             </span>
           )}
-          <span className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded-full">
-            <Users className="w-3 h-3" />{project.memberUids?.length ?? 1}명
+          <span className="flex items-center gap-1 text-[12px] bg-[#F1F3F4] text-[#5F6368]
+            px-3 py-1.5 rounded-full font-medium">
+            <span className="material-symbols-rounded ms-sm">group</span>
+            {project.memberUids?.length ?? 1}명
           </span>
         </div>
       </header>
@@ -426,7 +435,7 @@ export default function ProjectPage() {
 
       <div className="flex flex-1 overflow-hidden">
         <ActivitySidebar />
-        <div className="flex-1 overflow-hidden border-r border-gray-200">
+        <div className="flex-1 overflow-hidden border-r border-[#DADCE0]">
           <ChatPanel />
         </div>
         <div className="w-80 flex-shrink-0">

@@ -10,7 +10,6 @@ import { TeamDiscussionBanner } from './TeamDiscussionBanner'
 import { TeamDiscussionProposal } from './TeamDiscussionProposal'
 import { ArtifactSaveProposal } from './ArtifactSaveProposal'
 import { cn } from '@/lib/utils'
-import { Send, Loader2, Users, StopCircle, CheckCircle2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -42,10 +41,10 @@ function parseOptions(text: string): ParsedOptions | null {
 
 // ─── 안 선택 카드 렌더러 ─────────────────────────────
 const OPTION_COLORS = [
-  { bg: 'bg-blue-50',   border: 'border-blue-300',   badge: 'bg-blue-500',   btn: 'bg-blue-500 hover:bg-blue-600'   },
-  { bg: 'bg-violet-50', border: 'border-violet-300', badge: 'bg-violet-500', btn: 'bg-violet-500 hover:bg-violet-600' },
-  { bg: 'bg-teal-50',   border: 'border-teal-300',   badge: 'bg-teal-500',   btn: 'bg-teal-500 hover:bg-teal-600'   },
-  { bg: 'bg-amber-50',  border: 'border-amber-300',  badge: 'bg-amber-500',  btn: 'bg-amber-500 hover:bg-amber-600'  },
+  { bg: 'bg-[#E8F0FE]', border: 'border-[#AECBFA]', badge: 'bg-[#1A73E8]', btn: 'bg-[#1A73E8] hover:bg-[#1557b0]' },
+  { bg: 'bg-[#F3E5F5]', border: 'border-[#CE93D8]', badge: 'bg-[#7B1FA2]', btn: 'bg-[#7B1FA2] hover:bg-[#6a1790]' },
+  { bg: 'bg-[#E0F2F1]', border: 'border-[#80CBC4]', badge: 'bg-[#00897B]', btn: 'bg-[#00897B] hover:bg-[#00746a]' },
+  { bg: 'bg-[#FFF3E0]', border: 'border-[#FFCC80]', badge: 'bg-[#E65100]', btn: 'bg-[#E65100] hover:bg-[#cc4700]' },
 ]
 
 type MemberInfoMap = Record<string, { displayName: string; color: string; emoji: string }>
@@ -69,10 +68,10 @@ function VoteOverlayBar({
   }
 
   return (
-    <div className="sticky bottom-2 z-10 mx-1 bg-white border-2 border-amber-300 rounded-2xl shadow-lg p-3">
-      <p className="text-xs font-bold text-amber-800 mb-2.5 flex items-center gap-1.5">
-        <Users className="w-3.5 h-3.5" />
-        어느 안을 지지하시나요? <span className="font-normal text-amber-600">팀장의 최종 결정에 참고됩니다</span>
+    <div className="sticky bottom-2 z-10 mx-1 bg-white border border-[#FFCC80] rounded-2xl shadow-md p-3">
+      <p className="text-xs font-bold text-[#E65100] mb-2.5 flex items-center gap-1.5">
+        <span className="material-symbols-rounded msf ms-sm text-[#E65100]">how_to_vote</span>
+        어느 안을 지지하시나요? <span className="font-normal text-[#E65100] opacity-70">팀장의 최종 결정에 참고됩니다</span>
       </p>
       <div className="flex gap-2 flex-wrap">
         {options.map((opt, i) => {
@@ -87,14 +86,14 @@ function VoteOverlayBar({
               key={opt.label}
               onClick={() => handleVote(opt.label)}
               className={cn(
-                'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all border-2',
+                'flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all border',
                 isVoted
                   ? cn(c.badge, 'text-white border-transparent shadow-sm scale-105')
-                  : cn('bg-white', c.border, 'text-gray-700 hover:scale-105')
+                  : cn('bg-white', c.border, 'text-[#3C4043] hover:scale-105')
               )}
             >
               <span className="text-sm font-bold">{opt.label}</span>
-              {isVoted && <CheckCircle2 className="w-3.5 h-3.5" />}
+              {isVoted && <span className="material-symbols-rounded msf ms-sm">check_circle</span>}
               {others.length > 0 && (
                 <span className="flex items-center gap-1 ml-1">
                   {others.slice(0, 3).map((m, j) => (
@@ -148,12 +147,12 @@ function OptionsMessage({
 
   return (
     <div className="flex gap-2 mb-3">
-      <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
         AI
       </div>
       <div className="max-w-[85%] flex flex-col gap-3 flex-1">
         {pre && (
-          <div className="bg-gray-100 text-gray-800 px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
+          <div className="bg-[#F1F3F4] text-[#202124] px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
             <MarkdownContent text={pre} />
           </div>
         )}
@@ -217,15 +216,15 @@ function OptionsMessage({
               {isHost && (
                 <div className="mt-2.5 flex justify-end">
                   {isChosen ? (
-                    <span className="flex items-center gap-1 text-xs font-bold text-gray-600">
-                      <CheckCircle2 className="w-4 h-4 text-green-500" /> 선택됨
+                    <span className="flex items-center gap-1 text-xs font-bold text-[#34A853]">
+                      <span className="material-symbols-rounded msf ms-sm text-[#34A853]">check_circle</span> 선택됨
                     </span>
                   ) : (
                     <button
                       onClick={() => handleFinalSelect(opt.label, opt.content)}
                       disabled={!!selected}
                       className={cn(
-                        'text-xs font-bold text-white px-4 py-1.5 rounded-xl transition-colors disabled:cursor-not-allowed',
+                        'text-xs font-bold text-white px-4 py-1.5 rounded-full transition-colors disabled:cursor-not-allowed',
                         c.btn
                       )}
                     >
@@ -238,8 +237,8 @@ function OptionsMessage({
               {/* 팀원: 내가 지지한 안 표시 (투표는 오버레이에서) */}
               {!isHost && myVote === opt.label && (
                 <div className="mt-2.5 flex justify-end">
-                  <span className="flex items-center gap-1 text-xs font-semibold text-gray-500">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 내가 지지
+                  <span className="flex items-center gap-1 text-xs font-semibold text-[#5F6368]">
+                    <span className="material-symbols-rounded msf ms-sm text-[#34A853]">check_circle</span> 내가 지지
                   </span>
                 </div>
               )}
@@ -248,7 +247,7 @@ function OptionsMessage({
         })}
 
         {post && (
-          <div className="bg-gray-100 text-gray-800 px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
+          <div className="bg-[#F1F3F4] text-[#202124] px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
             <MarkdownContent text={post} />
           </div>
         )}
@@ -273,8 +272,8 @@ function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean 
               dark
                 ? 'bg-white/25 text-white'
                 : isPending
-                  ? 'bg-amber-100 text-amber-800'   // 미결·보류 → 앰버 파스텔
-                  : 'bg-indigo-100 text-indigo-800'  // 일반 강조 → 인디고 파스텔
+                  ? 'bg-[#FFF3E0] text-[#E65100]'   // 미결·보류 → 주황 파스텔
+                  : 'bg-[#E8F0FE] text-[#1A73E8]'   // 일반 강조 → 파란 파스텔
             )}>
               {children}
             </span>
@@ -291,22 +290,22 @@ function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean 
         ),
         // 테이블 렌더링
         table: ({ children }) => (
-          <div className="my-2 overflow-x-auto rounded-xl border border-gray-200">
+          <div className="my-2 overflow-x-auto rounded-xl border border-[#DADCE0]">
             <table className="min-w-full text-sm border-collapse">{children}</table>
           </div>
         ),
         thead: ({ children }) => (
-          <thead className={dark ? 'bg-white/20' : 'bg-gray-50'}>{children}</thead>
+          <thead className={dark ? 'bg-white/20' : 'bg-[#F8F9FA]'}>{children}</thead>
         ),
-        tbody: ({ children }) => <tbody className="divide-y divide-gray-100">{children}</tbody>,
-        tr: ({ children }) => <tr className="hover:bg-gray-50/50 transition-colors">{children}</tr>,
+        tbody: ({ children }) => <tbody className="divide-y divide-[#F1F3F4]">{children}</tbody>,
+        tr: ({ children }) => <tr className="hover:bg-[#F8F9FA]/50 transition-colors">{children}</tr>,
         th: ({ children }) => (
-          <th className="px-3 py-2.5 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap border-b border-gray-200">
+          <th className="px-3 py-2.5 text-left text-xs font-bold text-[#5F6368] uppercase tracking-wider whitespace-nowrap border-b border-[#DADCE0]">
             {children}
           </th>
         ),
         td: ({ children }) => (
-          <td className="px-3 py-2.5 text-sm text-gray-800 leading-relaxed">{children}</td>
+          <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed">{children}</td>
         ),
       }}
     >
@@ -552,15 +551,15 @@ function ContextMenuWrapper({ children, onReply, className }: {
             onContextMenu={(e) => { e.preventDefault(); setMenuPos(null) }}
           />
           <div
-            className="fixed bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
+            className="fixed bg-white rounded-2xl shadow-lg border border-[#DADCE0] overflow-hidden"
             style={{ left: menuPos.x, top: menuPos.y, zIndex: 9999, minWidth: 140 }}
           >
             <button
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-[#3C4043] hover:bg-[#F1F3F4] active:bg-[#E8EAED] transition-colors"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { onReply?.(); setMenuPos(null) }}
             >
-              <span className="text-base">↩</span>
+              <span className="material-symbols-rounded ms-sm text-[#5F6368]">reply</span>
               <span>답글</span>
             </button>
           </div>
@@ -626,7 +625,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
 
         <div className={cn(
           'px-3 py-2 rounded-2xl text-sm leading-relaxed',
-          !isUser && 'bg-gray-100 text-gray-800 rounded-tl-sm',
+          !isUser && 'bg-[#F1F3F4] text-[#202124] rounded-tl-sm',
           isUser && (alignRight ? 'rounded-tr-sm' : 'rounded-tl-sm'),
         )}
           style={isUser ? { backgroundColor: avatarColor, color: textOnColor } : undefined}
@@ -645,14 +644,14 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
 function AnalysisBubble({ text }: { text: string }) {
   return (
     <div className="mx-0 my-3">
-      <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4">
+      <div className="bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-2">
-          <div className="w-6 h-6 rounded-full bg-teal-600 flex items-center justify-center">
-            <Users className="w-3 h-3 text-white" />
+          <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
+            <span className="material-symbols-rounded msf text-white" style={{ fontSize: 14 }}>group</span>
           </div>
-          <span className="text-xs font-bold text-teal-800">팀 토론 분석 결과</span>
+          <span className="text-xs font-bold text-[#00695C]">팀 토론 분석 결과</span>
         </div>
-        <div className="text-sm text-teal-900 leading-relaxed">
+        <div className="text-sm text-[#004D40] leading-relaxed">
           <MarkdownContent text={text} />
         </div>
       </div>
@@ -666,16 +665,16 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
   if (isAnalysis) {
     return (
       <div className="mx-0 my-3">
-        <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4">
+        <div className="bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-6 h-6 rounded-full bg-teal-600 flex items-center justify-center">
-              <Loader2 className="w-3 h-3 text-white animate-spin" />
+            <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
+              <span className="material-symbols-rounded text-white" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }}>progress_activity</span>
             </div>
-            <span className="text-xs font-bold text-teal-800">팀 토론 분석 중...</span>
+            <span className="text-xs font-bold text-[#00695C]">팀 토론 분석 중...</span>
           </div>
-          <div className="text-sm text-teal-900 leading-relaxed">
+          <div className="text-sm text-[#004D40] leading-relaxed">
             <MarkdownContent text={text} />
-            <span className="inline-block w-1 h-4 bg-teal-400 animate-pulse ml-0.5 align-middle" />
+            <span className="inline-block w-1 h-4 bg-[#00897B] animate-pulse ml-0.5 align-middle" />
           </div>
         </div>
       </div>
@@ -683,12 +682,12 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
   }
   return (
     <div className="flex gap-2 mb-3">
-      <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
         AI
       </div>
-      <div className="max-w-[75%] bg-gray-100 text-gray-800 px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
+      <div className="max-w-[75%] bg-[#F1F3F4] text-[#202124] px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
         <MarkdownContent text={text} />
-        <span className="inline-block w-1 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle" />
+        <span className="inline-block w-1 h-4 bg-[#9AA0A6] animate-pulse ml-0.5 align-middle" />
       </div>
     </div>
   )
@@ -698,22 +697,22 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
 function AIIdleBubble() {
   return (
     <div className="flex gap-2 items-end mb-4">
-      <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
         AI
       </div>
-      <div className="bg-gray-100 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
+      <div className="bg-[#F1F3F4] px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
         <div className="flex gap-1.5 items-center">
           {[0, 1, 2].map(i => (
             <div
               key={i}
-              className="w-2 h-2 rounded-full bg-gray-400"
+              className="w-2 h-2 rounded-full bg-[#9AA0A6]"
               style={{
                 animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
               }}
             />
           ))}
         </div>
-        <span className="text-xs text-gray-500 ml-1">대화를 기다리고 있어요</span>
+        <span className="text-xs text-[#9AA0A6] ml-1">대화를 기다리고 있어요</span>
       </div>
       <style jsx>{`
         @keyframes bounce {
@@ -1363,25 +1362,35 @@ ${discussionSummary}
   }
 
   return (
-    <div className="flex flex-col h-full bg-white" style={isTeamMode ? { animation: 'teamBorderPulse 2s ease-in-out infinite', boxShadow: 'inset 0 0 0 3px #14b8a6' } : undefined}>
+    <div className="flex flex-col h-full bg-white" style={isTeamMode ? { animation: 'teamBorderPulse 2s ease-in-out infinite', boxShadow: 'inset 0 0 0 3px rgba(0, 137, 123, 0.7)' } : undefined}>
       {isTeamMode && (
         <style>{`
           @keyframes teamBorderPulse {
-            0%, 100% { box-shadow: inset 0 0 0 3px rgba(20, 184, 166, 0.9); }
-            50%       { box-shadow: inset 0 0 0 3px rgba(20, 184, 166, 0.25); }
+            0%, 100% { box-shadow: inset 0 0 0 3px rgba(0, 137, 123, 0.7); }
+            50%       { box-shadow: inset 0 0 0 3px rgba(0, 137, 123, 0.15); }
           }
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
+      )}
+      {!isTeamMode && (
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
         `}</style>
       )}
 
       {/* 헤더 */}
-      <div className={cn('px-4 py-3 border-b flex items-center gap-2 flex-shrink-0', isTeamMode ? 'bg-teal-50 border-teal-200' : 'bg-gray-50')}>
-        <div className={cn('w-2 h-2 rounded-full animate-pulse', isTeamMode ? 'bg-teal-500' : 'bg-green-400')} />
-        <span className="text-sm font-medium text-gray-700">{activityMeta.label}</span>
+      <div className={cn('px-4 py-3 border-b flex items-center gap-2 flex-shrink-0', isTeamMode ? 'bg-[#E0F2F1] border-[#80CBC4]' : 'bg-white border-[#DADCE0]')}>
+        <div className={cn('w-2 h-2 rounded-full animate-pulse', isTeamMode ? 'bg-[#00897B]' : 'bg-[#34A853]')} />
+        <span className="text-sm font-semibold text-[#202124]">{activityMeta.label}</span>
         {activityMeta.isGuardrailSource && (
-          <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">🛡 가드레일 소스</span>
+          <span className="flex items-center gap-1 text-[10px] bg-[#F3E5F5] text-[#7B1FA2] px-1.5 py-0.5 rounded-full">
+            <span className="material-symbols-rounded msf" style={{ fontSize: 11 }}>shield</span> 가드레일 소스
+          </span>
         )}
         {activityMeta.isBackwardDesignFirst && (
-          <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">★ 평가 먼저</span>
+          <span className="flex items-center gap-1 text-[10px] bg-[#FFF3E0] text-[#E65100] px-1.5 py-0.5 rounded-full">
+            <span className="material-symbols-rounded msf" style={{ fontSize: 11 }}>star</span> 평가 먼저
+          </span>
         )}
         <div className="ml-auto flex items-center gap-2">
           {userProfile && (
@@ -1392,11 +1401,11 @@ ${discussionSummary}
               >
                 {userProfile.displayName?.slice(0, 1) ?? '?'}
               </div>
-              <span className="text-xs font-medium text-gray-600">{userProfile.displayName}</span>
+              <span className="text-xs font-medium text-[#5F6368]">{userProfile.displayName}</span>
             </div>
           )}
           {isTeamMode && (
-            <span className="text-[10px] bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="text-[10px] bg-[#B2DFDB] text-[#00695C] px-2 py-0.5 rounded-full font-medium">
               팀 자유 토론 중
             </span>
           )}
@@ -1415,8 +1424,8 @@ ${discussionSummary}
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative">
         {visibleMessages.length === 0 && !streamingText && !isLoading && (
-          <div className="flex items-center justify-center h-full text-gray-300">
-            <Loader2 className="w-5 h-5 animate-spin" />
+          <div className="flex items-center justify-center h-full text-[#DADCE0]">
+            <span className="material-symbols-rounded" style={{ fontSize: 28, animation: 'spin 1s linear infinite' }}>progress_activity</span>
           </div>
         )}
 
@@ -1563,27 +1572,27 @@ ${discussionSummary}
 
         {/* 팀 채팅 시작 확인 카드 */}
         {showDiscussionConfirm && !isTeamMode && (
-          <div className="mx-0 my-3 bg-green-50 border-2 border-green-400 rounded-2xl p-4 shadow-sm">
+          <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
             <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                <Users className="w-4 h-4 text-white" />
+              <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
+                <span className="material-symbols-rounded msf text-white" style={{ fontSize: 18 }}>group</span>
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold text-green-900 mb-1">팀 채팅을 시작할까요?</p>
-                <p className="text-xs text-green-700 mb-3 leading-relaxed">
+                <p className="text-sm font-bold text-[#004D40] mb-1">팀 채팅을 시작할까요?</p>
+                <p className="text-xs text-[#00695C] mb-3 leading-relaxed">
                   AI 없이 팀원끼리 자유롭게 대화하는 시간입니다.<br />
                   토론이 끝나면 AI가 내용을 분석해 드립니다.
                 </p>
                 <div className="flex gap-2">
                   <button
                     onClick={handleConfirmStartDiscussion}
-                    className="flex-1 py-2 rounded-xl bg-green-500 text-white text-sm font-bold hover:bg-green-600 transition-colors"
+                    className="flex-1 py-2 rounded-full bg-[#00897B] text-white text-sm font-bold hover:bg-[#00746a] transition-colors"
                   >
                     시작하기
                   </button>
                   <button
                     onClick={() => setShowDiscussionConfirm(false)}
-                    className="px-4 py-2 rounded-xl border border-green-300 text-green-700 text-sm hover:bg-green-100 transition-colors"
+                    className="px-4 py-2 rounded-full border border-[#80CBC4] text-[#00695C] text-sm hover:bg-[#B2DFDB] transition-colors"
                   >
                     취소
                   </button>
@@ -1595,16 +1604,16 @@ ${discussionSummary}
 
         {/* 팀 채팅 요청 알림 카드 (방장에게만 표시) */}
         {isHost && proj.teamDiscussionRequest?.pending && !isTeamMode && !showDiscussionConfirm && (
-          <div className="mx-0 my-3 bg-teal-50 border-2 border-teal-400 rounded-2xl p-4 shadow-sm">
+          <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
             <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full bg-teal-500 flex items-center justify-center flex-shrink-0 text-base">
-                💬
+              <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
+                <span className="material-symbols-rounded msf text-white" style={{ fontSize: 18 }}>chat_bubble</span>
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold text-teal-900 mb-1">
+                <p className="text-sm font-bold text-[#004D40] mb-1">
                   팀 채팅 요청이 왔어요
                 </p>
-                <p className="text-xs text-teal-700 mb-3 leading-relaxed">
+                <p className="text-xs text-[#00695C] mb-3 leading-relaxed">
                   <span className="font-semibold">{proj.teamDiscussionRequest.displayName}</span>님이 팀 채팅을 제안했습니다.<br />
                   지금 팀 채팅을 시작할까요?
                 </p>
@@ -1616,7 +1625,7 @@ ${discussionSummary}
                         clearTeamDiscussionRequest(proj.id),
                       ]).catch(console.error)
                     }}
-                    className="flex-1 py-2 rounded-xl bg-teal-500 text-white text-sm font-bold hover:bg-teal-600 transition-colors"
+                    className="flex-1 py-2 rounded-full bg-[#00897B] text-white text-sm font-bold hover:bg-[#00746a] transition-colors"
                   >
                     수락하기
                   </button>
@@ -1624,7 +1633,7 @@ ${discussionSummary}
                     onClick={async () => {
                       await clearTeamDiscussionRequest(proj.id).catch(console.error)
                     }}
-                    className="px-4 py-2 rounded-xl border border-teal-300 text-teal-700 text-sm hover:bg-teal-100 transition-colors"
+                    className="px-4 py-2 rounded-full border border-[#80CBC4] text-[#00695C] text-sm hover:bg-[#B2DFDB] transition-colors"
                   >
                     거절
                   </button>
@@ -1658,18 +1667,18 @@ ${discussionSummary}
           const isSaved = !!(project?.artifacts?.[currentActivity])
           return isSaved ? (
             // 산출물 저장된 경우 → 초록 배너 (검토 후 이동 유도)
-            <div className="mx-4 mb-2 rounded-xl border-2 border-green-400 bg-green-50 p-3.5 flex flex-col gap-2.5">
+            <div className="mx-4 mb-2 rounded-2xl border border-[#81C995] bg-[#E6F4EA] p-3.5 flex flex-col gap-2.5">
               <div className="flex items-start gap-2">
-                <span className="text-green-500 text-base leading-none mt-0.5">✅</span>
+                <span className="material-symbols-rounded msf text-[#34A853] mt-0.5" style={{ fontSize: 18 }}>check_circle</span>
                 <div>
-                  <p className="text-sm font-bold text-green-800">산출물이 저장되었습니다</p>
-                  <p className="text-xs text-green-700 mt-0.5">우측 산출물을 확인하고 확정한 후 다음 단계로 넘어가세요. 수정이 필요하면 계속 대화할 수 있습니다.</p>
+                  <p className="text-sm font-bold text-[#1E4620]">산출물이 저장되었습니다</p>
+                  <p className="text-xs text-[#1E8C3A] mt-0.5">우측 산출물을 확인하고 확정한 후 다음 단계로 넘어가세요. 수정이 필요하면 계속 대화할 수 있습니다.</p>
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPendingAdvance(null)}
-                  className="flex-1 py-2 rounded-lg border border-green-400 text-green-700 text-xs font-semibold hover:bg-green-100 transition-colors"
+                  className="flex-1 py-2 rounded-full border border-[#81C995] text-[#1E8C3A] text-xs font-semibold hover:bg-[#CEEAD6] transition-colors"
                 >
                   계속 수정하기
                 </button>
@@ -1706,7 +1715,7 @@ ${discussionSummary}
                     handleActivityAdvance(pendingAdvance)
                     setPendingAdvance(null)
                   }}
-                  className="flex-1 py-2 rounded-lg bg-green-500 text-white text-xs font-bold hover:bg-green-600 transition-colors"
+                  className="flex-1 py-2 rounded-full bg-[#34A853] text-white text-xs font-bold hover:bg-[#2d9248] transition-colors"
                 >
                   확정 후 다음 단계로 →
                 </button>
@@ -1714,12 +1723,12 @@ ${discussionSummary}
             </div>
           ) : (
             // 산출물 미저장 경우 → 주황 배너 (저장 촉구)
-            <div className="mx-4 mb-2 rounded-xl border-2 border-amber-400 bg-amber-50 p-3.5 flex flex-col gap-2.5">
+            <div className="mx-4 mb-2 rounded-2xl border border-[#FFCC80] bg-[#FFF3E0] p-3.5 flex flex-col gap-2.5">
               <div className="flex items-start gap-2">
-                <span className="text-amber-500 text-base leading-none mt-0.5">⚠️</span>
+                <span className="material-symbols-rounded msf text-[#E65100] mt-0.5" style={{ fontSize: 18 }}>warning</span>
                 <div>
-                  <p className="text-sm font-bold text-amber-800">산출물이 저장되지 않았습니다</p>
-                  <p className="text-xs text-amber-700 mt-0.5">저장 없이 넘어가면 이 활동 내용이 기록되지 않습니다. AI에게 저장을 요청하거나 직접 입력할 수 있습니다.</p>
+                  <p className="text-sm font-bold text-[#BF360C]">산출물이 저장되지 않았습니다</p>
+                  <p className="text-xs text-[#E65100] mt-0.5">저장 없이 넘어가면 이 활동 내용이 기록되지 않습니다. AI에게 저장을 요청하거나 직접 입력할 수 있습니다.</p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -1728,13 +1737,13 @@ ${discussionSummary}
                     handleActivityAdvance(pendingAdvance)
                     setPendingAdvance(null)
                   }}
-                  className="flex-1 py-2 rounded-lg border border-amber-400 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
+                  className="flex-1 py-2 rounded-full border border-[#FFCC80] text-[#E65100] text-xs font-semibold hover:bg-[#FFE0B2] transition-colors"
                 >
                   저장 없이 넘어가기
                 </button>
                 <button
                   onClick={() => setPendingAdvance(null)}
-                  className="flex-1 py-2 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors"
+                  className="flex-1 py-2 rounded-full bg-[#E65100] text-white text-xs font-bold hover:bg-[#cc4700] transition-colors"
                 >
                   취소 (저장 먼저)
                 </button>
@@ -1776,15 +1785,15 @@ ${discussionSummary}
           <div className="flex gap-2 mb-3">
             <div className={cn(
               'w-8 h-8 rounded-full flex items-center justify-center',
-              isAnalyzing ? 'bg-teal-600' : 'bg-gray-800'
+              isAnalyzing ? 'bg-[#00897B]' : 'bg-[#202124]'
             )}>
-              <Loader2 className="w-4 h-4 text-white animate-spin" />
+              <span className="material-symbols-rounded text-white" style={{ fontSize: 16, animation: 'spin 1s linear infinite' }}>progress_activity</span>
             </div>
-            <div className={cn('px-4 py-3 rounded-2xl rounded-tl-sm', isAnalyzing ? 'bg-teal-50' : 'bg-gray-100')}>
+            <div className={cn('px-4 py-3 rounded-2xl rounded-tl-sm', isAnalyzing ? 'bg-[#E0F2F1]' : 'bg-[#F1F3F4]')}>
               <div className="flex gap-1">
                 {[0,1,2].map(i => (
                   <div key={i}
-                    className={cn('w-1.5 h-1.5 rounded-full animate-bounce', isAnalyzing ? 'bg-teal-400' : 'bg-gray-400')}
+                    className={cn('w-1.5 h-1.5 rounded-full animate-bounce', isAnalyzing ? 'bg-[#00897B]' : 'bg-[#9AA0A6]')}
                     style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
               </div>
@@ -1797,16 +1806,16 @@ ${discussionSummary}
 
       {/* 팀 채팅 종료 스트립 (메시지 영역 밖, 입력창 위) */}
       {isTeamMode && (
-        <div className="flex-shrink-0 px-4 py-2.5 border-t-2 border-teal-300 bg-teal-50 flex items-center gap-3">
+        <div className="flex-shrink-0 px-4 py-2.5 border-t border-[#80CBC4] bg-[#E0F2F1] flex items-center gap-3">
           {/* 진행 중 표시 */}
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
             <div className="flex gap-1">
               {[0,1,2].map(i => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full bg-teal-500 flex-shrink-0"
+                <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#00897B] flex-shrink-0"
                   style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
               ))}
             </div>
-            <span className="text-xs text-teal-700 font-medium truncate">
+            <span className="text-xs text-[#00695C] font-medium truncate">
               팀 채팅 진행 중{!isHost && ' · 방장이 종료할 수 있어요'}
             </span>
           </div>
@@ -1814,9 +1823,9 @@ ${discussionSummary}
           {isHost && (
             <button
               onClick={handleEndDiscussionAndAnalyze}
-              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-[0.98] bg-teal-500 hover:bg-teal-600 text-white shadow-md shadow-teal-100"
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-[0.98] bg-[#00897B] hover:bg-[#00746a] text-white shadow-sm"
             >
-              <StopCircle className="w-4 h-4" />
+              <span className="material-symbols-rounded msf ms-sm">stop_circle</span>
               종료 → AI 분석
             </button>
           )}
@@ -1824,27 +1833,28 @@ ${discussionSummary}
       )}
 
       {/* 입력창 */}
-      <div className={cn('px-4 py-3 border-t', isTeamMode ? 'bg-teal-50' : 'bg-gray-50')}>
+      <div className={cn('px-4 py-3 border-t', isTeamMode ? 'bg-[#E0F2F1] border-[#80CBC4]' : 'bg-[#F8F9FA] border-[#DADCE0]')}>
         {/* 팀 채팅 컨트롤 바 */}
         <div className="flex items-center justify-between mb-2">
           {isTeamMode ? (
-            <span className="text-[11px] text-teal-700 font-medium">팀원끼리 자유롭게 대화하세요 · AI는 잠시 대기 중</span>
+            <span className="text-[11px] text-[#00695C] font-medium">팀원끼리 자유롭게 대화하세요 · AI는 잠시 대기 중</span>
           ) : isWaitingForChoice ? (
-            <span className="text-[11px] text-amber-700 font-medium flex items-center gap-1">
-              💬 안을 선택하거나 팀원과 의논해보세요 · AI는 선택 후 응답합니다
+            <span className="text-[11px] text-[#E65100] font-medium flex items-center gap-1">
+              <span className="material-symbols-rounded ms-sm text-[#E65100]">chat_bubble</span>
+              안을 선택하거나 팀원과 의논해보세요 · AI는 선택 후 응답합니다
             </span>
           ) : (
             <>
-              <span className="text-[11px] text-gray-400">
+              <span className="text-[11px] text-[#9AA0A6]">
                 {isHost ? '방장' : '팀원'}
               </span>
               {isHost ? (
                 <button
                   onClick={() => setShowDiscussionConfirm(true)}
                   disabled={isLoading}
-                  className="text-[11px] font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-300 px-3 py-1 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-40"
+                  className="text-[11px] font-semibold text-[#00695C] bg-[#E0F2F1] hover:bg-[#B2DFDB] border border-[#80CBC4] px-3 py-1 rounded-full transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
-                  <Users className="w-3 h-3" />
+                  <span className="material-symbols-rounded msf" style={{ fontSize: 13 }}>group</span>
                   팀 채팅 시작
                 </button>
               ) : (
@@ -1854,9 +1864,9 @@ ${discussionSummary}
                     await requestTeamDiscussion(proj.id, userProfile.uid, userProfile.displayName).catch(console.error)
                   }}
                   disabled={isLoading || !!proj.teamDiscussionRequest?.pending}
-                  className="text-[11px] font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-300 px-3 py-1 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-40"
+                  className="text-[11px] font-semibold text-[#00695C] bg-[#E0F2F1] hover:bg-[#B2DFDB] border border-[#80CBC4] px-3 py-1 rounded-full transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
-                  <Users className="w-3 h-3" />
+                  <span className="material-symbols-rounded msf" style={{ fontSize: 13 }}>group</span>
                   {proj.teamDiscussionRequest?.pending ? '제안 대기 중...' : '팀 채팅 제안'}
                 </button>
               )}
@@ -1865,31 +1875,31 @@ ${discussionSummary}
         </div>
         {/* 답글 미리보기 배너 */}
         {replyTo && (
-          <div className="flex items-center gap-2 mb-1.5 px-1 py-1.5 rounded-xl bg-blue-50 border-l-4 border-blue-400">
+          <div className="flex items-center gap-2 mb-1.5 px-2 py-1.5 rounded-xl bg-[#E8F0FE] border-l-4 border-[#1A73E8]">
             <div className="flex-1 min-w-0">
               {replyTo.senderName && (
-                <span className="text-[11px] font-bold text-blue-700 block">{replyTo.senderName}에게 답글</span>
+                <span className="text-[11px] font-bold text-[#1A73E8] block">{replyTo.senderName}에게 답글</span>
               )}
-              <span className="text-[11px] text-blue-600 line-clamp-1 block truncate">
+              <span className="text-[11px] text-[#1557b0] line-clamp-1 block truncate">
                 {replyTo.content.replace(/\[.*?\]/g, '').trim().slice(0, 80)}
               </span>
             </div>
             <button
               onClick={() => setReplyTo(null)}
-              className="text-blue-400 hover:text-blue-600 text-base leading-none flex-shrink-0 px-1"
+              className="text-[#9AA0A6] hover:text-[#5F6368] leading-none flex-shrink-0 px-1"
             >
-              ×
+              <span className="material-symbols-rounded ms-sm">close</span>
             </button>
           </div>
         )}
 
         {/* 슬래시 커맨드 팔레트 */}
         {slashQuery !== null && filteredSlashCmds.length > 0 && (
-          <div className="mb-2 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-            <div className="px-3 pt-2.5 pb-1.5 border-b border-gray-100 flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">커맨드</span>
+          <div className="mb-2 bg-white rounded-2xl shadow-md border border-[#DADCE0] overflow-hidden">
+            <div className="px-3 pt-2.5 pb-1.5 border-b border-[#F1F3F4] flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">커맨드</span>
               {replyTo && (
-                <span className="text-[11px] text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.5 rounded-full">
+                <span className="text-[11px] text-[#1A73E8] font-semibold bg-[#E8F0FE] px-1.5 py-0.5 rounded-full">
                   선택된 메시지에 적용
                 </span>
               )}
@@ -1898,21 +1908,21 @@ ${discussionSummary}
               <button
                 key={cmd.id}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-gray-50 last:border-0',
-                  i === slashCmdIdx ? 'bg-indigo-50' : 'hover:bg-gray-50'
+                  'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-[#F1F3F4] last:border-0',
+                  i === slashCmdIdx ? 'bg-[#E8F0FE]' : 'hover:bg-[#F8F9FA]'
                 )}
                 onMouseDown={(e) => { e.preventDefault(); executeSlashCommand(cmd.id) }}
                 onMouseEnter={() => setSlashCmdIdx(i)}
               >
                 <span className="text-xl flex-shrink-0">{cmd.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">{cmd.label}</p>
-                  <p className="text-xs text-gray-400">{cmd.desc}</p>
+                  <p className="text-sm font-semibold text-[#202124]">{cmd.label}</p>
+                  <p className="text-xs text-[#9AA0A6]">{cmd.desc}</p>
                 </div>
-                <span className="text-[11px] text-gray-300 font-mono flex-shrink-0">/{cmd.keywords[0]}</span>
+                <span className="text-[11px] text-[#DADCE0] font-mono flex-shrink-0">/{cmd.keywords[0]}</span>
               </button>
             ))}
-            <p className="px-4 py-2 text-[11px] text-gray-300">↑↓ 이동 · Enter 실행 · Esc 닫기</p>
+            <p className="px-4 py-2 text-[11px] text-[#DADCE0]">↑↓ 이동 · Enter 실행 · Esc 닫기</p>
           </div>
         )}
 
@@ -1936,27 +1946,27 @@ ${discussionSummary}
             rows={2}
             disabled={isLoading && !isTeamMode && !isWaitingForChoice}
             className={cn(
-              'flex-1 resize-none rounded-xl border px-3 py-2 text-sm',
-              'focus:outline-none focus:ring-2 disabled:opacity-50 bg-white',
+              'flex-1 resize-none rounded-2xl border px-3 py-2 text-sm',
+              'focus:outline-none focus:ring-2 disabled:opacity-50 bg-white text-[#202124]',
               isTeamMode
-                ? 'border-teal-300 focus:ring-teal-400'
-                : 'border-gray-300 focus:ring-blue-400'
+                ? 'border-[#80CBC4] focus:ring-[#00897B]'
+                : 'border-[#DADCE0] focus:ring-[#1A73E8]'
             )}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice)}
             className={cn(
-              'w-10 h-10 rounded-xl text-white flex items-center justify-center',
+              'w-10 h-10 rounded-full text-white flex items-center justify-center',
               'disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0',
-              isTeamMode ? 'bg-teal-500 hover:bg-teal-600'
-                : isWaitingForChoice ? 'bg-amber-500 hover:bg-amber-600'
-                : 'bg-blue-500 hover:bg-blue-600'
+              isTeamMode ? 'bg-[#00897B] hover:bg-[#00746a]'
+                : isWaitingForChoice ? 'bg-[#E65100] hover:bg-[#cc4700]'
+                : 'bg-[#1A73E8] hover:bg-[#1557b0]'
             )}
           >
             {isLoading && !isTeamMode && !isWaitingForChoice
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <Send className="w-4 h-4" />
+              ? <span className="material-symbols-rounded" style={{ fontSize: 18, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+              : <span className="material-symbols-rounded msf" style={{ fontSize: 18 }}>send</span>
             }
           </button>
         </div>

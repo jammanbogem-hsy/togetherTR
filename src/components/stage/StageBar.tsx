@@ -1,49 +1,35 @@
 'use client'
 
 import { useProjectStore } from '@/store/project'
-import { STAGES, ACTIVITY_META, type StageCode, type StageStatus } from '@/types'
-import { CheckCircle, AlertTriangle, Circle } from 'lucide-react'
+import { STAGES, type StageCode, type StageStatus } from '@/types'
 import { cn } from '@/lib/utils'
 
-const STAGE_COLORS: Record<StageCode, { active: string; progress: string; ring: string; text: string }> = {
-  T:  { active: 'bg-blue-500',    progress: 'bg-blue-400',    ring: 'ring-blue-300',   text: 'text-blue-600'   },
-  A:  { active: 'bg-violet-500',  progress: 'bg-violet-400',  ring: 'ring-violet-300', text: 'text-violet-600' },
-  Ds: { active: 'bg-emerald-500', progress: 'bg-emerald-400', ring: 'ring-emerald-300',text: 'text-emerald-600'},
-  DI: { active: 'bg-orange-500',  progress: 'bg-orange-400',  ring: 'ring-orange-300', text: 'text-orange-600' },
-  E:  { active: 'bg-rose-500',    progress: 'bg-rose-400',    ring: 'ring-rose-300',   text: 'text-rose-600'   },
+const STAGE_COLOR: Record<StageCode, { chip: string; chipText: string; done: string; doneText: string }> = {
+  T:  { chip: 'bg-[#1A73E8]', chipText: 'text-white', done: 'bg-[#E8F0FE]', doneText: 'text-[#1A73E8]' },
+  A:  { chip: 'bg-[#7B1FA2]', chipText: 'text-white', done: 'bg-[#F3E5F5]', doneText: 'text-[#7B1FA2]' },
+  Ds: { chip: 'bg-[#00897B]', chipText: 'text-white', done: 'bg-[#E0F2F1]', doneText: 'text-[#00897B]' },
+  DI: { chip: 'bg-[#E65100]', chipText: 'text-white', done: 'bg-[#FBE9E7]', doneText: 'text-[#E65100]' },
+  E:  { chip: 'bg-[#C62828]', chipText: 'text-white', done: 'bg-[#FFEBEE]', doneText: 'text-[#C62828]' },
 }
 
-// ─── E→T 순환 화살표 ──────────────────────────────────
 function CycleArrow() {
   return (
-    <div className="absolute -top-8 left-0 right-0 pointer-events-none flex justify-center">
-      <svg width="320" height="28" viewBox="0 0 320 28">
+    <div className="absolute -top-6 left-0 right-0 pointer-events-none flex justify-center">
+      <svg width="300" height="22" viewBox="0 0 300 22">
         <defs>
-          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-            <polygon points="0 0, 8 3, 0 6" fill="#16a34a" />
+          <marker id="arr" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 6 2.5, 0 5" fill="#34A853" />
           </marker>
         </defs>
-        <path d="M 290 20 C 290 5, 30 5, 30 20" fill="none" stroke="#16a34a"
-          strokeWidth="2" strokeDasharray="6,3" markerEnd="url(#arrowhead)" />
-        <text x="155" y="10" textAnchor="middle" fill="#16a34a" fontSize="10">새로운 주기</text>
+        <path d="M 270 17 C 270 3, 30 3, 30 17" fill="none" stroke="#34A853"
+          strokeWidth="1.5" strokeDasharray="5,3" markerEnd="url(#arr)" />
+        <text x="148" y="9" textAnchor="middle" fill="#34A853" fontSize="9" fontWeight="500">새로운 주기</text>
       </svg>
     </div>
   )
 }
 
-// ─── 연결선 ───────────────────────────────────────────
-function Connector({ isActive }: { isActive: boolean }) {
-  return (
-    <div className="flex items-center px-1 flex-shrink-0">
-      <div className={cn('h-0.5 w-5 rounded', isActive ? 'bg-blue-400' : 'bg-gray-200')} />
-      <div className={cn('w-0 h-0 border-y-4 border-y-transparent border-l-4',
-        isActive ? 'border-l-blue-400' : 'border-l-gray-200')} />
-    </div>
-  )
-}
-
-// ─── 단계 노드 ────────────────────────────────────────
-function StageNode({
+function StageChip({
   stage, status, isCurrent, completedCount, totalCount, onClick,
 }: {
   stage: typeof STAGES[number]
@@ -53,140 +39,124 @@ function StageNode({
   totalCount: number
   onClick: () => void
 }) {
-  const color = STAGE_COLORS[stage.code]
+  const color = STAGE_COLOR[stage.code]
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+  const isDone = status === 'completed'
 
   if (isCurrent) {
-    // ── 현재 단계: 크고 강조된 카드 ──
     return (
       <button
         onClick={onClick}
         className={cn(
-          'relative flex flex-col items-center gap-1.5 px-5 py-3 rounded-2xl border-0',
-          'transition-all duration-200 min-w-[96px]',
-          color.active, 'text-white shadow-lg',
-          `ring-4 ${color.ring} ring-offset-2`
+          'flex items-center gap-2 pl-3.5 pr-4 py-2 rounded-full select-none',
+          'shadow-md hover:shadow-lg active:scale-[0.97] transition-all duration-150',
+          color.chip, color.chipText
         )}
       >
-        {/* 단계 코드 + 라벨 */}
-        <div className="flex items-center gap-1.5">
-          <CheckCircle className="w-3.5 h-3.5 opacity-80" />
-          <span className="text-base font-black tracking-wide">{stage.code}</span>
+        {/* 원형 진행률 */}
+        <div className="relative w-[18px] h-[18px] flex-shrink-0">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 18 18">
+            <circle cx="9" cy="9" r="7" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" />
+            <circle cx="9" cy="9" r="7" fill="none" stroke="white" strokeWidth="2"
+              strokeDasharray={`${progressPct * 0.44} 100`} strokeLinecap="round" />
+          </svg>
         </div>
-        <span className="text-[12px] font-semibold opacity-90">{stage.label}</span>
-
-        {/* 진행률 바 */}
-        <div className="w-full mt-0.5">
-          <div className="w-full h-1.5 bg-white/30 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-white rounded-full transition-all duration-500"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-          <p className="text-[10px] text-white/80 text-right mt-0.5">{completedCount}/{totalCount}</p>
-        </div>
+        <span className="text-[13px] font-bold tracking-wide">{stage.code}</span>
+        <span className="text-[11px] font-medium opacity-90">{stage.label}</span>
+        <span className="text-[10px] opacity-70 ml-0.5">{completedCount}/{totalCount}</span>
       </button>
     )
   }
 
-  // ── 비현재 단계: 작고 조용한 노드 ──
-  const isDone = status === 'completed'
-  const isWarn = status === 'warning'
+  if (isDone) {
+    return (
+      <button
+        onClick={onClick}
+        className={cn(
+          'flex items-center gap-1.5 pl-3 pr-4 py-2 rounded-full select-none',
+          'hover:brightness-95 active:scale-[0.97] transition-all duration-150',
+          color.done, color.doneText
+        )}
+      >
+        <span className="material-symbols-rounded msf" style={{ fontSize: 15 }}>check_circle</span>
+        <span className="text-[12px] font-semibold">{stage.code}</span>
+        <span className="text-[11px] font-normal opacity-80">{stage.label}</span>
+      </button>
+    )
+  }
 
   return (
     <button
       onClick={onClick}
-      className={cn(
-        'relative flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 transition-all duration-200 min-w-[72px]',
-        isDone
-          ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100'
-          : isWarn
-          ? 'bg-yellow-50 border-yellow-300 text-yellow-700'
-          : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600'
-      )}
+      className="flex items-center gap-1.5 pl-3 pr-4 py-2 rounded-full select-none
+        border border-[#DADCE0] bg-white text-[#5F6368]
+        hover:bg-[#F1F3F4] hover:border-[#BDC1C6] active:scale-[0.97] transition-all duration-150"
     >
-      <div className="flex items-center gap-1 text-sm font-bold">
-        {isDone ? <CheckCircle className="w-3 h-3" /> :
-         isWarn  ? <AlertTriangle className="w-3 h-3" /> :
-                   <Circle className="w-3 h-3" />}
-        <span>{stage.code}</span>
-      </div>
-      <span className="text-[11px] font-medium whitespace-nowrap">{stage.label}</span>
-
-      {/* 진행률 바 (시작된 경우에만) */}
-      {completedCount > 0 && (
-        <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            className={cn('h-full rounded-full', isDone ? 'bg-green-400' : color.progress)}
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-      )}
+      <span className="material-symbols-rounded" style={{ fontSize: 15, color: '#9AA0A6' }}>
+        radio_button_unchecked
+      </span>
+      <span className="text-[12px] font-medium">{stage.code}</span>
+      <span className="text-[11px] opacity-70">{stage.label}</span>
     </button>
   )
 }
 
-// ─── 메인 StageBar ────────────────────────────────────
 export function StageBar() {
   const { project, activityStatus, setPendingStageMove } = useProjectStore()
   if (!project) return null
 
   const currentStage = project.currentStage
-  const isECompleted = project.isECompleted
-  const isA23Completed = project.isA23Completed
+  const currentStageIdx = STAGES.findIndex(s => s.code === currentStage)
 
   function getStageStatus(stageCode: StageCode): StageStatus {
-    const stageInfo = STAGES.find(s => s.code === stageCode)!
-    const statuses = stageInfo.activities.map(a => activityStatus[a] ?? 'not_started')
+    const info = STAGES.find(s => s.code === stageCode)!
+    const statuses = info.activities.map(a => activityStatus[a] ?? 'not_started')
     if (statuses.every(s => s === 'completed')) return 'completed'
     if (stageCode === currentStage) return 'in_progress'
-    if (statuses.some(s => s === 'warning')) return 'warning'
-    if (statuses.some(s => s === 'active_return')) return 'active_return'
     if (statuses.some(s => s !== 'not_started')) return 'in_progress'
     return 'not_started'
   }
 
   function getCompletedCount(stageCode: StageCode) {
-    const stageInfo = STAGES.find(s => s.code === stageCode)!
-    return stageInfo.activities.filter(a => activityStatus[a] === 'completed').length
+    return STAGES.find(s => s.code === stageCode)!.activities
+      .filter(a => activityStatus[a] === 'completed').length
   }
 
   return (
-    <div className="relative bg-white border-b border-gray-200 px-6 py-3">
-      {isECompleted && <CycleArrow />}
+    <div className="relative bg-white border-b border-[#DADCE0] px-6 py-3">
+      {project.isECompleted && <CycleArrow />}
 
-      <div className="flex items-center justify-center gap-0 mt-1">
+      <div className="flex items-center justify-center gap-0">
         {STAGES.map((stage, idx) => {
-          const status = getStageStatus(stage.code)
-          const isCurrent = stage.code === currentStage
-          const completedCount = getCompletedCount(stage.code)
-          const totalCount = stage.activities.length
+          const stageIdx = STAGES.findIndex(s => s.code === stage.code)
+          const passed = stageIdx < currentStageIdx
 
           return (
             <div key={stage.code} className="flex items-center">
-              <StageNode
+              <StageChip
                 stage={stage}
-                status={status}
-                isCurrent={isCurrent}
-                completedCount={completedCount}
-                totalCount={totalCount}
-                onClick={() => {
-                  if (stage.code !== currentStage) setPendingStageMove(stage.code)
-                }}
+                status={getStageStatus(stage.code)}
+                isCurrent={stage.code === currentStage}
+                completedCount={getCompletedCount(stage.code)}
+                totalCount={stage.activities.length}
+                onClick={() => { if (stage.code !== currentStage) setPendingStageMove(stage.code) }}
               />
               {idx < STAGES.length - 1 && (
-                <Connector isActive={STAGES.findIndex(s => s.code === currentStage) > idx} />
+                <div className="flex items-center px-1.5 flex-shrink-0">
+                  <div className={cn('h-px w-5 transition-colors', passed ? 'bg-[#34A853]' : 'bg-[#DADCE0]')} />
+                </div>
               )}
             </div>
           )
         })}
       </div>
 
-      {/* 가드레일 표시 */}
-      {isA23Completed && (
-        <div className="flex justify-center mt-1.5">
-          <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200">
-            🛡 학습자 프로필 가드레일 적용 중
+      {project.isA23Completed && (
+        <div className="absolute right-5 top-1/2 -translate-y-1/2">
+          <span className="flex items-center gap-1 text-[10px] bg-[#F3E5F5] text-[#7B1FA2]
+            px-2.5 py-1 rounded-full border border-[#E1BEE7] font-medium select-none">
+            <span className="material-symbols-rounded msf" style={{ fontSize: 13 }}>shield</span>
+            가드레일
           </span>
         </div>
       )}

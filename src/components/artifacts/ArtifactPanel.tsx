@@ -6,19 +6,19 @@ import { ACTIVITY_META } from '@/types'
 import type { ArtifactStatus } from '@/types'
 import { setProjectArtifact } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
-import { CheckCircle, Clock, RotateCcw, FileText, ArrowLeftFromLine, Lock, MessageSquare, Pencil, X } from 'lucide-react'
 
-const STATUS_CONFIG: Record<ArtifactStatus, { label: string; className: string }> = {
-  ai_draft:   { label: 'AI 초안',   className: 'bg-blue-100 text-blue-700' },
-  in_review:  { label: '검토 중',   className: 'bg-amber-100 text-amber-700' },
-  confirmed:  { label: '확정',      className: 'bg-green-100 text-green-700' },
-  rejected:   { label: '반려',      className: 'bg-red-100 text-red-700' },
+const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: string; className: string }> = {
+  ai_draft:  { label: 'AI 초안', icon: 'auto_awesome',    className: 'bg-[#E8F0FE] text-[#1A73E8]' },
+  in_review: { label: '검토 중', icon: 'rate_review',     className: 'bg-[#FEF7E0] text-[#B06000]' },
+  confirmed: { label: '확정',    icon: 'check_circle',    className: 'bg-[#E6F4EA] text-[#137333]' },
+  rejected:  { label: '반려',    icon: 'cancel',          className: 'bg-[#FFEBEE] text-[#C62828]' },
 }
 
 function StatusBadge({ status }: { status: ArtifactStatus }) {
   const cfg = STATUS_CONFIG[status]
   return (
-    <span className={cn('text-xs px-2.5 py-1 rounded-full font-semibold', cfg.className)}>
+    <span className={cn('flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full font-semibold', cfg.className)}>
+      <span className="material-symbols-rounded msf ms-sm">{cfg.icon}</span>
       {cfg.label}
     </span>
   )
@@ -26,21 +26,22 @@ function StatusBadge({ status }: { status: ArtifactStatus }) {
 
 function EmptyState({ activityLabel }: { activityLabel: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-4 px-6">
-      <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center">
-        <FileText className="w-8 h-8 opacity-40" />
+    <div className="flex flex-col items-center justify-center h-full text-[#9AA0A6] gap-5 px-6">
+      <div className="w-16 h-16 rounded-full bg-[#F1F3F4] flex items-center justify-center">
+        <span className="material-symbols-rounded text-[#DADCE0]" style={{ fontSize: 36 }}>description</span>
       </div>
       <div className="text-center">
-        <p className="text-sm font-semibold text-gray-500">아직 산출물이 없습니다</p>
-        <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
+        <p className="text-sm font-semibold text-[#5F6368]">아직 산출물이 없습니다</p>
+        <p className="text-xs text-[#9AA0A6] mt-1.5 leading-relaxed">
           [{activityLabel}] 활동에서<br />
           AI와 대화하면 초안이 자동으로 생성됩니다
         </p>
       </div>
-      <div className="flex items-center gap-2 text-[11px] text-gray-400 bg-gray-50 rounded-xl px-4 py-2">
+      <div className="flex items-center gap-2 text-[11px] text-[#9AA0A6] bg-[#F1F3F4] rounded-full px-4 py-2">
+        <span className="material-symbols-rounded ms-sm">chat</span>
         <span>채팅</span>
-        <ArrowLeftFromLine className="w-3.5 h-3.5 rotate-180" />
-        <span className="font-medium text-gray-500">산출물</span>
+        <span className="material-symbols-rounded ms-sm">arrow_forward</span>
+        <span className="font-medium text-[#5F6368]">산출물</span>
       </div>
     </div>
   )
@@ -52,33 +53,33 @@ function ArtifactSection({ sectionKey, value, onDelete }: {
   onDelete?: () => void
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 overflow-hidden">
-      <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex items-center justify-between">
-        <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">{sectionKey}</span>
+    <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white md-shadow-1">
+      <div className="bg-[#F8F9FA] px-4 py-2.5 border-b border-[#DADCE0] flex items-center justify-between">
+        <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider">{sectionKey}</span>
         {onDelete && (
           <button
             onClick={onDelete}
-            className="ml-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded p-0.5 flex-shrink-0 transition-colors"
+            className="ml-2 text-[#9AA0A6] hover:text-[#C62828] hover:bg-[#FFEBEE] rounded-full p-1 flex-shrink-0 transition-colors"
             title="이 섹션 삭제"
           >
-            <X className="w-3.5 h-3.5" />
+            <span className="material-symbols-rounded ms-sm">close</span>
           </button>
         )}
       </div>
-      <div className="px-4 py-3.5 bg-white">
+      <div className="px-4 py-4 bg-white">
         {typeof value === 'string' ? (
-          <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{value}</p>
+          <p className="text-sm text-[#202124] leading-relaxed whitespace-pre-wrap">{value}</p>
         ) : Array.isArray(value) ? (
           <ul className="space-y-2">
             {value.map((item, i) => (
-              <li key={i} className="flex gap-2 text-sm text-gray-800">
-                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
+              <li key={i} className="flex gap-2.5 text-sm text-[#202124]">
+                <span className="mt-2 w-1.5 h-1.5 rounded-full bg-[#1A73E8] flex-shrink-0" />
                 <span className="leading-relaxed">{String(item)}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <pre className="text-xs text-gray-600 whitespace-pre-wrap">{JSON.stringify(value, null, 2)}</pre>
+          <pre className="text-xs text-[#5F6368] whitespace-pre-wrap">{JSON.stringify(value, null, 2)}</pre>
         )}
       </div>
     </div>
@@ -103,8 +104,9 @@ function ArtifactContent({ content, onDeleteSection }: {
   )
   if (filteredEntries.length === 0) {
     return (
-      <div className="rounded-xl border-2 border-dashed border-gray-200 px-4 py-8 flex flex-col items-center gap-2 text-gray-400">
-        <FileText className="w-6 h-6 opacity-30" />
+      <div className="rounded-2xl border-2 border-dashed border-[#DADCE0] px-4 py-8
+        flex flex-col items-center gap-2 text-[#9AA0A6]">
+        <span className="material-symbols-rounded" style={{ fontSize: 28, color: '#DADCE0' }}>description</span>
         <p className="text-xs text-center leading-relaxed">
           내용이 없습니다.<br />
           AI와 대화하여 내용을 추가하거나<br />
@@ -284,17 +286,18 @@ export function ArtifactPanel() {
   return (
     <div className="flex flex-col h-full bg-white">
       {/* 헤더 */}
-      <div className="px-5 py-4 border-b bg-gray-50 flex-shrink-0">
+      <div className="px-5 py-4 border-b border-[#DADCE0] bg-white flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-base font-bold text-gray-900">산출물</h3>
-            <p className="text-xs text-gray-500 mt-0.5">{activityMeta.label}</p>
+            <h3 className="text-[15px] font-bold text-[#202124]">산출물</h3>
+            <p className="text-xs text-[#5F6368] mt-0.5">{activityMeta.label}</p>
           </div>
           <div className="flex items-center gap-2">
             {displayArtifact && <StatusBadge status={effectiveStatus} />}
             {!isHost && displayArtifact && (
-              <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
-                <Lock className="w-3 h-3" /> 팀장 확정
+              <span className="text-[10px] text-[#9AA0A6] flex items-center gap-1">
+                <span className="material-symbols-rounded ms-sm">lock</span>
+                팀장 확정
               </span>
             )}
           </div>
@@ -304,36 +307,39 @@ export function ArtifactPanel() {
       {/* 직접 입력 폼 (오버레이) */}
       {showDirectInput && (
         <div className="absolute inset-0 z-10 bg-white flex flex-col">
-          <div className="px-5 py-4 border-b bg-amber-50 flex items-center justify-between flex-shrink-0">
+          <div className="px-5 py-4 border-b border-[#DADCE0] bg-[#FEF7E0] flex items-center justify-between flex-shrink-0">
             <div>
-              <p className="text-sm font-bold text-amber-800">산출물 직접 입력</p>
-              <p className="text-xs text-amber-600 mt-0.5">AI가 저장하지 못한 경우 직접 내용을 입력하세요</p>
+              <p className="text-sm font-bold text-[#B06000]">산출물 직접 입력</p>
+              <p className="text-xs text-[#B06000] opacity-70 mt-0.5">AI가 저장하지 못한 경우 직접 입력하세요</p>
             </div>
-            <button onClick={() => setShowDirectInput(false)} className="text-gray-400 hover:text-gray-700">
-              <X className="w-5 h-5" />
+            <button onClick={() => setShowDirectInput(false)}
+              className="text-[#9AA0A6] hover:text-[#5F6368] rounded-full p-1 hover:bg-[#F1F3F4] transition-colors">
+              <span className="material-symbols-rounded ms-sm">close</span>
             </button>
           </div>
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-            <p className="text-xs text-gray-500">현재 활동: <span className="font-semibold text-gray-700">{activityMeta.label}</span></p>
+            <p className="text-xs text-[#5F6368]">현재 활동: <span className="font-semibold text-[#202124]">{activityMeta.label}</span></p>
             <textarea
               value={directInputText}
               onChange={e => setDirectInputText(e.target.value)}
               placeholder={`예: "학생들이 협력하여 실생활 문제를 해결하는 경험을 만드는 교육"`}
               rows={8}
-              className="w-full text-sm border border-gray-300 rounded-xl px-3 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 leading-relaxed"
+              className="w-full text-sm border border-[#DADCE0] rounded-2xl px-4 py-3 resize-none
+                focus:outline-none focus:ring-2 focus:ring-[#1A73E8] focus:border-transparent leading-relaxed"
             />
           </div>
-          <div className="px-5 py-4 border-t bg-gray-50 flex gap-2 flex-shrink-0">
+          <div className="px-5 py-4 border-t border-[#DADCE0] bg-[#F8F9FA] flex gap-2 flex-shrink-0">
             <button
               onClick={handleDirectSave}
               disabled={isSaving || !directInputText.trim()}
-              className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50 transition-colors"
+              className="flex-1 py-2.5 rounded-full bg-[#FBBC04] text-[#202124] text-sm font-bold
+                hover:bg-[#F9AB00] disabled:opacity-50 transition-colors shadow-sm"
             >
               {isSaving ? '저장 중...' : '산출물에 저장'}
             </button>
             <button
               onClick={() => setShowDirectInput(false)}
-              className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50"
+              className="px-5 py-2.5 rounded-full border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
             >
               취소
             </button>
@@ -347,12 +353,14 @@ export function ArtifactPanel() {
           <>
             <EmptyState activityLabel={activityMeta.label} />
             {isHost && (
-              <div className="px-4 pb-4">
+              <div className="px-2 pb-4 mt-4">
                 <button
                   onClick={() => setShowDirectInput(true)}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-amber-300 text-amber-600 text-sm font-medium hover:bg-amber-50 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
+                    border-2 border-dashed border-[#FBBC04] text-[#B06000] text-sm font-medium
+                    hover:bg-[#FEF7E0] transition-colors"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
+                  <span className="material-symbols-rounded ms-sm">edit</span>
                   AI가 저장 안 했나요? 직접 입력하기
                 </button>
               </div>
@@ -360,9 +368,9 @@ export function ArtifactPanel() {
           </>
         ) : (
           <div className="space-y-5">
-            <div className="pb-3 border-b border-gray-100">
-              <h4 className="font-bold text-gray-900 text-base leading-snug">{displayArtifact.title}</h4>
-              <p className="text-xs text-gray-400 mt-1">
+            <div className="pb-3 border-b border-[#F1F3F4]">
+              <h4 className="font-bold text-[#202124] text-[15px] leading-snug">{displayArtifact.title}</h4>
+              <p className="text-[11px] text-[#9AA0A6] mt-1">
                 버전 {displayArtifact.currentVersion} · {displayArtifact.artifactType}
               </p>
             </div>
@@ -370,14 +378,15 @@ export function ArtifactPanel() {
             {effectiveStatus === 'in_review' && displayArtifact.aiDraft && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full font-semibold">
+                  <span className="flex items-center gap-1 text-xs bg-[#E8F0FE] text-[#1A73E8] px-2.5 py-1 rounded-full font-semibold">
+                    <span className="material-symbols-rounded msf ms-sm">auto_awesome</span>
                     AI 초안 검토
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-[#9AA0A6]">
                     {isHost ? '내용을 확인하고 확정하세요' : '팀장이 확정 대기 중'}
                   </span>
                 </div>
-                <div className="border-l-4 border-blue-400 pl-1">
+                <div className="border-l-4 border-[#1A73E8] pl-2">
                   <ArtifactContent content={displayArtifact.aiDraft!} onDeleteSection={isHost ? handleDeleteSection : undefined} />
                 </div>
               </div>
@@ -389,13 +398,13 @@ export function ArtifactPanel() {
 
             {/* 수정 요청 메모 배너 */}
             {firestoreArtifact?.revisionNote && effectiveStatus === 'in_review' && (
-              <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3.5">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                  <span className="text-xs font-bold text-amber-800">
+              <div className="rounded-2xl border border-[#FBBC04] bg-[#FEF7E0] p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">chat</span>
+                  <span className="text-xs font-bold text-[#B06000]">
                     수정 요청
                     {firestoreArtifact.revisionRequestedBy && (
-                      <span className="font-normal ml-1 text-amber-600">
+                      <span className="font-normal ml-1 opacity-80">
                         · {project?.memberInfo?.[firestoreArtifact.revisionRequestedBy]?.displayName ?? '팀원'}
                         {firestoreArtifact.revisionRequestedAt && (
                           <> · {new Date(firestoreArtifact.revisionRequestedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
@@ -404,16 +413,16 @@ export function ArtifactPanel() {
                     )}
                   </span>
                 </div>
-                <p className="text-sm text-amber-900 leading-relaxed whitespace-pre-wrap">
+                <p className="text-sm text-[#B06000] leading-relaxed whitespace-pre-wrap opacity-90">
                   "{firestoreArtifact.revisionNote}"
                 </p>
               </div>
             )}
 
-            {/* 확정 정보 (누가 확정했는지) */}
+            {/* 확정 정보 */}
             {isConfirmed && firestoreArtifact?.confirmedBy && (
-              <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-xl px-3 py-2">
-                <CheckCircle className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-2 text-xs text-[#137333] bg-[#E6F4EA] rounded-full px-4 py-2">
+                <span className="material-symbols-rounded msf ms-sm text-[#34A853]">check_circle</span>
                 <span>
                   {firestoreArtifact.confirmedBy === userProfile?.uid
                     ? '내가 확정함'
@@ -425,8 +434,8 @@ export function ArtifactPanel() {
               </div>
             )}
 
-            <div className="flex items-center gap-1.5 text-xs text-gray-400 pt-2 border-t border-gray-100">
-              <Clock className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-1.5 text-[11px] text-[#9AA0A6] pt-2 border-t border-[#F1F3F4]">
+              <span className="material-symbols-rounded ms-sm">schedule</span>
               <span>
                 {displayArtifact.meta?.updatedAt
                   ? new Date(displayArtifact.meta.updatedAt.toDate()).toLocaleString('ko-KR')
@@ -439,20 +448,20 @@ export function ArtifactPanel() {
 
       {/* 액션 버튼 */}
       {displayArtifact && (
-        <div className="px-5 py-4 border-t bg-gray-50 space-y-2 flex-shrink-0">
+        <div className="px-5 py-4 border-t border-[#DADCE0] bg-[#F8F9FA] space-y-2.5 flex-shrink-0">
           {isHost ? (
-            // ── 팀장 전용 버튼 ──
             isConfirmed ? (
               <>
-                <div className="flex items-center gap-2 text-green-700 mb-1">
-                  <CheckCircle className="w-4 h-4" />
+                <div className="flex items-center gap-2 text-[#137333] mb-1">
+                  <span className="material-symbols-rounded msf ms-sm text-[#34A853]">check_circle</span>
                   <span className="text-sm font-bold">산출물이 확정되었습니다</span>
                 </div>
                 <button
                   onClick={handleRedraft}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
+                    border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="material-symbols-rounded ms-sm">replay</span>
                   확정 취소 · 재검토
                 </button>
               </>
@@ -461,26 +470,28 @@ export function ArtifactPanel() {
                 <button
                   onClick={handleConfirm}
                   disabled={isSaving}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-green-500 text-white text-sm font-bold hover:bg-green-600 disabled:opacity-60 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-full
+                    bg-[#34A853] text-white text-sm font-bold hover:bg-[#2D9249] disabled:opacity-60
+                    transition-colors shadow-sm"
                 >
-                  <CheckCircle className="w-4 h-4" />
+                  <span className="material-symbols-rounded msf ms-sm">check_circle</span>
                   {isSaving ? '저장 중...' : '산출물 확정하기'}
                 </button>
                 <button
                   onClick={handleRedraft}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
+                    border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="material-symbols-rounded ms-sm">replay</span>
                   AI 재초안 요청
                 </button>
               </>
             )
           ) : (
-            // ── 팀원 전용 버튼 ──
             isConfirmed ? (
               <>
-                <div className="flex items-center gap-2 text-green-700 mb-1">
-                  <CheckCircle className="w-4 h-4" />
+                <div className="flex items-center gap-2 text-[#137333] mb-1">
+                  <span className="material-symbols-rounded msf ms-sm text-[#34A853]">check_circle</span>
                   <span className="text-sm font-semibold">팀장이 확정한 산출물입니다</span>
                 </div>
                 {showRevisionForm ? (
@@ -490,18 +501,19 @@ export function ArtifactPanel() {
                       onChange={e => setRevisionNote(e.target.value)}
                       placeholder="수정이 필요한 내용을 적어주세요..."
                       rows={3}
-                      className="w-full text-sm border border-gray-300 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-full text-sm border border-[#DADCE0] rounded-2xl px-4 py-3 resize-none
+                        focus:outline-none focus:ring-2 focus:ring-[#FBBC04] focus:border-transparent"
                     />
                     <div className="flex gap-2">
                       <button
                         onClick={handleRevisionRequest}
-                        className="flex-1 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 transition-colors"
+                        className="flex-1 py-2.5 rounded-full bg-[#FBBC04] text-[#202124] text-sm font-bold hover:bg-[#F9AB00] transition-colors"
                       >
                         수정 요청 보내기
                       </button>
                       <button
                         onClick={() => setShowRevisionForm(false)}
-                        className="px-4 py-2 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50"
+                        className="px-4 py-2.5 rounded-full border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
                       >
                         취소
                       </button>
@@ -510,16 +522,18 @@ export function ArtifactPanel() {
                 ) : (
                   <button
                     onClick={() => setShowRevisionForm(true)}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-amber-300 text-amber-700 text-sm font-semibold hover:bg-amber-50 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
+                      border border-[#FBBC04] text-[#B06000] text-sm font-semibold
+                      hover:bg-[#FEF7E0] transition-colors"
                   >
-                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span className="material-symbols-rounded ms-sm">chat</span>
                     수정 요청하기
                   </button>
                 )}
               </>
             ) : (
-              <div className="flex items-center gap-2 text-gray-500 text-xs py-1">
-                <Lock className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-2 text-[#9AA0A6] text-xs py-1">
+                <span className="material-symbols-rounded ms-sm">lock</span>
                 <span>팀장만 산출물을 확정할 수 있습니다</span>
               </div>
             )

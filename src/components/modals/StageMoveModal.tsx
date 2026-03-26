@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
+import { returnToActivity, advanceActivity } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
-import { ArrowRight, AlertTriangle, X } from 'lucide-react'
 
 function getStageLabel(code: StageCode) {
   return STAGES.find(s => s.code === code)?.label ?? code
@@ -42,17 +42,37 @@ export function StageMoveModal() {
     STAGES.findIndex(s => s.code === fromStage)
   const isCycle = fromStage === 'E' && toStage === 'T'
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (!project) return
 
-    // 대상 단계의 첫 번째 활동으로 이동
     const targetStage = STAGES.find(s => s.code === toStage)
-    if (targetStage) {
-      setCurrentActivity(targetStage.activities[0])
-      setMessages([])
+    if (!targetStage) return
+
+    const firstActivity = targetStage.activities[0]
+
+    if (isBackward || isCycle) {
+      // 이전 단계로 이동: returnToActivity + currentStage 업데이트
+      await returnToActivity(project.id, firstActivity, toStage).catch(console.error)
+    } else {
+      // 다음 단계로 이동: 현재 스테이지 activities + 다음 스테이지 activities 합쳐서 advance
+      const currentStageInfo = STAGES.find(s => s.code === fromStage)!
+      const combinedActivities = [
+        ...currentStageInfo.activities,
+        ...targetStage.activities,
+      ] as import('@/types').ActivityCode[]
+      const currentActivityCode = project.currentActivity ?? currentStageInfo.activities[0]
+      await advanceActivity(
+        project.id,
+        combinedActivities,
+        currentActivityCode as import('@/types').ActivityCode,
+        firstActivity,
+        toStage
+      ).catch(console.error)
     }
 
-    // TODO: Firestore에 단계 전환 기록 저장 (logStageTransition)
+    // 로컬 상태도 즉시 반영
+    setCurrentActivity(firstActivity)
+    setMessages([])
     setPendingStageMove(null)
     setReason('')
   }
@@ -68,51 +88,51 @@ export function StageMoveModal() {
         {/* 헤더 */}
         <div className={cn(
           'px-6 py-4 flex items-center justify-between',
-          isCycle ? 'bg-green-50' : isBackward ? 'bg-amber-50' : 'bg-blue-50'
+          isCycle ? 'bg-[#E6F4EA]' : isBackward ? 'bg-[#FFF3E0]' : 'bg-[#E8F0FE]'
         )}>
           <div>
-            <h2 className="font-bold text-gray-900">
+            <h2 className="font-bold text-[#202124]">
               {isCycle ? '새로운 설계 주기 시작' : isBackward ? '이전 단계로 이동' : '다음 단계로 이동'}
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-sm font-medium text-gray-600">
+              <span className="text-sm font-medium text-[#5F6368]">
                 {fromStage} · {getStageLabel(fromStage)}
               </span>
-              <ArrowRight className="w-4 h-4 text-gray-400" />
+              <span className="material-symbols-rounded ms-sm text-[#9AA0A6]">arrow_forward</span>
               <span className={cn(
                 'text-sm font-bold',
-                isCycle ? 'text-green-700' : isBackward ? 'text-amber-700' : 'text-blue-700'
+                isCycle ? 'text-[#137333]' : isBackward ? 'text-[#E65100]' : 'text-[#1A73E8]'
               )}>
                 {toStage} · {getStageLabel(toStage)}
               </span>
             </div>
           </div>
-          <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
+          <button onClick={handleCancel} className="text-[#9AA0A6] hover:text-[#5F6368]">
+            <span className="material-symbols-rounded ms-sm">close</span>
           </button>
         </div>
 
         <div className="px-6 py-5 space-y-4">
           {/* 미완료 활동 경고 */}
           {incompleteActivities.length > 0 && !isBackward && (
-            <div className="flex gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex gap-3 bg-[#FFF3E0] border border-[#FFCC80] rounded-2xl p-3">
+              <span className="material-symbols-rounded msf ms-sm text-[#E65100] flex-shrink-0 mt-0.5">warning</span>
               <div>
-                <p className="text-sm font-medium text-amber-800">미완료 활동이 있습니다</p>
+                <p className="text-sm font-medium text-[#BF360C]">미완료 활동이 있습니다</p>
                 <ul className="mt-1 space-y-0.5">
                   {incompleteActivities.map(label => (
-                    <li key={label} className="text-xs text-amber-700">· {label}</li>
+                    <li key={label} className="text-xs text-[#E65100]">· {label}</li>
                   ))}
                 </ul>
-                <p className="text-xs text-amber-600 mt-1">계속 진행하면 미완료 상태로 넘어갑니다.</p>
+                <p className="text-xs text-[#E65100] mt-1">계속 진행하면 미완료 상태로 넘어갑니다.</p>
               </div>
             </div>
           )}
 
           {/* 사이클 안내 */}
           {isCycle && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-              <p className="text-sm text-green-800">
+            <div className="bg-[#E6F4EA] border border-[#81C995] rounded-2xl p-3">
+              <p className="text-sm text-[#1E4620]">
                 평가 단계 성찰을 바탕으로 <strong>주기 {(project.cycleCount ?? 1) + 1}</strong>를
                 시작합니다. T 단계부터 새로운 시각으로 설계를 개선해보세요.
               </p>
@@ -121,8 +141,8 @@ export function StageMoveModal() {
 
           {/* 이동 이유 입력 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              이동 이유 <span className="text-gray-400 font-normal">(선택)</span>
+            <label className="block text-sm font-medium text-[#202124] mb-1.5">
+              이동 이유 <span className="text-[#9AA0A6] font-normal">(선택)</span>
             </label>
             <textarea
               value={reason}
@@ -135,8 +155,8 @@ export function StageMoveModal() {
                   : '다음 단계로 이동하는 이유를 간단히 적어주세요'
               }
               rows={3}
-              className="w-full resize-none rounded-xl border border-gray-300 px-3 py-2
-                         text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full resize-none rounded-2xl border border-[#DADCE0] px-3 py-2
+                         text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8] text-[#202124]"
             />
           </div>
 
@@ -144,18 +164,18 @@ export function StageMoveModal() {
           <div className="flex gap-3">
             <button
               onClick={handleCancel}
-              className="flex-1 py-2.5 rounded-xl border border-gray-300 text-sm
-                         font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 py-2.5 rounded-full border border-[#DADCE0] text-sm
+                         font-medium text-[#5F6368] hover:bg-[#F1F3F4] transition-colors"
             >
               취소
             </button>
             <button
               onClick={handleConfirm}
               className={cn(
-                'flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-colors',
-                isCycle ? 'bg-green-500 hover:bg-green-600'
-                  : isBackward ? 'bg-amber-500 hover:bg-amber-600'
-                  : 'bg-blue-500 hover:bg-blue-600'
+                'flex-1 py-2.5 rounded-full text-sm font-bold text-white transition-colors',
+                isCycle ? 'bg-[#34A853] hover:bg-[#2d9248]'
+                  : isBackward ? 'bg-[#E65100] hover:bg-[#cc4700]'
+                  : 'bg-[#1A73E8] hover:bg-[#1557b0]'
               )}
             >
               {isCycle ? '새 주기 시작' : isBackward ? '이전으로 이동' : '다음으로 이동'}

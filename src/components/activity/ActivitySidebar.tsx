@@ -4,22 +4,15 @@ import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type ActivityCode, type StageStatus } from '@/types'
 import { setProjectActivity } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
-import { CheckCircle, Shield, Star, ChevronRight, AlertTriangle, RotateCcw } from 'lucide-react'
 
-// 단계별 색상
-const STAGE_BG: Record<string, string> = {
-  T: 'bg-blue-600', A: 'bg-violet-600', Ds: 'bg-emerald-600',
-  DI: 'bg-orange-600', E: 'bg-rose-600',
-}
-const STAGE_LIGHT: Record<string, string> = {
-  T: 'bg-blue-50 border-blue-200 text-blue-800',
-  A: 'bg-violet-50 border-violet-200 text-violet-800',
-  Ds: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-  DI: 'bg-orange-50 border-orange-200 text-orange-800',
-  E: 'bg-rose-50 border-rose-200 text-rose-800',
+const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; border: string }> = {
+  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', border: 'border-[#AECBFA]' },
+  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]', border: 'border-[#CE93D8]' },
+  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', border: 'border-[#80CBC4]' },
+  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', border: 'border-[#FFAB91]' },
+  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', border: 'border-[#EF9A9A]' },
 }
 
-// 단계 설명 (팀이 해야 할 일)
 const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
   T: {
     goal: '팀이 하나의 방향으로 정렬되는 단계',
@@ -31,7 +24,7 @@ const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
   },
   Ds: {
     goal: '평가를 먼저 설계하고 활동을 채우는 단계',
-    teamTasks: ['평가계획을 먼저 확정해요 (Backward Design)', '학습자 프로필을 모든 설계에 반영해요', '활동-평가 정합성을 팀이 함께 확인해요'],
+    teamTasks: ['평가계획을 먼저 확정해요', '학습자 프로필을 모든 설계에 반영해요', '활동-평가 정합성을 함께 확인해요'],
   },
   DI: {
     goal: '설계를 실제 수업으로 구현하는 단계',
@@ -43,65 +36,62 @@ const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
   },
 }
 
-const STATUS_STYLE: Record<StageStatus, { dot: string; text: string }> = {
-  not_started:   { dot: 'bg-gray-300', text: 'text-gray-400' },
-  in_progress:   { dot: 'bg-blue-500 animate-pulse', text: 'text-gray-700 font-medium' },
-  completed:     { dot: 'bg-green-500', text: 'text-green-700' },
-  warning:       { dot: 'bg-yellow-400', text: 'text-yellow-700' },
-  active_return: { dot: 'bg-orange-400', text: 'text-orange-700' },
-}
-
 function ActivityItem({ code, isCurrent, status, index, onClick }: {
   code: ActivityCode; isCurrent: boolean; status: StageStatus; index: number; onClick: () => void
 }) {
   const meta = ACTIVITY_META[code]
-  const style = STATUS_STYLE[status]
+
+  let statusIcon = ''
+  let statusColor = 'text-[#9AA0A6]'
+  if (status === 'completed') { statusIcon = 'check_circle'; statusColor = 'text-[#34A853]' }
+  else if (status === 'warning') { statusIcon = 'warning'; statusColor = 'text-[#F9AB00]' }
+  else if (status === 'active_return') { statusIcon = 'replay'; statusColor = 'text-[#E65100]' }
+  else if (status === 'in_progress' || isCurrent) { statusIcon = 'pending'; statusColor = 'text-[#1A73E8]' }
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all',
+        'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150',
         isCurrent
-          ? 'bg-white shadow-sm border border-blue-200 ring-1 ring-blue-300'
-          : 'hover:bg-white/60 text-gray-600'
+          ? 'bg-[#E8F0FE] shadow-sm'
+          : 'hover:bg-[#F1F3F4] text-[#5F6368]'
       )}
     >
-      {/* 번호 */}
       <div className={cn(
         'w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0',
-        isCurrent ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'
+        isCurrent ? 'bg-[#1A73E8] text-white' : 'bg-[#F1F3F4] text-[#9AA0A6]'
       )}>
         {index + 1}
       </div>
 
-      {/* 레이블 */}
       <div className="flex-1 min-w-0">
-        <p className={cn('text-xs leading-tight truncate', isCurrent ? 'font-bold text-gray-900' : style.text)}>
+        <p className={cn('text-xs leading-tight truncate',
+          isCurrent ? 'font-bold text-[#1A73E8]' : 'font-medium text-[#3C4043]'
+        )}>
           {meta.label}
         </p>
-        {isCurrent && (
-          <p className="text-[10px] text-blue-500 mt-0.5">진행 중</p>
-        )}
         {!isCurrent && status === 'warning' && (
-          <p className="text-[10px] text-yellow-600 mt-0.5">건너뜀</p>
-        )}
-        {!isCurrent && status === 'completed' && (
-          <p className="text-[10px] text-green-600 mt-0.5">완료</p>
+          <p className="text-[10px] text-[#F9AB00] mt-0.5">건너뜀</p>
         )}
         {!isCurrent && status === 'active_return' && (
-          <p className="text-[10px] text-orange-600 mt-0.5">재진행 중</p>
+          <p className="text-[10px] text-[#E65100] mt-0.5">재진행 중</p>
         )}
       </div>
 
-      {/* 아이콘 */}
       <div className="flex items-center gap-0.5 flex-shrink-0">
-        {meta.isGuardrailSource && <Shield className="w-3 h-3 text-purple-500" />}
-        {meta.isBackwardDesignFirst && <Star className="w-3 h-3 text-amber-500" />}
-        {status === 'completed' && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
-        {status === 'warning' && <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />}
-        {status === 'active_return' && !isCurrent && <RotateCcw className="w-3.5 h-3.5 text-orange-500" />}
-        {isCurrent && <ChevronRight className="w-3.5 h-3.5 text-blue-400" />}
+        {meta.isGuardrailSource && (
+          <span className="material-symbols-rounded msf ms-sm text-[#7B1FA2]">shield</span>
+        )}
+        {meta.isBackwardDesignFirst && (
+          <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">star</span>
+        )}
+        {statusIcon && (
+          <span className={cn('material-symbols-rounded msf ms-sm', statusColor)}>{statusIcon}</span>
+        )}
+        {isCurrent && (
+          <span className="material-symbols-rounded ms-sm text-[#1A73E8]">chevron_right</span>
+        )}
       </div>
     </button>
   )
@@ -114,63 +104,57 @@ export function ActivitySidebar() {
   const currentStage = project.currentStage
   const currentStageInfo = STAGES.find(s => s.code === currentStage)!
   const guide = STAGE_GUIDE[currentStage]
+  const color = STAGE_COLOR[currentStage]
   const completedCount = currentStageInfo.activities.filter(a => activityStatus[a] === 'completed').length
   const totalCount = currentStageInfo.activities.length
-  const currentIdx = currentStageInfo.activities.indexOf(currentActivity)
+  const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
 
   function handleActivityClick(code: ActivityCode) {
     if (code === currentActivity) return
     setCurrentActivity(code)
-    // setMessages([])는 watchMessages effect가 currentActivity 변경을 감지하여 처리
-    // Firestore 동기화 → 모든 팀원에게 현재 활동 공유
     setProjectActivity(project!.id, code).catch(console.error)
   }
 
   return (
-    <div className="w-60 flex-shrink-0 flex flex-col bg-gray-50/80 border-r border-gray-200 overflow-hidden">
+    <div className="w-60 flex-shrink-0 flex flex-col bg-white border-r border-[#DADCE0] overflow-hidden">
 
-      {/* ── 단계 헤더 (크고 명확하게) ── */}
-      <div className={cn('px-4 pt-4 pb-3 border-b border-gray-200')}>
-        {/* 단계 배지 */}
-        <div className="flex items-center gap-2 mb-2">
-          <div className={cn('px-2.5 py-1 rounded-lg text-white text-xs font-black tracking-wide', STAGE_BG[currentStage])}>
+      {/* 단계 헤더 */}
+      <div className="px-4 pt-5 pb-4 border-b border-[#F1F3F4]">
+        <div className="flex items-center gap-2 mb-3">
+          <span className={cn('px-2.5 py-1 rounded-full text-[11px] font-bold text-white', color.bg)}>
             {currentStage}
-          </div>
-          <span className="text-base font-black text-gray-900">{currentStageInfo.label}</span>
+          </span>
+          <span className="text-sm font-bold text-[#202124]">{currentStageInfo.label}</span>
         </div>
-
-        {/* 목표 */}
-        <p className="text-[11px] text-gray-600 leading-snug mb-2">{guide.goal}</p>
+        <p className="text-[11px] text-[#5F6368] leading-relaxed mb-3">{guide.goal}</p>
 
         {/* 진행률 바 */}
         <div className="flex items-center gap-2">
-          <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <div className="flex-1 h-1.5 bg-[#F1F3F4] rounded-full overflow-hidden">
             <div
-              className={cn('h-full rounded-full transition-all', STAGE_BG[currentStage])}
-              style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
+              className={cn('h-full rounded-full transition-all duration-500', color.bg)}
+              style={{ width: `${progressPct}%` }}
             />
           </div>
-          <span className="text-[10px] text-gray-400 font-medium">{completedCount}/{totalCount}</span>
+          <span className="text-[10px] text-[#9AA0A6] font-medium tabular-nums">{completedCount}/{totalCount}</span>
         </div>
       </div>
 
-      {/* ── 팀이 해야 할 일 ── */}
-      <div className={cn('mx-3 mt-3 rounded-xl border px-3 py-2.5', STAGE_LIGHT[currentStage])}>
-        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5 opacity-70">팀이 할 일</p>
+      {/* 팀이 할 일 */}
+      <div className={cn('mx-3 mt-3 rounded-2xl border px-3.5 py-3', color.light, color.border)}>
+        <p className={cn('text-[10px] font-bold uppercase tracking-wider mb-2 opacity-60', color.text)}>팀이 할 일</p>
         {guide.teamTasks.map((task, i) => (
-          <div key={i} className="flex items-start gap-1.5 mb-1 last:mb-0">
-            <span className="text-[10px] font-bold mt-0.5 opacity-60">{i + 1}.</span>
-            <p className={cn('text-[11px] leading-snug', i === currentIdx ? 'font-bold' : 'opacity-80')}>
-              {task}
-            </p>
+          <div key={i} className="flex items-start gap-2 mb-1.5 last:mb-0">
+            <span className={cn('text-[10px] font-bold mt-0.5 opacity-50 flex-shrink-0', color.text)}>{i + 1}.</span>
+            <p className={cn('text-[11px] leading-snug', color.text, 'opacity-85')}>{task}</p>
           </div>
         ))}
       </div>
 
-      {/* ── 활동 목록 ── */}
-      <div className="flex-1 overflow-y-auto px-3 py-3">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest px-1 mb-2">활동</p>
-        <div className="space-y-1">
+      {/* 활동 목록 */}
+      <div className="flex-1 overflow-y-auto px-2 py-3">
+        <p className="text-[10px] font-semibold text-[#9AA0A6] uppercase tracking-widest px-2 mb-1.5">활동</p>
+        <div className="space-y-0.5">
           {currentStageInfo.activities.map((code, idx) => (
             <ActivityItem
               key={code}
@@ -184,13 +168,15 @@ export function ActivitySidebar() {
         </div>
       </div>
 
-      {/* ── 아이콘 범례 ── */}
-      <div className="px-4 py-2.5 border-t border-gray-200 flex gap-4">
-        <div className="flex items-center gap-1 text-[10px] text-gray-400">
-          <Shield className="w-3 h-3 text-purple-500" /><span>가드레일</span>
+      {/* 범례 */}
+      <div className="px-4 py-2.5 border-t border-[#F1F3F4] flex gap-3">
+        <div className="flex items-center gap-1 text-[10px] text-[#9AA0A6]">
+          <span className="material-symbols-rounded msf ms-sm text-[#7B1FA2]">shield</span>
+          <span>가드레일</span>
         </div>
-        <div className="flex items-center gap-1 text-[10px] text-gray-400">
-          <Star className="w-3 h-3 text-amber-500" /><span>평가 먼저</span>
+        <div className="flex items-center gap-1 text-[10px] text-[#9AA0A6]">
+          <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">star</span>
+          <span>평가 먼저</span>
         </div>
       </div>
     </div>
