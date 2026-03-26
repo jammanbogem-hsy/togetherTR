@@ -45,8 +45,7 @@ function ActivityItem({ code, isCurrent, status, index, onClick }: {
   let statusColor = 'text-[#9AA0A6]'
   if (status === 'completed') { statusIcon = 'check_circle'; statusColor = 'text-[#34A853]' }
   else if (status === 'warning') { statusIcon = 'warning'; statusColor = 'text-[#F9AB00]' }
-  else if (status === 'active_return') { statusIcon = 'replay'; statusColor = 'text-[#E65100]' }
-  else if (status === 'in_progress' || isCurrent) { statusIcon = 'pending'; statusColor = 'text-[#1A73E8]' }
+  else if (status === 'in_progress' || status === 'active_return' || isCurrent) { statusIcon = 'pending'; statusColor = 'text-[#1A73E8]' }
 
   return (
     <button
@@ -73,9 +72,6 @@ function ActivityItem({ code, isCurrent, status, index, onClick }: {
         </p>
         {!isCurrent && status === 'warning' && (
           <p className="text-[10px] text-[#F9AB00] mt-0.5">건너뜀</p>
-        )}
-        {!isCurrent && status === 'active_return' && (
-          <p className="text-[10px] text-[#E65100] mt-0.5">재진행 중</p>
         )}
       </div>
 

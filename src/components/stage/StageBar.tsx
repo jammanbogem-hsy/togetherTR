@@ -128,8 +128,9 @@ export function StageBar() {
 
       <div className="flex items-center justify-center gap-0">
         {STAGES.map((stage, idx) => {
-          const stageIdx = STAGES.findIndex(s => s.code === stage.code)
-          const passed = stageIdx < currentStageIdx
+          // 다음 단계가 시작된 경우(완료 또는 진행 중) 커넥터를 초록색으로
+          const nextStage = STAGES[idx + 1]
+          const nextStarted = nextStage && getStageStatus(nextStage.code) !== 'not_started'
 
           return (
             <div key={stage.code} className="flex items-center">
@@ -142,8 +143,10 @@ export function StageBar() {
                 onClick={() => { if (stage.code !== currentStage) setPendingStageMove(stage.code) }}
               />
               {idx < STAGES.length - 1 && (
-                <div className="flex items-center px-1.5 flex-shrink-0">
-                  <div className={cn('h-px w-5 transition-colors', passed ? 'bg-[#34A853]' : 'bg-[#DADCE0]')} />
+                <div className="flex items-center px-1 flex-shrink-0 gap-px">
+                  <div className={cn('h-px w-3 transition-colors', nextStarted ? 'bg-[#34A853]' : 'bg-[#DADCE0]')} />
+                  <span className={cn('text-[8px] transition-colors leading-none', nextStarted ? 'text-[#34A853]' : 'text-[#DADCE0]')}>⇄</span>
+                  <div className={cn('h-px w-3 transition-colors', nextStarted ? 'bg-[#34A853]' : 'bg-[#DADCE0]')} />
                 </div>
               )}
             </div>
