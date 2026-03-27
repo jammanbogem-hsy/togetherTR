@@ -28,6 +28,8 @@ body {
   font-family: var(--font-noto), 'Google Sans', -apple-system, BlinkMacSystemFont,
     'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+  font-weight: 500;
+  font-size: 15px;
 }
 
 
@@ -39,6 +41,15 @@ body {
 /* ── Animations ─────────────────────────────────────── */
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes chevron-flow {
+  0%   { opacity: 0.15; transform: translateX(-4px); }
+  50%  { opacity: 1;    transform: translateX(0px);  }
+  100% { opacity: 0.15; transform: translateX(4px);  }
+}
+@keyframes dot-idle {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50%       { opacity: 0.55; transform: scale(1.2); }
 }
 @keyframes pulse-ring {
   0%   { box-shadow: 0 0 0 0 rgba(26, 115, 232, 0.45); }
@@ -75,6 +86,168 @@ body {
   50%     { border-radius: 50% 50% 30% 70% / 70% 50% 50% 30%; }
   75%     { border-radius: 70% 30% 50% 50% / 40% 70% 30% 60%; }
 }
+
+/* ── Chat Input Animated Gradient Border ────────────── */
+@keyframes rotate-gradient {
+  to { transform: translate(-50%, -50%) rotate(1turn); }
+}
+.chat-input-wrap {
+  position: relative;
+  border-radius: 20px;
+  padding: 2px;
+  overflow: hidden;
+}
+.chat-input-wrap::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  transform: translate(-50%, -50%) rotate(0deg);
+  background: conic-gradient(from 0deg, #F48FB1, #FFD54F, #CE93D8, #FFAB91, #80CBC4, #F48FB1);
+  animation: rotate-gradient 10s linear infinite;
+}
+.chat-input-wrap-team::before {
+  background: conic-gradient(from 0deg, #80CBC4, #FFD54F, #A5D6A7, #FFD54F, #80CBC4);
+  animation: rotate-gradient 10s linear infinite;
+}
+.chat-input-inner {
+  position: relative;
+  z-index: 1;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+/* ── Panel Corner Decoration — 섹션별 다른 위치/크기 ─── */
+@property --corner-pct {
+  syntax: '<percentage>';
+  initial-value: 24%;
+  inherits: false;
+}
+
+/* ActivitySidebar: 우상단 + 좌하단, 크게 확장 */
+.corner-wrap-sidebar {
+  --cc: rgba(26, 115, 232, 0.12);
+  --corner-pct: 30%;
+  background-image:
+    radial-gradient(circle at 100% 0%,   var(--cc) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px)),
+    radial-gradient(circle at 0%   100%, var(--cc) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px));
+  background-color: white;
+  transition: --corner-pct 0.65s cubic-bezier(.4,0,.2,1);
+}
+.corner-wrap-sidebar:hover { --corner-pct: 50%; }
+
+/* ChatPanel: 좌상단 + 우하단, 작게 시작 천천히 확장 */
+.corner-wrap-chat {
+  --cc: rgba(26, 115, 232, 0.09);
+  --corner-pct: 16%;
+  background-image:
+    radial-gradient(circle at 0%   0%,   var(--cc) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px)),
+    radial-gradient(circle at 100% 100%, var(--cc) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px));
+  background-color: white;
+  transition: --corner-pct 0.9s cubic-bezier(.4,0,.2,1);
+}
+.corner-wrap-chat:hover { --corner-pct: 30%; }
+
+/* ArtifactPanel: 우상단 + 우하단 (오른쪽 면 강조), 가장 크게 */
+.corner-wrap-artifact {
+  --cc: rgba(26, 115, 232, 0.11);
+  --corner-pct: 34%;
+  background-image:
+    radial-gradient(circle at 100% 0%,   var(--cc) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px)),
+    radial-gradient(circle at 100% 100%, var(--cc) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px));
+  background-color: white;
+  transition: --corner-pct 0.5s cubic-bezier(.4,0,.2,1);
+}
+.corner-wrap-artifact:hover { --corner-pct: 52%; }
+
+/* ── Project Card — 단일 클래스, 코너 위치/색상은 CSS 변수로 주입 ─── */
+.project-card {
+  --corner-pct: 24%;
+  background-color: white;
+  background-image:
+    radial-gradient(circle at var(--cx1, 100%) var(--cy1, 0%),   var(--cc, rgba(26,115,232,0.11)) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px)),
+    radial-gradient(circle at var(--cx2, 0%)   var(--cy2, 100%), var(--cc, rgba(26,115,232,0.11)) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px));
+  transition: --corner-pct var(--card-speed, 0.65s) cubic-bezier(.4,0,.2,1);
+}
+.project-card:hover { --corner-pct: 56%; }
+
+/* ── Squid Button (odd-squid style icon spin) ─────────── */
+.squid-btn:hover svg { animation: spin 2s linear infinite; }
+
+/* ── Morph Button — 버튼 유기적 일렁임 ──────────────── */
+@keyframes morph-btn {
+  0%, 100% { border-radius: 20px 14px 20px 14px / 14px 20px 14px 20px; }
+  33%       { border-radius: 14px 20px 16px 22px / 20px 14px 22px 16px; }
+  66%       { border-radius: 22px 16px 14px 20px / 16px 22px 20px 14px; }
+}
+.morph-btn {
+  animation: morph-btn 5s ease-in-out infinite;
+}
+
+/* ── Artifact Markdown Rendering ──────────────────────── */
+.artifact-md h1 { font-size: 1.2rem; font-weight: 800; color: #202124; margin: 0.75rem 0 0.4rem; line-height: 1.3; }
+.artifact-md h2 { font-size: 1.05rem; font-weight: 700; color: #202124; margin: 0.65rem 0 0.35rem; line-height: 1.3; }
+.artifact-md h3 { font-size: 0.95rem; font-weight: 700; color: #3C4043; margin: 0.5rem 0 0.3rem; line-height: 1.3; }
+.artifact-md p  { margin: 0.4rem 0; line-height: 1.7; }
+.artifact-md strong { font-weight: 800; color: #202124; }
+.artifact-md em { font-style: italic; color: #5F6368; }
+.artifact-md ul { list-style: none; padding: 0; margin: 0.4rem 0; space-y: 0.3rem; }
+.artifact-md ul li { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.35rem; line-height: 1.6; }
+.artifact-md ul li::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #1A73E8; flex-shrink: 0; margin-top: 0.45rem; }
+.artifact-md ol { list-style: none; padding: 0; counter-reset: ol-counter; margin: 0.4rem 0; }
+.artifact-md ol li { counter-increment: ol-counter; display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.35rem; line-height: 1.6; }
+.artifact-md ol li::before { content: counter(ol-counter) '.'; font-weight: 700; color: #1A73E8; font-size: 0.8rem; flex-shrink: 0; min-width: 1.2rem; }
+.artifact-md blockquote { border-left: 3px solid #AECBFA; padding: 0.4rem 0.75rem; margin: 0.5rem 0; background: #F8F9FA; border-radius: 0 8px 8px 0; color: #5F6368; font-style: italic; }
+.artifact-md code { font-family: monospace; font-size: 0.85em; background: #F1F3F4; padding: 0.15em 0.4em; border-radius: 4px; color: #C62828; }
+.artifact-md hr { border: none; border-top: 1.5px solid #DADCE0; margin: 0.75rem 0; }
+.artifact-md > *:first-child { margin-top: 0; }
+.artifact-md > *:last-child  { margin-bottom: 0; }
+
+/* ── Analysis Report — 보고서 전용 타이포그래피 ────── */
+.analysis-report h1 { font-size: 1.35rem; font-weight: 900; color: #202124; margin: 0 0 1.2rem; line-height: 1.25; letter-spacing: -0.02em; border-bottom: 3px solid #1A73E8; padding-bottom: 0.6rem; }
+.analysis-report h2 { font-size: 1.05rem; font-weight: 800; color: #202124; margin: 1.6rem 0 0.6rem; line-height: 1.3; display: flex; align-items: center; gap: 0.4rem; }
+.analysis-report h2::after { content: ''; flex: 1; height: 1.5px; background: linear-gradient(to right, #DADCE0, transparent); }
+.analysis-report h3 { font-size: 0.95rem; font-weight: 700; color: #1A73E8; margin: 1rem 0 0.4rem; line-height: 1.3; }
+.analysis-report p  { margin: 0.5rem 0; line-height: 1.75; color: #3C4043; font-size: 0.93rem; }
+.analysis-report strong { font-weight: 800; color: #202124; }
+.analysis-report em { font-style: italic; color: #5F6368; }
+
+/* 첫 번째 h2 섹션(이 팀이 만들어낸 것)은 강조 블록 */
+.analysis-report h2:first-of-type { font-size: 1.1rem; color: #1A73E8; }
+.analysis-report h2:first-of-type + p,
+.analysis-report h2:first-of-type ~ p:first-of-type {
+  background: linear-gradient(135deg, #E8F0FE 0%, #F3E5F5 100%);
+  border-left: 4px solid #1A73E8;
+  border-radius: 0 12px 12px 0;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: #202124;
+  font-weight: 500;
+}
+
+.analysis-report ul { list-style: none; padding: 0; margin: 0.5rem 0; }
+.analysis-report ul li { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.45rem; line-height: 1.65; font-size: 0.92rem; color: #3C4043; }
+.analysis-report ul li::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #1A73E8; flex-shrink: 0; margin-top: 0.5rem; }
+.analysis-report ol { list-style: none; padding: 0; counter-reset: ol-counter; margin: 0.5rem 0; }
+.analysis-report ol li { counter-increment: ol-counter; display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.45rem; line-height: 1.65; font-size: 0.92rem; }
+.analysis-report ol li::before { content: counter(ol-counter); font-weight: 800; color: white; background: #1A73E8; font-size: 0.72rem; flex-shrink: 0; min-width: 1.3rem; height: 1.3rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-top: 0.2rem; }
+
+/* 표 — 준비도 요약 */
+.analysis-report table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; border-radius: 12px; overflow: hidden; font-size: 0.88rem; }
+.analysis-report thead { background: #1A73E8; }
+.analysis-report thead th { color: white; font-weight: 700; padding: 0.6rem 1rem; text-align: left; }
+.analysis-report tbody tr:nth-child(even) { background: #F8F9FA; }
+.analysis-report tbody tr:nth-child(odd) { background: white; }
+.analysis-report tbody td { padding: 0.55rem 1rem; color: #3C4043; border-bottom: 1px solid #F1F3F4; }
+.analysis-report tbody td:last-child { font-weight: 700; color: #202124; }
+
+.analysis-report blockquote { border-left: 4px solid #AECBFA; padding: 0.6rem 1rem; margin: 0.75rem 0; background: #F8F9FA; border-radius: 0 8px 8px 0; color: #5F6368; font-size: 0.9rem; line-height: 1.7; }
+.analysis-report hr { border: none; border-top: 1.5px solid #DADCE0; margin: 1.2rem 0; }
+.analysis-report > *:first-child { margin-top: 0; }
+.analysis-report > *:last-child { margin-bottom: 0; }
 
 /* ── Scrollbar ──────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

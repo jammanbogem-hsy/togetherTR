@@ -1,12 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META } from '@/types'
 import type { ArtifactStatus } from '@/types'
 import { setProjectArtifact } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
 import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, CheckSquare, Chat, Clock, X, PencilSimple, ClockCounterClockwise, type Icon } from '@phosphor-icons/react'
+
+const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; pulse: string; corner: string }> = {
+  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', pulse: 'rgba(26,115,232,0.35)',  corner: 'rgba(26,115,232,0.11)'  },
+  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]', pulse: 'rgba(123,31,162,0.35)', corner: 'rgba(123,31,162,0.10)'  },
+  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', pulse: 'rgba(0,137,123,0.35)',  corner: 'rgba(0,137,123,0.10)'   },
+  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', pulse: 'rgba(230,81,0,0.35)',   corner: 'rgba(230,81,0,0.10)'    },
+  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', pulse: 'rgba(198,40,40,0.35)',  corner: 'rgba(198,40,40,0.10)'   },
+}
 
 const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: Icon; className: string }> = {
   ai_draft:  { label: 'AI 초안', icon: Sparkle,      className: 'bg-[#E8F0FE] text-[#1A73E8]' },
@@ -70,7 +80,9 @@ function ArtifactSection({ sectionKey, value, onDelete }: {
       </div>
       <div className="px-4 py-4 bg-white">
         {typeof value === 'string' ? (
-          <p className="text-sm text-[#202124] leading-relaxed whitespace-pre-wrap">{value}</p>
+          <div className="artifact-md text-sm text-[#202124] leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+          </div>
         ) : Array.isArray(value) ? (
           <ul className="space-y-2">
             {value.map((item, i) => (
@@ -141,6 +153,7 @@ export function ArtifactPanel() {
   const [directInputText, setDirectInputText] = useState('')
 
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
+  const stageColor = STAGE_COLOR[project?.currentStage ?? 'T']
 
   // Firestore 산출물 (팀 전체 소스)
   const firestoreArtifact = project?.artifacts?.[currentActivity]
@@ -286,21 +299,22 @@ export function ArtifactPanel() {
     {}
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full overflow-hidden corner-wrap-artifact"
+      style={{ '--cc': stageColor.corner } as React.CSSProperties}>
       {/* ─── 산출물 아이덴티티 헤더 ─────────────── */}
-      <div className="bg-[#E8F0FE] px-5 pt-4 pb-4 flex-shrink-0">
+      <div className={cn(stageColor.light, 'px-5 pt-4 pb-4 flex-shrink-0')}>
         <div className="flex items-center gap-3 mb-3">
           <div
-            className="w-11 h-11 bg-[#1A73E8] flex items-center justify-center flex-shrink-0"
+            className={cn('w-11 h-11 flex items-center justify-center flex-shrink-0', stageColor.bg)}
             style={{
               animation: 'morph-shape 9s ease-in-out infinite, stage-bounce 3.5s ease-in-out infinite',
-              boxShadow: '0 6px 16px rgba(26,115,232,0.35)',
+              boxShadow: `0 6px 16px ${stageColor.pulse}`,
             }}
           >
             <FileText size={22} weight="fill" className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A73E8] mb-0.5">산출물</p>
+            <p className={cn('text-[10px] font-bold uppercase tracking-widest mb-0.5', stageColor.text)}>산출물</p>
             <p className="text-[13px] font-bold text-[#202124] leading-tight truncate">{activityMeta.label}</p>
           </div>
           {displayArtifact && <StatusBadge status={effectiveStatus} />}
@@ -367,9 +381,8 @@ export function ArtifactPanel() {
               <div className="px-2 pb-4 mt-4">
                 <button
                   onClick={() => setShowDirectInput(true)}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
-                    border-2 border-dashed border-[#FBBC04] text-[#B06000] text-sm font-medium
-                    hover:bg-[#FEF7E0] transition-colors"
+                  className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
+                    bg-[rgba(249,171,0,0.12)] hover:bg-[rgba(249,171,0,0.24)] text-[#B06000] text-sm font-semibold transition-colors"
                 >
                   <PencilSimple size={16} weight="regular" />
                   AI가 저장 안 했나요? 직접 입력하기
@@ -469,8 +482,8 @@ export function ArtifactPanel() {
                 </div>
                 <button
                   onClick={handleRedraft}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
-                    border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
+                  className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
+                    text-[#5F6368] bg-[rgba(95,99,104,0.08)] hover:bg-[rgba(95,99,104,0.16)] text-sm transition-colors"
                 >
                   <ClockCounterClockwise size={16} weight="regular" />
                   확정 취소 · 재검토
@@ -481,17 +494,17 @@ export function ArtifactPanel() {
                 <button
                   onClick={handleConfirm}
                   disabled={isSaving}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-full
-                    bg-[#34A853] text-white text-sm font-bold hover:bg-[#2D9249] disabled:opacity-60
-                    transition-colors shadow-sm"
+                  className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-3
+                    bg-[rgba(52,168,83,0.15)] hover:bg-[rgba(52,168,83,0.28)] text-[#1E7E34] text-sm font-bold
+                    disabled:opacity-60 transition-colors"
                 >
                   <CheckCircle size={16} weight="fill" />
                   {isSaving ? '저장 중...' : '산출물 확정하기'}
                 </button>
                 <button
                   onClick={handleRedraft}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
-                    border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
+                  className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
+                    text-[#5F6368] bg-[rgba(95,99,104,0.08)] hover:bg-[rgba(95,99,104,0.16)] text-sm transition-colors"
                 >
                   <ClockCounterClockwise size={16} weight="regular" />
                   AI 재초안 요청
@@ -518,13 +531,14 @@ export function ArtifactPanel() {
                     <div className="flex gap-2">
                       <button
                         onClick={handleRevisionRequest}
-                        className="flex-1 py-2.5 rounded-full bg-[#FBBC04] text-[#202124] text-sm font-bold hover:bg-[#F9AB00] transition-colors"
+                        className="squid-btn morph-btn flex-1 py-2.5 bg-[rgba(249,171,0,0.18)] hover:bg-[rgba(249,171,0,0.32)] text-[#B06000] text-sm font-bold transition-colors flex items-center justify-center gap-2"
                       >
+                        <Chat size={15} weight="fill" />
                         수정 요청 보내기
                       </button>
                       <button
                         onClick={() => setShowRevisionForm(false)}
-                        className="px-4 py-2.5 rounded-full border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
+                        className="squid-btn morph-btn px-4 py-2.5 text-[#5F6368] bg-[rgba(95,99,104,0.08)] hover:bg-[rgba(95,99,104,0.16)] text-sm transition-colors"
                       >
                         취소
                       </button>
@@ -533,11 +547,10 @@ export function ArtifactPanel() {
                 ) : (
                   <button
                     onClick={() => setShowRevisionForm(true)}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-full
-                      border border-[#FBBC04] text-[#B06000] text-sm font-semibold
-                      hover:bg-[#FEF7E0] transition-colors"
+                    className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
+                      bg-[rgba(249,171,0,0.14)] hover:bg-[rgba(249,171,0,0.28)] text-[#B06000] text-sm font-semibold transition-colors"
                   >
-                    <Chat size={16} weight="regular" />
+                    <Chat size={16} weight="fill" />
                     수정 요청하기
                   </button>
                 )}

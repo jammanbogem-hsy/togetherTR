@@ -17,6 +17,11 @@ import {
   Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X,
 } from '@phosphor-icons/react'
 
+const STAGE_CORNER: Record<string, string> = {
+  T: 'rgba(26,115,232,0.09)', A: 'rgba(123,31,162,0.08)', Ds: 'rgba(0,137,123,0.08)',
+  DI: 'rgba(230,81,0,0.08)', E: 'rgba(198,40,40,0.08)',
+}
+
 // ─── 안(案) 선택지 파싱 ──────────────────────────────
 interface ParsedOption { label: string; content: string }
 interface ParsedOptions { pre: string; options: ParsedOption[]; post: string }
@@ -151,13 +156,13 @@ function OptionsMessage({
 
   return (
     <div className="flex gap-2 mb-3">
-      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
+      <div className="w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
         style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
         AI
       </div>
       <div className="max-w-[85%] flex flex-col gap-3 flex-1">
         {pre && (
-          <div className="bg-[#F1F3F4] text-[#202124] px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
+          <div className="bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
             <MarkdownContent text={pre} />
           </div>
         )}
@@ -252,7 +257,7 @@ function OptionsMessage({
         })}
 
         {post && (
-          <div className="bg-[#F1F3F4] text-[#202124] px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
+          <div className="bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
             <MarkdownContent text={post} />
           </div>
         )}
@@ -600,9 +605,9 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
 
   return (
     <ContextMenuWrapper onReply={onReply} className={cn('flex gap-2 mb-3', alignRight ? 'flex-row-reverse' : 'flex-row')}>
-      {/* 아바타 */}
+      {/* 아바타 — 상단 정렬, 크게 */}
       <div
-        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm self-end"
+        className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
         style={{ backgroundColor: avatarColor, color: textOnColor, animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
         title={senderName}
       >
@@ -629,11 +634,11 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
         )}
 
         <div className={cn(
-          'px-3 py-2 rounded-2xl text-sm leading-relaxed',
-          !isUser && 'bg-[#F1F3F4] text-[#202124] rounded-tl-sm',
-          isUser && (alignRight ? 'rounded-tr-sm' : 'rounded-tl-sm'),
+          'px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
+          !isUser && 'bg-[#EAF2FF] text-[#1a2e5a] rounded-tl-none border-l-[3px] border-[#4285F4]',
+          isUser && (alignRight ? 'rounded-tr-none' : 'rounded-tl-none'),
         )}
-          style={isUser ? { backgroundColor: avatarColor, color: textOnColor } : undefined}
+          style={isUser ? { backgroundColor: avatarColor, color: textOnColor, filter: 'saturate(1.2) brightness(0.95)' } : undefined}
         >
           {isUser
             ? <span className="whitespace-pre-wrap">{content}</span>
@@ -687,13 +692,13 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
   }
   return (
     <div className="flex gap-2 mb-3">
-      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
+      <div className="w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
         style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
         AI
       </div>
-      <div className="max-w-[75%] bg-[#F1F3F4] text-[#202124] px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
+      <div className="max-w-[75%] bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
         <MarkdownContent text={text} />
-        <span className="inline-block w-1 h-4 bg-[#9AA0A6] animate-pulse ml-0.5 align-middle" />
+        <span className="inline-block w-1 h-4 bg-[#4285F4] animate-pulse ml-0.5 align-middle" />
       </div>
     </div>
   )
@@ -1368,8 +1373,11 @@ ${discussionSummary}
     handleEndDiscussion()   // 기존 AI 분석 로직 호출
   }
 
+  const cornerColor = STAGE_CORNER[project?.currentStage ?? 'T']
+
   return (
-    <div className="flex flex-col h-full bg-white" style={isTeamMode ? { animation: 'teamBorderPulse 2s ease-in-out infinite', boxShadow: 'inset 0 0 0 3px rgba(0, 137, 123, 0.7)' } : undefined}>
+    <div className="flex flex-col h-full overflow-hidden corner-wrap-chat"
+      style={{ '--cc': cornerColor, ...(isTeamMode ? { animation: 'teamBorderPulse 2s ease-in-out infinite', boxShadow: 'inset 0 0 0 3px rgba(0, 137, 123, 0.7)' } : {}) } as React.CSSProperties}>
       {isTeamMode && (
         <style>{`
           @keyframes teamBorderPulse {
@@ -1599,7 +1607,7 @@ ${discussionSummary}
                   </button>
                   <button
                     onClick={() => setShowDiscussionConfirm(false)}
-                    className="px-4 py-2 rounded-full border border-[#80CBC4] text-[#00695C] text-sm hover:bg-[#B2DFDB] transition-colors"
+                    className="squid-btn px-4 py-2 rounded-full bg-[rgba(0,137,123,0.10)] hover:bg-[rgba(0,137,123,0.20)] text-[#00695C] text-sm transition-colors"
                   >
                     취소
                   </button>
@@ -1640,7 +1648,7 @@ ${discussionSummary}
                     onClick={async () => {
                       await clearTeamDiscussionRequest(proj.id).catch(console.error)
                     }}
-                    className="px-4 py-2 rounded-full border border-[#80CBC4] text-[#00695C] text-sm hover:bg-[#B2DFDB] transition-colors"
+                    className="squid-btn px-4 py-2 rounded-full bg-[rgba(0,137,123,0.10)] hover:bg-[rgba(0,137,123,0.20)] text-[#00695C] text-sm transition-colors"
                   >
                     거절
                   </button>
@@ -1685,7 +1693,7 @@ ${discussionSummary}
               <div className="flex gap-2">
                 <button
                   onClick={() => setPendingAdvance(null)}
-                  className="flex-1 py-2 rounded-full border border-[#81C995] text-[#1E8C3A] text-xs font-semibold hover:bg-[#CEEAD6] transition-colors"
+                  className="squid-btn flex-1 py-2 rounded-full bg-[rgba(52,168,83,0.12)] hover:bg-[rgba(52,168,83,0.24)] text-[#1E8C3A] text-xs font-semibold transition-colors"
                 >
                   계속 수정하기
                 </button>
@@ -1744,7 +1752,7 @@ ${discussionSummary}
                     handleActivityAdvance(pendingAdvance)
                     setPendingAdvance(null)
                   }}
-                  className="flex-1 py-2 rounded-full border border-[#FFCC80] text-[#E65100] text-xs font-semibold hover:bg-[#FFE0B2] transition-colors"
+                  className="squid-btn flex-1 py-2 rounded-full bg-[rgba(230,81,0,0.10)] hover:bg-[rgba(230,81,0,0.20)] text-[#E65100] text-xs font-semibold transition-colors"
                 >
                   저장 없이 넘어가기
                 </button>
@@ -1859,7 +1867,7 @@ ${discussionSummary}
                 <button
                   onClick={() => setShowDiscussionConfirm(true)}
                   disabled={isLoading}
-                  className="text-[11px] font-semibold text-[#00695C] bg-[#E0F2F1] hover:bg-[#B2DFDB] border border-[#80CBC4] px-3 py-1 rounded-full transition-colors flex items-center gap-1 disabled:opacity-40"
+                  className="squid-btn morph-btn text-[11px] font-semibold text-[#00897B] bg-[rgba(0,137,123,0.12)] hover:bg-[rgba(0,137,123,0.22)] px-3 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
                   <Users size={13} weight="fill" />
                   팀 채팅 시작
@@ -1871,7 +1879,7 @@ ${discussionSummary}
                     await requestTeamDiscussion(proj.id, userProfile.uid, userProfile.displayName).catch(console.error)
                   }}
                   disabled={isLoading || !!proj.teamDiscussionRequest?.pending}
-                  className="text-[11px] font-semibold text-[#00695C] bg-[#E0F2F1] hover:bg-[#B2DFDB] border border-[#80CBC4] px-3 py-1 rounded-full transition-colors flex items-center gap-1 disabled:opacity-40"
+                  className="squid-btn morph-btn text-[11px] font-semibold text-[#00897B] bg-[rgba(0,137,123,0.12)] hover:bg-[rgba(0,137,123,0.22)] px-3 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
                   <Users size={13} weight="fill" />
                   {proj.teamDiscussionRequest?.pending ? '제안 대기 중...' : '팀 채팅 제안'}
@@ -1934,50 +1942,62 @@ ${discussionSummary}
         )}
 
         <div className="flex gap-2 items-end">
-          <textarea
-            value={input}
-            onChange={(e) => {
-              const val = e.target.value
-              setInput(val)
-              // 슬래시 커맨드 감지: 줄 끝이 /로 시작하는 단어
-              const match = val.match(/(?:^|\n)\/([\w가-힣]*)$/)
-              if (match) {
-                setSlashQuery(match[1])
-                setSlashCmdIdx(0)
-              } else {
-                setSlashQuery(null)
-              }
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder={isTeamMode ? '팀원에게 의견을 전달하세요...' : isWaitingForChoice ? '안을 선택 전 팀원과 의논해보세요...' : '메시지를 입력하세요... (/ 로 커맨드 · Shift+Enter: 줄바꿈)'}
-            rows={2}
-            disabled={isLoading && !isTeamMode && !isWaitingForChoice}
-            className={cn(
-              'flex-1 resize-none rounded-2xl border px-3 py-2 text-sm',
-              'focus:outline-none focus:ring-2 disabled:opacity-50 bg-white text-[#202124]',
-              isTeamMode
-                ? 'border-[#80CBC4] focus:ring-[#00897B]'
-                : 'border-[#DADCE0] focus:ring-[#1A73E8]'
-            )}
-          />
+          <div className={cn('chat-input-wrap flex-1', isTeamMode && 'chat-input-wrap-team')}>
+            <div className={cn('chat-input-inner', isTeamMode ? 'bg-[#E0F2F1]' : 'bg-white')}>
+              <textarea
+                value={input}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setInput(val)
+                  // 슬래시 커맨드 감지: 줄 끝이 /로 시작하는 단어
+                  const match = val.match(/(?:^|\n)\/([\w가-힣]*)$/)
+                  if (match) {
+                    setSlashQuery(match[1])
+                    setSlashCmdIdx(0)
+                  } else {
+                    setSlashQuery(null)
+                  }
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={isTeamMode ? '팀원에게 의견을 전달하세요...' : isWaitingForChoice ? '안을 선택 전 팀원과 의논해보세요...' : '메시지를 입력하세요... (/ 로 커맨드 · Shift+Enter: 줄바꿈)'}
+                rows={3}
+                disabled={isLoading && !isTeamMode && !isWaitingForChoice}
+                className={cn(
+                  'w-full resize-none border-0 rounded-[18px] px-3 py-2 text-sm',
+                  'focus:outline-none disabled:opacity-50 text-[#202124]',
+                  isTeamMode ? 'bg-[#E0F2F1]' : 'bg-white'
+                )}
+              />
+            </div>
+          </div>
+          {/* 전송 버튼 — morph-shape 일렁임 */}
           <button
             onClick={handleSend}
             disabled={!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice)}
             className={cn(
-              'w-10 h-10 rounded-full text-white flex items-center justify-center',
-              'disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0',
-              isTeamMode ? 'bg-[#00897B] hover:bg-[#00746a]'
-                : isWaitingForChoice ? 'bg-[#E65100] hover:bg-[#cc4700]'
-                : 'bg-[#1A73E8] hover:bg-[#1557b0]'
+              'w-12 h-[70px] text-white flex items-center justify-center flex-shrink-0',
+              'disabled:opacity-40 disabled:cursor-not-allowed',
+              isTeamMode ? 'bg-[#00897B]'
+                : isWaitingForChoice ? 'bg-[#E65100]'
+                : 'bg-[#1A73E8]'
             )}
+            style={{
+              animation: 'morph-shape 6s ease-in-out infinite, stage-bounce 3.5s ease-in-out infinite',
+              filter: isTeamMode
+                ? 'drop-shadow(0 4px 12px rgba(0,137,123,0.45))'
+                : isWaitingForChoice
+                  ? 'drop-shadow(0 4px 12px rgba(230,81,0,0.45))'
+                  : 'drop-shadow(0 4px 12px rgba(26,115,232,0.45))',
+            }}
           >
             {isLoading && !isTeamMode && !isWaitingForChoice
-              ? <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={18} /></span>
-              : <PaperPlaneRight size={18} weight="fill" />
+              ? <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={20} /></span>
+              : <PaperPlaneRight size={20} weight="fill" />
             }
           </button>
         </div>
       </div>
+
     </div>
   )
 }

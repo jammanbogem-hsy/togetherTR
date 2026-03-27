@@ -6,9 +6,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProjectStore } from '@/store/project'
 import { signInWithNickname } from '@/lib/auth'
-import { BookOpen, Loader2, User } from 'lucide-react'
+import { BookOpen, ArrowRight, Loader2 } from 'lucide-react'
 
-const SUGGESTED_EMOJIS = ['🍎', '🌿', '🌊', '☀️', '🌸', '🍊', '⭐', '🦋']
 const SUGGESTED_NAMES = ['김선생님', '이선생님', '박선생님', '최선생님', '정선생님']
 
 export default function LoginPage() {
@@ -33,26 +32,63 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        {/* 로고 */}
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ background: 'linear-gradient(135deg, #EAF2FF 0%, #F8F9FA 50%, #F3E5F5 100%)' }}
+    >
+      {/* 배경 장식 원 */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div style={{
+          position: 'absolute', top: '-10%', left: '-8%',
+          width: '420px', height: '420px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(26,115,232,0.10) 0%, transparent 70%)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-8%', right: '-6%',
+          width: '360px', height: '360px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(123,31,162,0.09) 0%, transparent 70%)',
+        }} />
+      </div>
+
+      <div className="w-full max-w-sm relative">
+        {/* 로고 아이콘 */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-500 rounded-2xl mb-4 shadow-lg">
-            <BookOpen className="w-7 h-7 text-white" />
+          <div
+            className="inline-flex items-center justify-center w-[72px] h-[72px] bg-[#1A73E8] mb-5 shadow-xl"
+            style={{
+              animation: 'morph-shape 8s ease-in-out infinite, stage-bounce 3s ease-in-out infinite',
+              boxShadow: '0 8px 28px rgba(26,115,232,0.42)',
+            }}
+          >
+            <BookOpen className="w-8 h-8 text-white" strokeWidth={2.2} />
           </div>
-          <h1 className="text-2xl font-black text-gray-900">T-CID 협력 수업설계</h1>
-          <p className="text-sm text-gray-500 mt-1">AI 퍼실리테이터와 함께하는 수업설계</p>
+          <h1 className="text-[26px] font-black text-[#202124] tracking-tight">T-CID 협력 수업설계</h1>
+          <p className="text-[13px] text-[#5F6368] mt-1.5">AI 퍼실리테이터와 함께하는 수업설계</p>
         </div>
 
         {/* 카드 */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center">
-              <User className="w-4 h-4 text-blue-600" />
+        <div
+          className="project-card rounded-3xl p-6 shadow-2xl"
+          style={{
+            '--cc': 'rgba(26,115,232,0.12)',
+            '--cx1': '100%', '--cy1': '0%',
+            '--cx2': '0%',  '--cy2': '100%',
+            '--card-speed': '0.7s',
+          } as React.CSSProperties}
+        >
+          {/* 헤더 */}
+          <div className="flex items-center gap-3 mb-5">
+            <div
+              className="w-9 h-9 bg-[#1A73E8] flex items-center justify-center flex-shrink-0"
+              style={{ animation: 'morph-shape 9s ease-in-out infinite', boxShadow: '0 4px 12px rgba(26,115,232,0.35)' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+              </svg>
             </div>
             <div>
-              <p className="text-sm font-bold text-gray-900">이름을 알려주세요</p>
-              <p className="text-xs text-gray-500">팀원들에게 보여질 이름입니다</p>
+              <p className="text-[14px] font-bold text-[#202124]">이름을 알려주세요</p>
+              <p className="text-[12px] text-[#9AA0A6]">팀원들에게 보여질 이름입니다</p>
             </div>
           </div>
 
@@ -65,18 +101,19 @@ export default function LoginPage() {
             placeholder="예) 김민준 선생님"
             maxLength={20}
             autoFocus
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm
-                       focus:outline-none focus:ring-2 focus:ring-blue-400 mb-3"
+            className="w-full rounded-2xl border border-[#E8EAED] bg-white px-4 py-3 text-[14px] text-[#202124] placeholder:text-[#BDC1C6] mb-3 outline-none transition-all duration-200"
+            style={{ boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.06)' }}
+            onFocus={e => { e.currentTarget.style.borderColor = '#1A73E8'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(26,115,232,0.12)' }}
+            onBlur={e => { e.currentTarget.style.borderColor = '#E8EAED'; e.currentTarget.style.boxShadow = 'inset 0 1px 3px rgba(0,0,0,0.06)' }}
           />
 
           {/* 빠른 선택 */}
-          <div className="flex flex-wrap gap-1.5 mb-4">
+          <div className="flex flex-wrap gap-1.5 mb-5">
             {SUGGESTED_NAMES.map(n => (
               <button
                 key={n}
                 onClick={() => setName(n)}
-                className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600
-                           hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                className="text-[12px] px-3 py-1.5 rounded-full border border-[#E8EAED] bg-white text-[#5F6368] font-medium transition-all duration-150 hover:border-[#1A73E8] hover:text-[#1A73E8] hover:bg-[#E8F0FE]"
               >
                 {n}
               </button>
@@ -84,25 +121,25 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className="text-xs text-red-500 mb-3">{error}</p>
+            <p className="text-[12px] text-[#C62828] mb-3 bg-[#FFEBEE] rounded-xl px-3 py-2">{error}</p>
           )}
 
+          {/* 시작 버튼 */}
           <button
             onClick={handleStart}
             disabled={!name.trim() || isLoading}
-            className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold text-sm
-                       hover:bg-blue-600 transition-colors disabled:opacity-40
-                       disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="morph-btn w-full py-3.5 bg-[#1A73E8] text-white font-bold text-[14px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+            style={{ filter: name.trim() && !isLoading ? 'drop-shadow(0 4px 14px rgba(26,115,232,0.42))' : 'none' }}
           >
             {isLoading ? (
               <><Loader2 className="w-4 h-4 animate-spin" />입장 중...</>
             ) : (
-              '수업설계 시작하기 →'
+              <><span>수업설계 시작하기</span><ArrowRight className="w-4 h-4" /></>
             )}
           </button>
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-4">
+        <p className="text-center text-[12px] text-[#9AA0A6] mt-4">
           이름은 언제든지 변경할 수 있습니다
         </p>
       </div>

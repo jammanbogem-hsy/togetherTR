@@ -81,71 +81,85 @@ function WaitingRoom({
   const memberCount = memberUids.length
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
       {/* 헤더 */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3">
+      <header className="bg-white border-b border-[#DADCE0] px-6 py-4 flex-shrink-0">
         <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          <span className="text-sm text-amber-600 font-medium">팀원을 기다리는 중</span>
-          <div className="h-4 w-px bg-gray-200 mx-1" />
-          <h1 className="text-sm font-bold text-gray-900">{project.title}</h1>
+          <div className="w-2.5 h-2.5 rounded-full bg-[#F9AB00]"
+            style={{ animation: 'dot-idle 1.6s ease-in-out infinite' }} />
+          <span className="text-[13px] text-[#E37400] font-bold">팀원을 기다리는 중</span>
+          <div className="h-4 w-px bg-[#DADCE0] mx-1" />
+          <h1 className="text-[14px] font-extrabold text-[#202124]">{project.title}</h1>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 왼쪽: 초대코드 + 시작 */}
+      <div className="max-w-5xl mx-auto w-full px-4 py-8 grid grid-cols-1 lg:grid-cols-2 gap-5 flex-1">
+        {/* 왼쪽: 초대코드 + 참여 인원 + 시작 */}
         <div className="space-y-4">
+
           {/* 초대코드 카드 */}
           {project.inviteCode && (
-            <div className="bg-white rounded-2xl border border-[#DADCE0] p-6">
-              <p className="text-xs font-semibold text-[#5F6368] mb-1">이 방의 초대코드</p>
+            <div className="project-card rounded-2xl p-6"
+              style={{
+                '--cc': 'rgba(26,115,232,0.12)', '--cx1': '100%', '--cy1': '0%', '--cx2': '0%', '--cy2': '100%', '--card-speed': '0.65s',
+                border: '2.5px solid #4285F4', boxShadow: '0 2px 12px rgba(26,115,232,0.18)',
+              } as React.CSSProperties}>
+              <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-widest mb-2">이 방의 초대코드</p>
               <div className="flex items-center justify-between">
-                <p className="text-3xl font-black text-[#1A73E8] tracking-wide">{project.inviteCode}</p>
-                <button
-                  onClick={handleCopy}
-                  className="flex items-center gap-1.5 text-sm text-[#1A73E8] hover:text-[#1557b0] transition-colors px-3 py-1.5 rounded-full hover:bg-[#E8F0FE]"
-                >
-                  {copied ? <Check size={16} weight="regular" /> : <Copy size={16} weight="regular" />}
-                  {copied ? '복사됨' : '복사'}
+                <p className="text-4xl font-black text-[#1A73E8] tracking-widest">{project.inviteCode}</p>
+                <button onClick={handleCopy}
+                  className="morph-btn flex items-center gap-1.5 text-[13px] font-bold text-[#1A73E8] px-4 py-2 bg-[#E8F0FE] hover:bg-[#C5D9F9] transition-colors">
+                  {copied ? <Check size={15} weight="bold" /> : <Copy size={15} weight="bold" />}
+                  {copied ? '복사됨!' : '복사'}
                 </button>
               </div>
-              <p className="text-xs text-[#9AA0A6] mt-2">
+              <p className="text-[11px] text-[#9AA0A6] mt-3 leading-snug">
                 팀원에게 공유하면 대시보드 "방 참여하기"에서 입장할 수 있어요
               </p>
             </div>
           )}
 
           {/* 참여 인원 카드 */}
-          <div className="bg-white rounded-2xl border border-[#DADCE0] p-5">
+          <div className="project-card rounded-2xl p-5"
+            style={{
+              '--cc': 'rgba(26,115,232,0.09)', '--cx1': '0%', '--cy1': '0%', '--cx2': '100%', '--cy2': '100%', '--card-speed': '0.9s',
+              border: '2.5px solid #4285F4', boxShadow: '0 2px 12px rgba(26,115,232,0.14)',
+            } as React.CSSProperties}>
             <div className="flex items-center gap-2 mb-4">
-              <Users size={16} weight="regular" className="text-[#5F6368]" />
-              <span className="text-sm font-bold text-[#202124]">참여 중 · {memberCount}명</span>
+              <Users size={16} weight="fill" className="text-[#1A73E8]" />
+              <span className="text-[14px] font-extrabold text-[#202124]">참여 중 · {memberCount}명</span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {memberUids.map(mUid => {
                 const info = memberInfo[mUid]
                 const isThisHost = project.hostUid === mUid || project.createdBy === mUid
                 const isSelf = mUid === uid
                 return (
-                  <div key={mUid} className="flex items-center gap-2.5">
+                  <div key={mUid} className="flex items-center gap-3">
                     <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                      style={{ backgroundColor: info?.color ?? '#6B7280' }}
+                      className="w-10 h-10 flex items-center justify-center text-[15px] font-extrabold text-white flex-shrink-0 select-none shadow-sm"
+                      style={{
+                        backgroundColor: info?.color ?? '#9AA0A6',
+                        animation: isThisHost ? 'morph-shape 8s ease-in-out infinite' : 'morph-shape 11s ease-in-out infinite',
+                      }}
                     >
-                      {info?.emoji ?? '👤'}
+                      {(info?.displayName?.[0] ?? '?').toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-[#202124] truncate">
+                        <span className="text-[14px] font-bold text-[#202124] truncate">
                           {info?.displayName ?? mUid.slice(0, 8)}
                         </span>
                         {isSelf && (
-                          <span className="text-[10px] bg-[#F1F3F4] text-[#5F6368] px-1.5 py-0.5 rounded-full">나</span>
+                          <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">나</span>
                         )}
                         {isThisHost && (
-                          <Crown size={13} weight="fill" className="text-[#F9AB00]" />
+                          <Crown size={14} weight="fill" className="text-[#F9AB00]" />
                         )}
                       </div>
+                      {isThisHost && (
+                        <p className="text-[11px] text-[#F9AB00] font-semibold">방장</p>
+                      )}
                     </div>
                   </div>
                 )
@@ -153,29 +167,31 @@ function WaitingRoom({
             </div>
           </div>
 
-          {/* 시작 버튼 */}
+          {/* 시작 / 대기 버튼 */}
           {isHost ? (
             <button
               onClick={handleStart}
               disabled={starting}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#1A73E8] text-white font-bold text-base hover:bg-[#1557b0] transition-colors disabled:opacity-50 shadow-md"
+              className="morph-btn w-full flex items-center justify-center gap-2 py-4 bg-[#1A73E8] text-white font-extrabold text-[15px] hover:bg-[#1557b0] transition-colors disabled:opacity-50"
+              style={{ filter: 'drop-shadow(0 4px 14px rgba(26,115,232,0.40))' }}
             >
               {starting ? (
                 <><span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={20} /></span>시작 중...</>
               ) : (
-                <><PlayCircle size={20} weight="fill" />수업설계 시작하기</>
+                <><PlayCircle size={22} weight="fill" />수업설계 시작하기</>
               )}
             </button>
           ) : (
-            <div className="space-y-2">
-              <div className="w-full py-4 rounded-2xl bg-[#F1F3F4] text-[#9AA0A6] text-sm text-center font-medium">
+            <div className="space-y-3">
+              <div className="project-card w-full py-4 rounded-2xl text-[13px] text-center font-semibold text-[#9AA0A6]"
+                style={{ '--cc': 'rgba(0,0,0,0.04)', '--cx1': '50%', '--cy1': '0%', '--cx2': '50%', '--cy2': '100%', '--card-speed': '0.5s', border: '2px solid #DADCE0' } as React.CSSProperties}>
                 방장이 시작 버튼을 누를 때까지 기다려주세요
               </div>
               <button
                 onClick={onBecomeHost}
-                className="w-full py-2.5 rounded-full border border-[#FFCC80] text-[#E65100] text-sm font-medium hover:bg-[#FFF3E0] transition-colors flex items-center justify-center gap-1.5"
+                className="morph-btn w-full py-3 border-2 border-[#FFCC80] text-[#E65100] text-[13px] font-bold hover:bg-[#FFF3E0] transition-all flex items-center justify-center gap-1.5"
               >
-                <Crown size={15} weight="fill" />
+                <Crown size={15} weight="fill" className="text-[#F9AB00]" />
                 방장 권한 받기
               </button>
             </div>
@@ -183,39 +199,47 @@ function WaitingRoom({
         </div>
 
         {/* 오른쪽: 대기실 채팅 */}
-        <div className="bg-white rounded-2xl border border-[#DADCE0] flex flex-col overflow-hidden" style={{ height: '460px' }}>
-          <div className="px-4 py-3 border-b border-[#DADCE0] bg-[#F8F9FA] flex-shrink-0">
-            <h3 className="text-sm font-bold text-[#202124]">대기실 채팅</h3>
-            <p className="text-[11px] text-[#5F6368]">팀원과 미리 대화해보세요</p>
+        <div className="project-card rounded-2xl flex flex-col overflow-hidden"
+          style={{
+            '--cc': 'rgba(26,115,232,0.11)', '--cx1': '100%', '--cy1': '0%', '--cx2': '100%', '--cy2': '100%', '--card-speed': '0.5s',
+            border: '2.5px solid #4285F4', boxShadow: '0 2px 12px rgba(26,115,232,0.18)', height: '480px',
+          } as React.CSSProperties}>
+          <div className="px-5 py-4 border-b border-[#E8F0FE] bg-[#E8F0FE]/60 flex-shrink-0">
+            <h3 className="text-[14px] font-extrabold text-[#202124]">대기실 채팅</h3>
+            <p className="text-[11px] text-[#5F6368] font-medium mt-0.5">팀원과 미리 대화해보세요</p>
           </div>
 
           {/* 메시지 목록 */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {lobbyMessages.length === 0 && (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-xs text-gray-400">아직 메시지가 없습니다<br />팀원에게 인사해보세요 👋</p>
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-[#9AA0A6]">
+                <div className="w-12 h-12 flex items-center justify-center bg-[#E8F0FE] text-[#4285F4] text-xl"
+                  style={{ animation: 'morph-shape 9s ease-in-out infinite' }}>
+                  👋
+                </div>
+                <p className="text-[12px] font-semibold text-center">아직 메시지가 없습니다<br />팀원에게 인사해보세요</p>
               </div>
             )}
             {lobbyMessages.map(msg => {
               const isSelf = msg.uid === uid
               return (
-                <div key={msg.id} className={cn('flex gap-2', isSelf ? 'flex-row-reverse' : 'flex-row')}>
+                <div key={msg.id} className={cn('flex gap-2.5', isSelf ? 'flex-row-reverse' : 'flex-row')}>
                   <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                    style={{ backgroundColor: msg.color }}
+                    className="w-9 h-9 flex items-center justify-center text-[13px] font-extrabold text-white flex-shrink-0 select-none"
+                    style={{ backgroundColor: msg.color, animation: 'morph-shape 10s ease-in-out infinite' }}
                   >
-                    {msg.emoji}
+                    {(msg.displayName?.[0] ?? '?').toUpperCase()}
                   </div>
-                  <div className={cn('max-w-[75%] space-y-0.5', isSelf ? 'items-end' : 'items-start', 'flex flex-col')}>
+                  <div className={cn('max-w-[75%] space-y-0.5 flex flex-col', isSelf ? 'items-end' : 'items-start')}>
                     {!isSelf && (
-                      <span className="text-[10px] font-semibold px-1" style={{ color: msg.color }}>
+                      <span className="text-[11px] font-bold px-1" style={{ color: msg.color }}>
                         {msg.displayName}
                       </span>
                     )}
                     <div
                       className={cn(
-                        'px-3 py-2 rounded-2xl text-sm',
-                        isSelf ? 'text-white rounded-tr-sm' : 'bg-[#F1F3F4] text-[#202124] rounded-tl-sm'
+                        'px-3.5 py-2 text-[13px] font-medium',
+                        isSelf ? 'text-white rounded-2xl rounded-tr-sm' : 'bg-[#EAF2FF] text-[#1a2e5a] rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4]'
                       )}
                       style={isSelf ? { backgroundColor: msg.color } : undefined}
                     >
@@ -229,24 +253,31 @@ function WaitingRoom({
           </div>
 
           {/* 입력창 */}
-          <div className="px-3 py-3 border-t border-[#DADCE0] bg-[#F8F9FA] flex-shrink-0 flex gap-2">
-            <input
-              type="text"
-              value={lobbyInput}
-              onChange={e => setLobbyInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSendLobby()
-              }}
-              placeholder="메시지 입력..."
-              className="flex-1 rounded-2xl border border-[#DADCE0] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8] bg-white text-[#202124]"
-            />
-            <button
-              onClick={handleSendLobby}
-              disabled={!lobbyInput.trim()}
-              className="w-9 h-9 rounded-full bg-[#1A73E8] text-white flex items-center justify-center hover:bg-[#1557b0] disabled:opacity-40 transition-colors flex-shrink-0"
-            >
-              <PaperPlaneRight size={18} weight="fill" />
-            </button>
+          <div className="px-3 py-3 border-t border-[#E8F0FE] bg-[#F8F9FA] flex-shrink-0">
+            <div className="chat-input-wrap">
+              <div className="chat-input-inner flex gap-2 bg-white px-3 py-2">
+                <input
+                  type="text"
+                  value={lobbyInput}
+                  onChange={e => setLobbyInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSendLobby() }}
+                  placeholder="메시지 입력..."
+                  className="flex-1 bg-transparent text-[13px] focus:outline-none text-[#202124] placeholder:text-[#9AA0A6]"
+                />
+                <button
+                  onClick={handleSendLobby}
+                  disabled={!lobbyInput.trim()}
+                  className="w-9 h-9 flex items-center justify-center text-white disabled:opacity-40 transition-all flex-shrink-0"
+                  style={{
+                    backgroundColor: '#1A73E8',
+                    animation: 'morph-shape 6s ease-in-out infinite',
+                    filter: lobbyInput.trim() ? 'drop-shadow(0 2px 6px rgba(26,115,232,0.5))' : 'none',
+                  }}
+                >
+                  <PaperPlaneRight size={16} weight="fill" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -255,6 +286,14 @@ function WaitingRoom({
 }
 
 // ─── 메인 페이지 ─────────────────────────────────────
+const STAGE_PANEL_BORDER: Record<string, string> = {
+  T:  'border-[2.5px] border-[#4285F4] shadow-[0_2px_12px_rgba(26,115,232,0.18)]',
+  A:  'border-[2.5px] border-[#AB47BC] shadow-[0_2px_12px_rgba(123,31,162,0.18)]',
+  Ds: 'border-[2.5px] border-[#26A69A] shadow-[0_2px_12px_rgba(0,137,123,0.18)]',
+  DI: 'border-[2.5px] border-[#EF6C00] shadow-[0_2px_12px_rgba(230,81,0,0.18)]',
+  E:  'border-[2.5px] border-[#E53935] shadow-[0_2px_12px_rgba(198,40,40,0.18)]',
+}
+
 export default function ProjectPage() {
   const params = useParams()
   const router = useRouter()
@@ -269,6 +308,7 @@ export default function ProjectPage() {
   } = useProjectStore()
 
   const [claimingHost, setClaimingHost] = useState(false)
+  const [activePanel, setActivePanel] = useState<string | null>(null)
 
   useEffect(() => {
     if (!projectId) return
@@ -381,25 +421,38 @@ export default function ProjectPage() {
     )
   }
 
+  const currentStage = project?.currentStage ?? 'T'
+  function panelBorder(panelId: string) {
+    if (activePanel === null) return cn(STAGE_PANEL_BORDER[currentStage], 'transition-all duration-300')
+    if (activePanel === panelId) return cn(STAGE_PANEL_BORDER[currentStage], 'transition-all duration-200')
+    return 'border border-[#E8EAED] shadow-none transition-all duration-300'
+  }
+
   return (
-    <div className="flex flex-col h-screen bg-[#F8F9FA] overflow-hidden">
-      {/* MD3 Top App Bar */}
-      <header className="flex-shrink-0 bg-white border-b border-[#DADCE0] px-5 py-0 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+    <div className="flex h-screen bg-[#F8F9FA] overflow-hidden p-3 gap-2">
+
+      {/* ══ 좌측 컬럼: 내비 + ActivitySidebar ══ */}
+      <div
+        className={cn('flex-shrink-0 flex flex-col rounded-2xl overflow-hidden', panelBorder('left'))}
+        onMouseEnter={() => setActivePanel('left')}
+        onMouseLeave={() => setActivePanel(null)}
+      >
+        {/* 좌측 상단: 내비게이션 */}
+        <div className="flex items-center gap-2 px-3 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
           <button
             onClick={() => router.push('/dashboard')}
             className="flex items-center gap-1 text-[#5F6368] hover:text-[#202124] hover:bg-[#F1F3F4]
-              rounded-full px-3 py-1.5 text-[13px] font-medium transition-all"
+              rounded-full px-2.5 py-1.5 text-[13px] font-medium transition-all"
           >
             <ArrowLeft size={16} weight="regular" />
             대시보드
           </button>
           <div className="h-4 w-px bg-[#DADCE0]" />
-          <h1 className="text-[14px] font-semibold text-[#202124] truncate max-w-xs">{project.title}</h1>
+          <h1 className="text-[13px] font-semibold text-[#202124] truncate max-w-[100px]">{project.title}</h1>
           {isHost ? (
             <span className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
-              px-2.5 py-1 rounded-full font-semibold">
-              <Crown size={16} weight="fill" className="text-[#F9AB00]" />
+              px-2 py-1 rounded-full font-semibold flex-shrink-0">
+              <Crown size={13} weight="fill" className="text-[#F9AB00]" />
               방장
             </span>
           ) : (
@@ -407,50 +460,64 @@ export default function ProjectPage() {
               onClick={handleClaimHost}
               disabled={claimingHost}
               className="flex items-center gap-1 text-[11px] border border-[#FBBC04] text-[#B06000]
-                px-2.5 py-1 rounded-full font-medium hover:bg-[#FEF7E0] transition-all disabled:opacity-50"
+                px-2 py-1 rounded-full font-medium hover:bg-[#FEF7E0] transition-all disabled:opacity-50 flex-shrink-0"
             >
-              <Crown size={16} weight="fill" className="text-[#F9AB00]" />
+              <Crown size={13} weight="fill" className="text-[#F9AB00]" />
               {claimingHost ? '처리 중...' : '방장 되기'}
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        {/* 좌측 하단: 활동 사이드바 */}
+        <div className="flex-1 overflow-hidden">
+          <ActivitySidebar />
+        </div>
+      </div>
+
+      {/* ══ 중앙 컬럼: 단계 섹션 + ChatPanel ══ */}
+      <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+        {/* 중앙 상단: 단계 바 — 전용 공간, 크게 */}
+        <div
+          className={cn('rounded-2xl bg-white flex-shrink-0 py-3', panelBorder('stage'))}
+          onMouseEnter={() => setActivePanel('stage')}
+          onMouseLeave={() => setActivePanel(null)}
+        >
+          <StageBar />
+        </div>
+        {/* 중앙 하단: 채팅 패널 */}
+        <div
+          className={cn('flex-1 overflow-hidden rounded-2xl', panelBorder('chat'))}
+          onMouseEnter={() => setActivePanel('chat')}
+          onMouseLeave={() => setActivePanel(null)}
+        >
+          <ChatPanel />
+        </div>
+      </div>
+
+      {/* ══ 우측 컬럼: 정보 + ArtifactPanel ══ */}
+      <div
+        className={cn('w-[418px] flex-shrink-0 flex flex-col rounded-2xl overflow-hidden', panelBorder('right'))}
+        onMouseEnter={() => setActivePanel('right')}
+        onMouseLeave={() => setActivePanel(null)}
+      >
+        {/* 우측 상단: 프로젝트 정보 */}
+        <div className="flex items-center justify-end gap-2 px-3 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
           {project.inviteCode && (
             <span className="flex items-center gap-1.5 text-[12px] bg-[#E8F0FE] text-[#1A73E8]
               px-3 py-1.5 rounded-full font-semibold">
-              <Key size={16} weight="regular" />
+              <Key size={14} weight="regular" />
               {project.inviteCode}
             </span>
           )}
           <span className="flex items-center gap-1 text-[12px] bg-[#F1F3F4] text-[#5F6368]
             px-3 py-1.5 rounded-full font-medium">
-            <Users size={16} weight="regular" />
+            <Users size={14} weight="regular" />
             {project.memberUids?.length ?? 1}명
           </span>
         </div>
-      </header>
-
-      {/* 3-컬럼: 좌우 패널은 최상단부터, 중앙은 StageBar + Chat 수직 적층 */}
-      <div className="flex flex-1 overflow-hidden px-3 pb-3 pt-2 gap-2">
-
-        {/* 좌측: ActivitySidebar — 헤더부터 전체 높이 */}
-        <div className="flex-shrink-0 rounded-2xl overflow-hidden border border-[#DADCE0] shadow-sm">
-          <ActivitySidebar />
-        </div>
-
-        {/* 중앙: StageBar 위 + ChatPanel 아래 */}
-        <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
-          <StageBar />
-          <div className="flex-1 overflow-hidden rounded-2xl border border-[#DADCE0] shadow-sm">
-            <ChatPanel />
-          </div>
-        </div>
-
-        {/* 우측: ArtifactPanel — 헤더부터 전체 높이 */}
-        <div className="w-[380px] flex-shrink-0 rounded-2xl overflow-hidden border border-[#DADCE0] shadow-sm">
+        {/* 우측 하단: 산출물 패널 */}
+        <div className="flex-1 overflow-hidden">
           <ArtifactPanel />
         </div>
-
       </div>
 
       {pendingStageMove && <StageMoveModal />}
