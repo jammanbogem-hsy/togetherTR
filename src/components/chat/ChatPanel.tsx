@@ -1817,31 +1817,19 @@ ${discussionSummary}
         <div ref={bottomRef} />
       </div>
 
-      {/* 팀 채팅 종료 스트립 */}
+      {/* 팀 채팅 진행 중 스트립 */}
       {isTeamMode && (
         <div
-          className="flex-shrink-0 px-4 py-2.5 border-t border-[#80CBC4] flex items-center gap-3"
+          className="flex-shrink-0 px-4 py-2 border-t border-[#80CBC4] flex items-center gap-2"
           style={{ background: 'linear-gradient(90deg, #E0F2F1 0%, #F1F8F7 100%)' }}
         >
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            {[0,1,2].map(i => (
-              <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#00897B] flex-shrink-0"
-                style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
-            ))}
-            <span className="text-[12px] text-[#00695C] font-semibold ml-1 truncate">
-              팀 채팅 진행 중{!isHost && ' · 방장이 종료할 수 있어요'}
-            </span>
-          </div>
-          {isHost && (
-            <button
-              onClick={handleEndDiscussionAndAnalyze}
-              className="morph-btn flex-shrink-0 flex items-center gap-1.5 px-4 py-2 text-[12px] font-bold bg-[#00897B] text-white hover:bg-[#00746a] transition-colors"
-              style={{ filter: 'drop-shadow(0 2px 8px rgba(0,137,123,0.42))' }}
-            >
-              <StopCircle size={14} weight="fill" />
-              종료 → AI 분석
-            </button>
-          )}
+          {[0,1,2].map(i => (
+            <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#00897B] flex-shrink-0"
+              style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
+          ))}
+          <span className="text-[11px] text-[#00695C] font-semibold truncate">
+            팀 채팅 진행 중{!isHost && ' · 방장이 종료할 수 있어요'}
+          </span>
         </div>
       )}
 

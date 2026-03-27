@@ -305,6 +305,7 @@ export default function ProjectPage() {
     setDiscussionMode, setTeamDiscussionStartIdx, messages,
     currentActivity, setCurrentActivity,
     setActivityStatus, resetProjectState,
+    discussionMode,
   } = useProjectStore()
 
   const [claimingHost, setClaimingHost] = useState(false)
@@ -422,7 +423,13 @@ export default function ProjectPage() {
   }
 
   const currentStage = project?.currentStage ?? 'T'
+  const isTeamMode = discussionMode === 'team_discussion'
+
   function panelBorder(panelId: string) {
+    // 팀채팅 모드일 때 chat 패널은 항상 초록 테두리
+    if (panelId === 'chat' && isTeamMode) {
+      return 'border-[2.5px] border-[#00897B] shadow-[0_2px_16px_rgba(0,137,123,0.22)] transition-all duration-300'
+    }
     if (activePanel === null) return cn(STAGE_PANEL_BORDER[currentStage], 'transition-all duration-300')
     if (activePanel === panelId) return cn(STAGE_PANEL_BORDER[currentStage], 'transition-all duration-200')
     return 'border border-[#E8EAED] shadow-none transition-all duration-300'
