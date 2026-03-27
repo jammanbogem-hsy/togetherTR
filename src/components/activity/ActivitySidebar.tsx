@@ -4,13 +4,25 @@ import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type ActivityCode, type StageStatus } from '@/types'
 import { setProjectActivity } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
+import {
+  UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy,
+  CheckCircle, Warning, Clock, Shield, Star, CaretRight, type Icon,
+} from '@phosphor-icons/react'
 
-const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; border: string }> = {
-  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', border: 'border-[#AECBFA]' },
-  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]', border: 'border-[#CE93D8]' },
-  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', border: 'border-[#80CBC4]' },
-  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', border: 'border-[#FFAB91]' },
-  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', border: 'border-[#EF9A9A]' },
+const STAGE_ICON_MAP: Record<string, Icon> = {
+  T:  UsersThree,
+  A:  ChartLineUp,
+  Ds: PencilRuler,
+  DI: RocketLaunch,
+  E:  Trophy,
+}
+
+const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; border: string; pulse: string }> = {
+  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', border: 'border-[#AECBFA]', pulse: 'rgba(26,115,232,0.35)'  },
+  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]', border: 'border-[#CE93D8]', pulse: 'rgba(123,31,162,0.35)' },
+  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', border: 'border-[#80CBC4]', pulse: 'rgba(0,137,123,0.35)'  },
+  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', border: 'border-[#FFAB91]', pulse: 'rgba(230,81,0,0.35)'   },
+  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', border: 'border-[#EF9A9A]', pulse: 'rgba(198,40,40,0.35)'  },
 }
 
 const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
@@ -44,11 +56,11 @@ function ActivityItem({ code, isCurrent, status, hasArtifact, index, onClick }: 
   // 산출물이 있으면 건너뜀(warning)도 완료로 간주
   const effectiveStatus: StageStatus = (status === 'warning' && hasArtifact) ? 'completed' : status
 
-  let statusIcon = ''
+  let StatusIconComp: Icon | null = null
   let statusColor = 'text-[#9AA0A6]'
-  if (effectiveStatus === 'completed') { statusIcon = 'check_circle'; statusColor = 'text-[#34A853]' }
-  else if (effectiveStatus === 'warning') { statusIcon = 'warning'; statusColor = 'text-[#F9AB00]' }
-  else if (effectiveStatus === 'in_progress' || effectiveStatus === 'active_return' || isCurrent) { statusIcon = 'pending'; statusColor = 'text-[#1A73E8]' }
+  if (effectiveStatus === 'completed') { StatusIconComp = CheckCircle; statusColor = 'text-[#34A853]' }
+  else if (effectiveStatus === 'warning') { StatusIconComp = Warning; statusColor = 'text-[#F9AB00]' }
+  else if (effectiveStatus === 'in_progress' || effectiveStatus === 'active_return' || isCurrent) { StatusIconComp = Clock; statusColor = 'text-[#1A73E8]' }
 
   return (
     <button
@@ -57,7 +69,8 @@ function ActivityItem({ code, isCurrent, status, hasArtifact, index, onClick }: 
         'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150',
         isCurrent
           ? 'bg-[#E8F0FE] shadow-sm'
-          : 'hover:bg-[#F1F3F4] text-[#5F6368]'
+          : 'hover:bg-[#F1F3F4] text-[#5F6368]',
+        isCurrent && 'activity-glow'
       )}
     >
       <div className={cn(
@@ -80,16 +93,16 @@ function ActivityItem({ code, isCurrent, status, hasArtifact, index, onClick }: 
 
       <div className="flex items-center gap-0.5 flex-shrink-0">
         {meta.isGuardrailSource && (
-          <span className="material-symbols-rounded msf ms-sm text-[#7B1FA2]">shield</span>
+          <Shield size={16} weight="fill" className="text-[#7B1FA2]" />
         )}
         {meta.isBackwardDesignFirst && (
-          <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">star</span>
+          <Star size={16} weight="fill" className="text-[#F9AB00]" />
         )}
-        {statusIcon && (
-          <span className={cn('material-symbols-rounded msf ms-sm', statusColor)}>{statusIcon}</span>
+        {StatusIconComp && (
+          <StatusIconComp size={16} weight="fill" className={statusColor} />
         )}
         {isCurrent && (
-          <span className="material-symbols-rounded ms-sm text-[#1A73E8]">chevron_right</span>
+          <CaretRight size={16} weight="regular" className="text-[#1A73E8]" />
         )}
       </div>
     </button>
@@ -122,27 +135,41 @@ export function ActivitySidebar() {
   }
 
   return (
-    <div className="w-60 flex-shrink-0 flex flex-col bg-white border-r border-[#DADCE0] overflow-hidden">
+    <div className="w-72 flex-shrink-0 flex flex-col bg-white overflow-hidden">
 
-      {/* 단계 헤더 */}
-      <div className="px-4 pt-5 pb-4 border-b border-[#F1F3F4]">
-        <div className="flex items-center gap-2 mb-3">
-          <span className={cn('px-2.5 py-1 rounded-full text-[11px] font-bold text-white', color.bg)}>
-            {currentStage}
-          </span>
-          <span className="text-sm font-bold text-[#202124]">{currentStageInfo.label}</span>
+      {/* ─── 단계 아이덴티티 헤더 ────────────────── */}
+      <div className={cn('px-4 pt-4 pb-4', color.light)}>
+        {/* 아이콘 + 단계명 */}
+        <div className="flex items-center gap-3 mb-3">
+          <div
+            className={cn('w-11 h-11 flex items-center justify-center flex-shrink-0 shadow-sm', color.bg)}
+            style={{
+              animation: 'morph-shape 8s ease-in-out infinite, stage-bounce 3s ease-in-out infinite',
+              boxShadow: `0 6px 16px ${color.pulse}`,
+            }}
+          >
+            {(() => { const StageIcon = STAGE_ICON_MAP[currentStage]; return <StageIcon size={22} weight="fill" className="text-white" /> })()}
+          </div>
+          <div className="min-w-0">
+            <p className={cn('text-[10px] font-bold uppercase tracking-widest mb-0.5', color.text)}>
+              {currentStage} 단계
+            </p>
+            <p className="text-[13px] font-bold text-[#202124] leading-tight">{currentStageInfo.label}</p>
+          </div>
         </div>
-        <p className="text-[11px] text-[#5F6368] leading-relaxed mb-3">{guide.goal}</p>
+
+        {/* 목표 */}
+        <p className={cn('text-[11px] leading-snug mb-3 line-clamp-2', color.text, 'opacity-70')}>{guide.goal}</p>
 
         {/* 진행률 바 */}
         <div className="flex items-center gap-2">
-          <div className="flex-1 h-1.5 bg-[#F1F3F4] rounded-full overflow-hidden">
+          <div className="flex-1 h-2 bg-white/60 rounded-full overflow-hidden">
             <div
               className={cn('h-full rounded-full transition-all duration-500', color.bg)}
               style={{ width: `${progressPct}%` }}
             />
           </div>
-          <span className="text-[10px] text-[#9AA0A6] font-medium tabular-nums">{completedCount}/{totalCount}</span>
+          <span className={cn('text-[11px] font-bold tabular-nums', color.text)}>{completedCount}/{totalCount}</span>
         </div>
       </div>
 
@@ -178,11 +205,11 @@ export function ActivitySidebar() {
       {/* 범례 */}
       <div className="px-4 py-2.5 border-t border-[#F1F3F4] flex gap-3">
         <div className="flex items-center gap-1 text-[10px] text-[#9AA0A6]">
-          <span className="material-symbols-rounded msf ms-sm text-[#7B1FA2]">shield</span>
+          <Shield size={16} weight="fill" className="text-[#7B1FA2]" />
           <span>가드레일</span>
         </div>
         <div className="flex items-center gap-1 text-[10px] text-[#9AA0A6]">
-          <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">star</span>
+          <Star size={16} weight="fill" className="text-[#F9AB00]" />
           <span>평가 먼저</span>
         </div>
       </div>

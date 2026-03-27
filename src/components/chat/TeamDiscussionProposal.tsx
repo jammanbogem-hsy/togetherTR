@@ -1,5 +1,7 @@
 'use client'
 
+import { Users } from '@phosphor-icons/react'
+
 interface Props {
   topic: string
   onAccept: () => void
@@ -11,7 +13,7 @@ export function TeamDiscussionProposal({ topic, onAccept, onDecline }: Props) {
     <div className="mx-4 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
-          <span className="material-symbols-rounded msf text-white" style={{ fontSize: 18 }}>group</span>
+          <Users size={18} weight="fill" className="text-white" />
         </div>
         <div className="flex-1">
           <p className="text-sm font-bold text-[#004D40] mb-1">팀 자유 토론을 시작할까요?</p>

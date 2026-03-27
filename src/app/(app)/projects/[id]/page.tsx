@@ -16,6 +16,7 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { StageMoveModal } from '@/components/modals/StageMoveModal'
 import { cn } from '@/lib/utils'
+import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight } from '@phosphor-icons/react'
 
 // ─── 대기실 ──────────────────────────────────────────
 function WaitingRoom({
@@ -104,7 +105,7 @@ function WaitingRoom({
                   onClick={handleCopy}
                   className="flex items-center gap-1.5 text-sm text-[#1A73E8] hover:text-[#1557b0] transition-colors px-3 py-1.5 rounded-full hover:bg-[#E8F0FE]"
                 >
-                  {copied ? <span className="material-symbols-rounded ms-sm">check</span> : <span className="material-symbols-rounded ms-sm">content_copy</span>}
+                  {copied ? <Check size={16} weight="regular" /> : <Copy size={16} weight="regular" />}
                   {copied ? '복사됨' : '복사'}
                 </button>
               </div>
@@ -117,7 +118,7 @@ function WaitingRoom({
           {/* 참여 인원 카드 */}
           <div className="bg-white rounded-2xl border border-[#DADCE0] p-5">
             <div className="flex items-center gap-2 mb-4">
-              <span className="material-symbols-rounded ms-sm text-[#5F6368]">group</span>
+              <Users size={16} weight="regular" className="text-[#5F6368]" />
               <span className="text-sm font-bold text-[#202124]">참여 중 · {memberCount}명</span>
             </div>
             <div className="space-y-2">
@@ -142,7 +143,7 @@ function WaitingRoom({
                           <span className="text-[10px] bg-[#F1F3F4] text-[#5F6368] px-1.5 py-0.5 rounded-full">나</span>
                         )}
                         {isThisHost && (
-                          <span className="material-symbols-rounded msf text-[#F9AB00]" style={{ fontSize: 13 }}>workspace_premium</span>
+                          <Crown size={13} weight="fill" className="text-[#F9AB00]" />
                         )}
                       </div>
                     </div>
@@ -160,9 +161,9 @@ function WaitingRoom({
               className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#1A73E8] text-white font-bold text-base hover:bg-[#1557b0] transition-colors disabled:opacity-50 shadow-md"
             >
               {starting ? (
-                <><span className="material-symbols-rounded" style={{ fontSize: 20, animation: 'spin 1s linear infinite' }}>progress_activity</span>시작 중...</>
+                <><span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={20} /></span>시작 중...</>
               ) : (
-                <><span className="material-symbols-rounded msf" style={{ fontSize: 20 }}>play_circle</span>수업설계 시작하기</>
+                <><PlayCircle size={20} weight="fill" />수업설계 시작하기</>
               )}
             </button>
           ) : (
@@ -174,7 +175,7 @@ function WaitingRoom({
                 onClick={onBecomeHost}
                 className="w-full py-2.5 rounded-full border border-[#FFCC80] text-[#E65100] text-sm font-medium hover:bg-[#FFF3E0] transition-colors flex items-center justify-center gap-1.5"
               >
-                <span className="material-symbols-rounded msf" style={{ fontSize: 15 }}>workspace_premium</span>
+                <Crown size={15} weight="fill" />
                 방장 권한 받기
               </button>
             </div>
@@ -244,7 +245,7 @@ function WaitingRoom({
               disabled={!lobbyInput.trim()}
               className="w-9 h-9 rounded-full bg-[#1A73E8] text-white flex items-center justify-center hover:bg-[#1557b0] disabled:opacity-40 transition-colors flex-shrink-0"
             >
-              <span className="material-symbols-rounded msf" style={{ fontSize: 18 }}>send</span>
+              <PaperPlaneRight size={18} weight="fill" />
             </button>
           </div>
         </div>
@@ -349,7 +350,7 @@ export default function ProjectPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-[#F8F9FA]">
         <div className="flex flex-col items-center gap-4 text-[#5F6368]">
-          <span className="material-symbols-rounded text-[#1A73E8]" style={{ fontSize: 32, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+          <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={32} className="text-[#1A73E8]" /></span>
           <p className="text-sm font-medium">프로젝트 불러오는 중...</p>
         </div>
       </div>
@@ -390,7 +391,7 @@ export default function ProjectPage() {
             className="flex items-center gap-1 text-[#5F6368] hover:text-[#202124] hover:bg-[#F1F3F4]
               rounded-full px-3 py-1.5 text-[13px] font-medium transition-all"
           >
-            <span className="material-symbols-rounded ms-sm">arrow_back</span>
+            <ArrowLeft size={16} weight="regular" />
             대시보드
           </button>
           <div className="h-4 w-px bg-[#DADCE0]" />
@@ -398,7 +399,7 @@ export default function ProjectPage() {
           {isHost ? (
             <span className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
               px-2.5 py-1 rounded-full font-semibold">
-              <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">workspace_premium</span>
+              <Crown size={16} weight="fill" className="text-[#F9AB00]" />
               방장
             </span>
           ) : (
@@ -408,7 +409,7 @@ export default function ProjectPage() {
               className="flex items-center gap-1 text-[11px] border border-[#FBBC04] text-[#B06000]
                 px-2.5 py-1 rounded-full font-medium hover:bg-[#FEF7E0] transition-all disabled:opacity-50"
             >
-              <span className="material-symbols-rounded msf ms-sm text-[#F9AB00]">workspace_premium</span>
+              <Crown size={16} weight="fill" className="text-[#F9AB00]" />
               {claimingHost ? '처리 중...' : '방장 되기'}
             </button>
           )}
@@ -417,30 +418,39 @@ export default function ProjectPage() {
           {project.inviteCode && (
             <span className="flex items-center gap-1.5 text-[12px] bg-[#E8F0FE] text-[#1A73E8]
               px-3 py-1.5 rounded-full font-semibold">
-              <span className="material-symbols-rounded ms-sm">key</span>
+              <Key size={16} weight="regular" />
               {project.inviteCode}
             </span>
           )}
           <span className="flex items-center gap-1 text-[12px] bg-[#F1F3F4] text-[#5F6368]
             px-3 py-1.5 rounded-full font-medium">
-            <span className="material-symbols-rounded ms-sm">group</span>
+            <Users size={16} weight="regular" />
             {project.memberUids?.length ?? 1}명
           </span>
         </div>
       </header>
 
-      <div className="flex-shrink-0">
-        <StageBar />
-      </div>
+      {/* 3-컬럼: 좌우 패널은 최상단부터, 중앙은 StageBar + Chat 수직 적층 */}
+      <div className="flex flex-1 overflow-hidden px-3 pb-3 pt-2 gap-2">
 
-      <div className="flex flex-1 overflow-hidden">
-        <ActivitySidebar />
-        <div className="flex-1 overflow-hidden border-r border-[#DADCE0]">
-          <ChatPanel />
+        {/* 좌측: ActivitySidebar — 헤더부터 전체 높이 */}
+        <div className="flex-shrink-0 rounded-2xl overflow-hidden border border-[#DADCE0] shadow-sm">
+          <ActivitySidebar />
         </div>
-        <div className="w-80 flex-shrink-0">
+
+        {/* 중앙: StageBar 위 + ChatPanel 아래 */}
+        <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+          <StageBar />
+          <div className="flex-1 overflow-hidden rounded-2xl border border-[#DADCE0] shadow-sm">
+            <ChatPanel />
+          </div>
+        </div>
+
+        {/* 우측: ArtifactPanel — 헤더부터 전체 높이 */}
+        <div className="w-[380px] flex-shrink-0 rounded-2xl overflow-hidden border border-[#DADCE0] shadow-sm">
           <ArtifactPanel />
         </div>
+
       </div>
 
       {pendingStageMove && <StageMoveModal />}

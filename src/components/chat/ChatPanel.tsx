@@ -12,6 +12,10 @@ import { ArtifactSaveProposal } from './ArtifactSaveProposal'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import {
+  ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, Chat,
+  Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X,
+} from '@phosphor-icons/react'
 
 // ─── 안(案) 선택지 파싱 ──────────────────────────────
 interface ParsedOption { label: string; content: string }
@@ -70,7 +74,7 @@ function VoteOverlayBar({
   return (
     <div className="sticky bottom-2 z-10 mx-1 bg-white border border-[#FFCC80] rounded-2xl shadow-md p-3">
       <p className="text-xs font-bold text-[#E65100] mb-2.5 flex items-center gap-1.5">
-        <span className="material-symbols-rounded msf ms-sm text-[#E65100]">how_to_vote</span>
+        <ListChecks size={16} weight="fill" className="text-[#E65100]" />
         어느 안을 지지하시나요? <span className="font-normal text-[#E65100] opacity-70">팀장의 최종 결정에 참고됩니다</span>
       </p>
       <div className="flex gap-2 flex-wrap">
@@ -93,7 +97,7 @@ function VoteOverlayBar({
               )}
             >
               <span className="text-sm font-bold">{opt.label}</span>
-              {isVoted && <span className="material-symbols-rounded msf ms-sm">check_circle</span>}
+              {isVoted && <CheckCircle size={16} weight="fill" />}
               {others.length > 0 && (
                 <span className="flex items-center gap-1 ml-1">
                   {others.slice(0, 3).map((m, j) => (
@@ -147,7 +151,8 @@ function OptionsMessage({
 
   return (
     <div className="flex gap-2 mb-3">
-      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
         AI
       </div>
       <div className="max-w-[85%] flex flex-col gap-3 flex-1">
@@ -217,7 +222,7 @@ function OptionsMessage({
                 <div className="mt-2.5 flex justify-end">
                   {isChosen ? (
                     <span className="flex items-center gap-1 text-xs font-bold text-[#34A853]">
-                      <span className="material-symbols-rounded msf ms-sm text-[#34A853]">check_circle</span> 선택됨
+                      <CheckCircle size={16} weight="fill" className="text-[#34A853]" /> 선택됨
                     </span>
                   ) : (
                     <button
@@ -238,7 +243,7 @@ function OptionsMessage({
               {!isHost && myVote === opt.label && (
                 <div className="mt-2.5 flex justify-end">
                   <span className="flex items-center gap-1 text-xs font-semibold text-[#5F6368]">
-                    <span className="material-symbols-rounded msf ms-sm text-[#34A853]">check_circle</span> 내가 지지
+                    <CheckCircle size={16} weight="fill" className="text-[#34A853]" /> 내가 지지
                   </span>
                 </div>
               )}
@@ -559,7 +564,7 @@ function ContextMenuWrapper({ children, onReply, className }: {
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { onReply?.(); setMenuPos(null) }}
             >
-              <span className="material-symbols-rounded ms-sm text-[#5F6368]">reply</span>
+              <ArrowBendUpLeft size={16} weight="regular" className="text-[#5F6368]" />
               <span>답글</span>
             </button>
           </div>
@@ -598,7 +603,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
       {/* 아바타 */}
       <div
         className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm self-end"
-        style={{ backgroundColor: avatarColor, color: textOnColor }}
+        style={{ backgroundColor: avatarColor, color: textOnColor, animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
         title={senderName}
       >
         {isUser ? (senderName?.slice(0, 1) ?? '?') : 'AI'}
@@ -647,7 +652,7 @@ function AnalysisBubble({ text }: { text: string }) {
       <div className="bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-2">
           <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
-            <span className="material-symbols-rounded msf text-white" style={{ fontSize: 14 }}>group</span>
+            <Users size={14} weight="fill" className="text-white" />
           </div>
           <span className="text-xs font-bold text-[#00695C]">팀 토론 분석 결과</span>
         </div>
@@ -668,7 +673,7 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
         <div className="bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
-              <span className="material-symbols-rounded text-white" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+              <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={14} className="text-white" /></span>
             </div>
             <span className="text-xs font-bold text-[#00695C]">팀 토론 분석 중...</span>
           </div>
@@ -682,7 +687,8 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
   }
   return (
     <div className="flex gap-2 mb-3">
-      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
         AI
       </div>
       <div className="max-w-[75%] bg-[#F1F3F4] text-[#202124] px-3 py-2 rounded-2xl rounded-tl-sm text-sm leading-relaxed">
@@ -697,7 +703,8 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
 function AIIdleBubble() {
   return (
     <div className="flex gap-2 items-end mb-4">
-      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
         AI
       </div>
       <div className="bg-[#F1F3F4] px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
@@ -1384,12 +1391,12 @@ ${discussionSummary}
         <span className="text-sm font-semibold text-[#202124]">{activityMeta.label}</span>
         {activityMeta.isGuardrailSource && (
           <span className="flex items-center gap-1 text-[10px] bg-[#F3E5F5] text-[#7B1FA2] px-1.5 py-0.5 rounded-full">
-            <span className="material-symbols-rounded msf" style={{ fontSize: 11 }}>shield</span> 가드레일 소스
+            <Shield size={11} weight="fill" /> 가드레일 소스
           </span>
         )}
         {activityMeta.isBackwardDesignFirst && (
           <span className="flex items-center gap-1 text-[10px] bg-[#FFF3E0] text-[#E65100] px-1.5 py-0.5 rounded-full">
-            <span className="material-symbols-rounded msf" style={{ fontSize: 11 }}>star</span> 평가 먼저
+            <Star size={11} weight="fill" /> 평가 먼저
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
@@ -1425,7 +1432,7 @@ ${discussionSummary}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative">
         {visibleMessages.length === 0 && !streamingText && !isLoading && (
           <div className="flex items-center justify-center h-full text-[#DADCE0]">
-            <span className="material-symbols-rounded" style={{ fontSize: 28, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={28} /></span>
           </div>
         )}
 
@@ -1575,7 +1582,7 @@ ${discussionSummary}
           <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
-                <span className="material-symbols-rounded msf text-white" style={{ fontSize: 18 }}>group</span>
+                <Users size={18} weight="fill" className="text-white" />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-bold text-[#004D40] mb-1">팀 채팅을 시작할까요?</p>
@@ -1607,7 +1614,7 @@ ${discussionSummary}
           <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
-                <span className="material-symbols-rounded msf text-white" style={{ fontSize: 18 }}>chat_bubble</span>
+                <Chat size={18} weight="fill" className="text-white" />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-bold text-[#004D40] mb-1">
@@ -1669,7 +1676,7 @@ ${discussionSummary}
             // 산출물 저장된 경우 → 초록 배너 (검토 후 이동 유도)
             <div className="mx-4 mb-2 rounded-2xl border border-[#81C995] bg-[#E6F4EA] p-3.5 flex flex-col gap-2.5">
               <div className="flex items-start gap-2">
-                <span className="material-symbols-rounded msf text-[#34A853] mt-0.5" style={{ fontSize: 18 }}>check_circle</span>
+                <CheckCircle size={18} weight="fill" className="text-[#34A853] mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm font-bold text-[#1E4620]">산출물이 저장되었습니다</p>
                   <p className="text-xs text-[#1E8C3A] mt-0.5">우측 산출물을 확인하고 확정한 후 다음 단계로 넘어가세요. 수정이 필요하면 계속 대화할 수 있습니다.</p>
@@ -1725,7 +1732,7 @@ ${discussionSummary}
             // 산출물 미저장 경우 → 주황 배너 (저장 촉구)
             <div className="mx-4 mb-2 rounded-2xl border border-[#FFCC80] bg-[#FFF3E0] p-3.5 flex flex-col gap-2.5">
               <div className="flex items-start gap-2">
-                <span className="material-symbols-rounded msf text-[#E65100] mt-0.5" style={{ fontSize: 18 }}>warning</span>
+                <Warning size={18} weight="fill" className="text-[#E65100] mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm font-bold text-[#BF360C]">산출물이 저장되지 않았습니다</p>
                   <p className="text-xs text-[#E65100] mt-0.5">저장 없이 넘어가면 이 활동 내용이 기록되지 않습니다. AI에게 저장을 요청하거나 직접 입력할 수 있습니다.</p>
@@ -1787,7 +1794,7 @@ ${discussionSummary}
               'w-8 h-8 rounded-full flex items-center justify-center',
               isAnalyzing ? 'bg-[#00897B]' : 'bg-[#202124]'
             )}>
-              <span className="material-symbols-rounded text-white" style={{ fontSize: 16, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+              <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={16} className="text-white" /></span>
             </div>
             <div className={cn('px-4 py-3 rounded-2xl rounded-tl-sm', isAnalyzing ? 'bg-[#E0F2F1]' : 'bg-[#F1F3F4]')}>
               <div className="flex gap-1">
@@ -1825,7 +1832,7 @@ ${discussionSummary}
               onClick={handleEndDiscussionAndAnalyze}
               className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-[0.98] bg-[#00897B] hover:bg-[#00746a] text-white shadow-sm"
             >
-              <span className="material-symbols-rounded msf ms-sm">stop_circle</span>
+              <StopCircle size={16} weight="fill" />
               종료 → AI 분석
             </button>
           )}
@@ -1840,7 +1847,7 @@ ${discussionSummary}
             <span className="text-[11px] text-[#00695C] font-medium">팀원끼리 자유롭게 대화하세요 · AI는 잠시 대기 중</span>
           ) : isWaitingForChoice ? (
             <span className="text-[11px] text-[#E65100] font-medium flex items-center gap-1">
-              <span className="material-symbols-rounded ms-sm text-[#E65100]">chat_bubble</span>
+              <Chat size={16} weight="regular" className="text-[#E65100]" />
               안을 선택하거나 팀원과 의논해보세요 · AI는 선택 후 응답합니다
             </span>
           ) : (
@@ -1854,7 +1861,7 @@ ${discussionSummary}
                   disabled={isLoading}
                   className="text-[11px] font-semibold text-[#00695C] bg-[#E0F2F1] hover:bg-[#B2DFDB] border border-[#80CBC4] px-3 py-1 rounded-full transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
-                  <span className="material-symbols-rounded msf" style={{ fontSize: 13 }}>group</span>
+                  <Users size={13} weight="fill" />
                   팀 채팅 시작
                 </button>
               ) : (
@@ -1866,7 +1873,7 @@ ${discussionSummary}
                   disabled={isLoading || !!proj.teamDiscussionRequest?.pending}
                   className="text-[11px] font-semibold text-[#00695C] bg-[#E0F2F1] hover:bg-[#B2DFDB] border border-[#80CBC4] px-3 py-1 rounded-full transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
-                  <span className="material-symbols-rounded msf" style={{ fontSize: 13 }}>group</span>
+                  <Users size={13} weight="fill" />
                   {proj.teamDiscussionRequest?.pending ? '제안 대기 중...' : '팀 채팅 제안'}
                 </button>
               )}
@@ -1888,7 +1895,7 @@ ${discussionSummary}
               onClick={() => setReplyTo(null)}
               className="text-[#9AA0A6] hover:text-[#5F6368] leading-none flex-shrink-0 px-1"
             >
-              <span className="material-symbols-rounded ms-sm">close</span>
+              <X size={16} weight="regular" />
             </button>
           </div>
         )}
@@ -1965,8 +1972,8 @@ ${discussionSummary}
             )}
           >
             {isLoading && !isTeamMode && !isWaitingForChoice
-              ? <span className="material-symbols-rounded" style={{ fontSize: 18, animation: 'spin 1s linear infinite' }}>progress_activity</span>
-              : <span className="material-symbols-rounded msf" style={{ fontSize: 18 }}>send</span>
+              ? <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={18} /></span>
+              : <PaperPlaneRight size={18} weight="fill" />
             }
           </button>
         </div>

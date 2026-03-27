@@ -5,6 +5,7 @@ import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { returnToActivity, advanceActivity } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
+import { ArrowRight, X, Warning } from '@phosphor-icons/react'
 
 function getStageLabel(code: StageCode) {
   return STAGES.find(s => s.code === code)?.label ?? code
@@ -98,7 +99,7 @@ export function StageMoveModal() {
               <span className="text-sm font-medium text-[#5F6368]">
                 {fromStage} · {getStageLabel(fromStage)}
               </span>
-              <span className="material-symbols-rounded ms-sm text-[#9AA0A6]">arrow_forward</span>
+              <ArrowRight size={16} weight="regular" className="text-[#9AA0A6]" />
               <span className={cn(
                 'text-sm font-bold',
                 isCycle ? 'text-[#137333]' : isBackward ? 'text-[#E65100]' : 'text-[#1A73E8]'
@@ -108,7 +109,7 @@ export function StageMoveModal() {
             </div>
           </div>
           <button onClick={handleCancel} className="text-[#9AA0A6] hover:text-[#5F6368]">
-            <span className="material-symbols-rounded ms-sm">close</span>
+            <X size={16} weight="regular" />
           </button>
         </div>
 
@@ -116,7 +117,7 @@ export function StageMoveModal() {
           {/* 미완료 활동 경고 */}
           {incompleteActivities.length > 0 && !isBackward && (
             <div className="flex gap-3 bg-[#FFF3E0] border border-[#FFCC80] rounded-2xl p-3">
-              <span className="material-symbols-rounded msf ms-sm text-[#E65100] flex-shrink-0 mt-0.5">warning</span>
+              <Warning size={16} weight="fill" className="text-[#E65100] flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-medium text-[#BF360C]">미완료 활동이 있습니다</p>
                 <ul className="mt-1 space-y-0.5">

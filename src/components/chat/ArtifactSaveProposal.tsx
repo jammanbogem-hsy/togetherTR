@@ -2,6 +2,7 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { CheckSquare, X } from '@phosphor-icons/react'
 
 interface Props {
   title: string
@@ -16,7 +17,7 @@ export function ArtifactSaveProposal({ title, sections, onAccept, onDecline }: P
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-full bg-[#1A73E8] flex items-center justify-center flex-shrink-0">
-            <span className="material-symbols-rounded msf text-white" style={{ fontSize: 14 }}>task_alt</span>
+            <CheckSquare size={14} weight="fill" className="text-white" />
           </div>
           <div>
             <p className="text-sm font-bold text-[#1A237E]">산출물 초안으로 저장할까요?</p>
@@ -24,7 +25,7 @@ export function ArtifactSaveProposal({ title, sections, onAccept, onDecline }: P
           </div>
         </div>
         <button onClick={onDecline} className="text-[#9AA0A6] hover:text-[#5F6368]">
-          <span className="material-symbols-rounded ms-sm">close</span>
+          <X size={16} weight="regular" />
         </button>
       </div>
 

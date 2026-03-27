@@ -30,27 +30,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Material Symbols Rounded ───────────────────────── */
-.material-symbols-rounded {
-  font-family: 'Material Symbols Rounded';
-  font-weight: normal;
-  font-style: normal;
-  font-size: 20px;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  direction: ltr;
-  -webkit-font-smoothing: antialiased;
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
-  vertical-align: middle;
-  user-select: none;
-}
-.msf { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20; }
-.ms-sm { font-size: 16px; }
-.ms-md { font-size: 20px; }
-.ms-lg { font-size: 24px; }
 
 /* ── MD3 Elevation ──────────────────────────────────── */
 .md-shadow-1 { box-shadow: var(--shadow-1); }
@@ -60,6 +39,41 @@ body {
 /* ── Animations ─────────────────────────────────────── */
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(26, 115, 232, 0.45); }
+  70%  { box-shadow: 0 0 0 8px rgba(26, 115, 232, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(26, 115, 232, 0); }
+}
+@keyframes activity-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(26, 115, 232, 0.15); }
+  50%       { box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.08); }
+}
+@keyframes float-dot {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-3px); }
+}
+.activity-glow { animation: activity-glow 2s ease-in-out infinite; }
+@keyframes stage-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%       { transform: translateY(-5px) scale(1.07); }
+}
+@keyframes avatar-pop {
+  0%   { transform: scale(0.5) rotate(-15deg); opacity: 0; }
+  55%  { transform: scale(1.18) rotate(5deg);  opacity: 1; }
+  75%  { transform: scale(0.95) rotate(-3deg); }
+  100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
+}
+@keyframes msg-slide-in {
+  0%   { transform: translateY(10px); opacity: 0; }
+  100% { transform: translateY(0);    opacity: 1; }
+}
+/* MD3 Expressive — organic morphing shape */
+@keyframes morph-shape {
+  0%,100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  25%     { border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; }
+  50%     { border-radius: 50% 50% 30% 70% / 70% 50% 50% 30%; }
+  75%     { border-radius: 70% 30% 50% 50% / 40% 70% 30% 60%; }
 }
 
 /* ── Scrollbar ──────────────────────────────────────── */
