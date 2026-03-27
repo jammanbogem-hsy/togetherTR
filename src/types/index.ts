@@ -109,7 +109,7 @@ export interface Project {
   teamDiscussion?: {
     active: boolean
     topic?: string
-    startedAt?: number   // Date.now() — 이 이후 메시지가 토론 메시지
+    startedAt?: number
   }
   teamDiscussionRequest?: {
     pending: boolean
@@ -117,6 +117,18 @@ export interface Project {
     displayName?: string
     requestedAt?: number
   }
+  // 활동별 팀 채팅 상태 (activityCode → 상태)
+  teamDiscussions?: Record<string, {
+    active: boolean
+    topic?: string
+    startedAt?: number
+  }>
+  teamDiscussionRequests?: Record<string, {
+    pending: boolean
+    requestedBy?: string
+    displayName?: string
+    requestedAt?: number
+  }>
   // 안(案) 선택지 투표: msgId → uid → label ('A안' 등)
   optionVotes?: Record<string, Record<string, string>>
   // 활동별 확정 산출물: activityCode → 확정 내용

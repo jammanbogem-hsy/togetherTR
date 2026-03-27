@@ -1090,7 +1090,7 @@ export function ChatPanel() {
   // ─── 팀 토론 승낙 (AI 제안 카드) ────────────────────
   async function handleAcceptDiscussion() {
     setPendingTeamDiscussion(null)
-    await setTeamDiscussion(proj.id, true, pendingTeamDiscussion?.topic).catch(console.error)
+    await setTeamDiscussion(proj.id, currentActivity, true, pendingTeamDiscussion?.topic).catch(console.error)
     setDiscussionMode('team_discussion')
     setTeamDiscussionStartIdx(messages.filter(m => m.role !== 'system').length)
   }
@@ -1308,7 +1308,7 @@ ${discussionSummary}
 
     if (cmdId === 'team-chat') {
       if (isHost) setShowDiscussionConfirm(true)
-      else requestTeamDiscussion(proj.id, userProfile!.uid, userProfile!.displayName).catch(console.error)
+      else requestTeamDiscussion(proj.id, currentActivity, userProfile!.uid, userProfile!.displayName).catch(console.error)
     } else if (cmdId === 'artifact') {
       if (replyTo) {
         // 답글 대상 메시지 내용을 산출물로 저장 제안
@@ -1360,7 +1360,7 @@ ${discussionSummary}
   // 팀 채팅 시작 확인 → Firestore 업데이트 (방장/팀원 모두)
   async function handleConfirmStartDiscussion() {
     setShowDiscussionConfirm(false)
-    await setTeamDiscussion(proj.id, true).catch(console.error)
+    await setTeamDiscussion(proj.id, currentActivity, true).catch(console.error)
     // 로컬 즉시 반영 (Firestore 감지 전 UX)
     setDiscussionMode('team_discussion')
     setTeamDiscussionStartIdx(messages.filter(m => m.role !== 'system').length)
@@ -1368,7 +1368,7 @@ ${discussionSummary}
 
   // 팀 채팅 종료 → Firestore 업데이트 후 AI 분석
   async function handleEndDiscussionAndAnalyze() {
-    await setTeamDiscussion(proj.id, false).catch(console.error)
+    await setTeamDiscussion(proj.id, currentActivity, false).catch(console.error)
     setDiscussionMode('ai_facilitated')
     handleEndDiscussion()   // 기존 AI 분석 로직 호출
   }
@@ -1430,7 +1430,7 @@ ${discussionSummary}
       {/* 팀 토론 배너 */}
       {isTeamMode && (
         <TeamDiscussionBanner
-          topic={project.teamDiscussion?.topic || '팀 자유 토론'}
+          topic={project.teamDiscussions?.[currentActivity]?.topic || '팀 자유 토론'}
           onEnd={handleEndDiscussionAndAnalyze}
           isHost={isHost}
         />
@@ -1618,41 +1618,39 @@ ${discussionSummary}
         )}
 
         {/* 팀 채팅 요청 알림 카드 (방장에게만 표시) */}
-        {isHost && proj.teamDiscussionRequest?.pending && !isTeamMode && !showDiscussionConfirm && (
-          <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
-                <Chat size={18} weight="fill" className="text-white" />
+        {isHost && proj.teamDiscussionRequests?.[currentActivity]?.pending && !isTeamMode && !showDiscussionConfirm && (
+          <div className="mx-0 my-3 rounded-2xl overflow-hidden border border-[#80CBC4]"
+            style={{ background: 'linear-gradient(135deg, #E0F2F1 0%, #F1F8F7 100%)' }}>
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="w-9 h-9 bg-[#00897B] flex items-center justify-center flex-shrink-0"
+                style={{ animation: 'morph-shape 7s ease-in-out infinite', boxShadow: '0 3px 10px rgba(0,137,123,0.35)' }}>
+                <Chat size={16} weight="fill" className="text-white" />
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-bold text-[#004D40] mb-1">
-                  팀 채팅 요청이 왔어요
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-[#004D40]">팀 채팅 요청이 왔어요</p>
+                <p className="text-[11px] text-[#00695C]">
+                  <span className="font-semibold">{proj.teamDiscussionRequests[currentActivity].displayName}</span>님이 제안했습니다
                 </p>
-                <p className="text-xs text-[#00695C] mb-3 leading-relaxed">
-                  <span className="font-semibold">{proj.teamDiscussionRequest.displayName}</span>님이 팀 채팅을 제안했습니다.<br />
-                  지금 팀 채팅을 시작할까요?
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={async () => {
-                      await Promise.all([
-                        setTeamDiscussion(proj.id, true),
-                        clearTeamDiscussionRequest(proj.id),
-                      ]).catch(console.error)
-                    }}
-                    className="flex-1 py-2 rounded-full bg-[#00897B] text-white text-sm font-bold hover:bg-[#00746a] transition-colors"
-                  >
-                    수락하기
-                  </button>
-                  <button
-                    onClick={async () => {
-                      await clearTeamDiscussionRequest(proj.id).catch(console.error)
-                    }}
-                    className="squid-btn px-4 py-2 rounded-full bg-[rgba(0,137,123,0.10)] hover:bg-[rgba(0,137,123,0.20)] text-[#00695C] text-sm transition-colors"
-                  >
-                    거절
-                  </button>
-                </div>
+              </div>
+              <div className="flex gap-1.5 flex-shrink-0">
+                <button
+                  onClick={async () => {
+                    await Promise.all([
+                      setTeamDiscussion(proj.id, currentActivity, true),
+                      clearTeamDiscussionRequest(proj.id, currentActivity),
+                    ]).catch(console.error)
+                  }}
+                  className="morph-btn px-3 py-1.5 bg-[#00897B] text-white text-[12px] font-bold hover:bg-[#00746a] transition-colors"
+                  style={{ filter: 'drop-shadow(0 2px 6px rgba(0,137,123,0.4))' }}
+                >
+                  수락
+                </button>
+                <button
+                  onClick={async () => { await clearTeamDiscussionRequest(proj.id, currentActivity).catch(console.error) }}
+                  className="morph-btn px-3 py-1.5 bg-white text-[#00695C] text-[12px] font-medium border border-[#80CBC4] hover:bg-[#E0F2F1] transition-colors"
+                >
+                  거절
+                </button>
               </div>
             </div>
           </div>
@@ -1819,28 +1817,28 @@ ${discussionSummary}
         <div ref={bottomRef} />
       </div>
 
-      {/* 팀 채팅 종료 스트립 (메시지 영역 밖, 입력창 위) */}
+      {/* 팀 채팅 종료 스트립 */}
       {isTeamMode && (
-        <div className="flex-shrink-0 px-4 py-2.5 border-t border-[#80CBC4] bg-[#E0F2F1] flex items-center gap-3">
-          {/* 진행 중 표시 */}
+        <div
+          className="flex-shrink-0 px-4 py-2.5 border-t border-[#80CBC4] flex items-center gap-3"
+          style={{ background: 'linear-gradient(90deg, #E0F2F1 0%, #F1F8F7 100%)' }}
+        >
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <div className="flex gap-1">
-              {[0,1,2].map(i => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#00897B] flex-shrink-0"
-                  style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
-              ))}
-            </div>
-            <span className="text-xs text-[#00695C] font-medium truncate">
+            {[0,1,2].map(i => (
+              <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#00897B] flex-shrink-0"
+                style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
+            ))}
+            <span className="text-[12px] text-[#00695C] font-semibold ml-1 truncate">
               팀 채팅 진행 중{!isHost && ' · 방장이 종료할 수 있어요'}
             </span>
           </div>
-          {/* 종료 버튼: 방장만 */}
           {isHost && (
             <button
               onClick={handleEndDiscussionAndAnalyze}
-              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all active:scale-[0.98] bg-[#00897B] hover:bg-[#00746a] text-white shadow-sm"
+              className="morph-btn flex-shrink-0 flex items-center gap-1.5 px-4 py-2 text-[12px] font-bold bg-[#00897B] text-white hover:bg-[#00746a] transition-colors"
+              style={{ filter: 'drop-shadow(0 2px 8px rgba(0,137,123,0.42))' }}
             >
-              <StopCircle size={16} weight="fill" />
+              <StopCircle size={14} weight="fill" />
               종료 → AI 분석
             </button>
           )}
@@ -1848,7 +1846,11 @@ ${discussionSummary}
       )}
 
       {/* 입력창 */}
-      <div className={cn('px-4 py-3 border-t', isTeamMode ? 'bg-[#E0F2F1] border-[#80CBC4]' : 'bg-[#F8F9FA] border-[#DADCE0]')}>
+      <div className="px-4 py-3 border-t"
+        style={isTeamMode
+          ? { background: 'linear-gradient(90deg, #E0F2F1 0%, #F1F8F7 100%)', borderColor: '#80CBC4' }
+          : { background: '#F8F9FA', borderColor: '#DADCE0' }}
+      >
         {/* 팀 채팅 컨트롤 바 */}
         <div className="flex items-center justify-between mb-2">
           {isTeamMode ? (
@@ -1876,13 +1878,13 @@ ${discussionSummary}
                 <button
                   onClick={async () => {
                     if (!userProfile) return
-                    await requestTeamDiscussion(proj.id, userProfile.uid, userProfile.displayName).catch(console.error)
+                    await requestTeamDiscussion(proj.id, currentActivity, userProfile.uid, userProfile.displayName).catch(console.error)
                   }}
-                  disabled={isLoading || !!proj.teamDiscussionRequest?.pending}
+                  disabled={isLoading || !!proj.teamDiscussionRequests?.[currentActivity]?.pending}
                   className="squid-btn morph-btn text-[11px] font-semibold text-[#00897B] bg-[rgba(0,137,123,0.12)] hover:bg-[rgba(0,137,123,0.22)] px-3 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
                   <Users size={13} weight="fill" />
-                  {proj.teamDiscussionRequest?.pending ? '제안 대기 중...' : '팀 채팅 제안'}
+                  {proj.teamDiscussionRequests?.[currentActivity]?.pending ? '제안 대기 중...' : '팀 채팅 제안'}
                 </button>
               )}
             </>

@@ -341,13 +341,12 @@ export default function ProjectPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.activityStatuses])
 
-  // Firestore teamDiscussion → Zustand 동기화
+  // Firestore teamDiscussions[currentActivity] → Zustand 동기화
   useEffect(() => {
-    if (!project) return
-    const td = project.teamDiscussion
+    if (!project || !currentActivity) return
+    const td = project.teamDiscussions?.[currentActivity]
     if (td?.active) {
       setDiscussionMode('team_discussion')
-      // startedAt 이전 메시지 수 기준으로 인덱스 계산
       if (td.startedAt) {
         const idx = messages.filter(
           m => m.role !== 'system' && m.createdAt?.toDate?.()?.getTime?.() < td.startedAt!
@@ -358,7 +357,7 @@ export default function ProjectPage() {
       setDiscussionMode('ai_facilitated')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.teamDiscussion?.active, project?.teamDiscussion?.startedAt])
+  }, [project?.teamDiscussions?.[currentActivity]?.active, project?.teamDiscussions?.[currentActivity]?.startedAt, currentActivity])
 
   useEffect(() => {
     if (!projectId || !currentActivity) return

@@ -139,11 +139,12 @@ export function watchLobbyMessages(
 
 export async function setTeamDiscussion(
   projectId: string,
+  activityCode: string,
   active: boolean,
   topic?: string
 ): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
-    teamDiscussion: active
+    [`teamDiscussions.${activityCode}`]: active
       ? { active: true, topic: topic ?? '', startedAt: Date.now() }
       : { active: false },
     updatedAt: serverTimestamp(),
@@ -152,18 +153,19 @@ export async function setTeamDiscussion(
 
 export async function requestTeamDiscussion(
   projectId: string,
+  activityCode: string,
   requestedBy: string,
   displayName: string
 ): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
-    teamDiscussionRequest: { pending: true, requestedBy, displayName, requestedAt: Date.now() },
+    [`teamDiscussionRequests.${activityCode}`]: { pending: true, requestedBy, displayName, requestedAt: Date.now() },
     updatedAt: serverTimestamp(),
   })
 }
 
-export async function clearTeamDiscussionRequest(projectId: string): Promise<void> {
+export async function clearTeamDiscussionRequest(projectId: string, activityCode: string): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
-    teamDiscussionRequest: { pending: false },
+    [`teamDiscussionRequests.${activityCode}`]: { pending: false },
     updatedAt: serverTimestamp(),
   })
 }
