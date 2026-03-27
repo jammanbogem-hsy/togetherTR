@@ -26,6 +26,7 @@ export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<'loading' | 'streaming' | 'done' | 'error'>('loading')
   const [errorMsg, setErrorMsg] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const stage = project?.currentStage ?? 'T'
@@ -113,48 +114,52 @@ export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
   }
 
   function downloadPdf() {
+    const contentEl = contentRef.current
+    if (!contentEl) return
     const win = window.open('', '_blank')
     if (!win) return
-    // Convert markdown to simple HTML for printing
+
+    // 렌더된 DOM의 innerHTML을 그대로 복사 → 화면과 동일한 스타일 유지
+    const html = contentEl.innerHTML
+
     win.document.write(`<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>${project?.title} ${STAGE_LABELS[stage]} 분석 보고서</title>
+  <title>${project?.title ?? ''} ${STAGE_LABELS[stage]} 분석 보고서</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #202124; line-height: 1.7; font-size: 14px; }
-    h1 { font-size: 1.4rem; font-weight: 800; border-bottom: 3px solid #1A73E8; padding-bottom: 10px; margin-bottom: 20px; }
-    h2 { font-size: 1.15rem; font-weight: 700; color: #1A73E8; margin-top: 28px; margin-bottom: 10px; }
-    h3 { font-size: 1rem; font-weight: 700; color: #3C4043; margin-top: 16px; }
-    ul, ol { padding-left: 20px; }
-    li { margin-bottom: 6px; }
-    strong { font-weight: 700; }
-    blockquote { border-left: 3px solid #AECBFA; padding: 8px 16px; background: #F8F9FA; color: #5F6368; }
-    hr { border: none; border-top: 1px solid #DADCE0; margin: 20px 0; }
-    @media print { body { margin: 20px; } }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body {
+      font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 36px 40px;
+      color: #202124;
+      background: white;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    @page { size: A4; margin: 18mm 15mm; }
+    @media print {
+      body { padding: 0; }
+    }
   </style>
 </head>
 <body>
-  <div id="content">${markdownToHtml(markdown)}</div>
-  <script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); }<\/script>
+  ${html}
+  <script>
+    window.onload = () => {
+      setTimeout(() => {
+        window.print()
+        window.onafterprint = () => window.close()
+      }, 600)
+    }
+  <\/script>
 </body>
 </html>`)
     win.document.close()
-  }
-
-  // Very simple markdown → HTML for print (headings, bold, lists)
-  function markdownToHtml(md: string): string {
-    return md
-      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/^- (.+)$/gm, '<li>$1</li>')
-      .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
-      .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul>${s}</ul>`)
-      .replace(/^---$/gm, '<hr>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/^(?!<[hup]|<\/[hup]|<hr|<li|<\/[uo]l)(.+)$/gm, '<p>$1</p>')
   }
 
   return (
@@ -219,7 +224,7 @@ export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
           )}
 
           {(status === 'streaming' || status === 'done') && markdown && (
-            <div className="max-w-none">
+            <div className="max-w-none" ref={contentRef}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{

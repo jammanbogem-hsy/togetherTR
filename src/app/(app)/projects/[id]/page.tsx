@@ -309,6 +309,7 @@ export default function ProjectPage() {
 
   const [claimingHost, setClaimingHost] = useState(false)
   const [activePanel, setActivePanel] = useState<string | null>(null)
+  const [showMembers, setShowMembers] = useState(false)
 
   useEffect(() => {
     if (!projectId) return
@@ -508,11 +509,66 @@ export default function ProjectPage() {
               {project.inviteCode}
             </span>
           )}
-          <span className="flex items-center gap-1 text-[12px] bg-[#F1F3F4] text-[#5F6368]
-            px-3 py-1.5 rounded-full font-medium">
-            <Users size={14} weight="regular" />
-            {project.memberUids?.length ?? 1}명
-          </span>
+          <div className="relative">
+            <button
+              onClick={() => setShowMembers(v => !v)}
+              className="flex items-center gap-1 text-[12px] bg-[#F1F3F4] text-[#5F6368]
+                px-3 py-1.5 rounded-full font-medium hover:bg-[#E8F0FE] hover:text-[#1A73E8] transition-colors"
+            >
+              <Users size={14} weight="regular" />
+              {project.memberUids?.length ?? 1}명
+            </button>
+
+            {showMembers && (
+              <>
+                {/* 바깥 클릭 닫기 */}
+                <div className="fixed inset-0 z-40" onClick={() => setShowMembers(false)} />
+                {/* 팝오버 */}
+                <div className="absolute right-0 top-full mt-2 z-50 min-w-[200px]"
+                  style={{ filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.13))' }}>
+                  <div className="bg-white rounded-2xl overflow-hidden border border-[#E8EAED]">
+                    <div className="px-4 py-2.5 border-b border-[#F1F3F4]">
+                      <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">참여 중인 팀원</p>
+                    </div>
+                    <div className="py-1.5">
+                      {(project.memberUids ?? []).map((mUid: string) => {
+                        const info = project.memberInfo?.[mUid]
+                        const displayName = info?.displayName ?? mUid
+                        const color = info?.color ?? '#A0BCE8'
+                        const isCurrentUser = mUid === uid
+                        const isHostMember = mUid === (project.hostUid ?? project.createdBy)
+                        return (
+                          <div key={mUid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8F9FA]">
+                            <div
+                              className="w-8 h-8 flex items-center justify-center text-white text-[13px] font-black flex-shrink-0"
+                              style={{
+                                backgroundColor: color,
+                                animation: 'morph-shape 8s ease-in-out infinite',
+                                boxShadow: `0 3px 8px ${color}55`,
+                              }}
+                            >
+                              {displayName?.[0]?.toUpperCase() ?? '?'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] font-semibold text-[#202124] truncate">
+                                {displayName}
+                                {isCurrentUser && <span className="text-[11px] text-[#9AA0A6] font-normal ml-1">(나)</span>}
+                              </p>
+                              {isHostMember && (
+                                <p className="text-[11px] text-[#F9AB00] font-bold flex items-center gap-0.5">
+                                  <Crown size={10} weight="fill" /> 방장
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
         {/* 우측 하단: 산출물 패널 */}
         <div className="flex-1 overflow-hidden">
