@@ -5,7 +5,9 @@ import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { returnToActivity, advanceActivity } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
-import { ArrowRight, X, Warning } from '@phosphor-icons/react'
+import { ArrowRight, X, Warning, ChartBar } from '@phosphor-icons/react'
+import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
+import { setAnalysisOpen } from '@/lib/firebase/projects'
 
 function getStageLabel(code: StageCode) {
   return STAGES.find(s => s.code === code)?.label ?? code
@@ -33,6 +35,7 @@ export function StageMoveModal() {
   } = useProjectStore()
 
   const [reason, setReason] = useState('')
+  const [showAnalysis, setShowAnalysis] = useState(false)
 
   if (!project || !pendingStageMove) return null
 
@@ -84,7 +87,12 @@ export function StageMoveModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <>
+    {showAnalysis && <StageAnalysisModal onClose={() => {
+      setShowAnalysis(false)
+      if (project?.id) setAnalysisOpen(project.id, false).catch(console.error)
+    }} />}
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* 헤더 */}
         <div className={cn(
@@ -161,6 +169,69 @@ export function StageMoveModal() {
             />
           </div>
 
+          {/* 현재 단계 분석 제안 (다음 단계 이동 시만 표시) */}
+          {!isBackward && !isCycle && (
+            <div className="relative rounded-2xl overflow-hidden p-[1.5px]"
+              style={{ background: 'linear-gradient(135deg, #1A73E8, #7B2FF7, #1A73E8)', backgroundSize: '200% 200%', animation: 'gradient-shift 3s ease infinite' }}
+            >
+              <div className="relative bg-[#F0F4FF] rounded-[14px] p-4 flex items-center gap-4">
+                {/* 배경 빛번짐 */}
+                <div className="absolute inset-0 rounded-[14px] pointer-events-none"
+                  style={{ background: 'radial-gradient(ellipse at 30% 50%, rgba(26,115,232,0.12) 0%, transparent 70%)', animation: 'pulse-glow 2s ease-in-out infinite' }}
+                />
+                <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl"
+                  style={{ background: 'linear-gradient(135deg, #1A73E8, #7B2FF7)', boxShadow: '0 0 16px rgba(26,115,232,0.5)', animation: 'icon-pulse 2s ease-in-out infinite' }}
+                >
+                  <ChartBar size={18} weight="fill" className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-extrabold text-[#1A1F6B]">현재 단계 분석하기</p>
+                  <p className="text-xs text-[#5F6368] mt-0.5">다음 단계로 넘어가기 전에 {fromStage}단계 산출물을 T-CID 관점에서 분석합니다.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAnalysis(true)
+                    if (project?.id) setAnalysisOpen(project.id, true).catch(console.error)
+                  }}
+                  className="relative flex-shrink-0 px-4 py-2 rounded-full text-sm font-extrabold text-white overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(135deg, #1A73E8, #7B2FF7)',
+                    boxShadow: '0 0 18px rgba(26,115,232,0.6), 0 0 36px rgba(123,47,247,0.3)',
+                    animation: 'btn-glow 2s ease-in-out infinite',
+                  }}
+                >
+                  {/* 빛 sweeping 효과 */}
+                  <span className="absolute inset-0 rounded-full pointer-events-none"
+                    style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 60%)', backgroundSize: '200% 100%', animation: 'shine-sweep 2.4s linear infinite' }}
+                  />
+                  <span className="relative">분석 보기 ✦</span>
+                </button>
+              </div>
+              <style>{`
+                @keyframes gradient-shift {
+                  0%, 100% { background-position: 0% 50%; }
+                  50% { background-position: 100% 50%; }
+                }
+                @keyframes pulse-glow {
+                  0%, 100% { opacity: 0.6; }
+                  50% { opacity: 1; }
+                }
+                @keyframes icon-pulse {
+                  0%, 100% { box-shadow: 0 0 16px rgba(26,115,232,0.5); transform: scale(1); }
+                  50% { box-shadow: 0 0 28px rgba(123,47,247,0.7); transform: scale(1.08); }
+                }
+                @keyframes btn-glow {
+                  0%, 100% { box-shadow: 0 0 18px rgba(26,115,232,0.6), 0 0 36px rgba(123,47,247,0.3); }
+                  50% { box-shadow: 0 0 28px rgba(26,115,232,0.9), 0 0 56px rgba(123,47,247,0.5); }
+                }
+                @keyframes shine-sweep {
+                  0% { background-position: -100% 0; }
+                  100% { background-position: 200% 0; }
+                }
+              `}</style>
+            </div>
+          )}
+
           {/* 버튼 */}
           <div className="flex gap-3">
             <button
@@ -185,5 +256,6 @@ export function StageMoveModal() {
         </div>
       </div>
     </div>
+    </>
   )
 }

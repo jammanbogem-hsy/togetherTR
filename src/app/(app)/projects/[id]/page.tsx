@@ -10,11 +10,16 @@ import {
   sendLobbyMessage, watchLobbyMessages, joinProject, setTeamDiscussion,
   type LobbyMessage
 } from '@/lib/firebase/projects'
+import type { Project } from '@/types'
+import type { UserProfile } from '@/lib/auth'
 import { StageBar } from '@/components/stage/StageBar'
 import { ActivitySidebar } from '@/components/activity/ActivitySidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { StageMoveModal } from '@/components/modals/StageMoveModal'
+import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
+import { setAnalysisOpen } from '@/lib/firebase/projects'
+import { DevJumpPanel } from '@/components/dev/DevJumpPanel'
 import { cn } from '@/lib/utils'
 import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight } from '@phosphor-icons/react'
 
@@ -27,11 +32,11 @@ function WaitingRoom({
   userProfile,
   onBecomeHost,
 }: {
-  project: any
+  project: Project
   projectId: string
   uid: string
   isHost: boolean
-  userProfile: any
+  userProfile: UserProfile | null
   onBecomeHost: () => void
 }) {
   const [starting, setStarting] = useState(false)
@@ -70,7 +75,7 @@ function WaitingRoom({
       uid: userProfile.uid,
       displayName: userProfile.displayName,
       color: userProfile.color,
-      emoji: userProfile.emoji,
+      emoji: userProfile.emoji ?? '👤',
       content: msg,
     })
   }
@@ -304,6 +309,7 @@ export default function ProjectPage() {
     pendingStageMove, userProfile,
     setDiscussionMode, setTeamDiscussionStartIdx, messages,
     currentActivity, setCurrentActivity,
+    viewingActivity, setViewingActivity,
     setActivityStatus, resetProjectState,
     discussionMode,
   } = useProjectStore()
@@ -323,12 +329,12 @@ export default function ProjectPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
-  // Firestore currentActivity → Zustand 동기화 (팀원 실시간 공유)
+  // Firestore currentActivity → Zustand 동기화 (방장이 이동하면 모두 따라감)
   useEffect(() => {
     if (!project?.currentActivity) return
     if (project.currentActivity !== currentActivity) {
       setCurrentActivity(project.currentActivity)
-      // setMessages([])는 watchMessages effect가 currentActivity 변경을 감지하여 처리
+      setViewingActivity(project.currentActivity)  // 방장 이동 시 뷰도 함께 이동
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.currentActivity])
@@ -583,6 +589,19 @@ export default function ProjectPage() {
       </div>
 
       {pendingStageMove && <StageMoveModal />}
+
+      {/* 팀원: 방장이 분석 모달을 열면 동기화하여 표시 */}
+      {!isHost && project?.analysisOpen && (
+        <StageAnalysisModal
+          isHost={false}
+          onClose={() => setAnalysisOpen(projectId, false).catch(console.error)}
+        />
+      )}
+
+      {/* 개발용 활동 빠른 이동 패널 — 방장만 표시 */}
+      {isHost && currentActivity && (
+        <DevJumpPanel projectId={projectId} currentActivity={currentActivity} />
+      )}
     </div>
   )
 }

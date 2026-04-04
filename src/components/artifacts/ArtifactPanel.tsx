@@ -7,6 +7,7 @@ import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META } from '@/types'
 import type { ArtifactStatus } from '@/types'
 import { setProjectArtifact } from '@/lib/firebase/projects'
+import { Timestamp } from 'firebase/firestore'
 import { cn } from '@/lib/utils'
 import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, CheckSquare, Chat, Clock, X, PencilSimple, ClockCounterClockwise, type Icon } from '@phosphor-icons/react'
 
@@ -81,7 +82,35 @@ function ArtifactSection({ sectionKey, value, onDelete }: {
       <div className="px-4 py-4 bg-white">
         {typeof value === 'string' ? (
           <div className="artifact-md text-sm text-[#202124] leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}
+              components={{
+                strong: ({ children }) => (
+                  <span className="inline-block px-1.5 py-0.5 rounded-md text-[13px] font-semibold bg-[#E8F0FE] text-[#1A73E8] leading-snug mx-0.5">
+                    {children}
+                  </span>
+                ),
+                p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                table: ({ children }) => (
+                  <div className="my-2 overflow-x-auto rounded-xl border border-[#DADCE0]">
+                    <table className="min-w-full text-sm border-collapse">{children}</table>
+                  </div>
+                ),
+                thead: ({ children }) => <thead className="bg-[#F8F9FA]">{children}</thead>,
+                tbody: ({ children }) => <tbody className="divide-y divide-[#F1F3F4]">{children}</tbody>,
+                tr: ({ children }) => <tr className="hover:bg-[#F8F9FA]/50 transition-colors">{children}</tr>,
+                th: ({ children }) => (
+                  <th className="px-3 py-2.5 text-left text-xs font-bold text-[#5F6368] uppercase tracking-wider whitespace-nowrap border-b border-[#DADCE0]">
+                    {children}
+                  </th>
+                ),
+                td: ({ children }) => (
+                  <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed">{children}</td>
+                ),
+              }}
+            >
+              {/* **항목**: 패턴 앞에 빈 줄 삽입 → 각 항목이 별도 단락으로 분리 */}
+              {value.replace(/([^.\n])\s+(\*\*[^*\n]+\*\*\s*:)/g, '$1\n\n$2')}
+            </ReactMarkdown>
           </div>
         ) : Array.isArray(value) ? (
           <ul className="space-y-2">
@@ -107,6 +136,8 @@ const DISPLAY_BLOCKED_KEYS = [
   'ai 제안', '추천 사항', '참고 사항',
   '합의 내용', '논의 내용', '토론 내용', '확인 사항',
   '진행 내용', '진행 사항', '현황', '요약',
+  // 아래는 명시적 저장 경로(save proposal)에서 사용하는 키이므로 차단하지 않음
+  // '토론 결과', '보완할 점' → 표시 허용
 ]
 
 function ArtifactContent({ content, onDeleteSection }: {
@@ -144,8 +175,8 @@ function ArtifactContent({ content, onDeleteSection }: {
 }
 
 export function ArtifactPanel() {
-  const { currentArtifact, currentActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
-  const activityMeta = ACTIVITY_META[currentActivity]
+  const { currentArtifact, currentActivity, viewingActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
+  const activityMeta = ACTIVITY_META[viewingActivity]
   const [revisionNote, setRevisionNote] = useState('')
   const [showRevisionForm, setShowRevisionForm] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -156,13 +187,13 @@ export function ArtifactPanel() {
   const stageColor = STAGE_COLOR[project?.currentStage ?? 'T']
 
   // Firestore 산출물 (팀 전체 소스)
-  const firestoreArtifact = project?.artifacts?.[currentActivity]
+  const firestoreArtifact = project?.artifacts?.[viewingActivity]
 
   // useEffect 없이 렌더 시점에 직접 파생 — 타이밍 이슈 없음
   // 로컬 currentArtifact가 없으면 Firestore 데이터로 임시 객체 생성
   const displayArtifact = currentArtifact ?? (firestoreArtifact ? {
-    id: `${currentActivity}-firestore`,
-    activityCode: currentActivity,
+    id: `${viewingActivity}-firestore`,
+    activityCode: viewingActivity,
     artifactType: activityMeta.label,
     title: firestoreArtifact.title,
     status: firestoreArtifact.status as ArtifactStatus,
@@ -174,8 +205,8 @@ export function ArtifactPanel() {
     createdBy: firestoreArtifact.confirmedBy ?? 'host',
     meta: {
       author: 'AI 분석',
-      createdAt: { toDate: () => new Date(firestoreArtifact.confirmedAt ?? Date.now()) } as any,
-      updatedAt: { toDate: () => new Date(firestoreArtifact.confirmedAt ?? Date.now()) } as any,
+      createdAt: Timestamp.fromMillis(firestoreArtifact.confirmedAt ?? Date.now()),
+      updatedAt: Timestamp.fromMillis(firestoreArtifact.confirmedAt ?? Date.now()),
       evidence: '팀 합의',
       approvalStatus: 'approved' as const,
     },
@@ -193,7 +224,7 @@ export function ArtifactPanel() {
           : currentArtifact.confirmedContent,
       })
     }
-  }, [firestoreArtifact?.status, currentActivity])
+  }, [firestoreArtifact?.status, viewingActivity])
 
   const effectiveStatus: ArtifactStatus = firestoreArtifact?.status as ArtifactStatus ?? displayArtifact?.status ?? 'in_review'
   const isConfirmed = effectiveStatus === 'confirmed'
@@ -203,7 +234,7 @@ export function ArtifactPanel() {
     // Firestore snapshot 우선, 없으면 로컬 displayArtifact 사용
     const content = (
       firestoreArtifact?.content ??
-      (displayArtifact as any)?.lastEditedContent ??
+      displayArtifact?.lastEditedContent ??
       displayArtifact?.aiDraft ??
       {}
     ) as Record<string, unknown>
@@ -216,7 +247,7 @@ export function ArtifactPanel() {
     }
     setIsSaving(true)
     try {
-      await setProjectArtifact(project.id, currentActivity, {
+      await setProjectArtifact(project.id, viewingActivity, {
         status: 'confirmed',
         title,
         content,
@@ -263,13 +294,28 @@ export function ArtifactPanel() {
     if (!project || !firestoreArtifact) return
     const newContent = { ...(firestoreArtifact.content as Record<string, unknown>) }
     delete newContent[key]
-    const safeStatus = firestoreArtifact.status === 'rejected' ? 'in_review' : firestoreArtifact.status as 'ai_draft' | 'in_review' | 'confirmed'
-    await setProjectArtifact(project.id, currentActivity, {
-      status: safeStatus,
+    // 내용이 비었거나 confirmed 상태에서 수정하면 in_review로 되돌림
+    const isEmpty = Object.keys(newContent).length === 0
+    const nextStatus: 'ai_draft' | 'in_review' | 'confirmed' =
+      isEmpty || firestoreArtifact.status === 'confirmed' || firestoreArtifact.status === 'rejected'
+        ? 'in_review'
+        : firestoreArtifact.status as 'ai_draft' | 'in_review'
+    await setProjectArtifact(project.id, viewingActivity, {
+      status: nextStatus,
       title: firestoreArtifact.title,
       content: newContent,
       version: firestoreArtifact.version + 1,
     }).catch(console.error)
+    // 로컬 currentArtifact도 즉시 반영 (displayArtifact가 로컬 우선이므로 필수)
+    if (currentArtifact) {
+      setCurrentArtifact({
+        ...currentArtifact,
+        status: nextStatus,
+        aiDraft: newContent,
+        lastEditedContent: newContent,
+        confirmedContent: isEmpty ? undefined : newContent,
+      })
+    }
   }
 
   async function handleDirectSave() {
@@ -277,7 +323,7 @@ export function ArtifactPanel() {
     setIsSaving(true)
     try {
       const content = { [activityMeta.label]: directInputText.trim() }
-      await setProjectArtifact(project.id, currentActivity, {
+      await setProjectArtifact(project.id, viewingActivity, {
         status: 'in_review',
         title: `${activityMeta.label} - 직접 입력`,
         content,
@@ -294,9 +340,11 @@ export function ArtifactPanel() {
 
   const displayContent =
     displayArtifact?.confirmedContent ??
-    (displayArtifact as any)?.lastEditedContent ??
+    displayArtifact?.lastEditedContent ??
     displayArtifact?.aiDraft ??
     {}
+
+  const hasContent = Object.keys(displayContent).length > 0
 
   return (
     <div className="flex flex-col h-full overflow-hidden corner-wrap-artifact"
@@ -374,7 +422,7 @@ export function ArtifactPanel() {
 
       {/* 내용 */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
-        {!displayArtifact ? (
+        {!displayArtifact || !hasContent ? (
           <>
             <EmptyState activityLabel={activityMeta.label} />
             {isHost && (
@@ -470,8 +518,8 @@ export function ArtifactPanel() {
         )}
       </div>
 
-      {/* 액션 버튼 */}
-      {displayArtifact && (
+      {/* 액션 버튼 — 내용이 없으면 숨김 */}
+      {displayArtifact && hasContent && (
         <div className="px-5 py-4 border-t border-[#DADCE0] bg-[#F8F9FA] space-y-2.5 flex-shrink-0">
           {isHost ? (
             isConfirmed ? (

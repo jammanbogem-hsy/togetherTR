@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
-import { STAGES, ACTIVITY_META } from '@/types'
+import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { cn } from '@/lib/utils'
-import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar } from '@phosphor-icons/react'
+import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar, ArrowRight } from '@phosphor-icons/react'
+import { setAnalysisReport } from '@/lib/firebase/projects'
 
 const STAGE_COLOR: Record<string, { bg: string; text: string; light: string }> = {
   T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]' },
@@ -20,88 +21,211 @@ const STAGE_LABELS: Record<string, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
 }
 
-export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
-  const { project, activityStatus } = useProjectStore()
+export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => void; isHost?: boolean }) {
+  const { project, setPendingStageMove } = useProjectStore()
   const [markdown, setMarkdown] = useState('')
   const [status, setStatus] = useState<'loading' | 'streaming' | 'done' | 'error'>('loading')
   const [errorMsg, setErrorMsg] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // 마운트 시점의 project 스냅샷 — Firestore 업데이트로 인한 재실행 방지
+  const projectSnapshotRef = useRef(project)
+  const hasStartedRef = useRef(false)
 
   const stage = project?.currentStage ?? 'T'
   const color = STAGE_COLOR[stage]
 
-  const runAnalysis = useCallback(async () => {
-    if (!project) return
+  // 다음 단계 코드 계산
+  const nextStage = (() => {
+    const idx = STAGES.findIndex(s => s.code === stage)
+    return idx >= 0 && idx < STAGES.length - 1 ? STAGES[idx + 1].code as StageCode : null
+  })()
+
+  function handleMoveToNextStage() {
+    if (!nextStage) return
+    onClose()
+    setPendingStageMove(nextStage)
+  }
+
+  // ── 방장: 마운트 1회만 실행 — 기존 보고서 있으면 재사용 ──
+  useEffect(() => {
+    if (!isHost || hasStartedRef.current) return
+    hasStartedRef.current = true
+
+    // 기존 완성된 보고서가 있으면 바로 표시 (재생성 안 함)
+    const existingReport = projectSnapshotRef.current?.analysisReport
+    if (existingReport && !existingReport.generating && existingReport.content && existingReport.stage === stage) {
+      setMarkdown(existingReport.content)
+      setStatus('done')
+      return
+    }
+
+    const snap = projectSnapshotRef.current
+    if (!snap) return
+
+    async function run() {
+      const p = snap!
+      setMarkdown('')
+      setStatus('loading')
+      setErrorMsg('')
+
+      // Firestore에 생성 중 표시
+      if (p.id) await setAnalysisReport(p.id, stage, '', true).catch(console.error)
+
+      const stageInfo = STAGES.find(s => s.code === stage)!
+      const artifacts: Record<string, { title: string; content: Record<string, unknown> }> = {}
+      for (const code of stageInfo.activities) {
+        const art = p.artifacts?.[code]
+        if (art) artifacts[code] = { title: ACTIVITY_META[code].label, content: art.content ?? {} }
+      }
+
+      abortRef.current = new AbortController()
+      let fullText = ''
+      try {
+        const res = await fetch('/api/analyze/stage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: abortRef.current.signal,
+          body: JSON.stringify({
+            stage,
+            project: {
+              title: p.title,
+              targetGradeGroup: p.targetGradeGroup,
+              targetSubjects: p.targetSubjects,
+            },
+            artifacts,
+          }),
+        })
+        if (!res.ok) throw new Error('분석 요청 실패')
+        setStatus('streaming')
+
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() ?? ''
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.type === 'text') {
+                fullText += data.text
+                setMarkdown(fullText)
+                setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50)
+              } else if (data.type === 'done') {
+                setStatus('done')
+              } else if (data.type === 'error') {
+                throw new Error(data.message)
+              }
+            } catch { /* ignore parse errors */ }
+          }
+        }
+        setStatus('done')
+        // 완료 후 Firestore 저장 → 팀원 공유
+        if (p.id && fullText) {
+          await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        setStatus('error')
+        setErrorMsg(err instanceof Error ? err.message : '알 수 없는 오류')
+        if (p.id) await setAnalysisReport(p.id, stage, '', false).catch(console.error)
+      }
+    }
+
+    run()
+    return () => abortRef.current?.abort()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // 마운트 1회만 실행
+
+  // 방장: 다시 생성 버튼
+  function rerunAnalysis() {
+    hasStartedRef.current = false
+    projectSnapshotRef.current = project
     setMarkdown('')
     setStatus('loading')
     setErrorMsg('')
+    hasStartedRef.current = true
 
-    const stageInfo = STAGES.find(s => s.code === stage)!
-    const artifacts: Record<string, { title: string; content: Record<string, unknown> }> = {}
-    for (const code of stageInfo.activities) {
-      const art = project.artifacts?.[code]
-      if (art) artifacts[code] = { title: ACTIVITY_META[code].label, content: art.content ?? {} }
-    }
+    const snap = project
+    if (!snap) return
 
-    abortRef.current = new AbortController()
-    try {
-      const res = await fetch('/api/analyze/stage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: abortRef.current.signal,
-        body: JSON.stringify({
-          stage,
-          project: {
-            title: project.title,
-            targetGradeGroup: project.targetGradeGroup,
-            targetSubjects: project.targetSubjects,
-          },
-          artifacts,
-        }),
-      })
+    async function run() {
+      const p = snap!
+      if (p.id) await setAnalysisReport(p.id, stage, '', true).catch(console.error)
 
-      if (!res.ok) throw new Error('분석 요청 실패')
-      setStatus('streaming')
-
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buf = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        const lines = buf.split('\n')
-        buf = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const data = JSON.parse(line.slice(6))
-            if (data.type === 'text') {
-              setMarkdown(prev => prev + data.text)
-              setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50)
-            } else if (data.type === 'done') {
-              setStatus('done')
-            } else if (data.type === 'error') {
-              throw new Error(data.message)
-            }
-          } catch { /* ignore parse errors */ }
-        }
+      const stageInfo = STAGES.find(s => s.code === stage)!
+      const artifacts: Record<string, { title: string; content: Record<string, unknown> }> = {}
+      for (const code of stageInfo.activities) {
+        const art = p.artifacts?.[code]
+        if (art) artifacts[code] = { title: ACTIVITY_META[code].label, content: art.content ?? {} }
       }
-      setStatus('done')
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') return
-      setStatus('error')
-      setErrorMsg(err instanceof Error ? err.message : '알 수 없는 오류')
-    }
-  }, [project, stage])
 
+      abortRef.current?.abort()
+      abortRef.current = new AbortController()
+      let fullText = ''
+      try {
+        const res = await fetch('/api/analyze/stage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: abortRef.current.signal,
+          body: JSON.stringify({
+            stage,
+            project: { title: p.title, targetGradeGroup: p.targetGradeGroup, targetSubjects: p.targetSubjects },
+            artifacts,
+          }),
+        })
+        if (!res.ok) throw new Error('분석 요청 실패')
+        setStatus('streaming')
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() ?? ''
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.type === 'text') {
+                fullText += data.text
+                setMarkdown(fullText)
+                setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50)
+              } else if (data.type === 'done') {
+                setStatus('done')
+              }
+            } catch { /* ignore */ }
+          }
+        }
+        setStatus('done')
+        if (p.id && fullText) await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        setStatus('error')
+        setErrorMsg(err instanceof Error ? err.message : '알 수 없는 오류')
+      }
+    }
+    run()
+  }
+
+  // ── 팀원: Firestore 보고서 감지 (project 구독으로 자동 업데이트) ──
   useEffect(() => {
-    runAnalysis()
-    return () => abortRef.current?.abort()
-  }, [runAnalysis])
+    if (isHost) return
+    const saved = project?.analysisReport
+    if (saved && !saved.generating && saved.content && saved.stage === stage) {
+      setMarkdown(saved.content)
+      setStatus('done')
+    }
+  // project.analysisReport만 감지
+  }, [project?.analysisReport, isHost, stage])
 
   function downloadMd() {
     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
@@ -218,8 +342,18 @@ export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
                 style={{ animation: 'morph-shape 7s ease-in-out infinite, stage-bounce 2.8s ease-in-out infinite', filter: `drop-shadow(0 4px 14px ${color.bg.replace('bg-', '')})` }}>
                 <ChartBar size={28} weight="fill" className="text-white" />
               </div>
-              <p className="text-[14px] font-semibold text-[#5F6368]">산출물 분석 중...</p>
-              <p className="text-[12px] text-[#9AA0A6]">T-CID 협력 수업설계 관점에서 분석합니다</p>
+              {isHost ? (
+                <>
+                  <p className="text-[14px] font-semibold text-[#5F6368]">산출물 분석 중...</p>
+                  <p className="text-[12px] text-[#9AA0A6]">T-CID 협력 수업설계 관점에서 분석합니다</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[14px] font-semibold text-[#5F6368]">보고서가 생성 중입니다</p>
+                  <p className="text-[12px] text-[#9AA0A6]">방장이 분석을 완료하면 자동으로 표시됩니다</p>
+                  <SpinnerGap size={20} className={cn('animate-spin mt-1', color.text)} />
+                </>
+              )}
             </div>
           )}
 
@@ -266,26 +400,26 @@ export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
                   ol: ({ children }) => (
                     <ol style={{ listStyle: 'none', padding: 0, margin: '0.6rem 0', counterReset: 'ol' }}>{children}</ol>
                   ),
-                  li: ({ children, ordered, ...props }: any) => (
+                  li: ({ children }) => (
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', marginBottom: '0.5rem', fontSize: '0.91rem', color: '#3C4043', lineHeight: 1.75 }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1A73E8', flexShrink: 0, marginTop: '0.52rem', display: 'inline-block' }} />
                       <span>{children}</span>
                     </li>
                   ),
                   table: ({ children }) => (
-                    <div style={{ margin: '1rem 0', borderRadius: '12px', overflow: 'hidden', border: '1.5px solid #DADCE0' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>{children}</table>
+                    <div style={{ margin: '1rem 0', borderRadius: '12px', overflowX: 'auto', border: '1.5px solid #DADCE0' }}>
+                      <table style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>{children}</table>
                     </div>
                   ),
                   thead: ({ children }) => (
                     <thead style={{ background: '#1A73E8', color: 'white' }}>{children}</thead>
                   ),
                   th: ({ children }) => (
-                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white' }}>{children}</th>
+                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', whiteSpace: 'nowrap' }}>{children}</th>
                   ),
                   tr: ({ children }) => <tr>{children}</tr>,
                   td: ({ children }) => (
-                    <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem' }}>{children}</td>
+                    <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', whiteSpace: 'nowrap' }}>{children}</td>
                   ),
                   hr: () => (
                     <hr style={{ border: 'none', borderTop: '1.5px solid #F1F3F4', margin: '1.8rem 0' }} />
@@ -309,7 +443,7 @@ export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <p className="text-[14px] text-red-500 font-semibold">분석 중 오류가 발생했습니다</p>
               <p className="text-[12px] text-[#9AA0A6]">{errorMsg}</p>
-              <button onClick={runAnalysis}
+              <button onClick={rerunAnalysis}
                 className="morph-btn px-5 py-2.5 bg-[#1A73E8] text-white text-[13px] font-bold hover:bg-[#1557B0] transition-colors">
                 다시 시도
               </button>
@@ -325,9 +459,26 @@ export function StageAnalysisModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {status === 'done' && (
-          <div className="px-6 py-2.5 flex-shrink-0 flex items-center gap-2 border-t border-[#F1F3F4] bg-[#F8F9FA]">
-            <span className="text-[12px] text-[#34A853] font-semibold">✓ 분석 완료</span>
-            <span className="text-[11px] text-[#9AA0A6]">— MD 또는 PDF로 저장하세요</span>
+          <div className="px-6 py-3 flex-shrink-0 flex items-center justify-between gap-3 border-t border-[#F1F3F4] bg-[#F8F9FA]">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <span className="text-[12px] text-[#34A853] font-semibold whitespace-nowrap">✓ 분석 완료</span>
+              <span className="text-[11px] text-[#9AA0A6] hidden sm:inline">MD 또는 PDF로 저장하세요</span>
+              {isHost && (
+                <button onClick={rerunAnalysis}
+                  className="text-[11px] text-[#9AA0A6] hover:text-[#5F6368] underline transition-colors whitespace-nowrap">
+                  다시 생성
+                </button>
+              )}
+            </div>
+            {isHost && nextStage && (
+              <button
+                onClick={handleMoveToNextStage}
+                className="morph-btn flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold text-white bg-[#1A73E8] hover:bg-[#1557B0] transition-colors whitespace-nowrap flex-shrink-0"
+              >
+                {STAGE_LABELS[nextStage]} 단계로 이동
+                <ArrowRight size={15} weight="bold" />
+              </button>
+            )}
           </div>
         )}
       </div>

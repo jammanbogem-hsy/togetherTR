@@ -19,9 +19,13 @@ interface ProjectStore {
   activityStatus: StageActivityState
   setActivityStatus: (code: ActivityCode, status: StageStatus) => void
 
-  // 현재 활동
+  // 현재 활동 (Firestore 동기화 — 방장이 제어)
   currentActivity: ActivityCode
   setCurrentActivity: (code: ActivityCode) => void
+
+  // 탭 뷰 활동 (방장: currentActivity와 동일, 팀원: 독립적 탐색)
+  viewingActivity: ActivityCode
+  setViewingActivity: (code: ActivityCode) => void
 
   // 메시지
   messages: Message[]
@@ -77,7 +81,19 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     set((state) => ({ activityStatus: { ...state.activityStatus, [code]: status } })),
 
   currentActivity: 'T-1-1',
-  setCurrentActivity: (code) => set({ currentActivity: code, currentArtifact: null, pendingArtifactSave: null }),
+  setCurrentActivity: (code) => set({
+    currentActivity: code,
+    currentArtifact: null,
+    pendingArtifactSave: null,
+    discussionMode: 'ai_facilitated',
+    pendingTeamDiscussion: null,
+    teamDiscussionStartIdx: 0,
+    messages: [],
+    messagesLoaded: false,
+  }),
+
+  viewingActivity: 'T-1-1',
+  setViewingActivity: (code) => set({ viewingActivity: code, currentArtifact: null }),
 
   messages: [],
   addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
@@ -113,6 +129,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     project: null,
     activityStatus: {},
     currentActivity: 'T-1-1',
+    viewingActivity: 'T-1-1',
     messages: [],
     messagesLoaded: false,
     streamingText: '',

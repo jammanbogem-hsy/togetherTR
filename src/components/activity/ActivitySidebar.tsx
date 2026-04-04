@@ -3,11 +3,11 @@
 import { useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type ActivityCode, type StageStatus } from '@/types'
-import { setProjectActivity } from '@/lib/firebase/projects'
+import { setProjectActivity, setAnalysisOpen } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
 import {
   UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy,
-  CheckCircle, Warning, Clock, Shield, Star, CaretRight, ChartBar, type Icon,
+  CheckCircle, Warning, Clock, Shield, Star, CaretRight, ChartBar, Crown, ArrowBendUpLeft, type Icon,
 } from '@phosphor-icons/react'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
 
@@ -25,6 +25,35 @@ const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; bor
   Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', border: 'border-[#80CBC4]', pulse: 'rgba(0,137,123,0.35)',  corner: 'rgba(0,137,123,0.11)'   },
   DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', border: 'border-[#FFAB91]', pulse: 'rgba(230,81,0,0.35)',   corner: 'rgba(230,81,0,0.11)'    },
   E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', border: 'border-[#EF9A9A]', pulse: 'rgba(198,40,40,0.35)',  corner: 'rgba(198,40,40,0.11)'   },
+}
+
+// 활동별 개념 안내 (선택된 활동에 맞는 안내 박스 표시)
+const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; example: string }>> = {
+  'T-1-1': {
+    title: '💡 팀 비전이란?',
+    body: '우리 팀이 이 수업을 통해 궁극적으로 실현하고자 하는 교육 목적입니다. 단순한 수업 목표가 아니라, 학생에게 어떤 변화·경험·역량을 만들어주고 싶은지를 담은 한 문장입니다.\n이 비전은 A~E 단계에서 의견이 엇갈릴 때마다 돌아오는 기준이 됩니다.',
+    example: '예: "학생들이 협력하여 실생활 문제를 해결하는 경험을 만드는 교육"',
+  },
+  'T-1-2': {
+    title: '🧭 수업설계 방향이란?',
+    body: '비전을 실현하기 위해 어떤 교수학습 전략과 방향을 지향할 것인지에 대한 합의입니다.\n교과 범위·성취기준·도구 선정은 이후 단계(A, Ds)에서 다룹니다.',
+    example: '예: "학생 주도 프로젝트 기반 학습, 과정 중심 평가 중심"',
+  },
+  'T-2-1': {
+    title: '👥 역할 분담이란?',
+    body: '설계팀이 원활하게 협력하기 위해 각 교사가 맡을 역할을 사전에 합의합니다.\n고정 역할(사회자, 기록자 등)과 활동별 순환 역할을 구분하면 책임 사각지대를 없앨 수 있습니다.',
+    example: '예: 사회자·촉진자 / 기록자 / 자료조사·편집 / 피드백 담당',
+  },
+  'T-2-2': {
+    title: '📋 팀 규칙이란?',
+    body: '안전하고 효율적인 논의를 위한 팀 그라운드 룰입니다.\n규칙마다 위반 시 조치 방법도 함께 정해두면 실제 갈등 상황에서 기준이 됩니다.',
+    example: '예: "발언 중 끼어들지 않기 / 마감 전날까지 공유"',
+  },
+  'T-2-3': {
+    title: '🗓 팀 일정 협의란?',
+    body: '수업설계의 각 단계(팀준비→분석→설계→개발·실행→평가)를 언제까지 완료할지 팀이 함께 현실적인 목표 날짜를 정하는 활동입니다.\n무리한 일정보다 실제로 지킬 수 있는 일정이 훨씬 중요합니다.',
+    example: '예: "분석 단계는 4월 말까지, 설계는 5월 중순까지"',
+  },
 }
 
 const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
@@ -50,46 +79,59 @@ const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
   },
 }
 
-function ActivityItem({ code, isCurrent, status, hasArtifact, index, onClick }: {
-  code: ActivityCode; isCurrent: boolean; status: StageStatus; hasArtifact: boolean; index: number; onClick: () => void
+function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtifact, artifactConfirmed, index, onClick }: {
+  code: ActivityCode; isViewing: boolean; isHostCurrent: boolean; isHost: boolean
+  status: StageStatus; hasArtifact: boolean; artifactConfirmed: boolean; index: number; onClick: () => void
 }) {
   const meta = ACTIVITY_META[code]
 
-  // 산출물이 있으면 건너뜀(warning)도 완료로 간주
-  const effectiveStatus: StageStatus = (status === 'warning' && hasArtifact) ? 'completed' : status
+  // 산출물 확정됐거나, 건너뜀(warning) + 산출물 있으면 완료로 간주
+  const effectiveStatus: StageStatus = artifactConfirmed || (status === 'warning' && hasArtifact) ? 'completed' : status
 
   let StatusIconComp: Icon | null = null
   let statusColor = 'text-[#9AA0A6]'
   if (effectiveStatus === 'completed') { StatusIconComp = CheckCircle; statusColor = 'text-[#34A853]' }
   else if (effectiveStatus === 'warning') { StatusIconComp = Warning; statusColor = 'text-[#F9AB00]' }
-  else if (effectiveStatus === 'in_progress' || effectiveStatus === 'active_return' || isCurrent) { StatusIconComp = Clock; statusColor = 'text-[#1A73E8]' }
+  else if (effectiveStatus === 'active_return') { StatusIconComp = ArrowBendUpLeft; statusColor = 'text-[#E65100]' }
+  else if (effectiveStatus === 'in_progress' || isViewing) { StatusIconComp = Clock; statusColor = 'text-[#1A73E8]' }
 
   return (
     <button
       onClick={onClick}
       className={cn(
         'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150',
-        isCurrent
+        isViewing
           ? 'bg-[#E8F0FE] shadow-sm'
-          : 'hover:bg-[#F1F3F4] text-[#5F6368]',
-        isCurrent && 'activity-glow'
+          : isHostCurrent && !isHost
+            ? 'bg-[#FFF8E1] hover:bg-[#FFF3CD]'
+            : 'hover:bg-[#F1F3F4] text-[#5F6368]',
+        isViewing && 'activity-glow'
       )}
     >
       <div className={cn(
         'w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0',
-        isCurrent ? 'bg-[#1A73E8] text-white' : 'bg-[#F1F3F4] text-[#9AA0A6]'
+        isViewing ? 'bg-[#1A73E8] text-white' : 'bg-[#F1F3F4] text-[#9AA0A6]'
       )}>
         {index + 1}
       </div>
 
       <div className="flex-1 min-w-0">
         <p className={cn('text-[13px] leading-tight truncate',
-          isCurrent ? 'font-bold text-[#1A73E8]' : 'font-medium text-[#3C4043]'
+          isViewing ? 'font-bold text-[#1A73E8]' : 'font-medium text-[#3C4043]'
         )}>
           {meta.label}
         </p>
-        {!isCurrent && effectiveStatus === 'warning' && (
+        {!isViewing && effectiveStatus === 'warning' && (
           <p className="text-[11px] text-[#F9AB00] mt-0.5">건너뜀</p>
+        )}
+        {effectiveStatus === 'active_return' && (
+          <p className="text-[11px] text-[#E65100] mt-0.5">재검토 중</p>
+        )}
+        {isHostCurrent && !isHost && !isViewing && (
+          <p className="text-[11px] text-[#E65100] mt-0.5 flex items-center gap-1">
+            <Crown size={10} weight="fill" className="inline" />
+            <span>방장 진행 중</span>
+          </p>
         )}
       </div>
 
@@ -100,10 +142,14 @@ function ActivityItem({ code, isCurrent, status, hasArtifact, index, onClick }: 
         {meta.isBackwardDesignFirst && (
           <Star size={16} weight="fill" className="text-[#F9AB00]" />
         )}
+        {/* 방장 현재 위치 표시 */}
+        {isHostCurrent && !isHost && (
+          <Crown size={14} weight="fill" className="text-[#F9AB00]" />
+        )}
         {StatusIconComp && (
           <StatusIconComp size={16} weight="fill" className={statusColor} />
         )}
-        {isCurrent && (
+        {isViewing && (
           <CaretRight size={16} weight="regular" className="text-[#1A73E8]" />
         )}
       </div>
@@ -130,9 +176,11 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
 }
 
 export function ActivitySidebar() {
-  const { project, activityStatus, currentActivity, setCurrentActivity } = useProjectStore()
+  const { project, activityStatus, currentActivity, viewingActivity, setViewingActivity, setCurrentActivity, userProfile } = useProjectStore()
   const [showAnalysis, setShowAnalysis] = useState(false)
   if (!project) return null
+
+  const isHost = project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid
 
   const currentStage = project.currentStage
   const currentStageInfo = STAGES.find(s => s.code === currentStage)!
@@ -150,9 +198,16 @@ export function ActivitySidebar() {
   const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
 
   function handleActivityClick(code: ActivityCode) {
-    if (code === currentActivity) return
-    setCurrentActivity(code)
-    setProjectActivity(project!.id, code).catch(console.error)
+    if (isHost) {
+      // 방장: Firestore 업데이트 + 로컬 동기화
+      if (code === currentActivity) return
+      setCurrentActivity(code)
+      setViewingActivity(code)
+      setProjectActivity(project!.id, code).catch(console.error)
+    } else {
+      // 팀원: 로컬 탐색만 (Firestore 변경 없음)
+      setViewingActivity(code)
+    }
   }
 
   return (
@@ -206,6 +261,22 @@ export function ActivitySidebar() {
         ))}
       </div>
 
+      {/* 팀원 탐색 모드 배너 */}
+      {!isHost && viewingActivity !== currentActivity && (
+        <div className="mx-3 mt-2 rounded-xl bg-[#FFF8E1] border border-[#FFD54F] px-3 py-2 flex items-center gap-2">
+          <Crown size={14} weight="fill" className="text-[#F9AB00] flex-shrink-0" />
+          <p className="flex-1 text-[11px] text-[#E65100] leading-snug">
+            탐색 중 — 채팅은 방장 진행 활동에서 계속됩니다
+          </p>
+          <button
+            onClick={() => setViewingActivity(currentActivity)}
+            className="text-[11px] font-bold text-[#E65100] underline flex-shrink-0 hover:no-underline"
+          >
+            돌아가기
+          </button>
+        </div>
+      )}
+
       {/* 활동 목록 */}
       <div className="flex-1 overflow-y-auto px-2 py-3">
         <p className="text-[11px] font-semibold text-[#9AA0A6] uppercase tracking-widest px-2 mb-1.5">활동</p>
@@ -215,31 +286,46 @@ export function ActivitySidebar() {
               key={code}
               code={code}
               index={idx}
-              isCurrent={code === currentActivity}
+              isViewing={code === viewingActivity}
+              isHostCurrent={code === currentActivity}
+              isHost={isHost}
               status={activityStatus[code] ?? 'not_started'}
               hasArtifact={!!project?.artifacts?.[code]}
+              artifactConfirmed={project?.artifacts?.[code]?.status === 'confirmed'}
               onClick={() => handleActivityClick(code)}
             />
           ))}
         </div>
-      </div>
 
-      {/* 단계 분석 버튼 — 모든 산출물 확정 시 활성화 */}
-      {completedCount === totalCount && totalCount > 0 && (
-        <div className="px-3 pt-2 pb-1">
-          <button
-            onClick={() => setShowAnalysis(true)}
-            className={cn(
-              'morph-btn w-full flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white transition-all',
-              color.bg
-            )}
-            style={{ filter: `drop-shadow(0 3px 10px ${color.pulse})` }}
-          >
-            <ChartBar size={16} weight="fill" />
-            현재 단계 분석하기
-          </button>
-        </div>
-      )}
+        {/* 선택된 활동 개념 안내 박스 */}
+        {viewingActivity && ACTIVITY_INFO[viewingActivity] && (
+          <div className="mt-3 mx-1 rounded-2xl border border-[#AECBFA] bg-[#E8F0FE] px-3.5 py-3">
+            <p className="text-[12px] font-bold text-[#1A73E8] mb-1.5">{ACTIVITY_INFO[viewingActivity]!.title}</p>
+            <p className="text-[11px] text-[#3C4043] leading-snug whitespace-pre-line mb-2">{ACTIVITY_INFO[viewingActivity]!.body}</p>
+            <p className="text-[11px] text-[#5F6368] italic leading-snug">{ACTIVITY_INFO[viewingActivity]!.example}</p>
+          </div>
+        )}
+
+        {/* 단계 분석 버튼 — 모든 산출물 확정 시 활성화 */}
+        {completedCount === totalCount && totalCount > 0 && (
+          <div className="px-1 pt-3 pb-1">
+            <button
+              onClick={() => {
+                setShowAnalysis(true)
+                if (project?.id) setAnalysisOpen(project.id, true).catch(console.error)
+              }}
+              className={cn(
+                'morph-btn w-full flex items-center justify-center gap-2 py-3 text-[13px] font-bold text-white transition-all',
+                color.bg
+              )}
+              style={{ filter: `drop-shadow(0 3px 10px ${color.pulse})` }}
+            >
+              <ChartBar size={16} weight="fill" />
+              현재 단계 분석하기
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* 범례 */}
       <div className="px-4 py-2.5 border-t border-[#F1F3F4] flex gap-3">
@@ -257,7 +343,10 @@ export function ActivitySidebar() {
         </Tooltip>
       </div>
 
-      {showAnalysis && <StageAnalysisModal onClose={() => setShowAnalysis(false)} />}
+      {showAnalysis && <StageAnalysisModal isHost={isHost} onClose={() => {
+        setShowAnalysis(false)
+        if (project?.id) setAnalysisOpen(project.id, false).catch(console.error)
+      }} />}
     </div>
   )
 }

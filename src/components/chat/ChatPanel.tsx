@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, type ActivityType, type ActivityCode } from '@/types'
 import { ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact } from '@/lib/firebase/projects'
+import { Timestamp } from 'firebase/firestore'
 import { TeamDiscussionBanner } from './TeamDiscussionBanner'
 import { TeamDiscussionProposal } from './TeamDiscussionProposal'
+import { HelpCard } from './HelpCard'
 import { ArtifactSaveProposal } from './ArtifactSaveProposal'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
@@ -22,24 +24,49 @@ const STAGE_CORNER: Record<string, string> = {
   DI: 'rgba(230,81,0,0.08)', E: 'rgba(198,40,40,0.08)',
 }
 
+// 단계별 AI 말풍선 색상
+const STAGE_BUBBLE: Record<string, { bg: string; border: string; text: string }> = {
+  T:  { bg: '#EAF2FF', border: '#4285F4', text: '#1a2e5a' },
+  A:  { bg: '#F3E5F5', border: '#7B1FA2', text: '#2d0045' },
+  Ds: { bg: '#E0F2F1', border: '#00897B', text: '#003d38' },
+  DI: { bg: '#FBE9E7', border: '#E65100', text: '#4a1a00' },
+  E:  { bg: '#FFEBEE', border: '#C62828', text: '#4a0000' },
+}
+
 // ─── 안(案) 선택지 파싱 ──────────────────────────────
 interface ParsedOption { label: string; content: string }
 interface ParsedOptions { pre: string; options: ParsedOption[]; post: string }
 
 function parseOptions(text: string): ParsedOptions | null {
-  // **A안:** "..." 또는 **A안**: "..." 형식 감지 (콜론이 볼드 안/밖 모두 지원)
-  const regex = /\*\*([A-Za-z0-9]+안):?\*\*\s*:?\s*"([^"]+)"/g
-  const options: ParsedOption[] = []
+  // **A안:** "..." 또는 A안: "..." 형식 감지 (볼드 유무 모두 지원)
+  const regex = /(?:\*\*([A-Za-z0-9]+안):?\*\*|^([A-Za-z0-9]+안):)\s*:?\s*"([^"]+)"/gm
   const matches = [...text.matchAll(regex)]
   if (matches.length < 2) return null
 
-  for (const m of matches) {
-    options.push({ label: m[1], content: m[2].trim() })
-  }
+  // 캡처 그룹 정규화: bold(m[1]) 또는 non-bold(m[2]) 중 존재하는 것이 label, m[3]이 content
+  const normalized = matches.map(m => ({ label: m[1] || m[2], content: m[3], index: m.index!, raw: m[0] }))
 
-  const firstIdx = matches[0].index!
-  const lastMatch = matches[matches.length - 1]
-  const lastIdx = lastMatch.index! + lastMatch[0].length
+  // A안부터 시작하는 첫 번째 연속 그룹만 캡처
+  const aIdx = normalized.findIndex(m => m.label === 'A안')
+  if (aIdx === -1) return null
+
+  const ORDER = ['A안', 'B안', 'C안', 'D안', 'E안']
+  const group = [normalized[aIdx]]
+  for (let i = aIdx + 1; i < normalized.length; i++) {
+    const expected = ORDER[group.length]
+    if (normalized[i].label === expected) group.push(normalized[i])
+    else break
+  }
+  if (group.length < 2) return null
+
+  const options: ParsedOption[] = group.map(m => ({
+    label: m.label,
+    content: m.content.trim().replace(/\*\*/g, ''),
+  }))
+
+  const firstIdx = group[0].index
+  const lastItem = group[group.length - 1]
+  const lastIdx = lastItem.index + lastItem.raw.length
 
   return {
     pre: text.slice(0, firstIdx).trim(),
@@ -256,6 +283,16 @@ function OptionsMessage({
           )
         })}
 
+        {/* 이 중에는 없다 — 재논의 버튼 (호스트만, 선택 전) */}
+        {isHost && !selected && (
+          <button
+            onClick={() => handleFinalSelect('재논의', '이 중에 마음에 드는 안이 없어요. 다시 논의하고 싶습니다.')}
+            className="self-start text-[11px] text-[#5F6368] hover:text-[#C62828] underline underline-offset-2 transition-colors"
+          >
+            이 중에는 없다 — 다시 논의하기
+          </button>
+        )}
+
         {post && (
           <div className="bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
             <MarkdownContent text={post} />
@@ -267,7 +304,109 @@ function OptionsMessage({
 }
 
 // ─── 마크다운 렌더러 ─────────────────────────────────
+// 가이드 카드 이모지 항목을 별도 블록으로 분리
+function splitGuideLines(text: string): { before: string; lines: string[]; after: string } | null {
+  const GUIDE_EMOJIS: string[] = [] // 이모지 카드 형식 미사용 — 섹션형 마크다운으로 전환
+  const hasGuide = GUIDE_EMOJIS.some(e => text.includes(e))
+  if (!hasGuide) return null
+
+  // 이모지가 시작되는 위치 찾기
+  const firstIdx = Math.min(...GUIDE_EMOJIS.map(e => {
+    const i = text.indexOf(e); return i === -1 ? Infinity : i
+  }))
+  if (firstIdx === Infinity) return null
+
+  const before = text.slice(0, firstIdx).trim()
+  const rest = text.slice(firstIdx)
+
+  // 이모지 기준으로 분리
+  const lines: string[] = []
+  let current = ''
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i]
+    const isEmoji = GUIDE_EMOJIS.some(e => rest.startsWith(e, i))
+    if (isEmoji && current.trim()) {
+      lines.push(current.trim())
+      current = ch
+    } else {
+      current += ch
+    }
+  }
+  if (current.trim()) lines.push(current.trim())
+
+  // 마지막 가이드 항목 이후 텍스트 분리
+  const lastGuideIdx = Math.max(...GUIDE_EMOJIS.map(e => {
+    const idx = rest.lastIndexOf(e); return idx === -1 ? -1 : idx
+  }))
+  if (lastGuideIdx === -1) return null
+
+  // 마지막 가이드 줄이 끝나는 위치 찾기 (다음 빈 줄 또는 텍스트)
+  const afterGuide = (() => {
+    const guideLines = lines.filter(l => GUIDE_EMOJIS.some(e => l.startsWith(e)))
+    const nonGuide = lines.filter(l => !GUIDE_EMOJIS.some(e => l.startsWith(e)))
+    return { guide: guideLines, after: nonGuide.join('\n').trim() }
+  })()
+
+  return { before, lines: afterGuide.guide, after: afterGuide.after }
+}
+
 function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean }) {
+  // AI가 <br> 태그를 생성하는 경우 줄바꿈으로 치환
+  // AI가 첫 줄에 [탐색] [팀+AI] 같은 활동유형/행위주체 태그를 출력하는 경우 제거
+  const sanitized = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/^(\s*\[[^\]\n]{1,20}\]\s*){1,4}\n/u, '')
+    // CommonMark 한계: **'text'**한국어 패턴에서 ' 뒤 ** 가 닫힘 기호로 인식 안 됨
+    // → **'text'** 를 **text** 로 정규화
+    .replace(/\*\*'([^'*\n]+)'\*\*/g, '**$1**')
+    // CommonMark 우측 플랭킹 규칙 한계: )**한국어 패턴 (닫는 구두점 뒤 **)
+    // → NBSP 삽입으로 강제 bold 닫힘 처리
+    .replace(/([)'"'"」』】）])\*\*([\uAC00-\uD7A3])/g, '$1**\u00A0$2')
+
+  const guide = splitGuideLines(sanitized)
+
+  if (guide) {
+    const strongComp = (isDark: boolean) => ({
+      p: ({ children }: { children?: React.ReactNode }) => <p className="mb-1 leading-relaxed">{children}</p>,
+      strong: ({ children }: { children?: React.ReactNode }) => (
+        <span className={cn('inline-block px-1.5 py-0.5 rounded-md text-[13px] font-semibold leading-snug mx-0.5', isDark ? 'bg-white/25 text-white' : 'bg-[#E8F0FE] text-[#1A73E8]')}>{children}</span>
+      ),
+    })
+    return (
+      <div>
+        {guide.before && (
+          <div className="mb-2">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={strongComp(dark)}>
+              {guide.before}
+            </ReactMarkdown>
+          </div>
+        )}
+        <div className={cn('rounded-xl overflow-hidden', dark ? 'border border-white/20' : 'border border-current/10')}>
+          {guide.lines.map((line, i) => (
+            <div
+              key={i}
+              className={cn(
+                'px-3 py-2 w-full',
+                i !== 0 && (dark ? 'border-t border-white/15' : 'border-t border-current/10'),
+              )}
+            >
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={strongComp(dark)}>
+                {line}
+              </ReactMarkdown>
+            </div>
+          ))}
+        </div>
+        {guide.after && (
+          <div className="mt-2">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={strongComp(dark)}>
+              {guide.after}
+            </ReactMarkdown>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -301,7 +440,7 @@ function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean 
         // 테이블 렌더링
         table: ({ children }) => (
           <div className="my-2 overflow-x-auto rounded-xl border border-[#DADCE0]">
-            <table className="min-w-full text-sm border-collapse">{children}</table>
+            <table className="min-w-max w-full text-sm border-collapse">{children}</table>
           </div>
         ),
         thead: ({ children }) => (
@@ -315,11 +454,11 @@ function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean 
           </th>
         ),
         td: ({ children }) => (
-          <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed">{children}</td>
+          <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed whitespace-nowrap">{children}</td>
         ),
       }}
     >
-      {text}
+      {sanitized}
     </ReactMarkdown>
   )
 }
@@ -339,11 +478,12 @@ function parseAnalysisToSections(text: string): Record<string, string> {
 
   for (const line of lines) {
     if (/^1\.|^1\./.test(line) || line.includes('합의한 핵심')) {
-      flush(); currentKey = '합의 내용'; buffer = []
+      flush(); currentKey = '토론 결과'; buffer = []
     } else if (/^2\./.test(line) || line.includes('결정되지 않')) {
-      flush(); currentKey = '미결 사항'; buffer = []
+      flush(); currentKey = '보완할 점'; buffer = []
     } else if (/^3\./.test(line) || line.includes('추천 행동') || line.includes('다음 단계')) {
-      flush(); currentKey = '다음 행동'; buffer = []
+      // "다음 행동"은 DISPLAY_BLOCKED_KEYS에 막혀 표시 안 됨 → 산출물에서 제외
+      flush(); currentKey = ''; buffer = []
     } else if (currentKey && line.trim()) {
       buffer.push(line.replace(/^[-·☐\s]+/, '').trim())
     }
@@ -379,6 +519,16 @@ function parseActivityReturn(text: string): { targetActivity: string; cleanText:
   return {
     targetActivity: match[1].trim(),
     cleanText: text.replace(/\n*\[ACTIVITY_RETURN:[^\]]+\]/, '').trimEnd(),
+  }
+}
+
+// ─── HELP_CARD 신호 파싱 ──────────────────────────
+function parseHelpCard(text: string): { cleanText: string; helpMessage: string | null } {
+  const match = text.match(/\[HELP_CARD:\s*([^\]]+)\]/)
+  if (!match) return { cleanText: text, helpMessage: null }
+  return {
+    cleanText: text.replace(/\[HELP_CARD:\s*[^\]]+\]\n?/, '').trim(),
+    helpMessage: match[1].trim(),
   }
 }
 
@@ -466,8 +616,8 @@ interface ArtifactUpdateItem {
 function parseArtifactUpdates(text: string): { updates: ArtifactUpdateItem[]; cleanText: string } {
   // actCode key → sections 버킷
   const buckets: Record<string, Record<string, string>> = {}
-  // [ARTIFACT_UPDATE@CODE: key=val] 또는 [ARTIFACT_UPDATE: key=val]
-  const regex = /\[ARTIFACT_UPDATE(?:@([A-Za-z0-9-]+))?:\s*([^=\]]+)=([^\]]+)\]/g
+  // [ARTIFACT_UPDATE@CODE: key=val] 또는 [ARTIFACT_UPDATE: key=val] (다중 줄 내용 포함)
+  const regex = /\[ARTIFACT_UPDATE(?:@([A-Za-z0-9-]+))?:\s*([^=\]]+)=([\s\S]+?)\]/g
   let match
   let cleanText = text
 
@@ -487,7 +637,7 @@ function parseArtifactUpdates(text: string): { updates: ArtifactUpdateItem[]; cl
   }))
 
   if (updates.some(u => Object.keys(u.sections).length > 0)) {
-    cleanText = text.replace(/\n*\[ARTIFACT_UPDATE(?:@[A-Za-z0-9-]+)?:[^\]]+\]/g, '').trimEnd()
+    cleanText = text.replace(/\n*\[ARTIFACT_UPDATE(?:@[A-Za-z0-9-]+)?:[\s\S]+?\]/g, '').trimEnd()
   }
   return { updates, cleanText }
 }
@@ -581,7 +731,7 @@ function ContextMenuWrapper({ children, onReply, className }: {
 }
 
 // ─── 메시지 버블 ──────────────────────────────────────
-function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply }: {
+function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage }: {
   role: 'user' | 'assistant'
   content: string
   activityType?: ActivityType
@@ -591,6 +741,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
   isSelf?: boolean
   replyTo?: { id: string; content: string; senderName?: string }
   onReply?: () => void
+  stage?: string
 }) {
   const isUser = role === 'user'
   const alignRight = isUser && isSelf
@@ -635,10 +786,16 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
 
         <div className={cn(
           'px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
-          !isUser && 'bg-[#EAF2FF] text-[#1a2e5a] rounded-tl-none border-l-[3px] border-[#4285F4]',
+          !isUser && 'rounded-tl-none border-l-[3px]',
           isUser && (alignRight ? 'rounded-tr-none' : 'rounded-tl-none'),
         )}
-          style={isUser ? { backgroundColor: avatarColor, color: textOnColor, filter: 'saturate(1.2) brightness(0.95)' } : undefined}
+          style={isUser
+            ? { backgroundColor: avatarColor, color: textOnColor, filter: 'saturate(1.2) brightness(0.95)' }
+            : (() => {
+                const s = STAGE_BUBBLE[stage ?? 'T'] ?? STAGE_BUBBLE['T']
+                return { backgroundColor: s.bg, color: s.text, borderColor: s.border }
+              })()
+          }
         >
           {isUser
             ? <span className="whitespace-pre-wrap">{content}</span>
@@ -670,7 +827,7 @@ function AnalysisBubble({ text }: { text: string }) {
 }
 
 // ─── 스트리밍 버블 ────────────────────────────────────
-function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: boolean }) {
+function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis?: boolean; stage?: string }) {
   if (!text) return null
   if (isAnalysis) {
     return (
@@ -690,15 +847,17 @@ function StreamingBubble({ text, isAnalysis }: { text: string; isAnalysis?: bool
       </div>
     )
   }
+  const s = STAGE_BUBBLE[stage ?? 'T'] ?? STAGE_BUBBLE['T']
   return (
     <div className="flex gap-2 mb-3">
       <div className="w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
         style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
         AI
       </div>
-      <div className="max-w-[75%] bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
+      <div className="max-w-[75%] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] text-sm leading-relaxed"
+        style={{ backgroundColor: s.bg, color: s.text, borderColor: s.border }}>
         <MarkdownContent text={text} />
-        <span className="inline-block w-1 h-4 bg-[#4285F4] animate-pulse ml-0.5 align-middle" />
+        <span className="inline-block w-1 h-4 animate-pulse ml-0.5 align-middle" style={{ backgroundColor: s.border }} />
       </div>
     </div>
   )
@@ -780,6 +939,7 @@ export function ChatPanel() {
     teamDiscussionStartIdx, setTeamDiscussionStartIdx,
     pendingArtifactSave, setPendingArtifactSave,
     currentArtifact, setCurrentArtifact,
+    setViewingActivity,
     userProfile,
   } = useProjectStore()
 
@@ -787,17 +947,30 @@ export function ChatPanel() {
   const [isLoading, setIsLoading] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isIdle, setIsIdle] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
   const [showDiscussionConfirm, setShowDiscussionConfirm] = useState(false)
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null)
   const [replyTo, setReplyTo] = useState<{ id: string; content: string; senderName?: string } | null>(null)
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
   const [slashCmdIdx, setSlashCmdIdx] = useState(0)
   const [remoteStreamingText, setRemoteStreamingText] = useState('')
+  const [isRemoteLoading, setIsRemoteLoading] = useState(false) // 다른 팀원이 AI 요청 중
+  // HELP_CARD: 마지막 AI 응답에 대한 도움 메시지 (messageId → helpMessage)
+  const [helpCardMap, setHelpCardMap] = useState<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement>(null)
   const introSentRef = useRef<Partial<Record<ActivityCode, true>>>({})
   // 스트리밍 중 Firestore 동기화용 interval ref
   const streamingFlushRef = useRef<NodeJS.Timeout | null>(null)
   const streamingAccumRef = useRef('')
+
+  // 활동 전환 시 해당 활동에만 속하는 로컬 UI 상태 초기화
+  useEffect(() => {
+    setPendingAdvance(null)
+    setChatError(null)
+    setIsIdle(false)
+    setHelpCardMap({})
+    setReplyTo(null)
+  }, [currentActivity])
 
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
   function applyArtifactUpdates(sections: Record<string, string>, actCode?: ActivityCode) {
@@ -828,8 +1001,8 @@ export function ChatPanel() {
       createdBy: userProfile?.uid ?? 'ai',
       meta: {
         author: 'AI 자동 기록',
-        createdAt: { toDate: () => new Date() } as any,
-        updatedAt: { toDate: () => new Date() } as any,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
         evidence: '대화 내용 자동 추출',
         approvalStatus: 'pending' as const,
       },
@@ -879,17 +1052,15 @@ export function ChatPanel() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingText, remoteStreamingText])
 
-  // 다른 팀원의 AI 스트리밍 상태 구독
+  // 다른 팀원의 AI 스트리밍 상태 구독 (사용자별 개별 문서 — 동시 스트리밍 충돌 없음)
   useEffect(() => {
     if (!project?.id || !currentActivity || !userProfile?.uid) return
-    const unsub = watchStreamingState(project.id, currentActivity, (state) => {
-      if (state && state.senderUid !== userProfile.uid) {
-        setRemoteStreamingText(state.text)
-      } else {
-        setRemoteStreamingText('')
-      }
+    const unsub = watchStreamingState(project.id, currentActivity, userProfile.uid, (states) => {
+      const active = states.length > 0
+      setIsRemoteLoading(active)
+      setRemoteStreamingText(active ? states[0].text : '')
     })
-    return () => { unsub(); setRemoteStreamingText('') }
+    return () => { unsub(); setRemoteStreamingText(''); setIsRemoteLoading(false) }
   }, [project?.id, currentActivity, userProfile?.uid])
 
   if (!project) return null
@@ -934,13 +1105,20 @@ export function ChatPanel() {
         },
         // 현재 활동의 기존 산출물 내용 전달 (AI가 수정 시 참조)
         currentArtifact: proj.artifacts?.[currentActivity] ?? null,
-        // 전체 확정 산출물 전달 (브리핑·맥락 파악용)
+        // 현재 활동 이전 확정 산출물만 전달 (미래 단계 산출물은 제외해 AI 혼선 방지)
         confirmedArtifacts: proj.artifacts
-          ? Object.fromEntries(
-              Object.entries(proj.artifacts)
-                .filter(([, a]) => a.status === 'confirmed')
-                .map(([code, a]) => [code, { title: a.title, content: a.content }])
-            )
+          ? (() => {
+              const allActivities = STAGES.flatMap(s => s.activities)
+              const currentIdx = allActivities.indexOf(currentActivity)
+              return Object.fromEntries(
+                Object.entries(proj.artifacts)
+                  .filter(([code, a]) => {
+                    const idx = allActivities.indexOf(code as ActivityCode)
+                    return a.status === 'confirmed' && idx < currentIdx
+                  })
+                  .map(([code, a]) => [code, { title: a.title, content: a.content }])
+              )
+            })()
           : undefined,
         teamMembers: teamMembersList,
         // 현재 활동 상태 (active_return이면 AI가 확정 산출물도 수정 가능)
@@ -952,17 +1130,24 @@ export function ChatPanel() {
     const reader = response.body!.getReader()
     const decoder = new TextDecoder()
     let fullText = ''
+    let buf = ''
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      for (const line of decoder.decode(value).split('\n')) {
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
         if (!line.startsWith('data: ')) continue
-        const data = JSON.parse(line.slice(6))
-        if (data.type === 'text') { fullText += data.text; onChunk(data.text) }
-        if (data.type === 'done') onDone(fullText)
+        try {
+          const data = JSON.parse(line.slice(6))
+          if (data.type === 'text') { fullText += data.text; onChunk(data.text) }
+          if (data.type === 'done') { onDone(fullText); return }
+        } catch { /* 잘못된 SSE 라인 무시 */ }
       }
     }
+    if (fullText) onDone(fullText)
   }
 
   // ─── 활동 전진 처리 (Firestore 동기화 포함, 크로스 스테이지 지원) ──
@@ -983,7 +1168,7 @@ export function ChatPanel() {
       const nextIdx = allActivities.indexOf(nextActivity)
       if (nextIdx <= currentIdx) return
       await advanceActivity(proj.id, allActivities, currentActivity, nextActivity)
-        .catch(console.error)
+        .catch((err) => { console.error(err); setChatError('다음 활동으로 이동하지 못했습니다. 다시 시도해주세요.') })
     } else {
       // 크로스 스테이지: 현재 스테이지 나머지 + 다음 스테이지 활동을 합쳐서 처리
       const combinedActivities = [
@@ -996,7 +1181,7 @@ export function ChatPanel() {
         currentActivity,
         nextActivity,
         nextStageInfo.code
-      ).catch(console.error)
+      ).catch((err) => { console.error(err); setChatError('다음 활동으로 이동하지 못했습니다. 다시 시도해주세요.') })
     }
 
     setCurrentActivity(nextActivity)
@@ -1005,8 +1190,11 @@ export function ChatPanel() {
   // ─── 활동 되돌아가기 처리 (Firestore 동기화 포함) ──────
   async function handleActivityReturn(targetCode: string) {
     if (!(targetCode in ACTIVITY_META)) return
-    await returnToActivity(proj.id, targetCode as ActivityCode).catch(console.error)
-    setCurrentActivity(targetCode as ActivityCode)
+    const code = targetCode as ActivityCode
+    await returnToActivity(proj.id, code)
+      .catch((err) => { console.error(err); setChatError('이전 활동으로 돌아가지 못했습니다. 다시 시도해주세요.') })
+    await setActivityStatus(proj.id, code, 'active_return').catch(console.error)
+    setCurrentActivity(code)
   }
 
   // ─── 활동 시작 환영 메시지 (API 호출 없음, 정적) ────────
@@ -1018,7 +1206,7 @@ export function ChatPanel() {
       activityCode: currentActivity,
       activityType: '제시' as const,
       agentType: 'orchestrator' as const,
-      createdAt: { toDate: () => new Date() } as any,
+      createdAt: Timestamp.now(),
     }
     addMessage(msg)
     setIsIdle(true)  // 환영 후 즉시 대기 상태
@@ -1058,6 +1246,9 @@ export function ChatPanel() {
     const merged = { ...baseContent, ...newContent }
     const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[currentActivity]?.version ?? 0)) + 1
 
+    // 우측 패널을 현재 활동으로 먼저 전환 (setViewingActivity가 currentArtifact를 null로 초기화하므로 반드시 먼저 호출)
+    setViewingActivity(currentActivity)
+    // 그 다음 artifact 설정 (초기화 이후에 덮어씀)
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
       activityCode: currentActivity,
@@ -1069,8 +1260,8 @@ export function ChatPanel() {
       createdBy: userProfile?.uid ?? 'demo-user',
       meta: {
         author: 'AI 분석',
-        createdAt: { toDate: () => new Date() } as any,
-        updatedAt: { toDate: () => new Date() } as any,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
         evidence: '팀 자유 토론 분석',
         approvalStatus: 'pending',
       },
@@ -1110,7 +1301,65 @@ export function ChatPanel() {
       .map(m => `${m.role === 'user' ? '교사' : 'AI'}: ${m.content}`)
       .join('\n\n')
 
-    const analysisPrompt = `다음은 방금 진행된 팀 자유 토론 내용입니다. AI 개입 없이 교사들끼리 나눈 대화입니다.
+    // 활동별 분석 지시: [ARTIFACT_UPDATE] 신호로 저장 형식을 명확히 지정
+    // 활동별 맞춤 분석 프롬프트 (없으면 공통 형식 사용)
+    const activityAnalysisPrompt: Partial<Record<ActivityCode, string>> = {
+      'T-1-1': `다음 토론을 분석하여 합의된 팀 비전을 정리해주세요.
+
+---
+${discussionSummary}
+---
+
+출력 형식:
+1. 팀이 합의한 핵심 내용 (3줄 이내)
+2. 보완이 필요한 부분 (없으면 생략)
+
+분석 후 반드시 아래 신호를 출력한다 (레이블 없이 신호만 단독 출력):
+[ARTIFACT_UPDATE: 팀 비전=비전 문장]`,
+
+      'T-1-2': `다음 토론을 분석하여 합의된 교수학습 방향을 정리해주세요.
+
+---
+${discussionSummary}
+---
+
+출력 형식:
+1. 팀이 합의한 핵심 내용 (3줄 이내)
+2. 보완이 필요한 부분 (없으면 생략)
+
+분석 후 반드시 아래 신호를 출력한다 (레이블 없이 신호만 단독 출력):
+[ARTIFACT_UPDATE: 교수학습 방향=키워드1 + 키워드2 — 한 줄 통합 방향 문장]
+합의가 완전하지 않아도 현재까지 논의된 키워드로 초안을 저장한다.`,
+
+      'T-2-1': `다음 토론을 분석하여 합의된 역할 배분을 정리해주세요.
+
+---
+${discussionSummary}
+---
+
+출력 형식:
+1. 팀이 합의한 핵심 내용 (역할별 담당자 명시)
+2. 보완이 필요한 부분 (없으면 생략)
+
+분석 후 배정된 역할별로 각각 아래 신호를 출력한다 (레이블 없이 신호만 단독 출력):
+[ARTIFACT_UPDATE: 역할명=담당자 이름 — 역할 내용]`,
+
+      'T-2-2': `다음 토론을 분석하여 합의된 팀 규칙을 정리해주세요.
+
+---
+${discussionSummary}
+---
+
+출력 형식:
+1. 팀이 합의한 규칙 목록 (규칙명 + 구체적 내용 + 위반 시 조치 포함)
+2. 보완이 필요한 부분 (없으면 생략)
+
+분석 후 합의된 규칙 전체를 아래 신호 하나로 출력한다 (레이블 없이 신호만 단독 출력):
+⚠️ 키워드 나열 금지. 위에서 정리한 규칙의 설명과 위반 시 조치를 빠짐없이 포함한다.
+[ARTIFACT_UPDATE: 팀 규칙=**규칙명1**: 규칙 설명 (위반 시: 조치) **규칙명2**: 규칙 설명 (위반 시: 조치) ...]`,
+    }
+
+    const analysisPrompt = activityAnalysisPrompt[currentActivity] ?? `다음은 방금 진행된 팀 자유 토론 내용입니다. AI 개입 없이 교사들끼리 나눈 대화입니다.
 
 ---
 ${discussionSummary}
@@ -1118,12 +1367,11 @@ ${discussionSummary}
 
 이 토론을 분석하여 다음을 제시해주세요:
 1. 팀이 합의한 핵심 내용 (3줄 이내)
-2. 아직 결정되지 않은 부분
-3. 다음 단계를 위한 AI 추천 행동 2가지`
+2. 보완이 필요한 부분 (없으면 생략)`
 
     try {
       await streamFromAPI(
-        [...messages.map(m => ({ role: m.role, content: m.content })),
+        [...messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
          { role: 'user', content: analysisPrompt }],
         (text) => appendStreamingText(text),
         (fullText) => {
@@ -1139,7 +1387,7 @@ ${discussionSummary}
             activityCode: currentActivity,
             activityType: '성찰',
             agentType: 'orchestrator',
-            createdAt: { toDate: () => new Date() } as any,
+            createdAt: Timestamp.now(),
           })
           clearStreamingText()
           saveMessage(proj.id, currentActivity, {
@@ -1171,11 +1419,96 @@ ${discussionSummary}
 
   const isTeamMode = discussionMode === 'team_discussion'
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
-  const visibleMessages = messages.filter(m => m.role !== 'system')
+
+  const visibleMessages = useMemo(
+    () => messages.filter(m => m.role !== 'system'),
+    [messages]
+  )
 
   // 마지막 AI 메시지에 선택지가 있으면 AI 대기 모드
-  const lastAIMsg = [...visibleMessages].reverse().find(m => m.role === 'assistant')
-  const isWaitingForChoice = !isTeamMode && !!lastAIMsg && !!parseOptions(lastAIMsg.content)
+  const lastAIMsg = useMemo(
+    () => [...visibleMessages].reverse().find(m => m.role === 'assistant'),
+    [visibleMessages]
+  )
+  const isWaitingForChoice = useMemo(
+    () => !isTeamMode && !!lastAIMsg
+      && lastAIMsg.activityCode === currentActivity
+      && !!parseOptions(lastAIMsg.content),
+    [isTeamMode, lastAIMsg, currentActivity]
+  )
+
+  // ─── 직접 메시지 전송 (HelpCard 등 버튼에서 호출) ──────
+  async function sendMessageDirectly(text: string) {
+    if (!text.trim() || isLoading || !project) return
+    setIsIdle(false)
+    setChatError(null)
+    const senderDisplayName = userProfile?.displayName
+    const tempUserMsg = {
+      id: Date.now().toString(),
+      role: 'user' as const,
+      content: text,
+      activityCode: currentActivity,
+      activityType: undefined,
+      userId: userProfile?.uid,
+      displayName: senderDisplayName,
+      createdAt: Timestamp.now(),
+    }
+    addMessage(tempUserMsg)
+    saveMessage(proj.id, currentActivity, {
+      role: 'user', content: text,
+      activityCode: currentActivity,
+      userId: userProfile?.uid,
+      displayName: senderDisplayName,
+    }).catch(console.error)
+    setIsLoading(true)
+    clearStreamingText()
+    streamingAccumRef.current = ''
+    streamingFlushRef.current = setInterval(() => {
+      if (streamingAccumRef.current && userProfile?.uid) {
+        setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid).catch(() => {})
+      }
+    }, 800)
+    try {
+      await streamFromAPI(
+        [...messages, tempUserMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
+        (chunk) => { appendStreamingText(chunk); streamingAccumRef.current += chunk },
+        (fullText) => {
+          const signal = parseDiscussionSignal(fullText)
+          let t1 = signal ? signal.cleanText : fullText
+          const advance = parseActivityAdvance(t1)
+          t1 = advance ? advance.cleanText : t1
+          const ret = parseActivityReturn(t1)
+          const t2 = ret ? ret.cleanText : t1
+          const { codes: cCodes, cleanText: t2c } = parseArtifactConfirm(t2)
+          const { updates: upd, cleanText: t2d } = parseArtifactUpdates(t2c)
+          const { cleanText: finalText, helpMessage: hm } = parseHelpCard(t2d)
+          if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
+          const newMsgId = generateMessageId(proj.id, currentActivity)
+          addMessage({ id: newMsgId, role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now() })
+          if (hm) setHelpCardMap(prev => ({ ...prev, [newMsgId]: hm }))
+          clearStreamingText()
+          // 메시지 저장 완료 후 streaming 상태 삭제 → B 화면에서 공백 없이 메시지로 전환
+          saveMessage(proj.id, currentActivity, { role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator' }, newMsgId)
+            .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
+            .catch(console.error)
+          if (signal) setPendingTeamDiscussion({ topic: signal.topic })
+          upd.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
+          if (cCodes.length > 0) applyArtifactConfirm(cCodes)
+          if (!upd.some(u => Object.keys(u.sections).length > 0)) {
+            const saveIntent = parseSaveIntent(fullText)
+            if (saveIntent) setPendingArtifactSave(saveIntent)
+          }
+          if (advance) setPendingAdvance(advance.nextActivity)
+          else if (ret) handleActivityReturn(ret.targetActivity)
+        }
+      )
+    } catch (err) {
+      console.error('Chat error:', err)
+      setChatError('AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.')
+      if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
+      clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? '').catch(() => {})
+    } finally { setIsLoading(false) }
+  }
 
   // ─── 메시지 전송 ──────────────────────────────────────
   async function handleSend() {
@@ -1184,13 +1517,15 @@ ${discussionSummary}
     const userMessage = input.trim()
     setInput('')
     setIsIdle(false)  // 사용자 입력 시 idle 해제
+    setChatError(null)  // 새 메시지 전송 시 이전 에러 초기화
 
-    const senderDisplayName = userProfile?.uid
-      ? proj.memberInfo?.[userProfile.uid]?.displayName ?? userProfile.displayName
-      : undefined
+    // memberInfo 캐시 대신 현재 프로필 이름을 직접 사용 (이름 변경 시 불일치 방지)
+    const senderDisplayName = userProfile?.displayName
 
+    // P3: Firestore ID 미리 생성 → 로컬 메시지와 Firestore 메시지 ID 동일
+    const userMsgId = generateMessageId(proj.id, currentActivity)
     const tempUserMsg = {
-      id: Date.now().toString(),
+      id: userMsgId,
       role: 'user' as const,
       content: userMessage,
       activityCode: currentActivity,
@@ -1198,7 +1533,7 @@ ${discussionSummary}
       userId: userProfile?.uid,
       displayName: senderDisplayName,
       replyTo: replyTo ?? undefined,
-      createdAt: { toDate: () => new Date() } as any,
+      createdAt: Timestamp.now(),
     }
     addMessage(tempUserMsg)
     saveMessage(proj.id, currentActivity, {
@@ -1208,7 +1543,7 @@ ${discussionSummary}
       userId: userProfile?.uid,
       displayName: senderDisplayName,
       replyTo: replyTo ?? undefined,
-    }).catch(console.error)
+    }, userMsgId).catch(console.error)
     setReplyTo(null)
 
     // 팀 토론 모드 또는 선택 대기 중: AI 호출 없이 메시지만 저장
@@ -1217,15 +1552,19 @@ ${discussionSummary}
     setIsLoading(true)
     clearStreamingText()
     streamingAccumRef.current = ''
+    // 즉시 빈 텍스트로 상태 전송 → 팀원 화면에 "대화를 기다리고 있어요" 즉시 표시
+    if (userProfile?.uid) {
+      setStreamingState(proj.id, currentActivity, '', userProfile.uid).catch(() => {})
+    }
     // 800ms 간격으로 스트리밍 텍스트를 Firestore에 동기화 (다른 팀원도 볼 수 있도록)
     streamingFlushRef.current = setInterval(() => {
-      if (streamingAccumRef.current && userProfile?.uid) {
+      if (userProfile?.uid) {
         setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid).catch(() => {})
       }
     }, 800)
     try {
       await streamFromAPI(
-        [...messages, tempUserMsg].map(m => ({ role: m.role, content: m.content })),
+        [...messages, tempUserMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
         (text) => {
           appendStreamingText(text)
           streamingAccumRef.current += text
@@ -1238,28 +1577,33 @@ ${discussionSummary}
           const ret = parseActivityReturn(text1)
           const text2 = ret ? ret.cleanText : text1
           const { codes: confirmCodes2, cleanText: text2c } = parseArtifactConfirm(text2)
-          const { updates, cleanText } = parseArtifactUpdates(text2c)
+          const { updates, cleanText: text2d } = parseArtifactUpdates(text2c)
+          const { cleanText, helpMessage } = parseHelpCard(text2d)
           const displayText = cleanText
           // interval 정리 + Firestore 스트리밍 상태 삭제
           if (streamingFlushRef.current) {
             clearInterval(streamingFlushRef.current)
             streamingFlushRef.current = null
           }
-          clearStreamingState(proj.id, currentActivity).catch(() => {})
+          const newMsgId = generateMessageId(proj.id, currentActivity)
           addMessage({
-            id: (Date.now() + 1).toString(),
+            id: newMsgId,
             role: 'assistant',
             content: displayText,
             activityCode: currentActivity,
             activityType: '생성',
             agentType: 'orchestrator',
-            createdAt: { toDate: () => new Date() } as any,
+            createdAt: Timestamp.now(),
           })
+          if (helpMessage) setHelpCardMap(prev => ({ ...prev, [newMsgId]: helpMessage }))
           clearStreamingText()
+          // 메시지 저장 완료 후 streaming 상태 삭제 → B 화면에서 공백 없이 메시지로 전환
           saveMessage(proj.id, currentActivity, {
             role: 'assistant', content: displayText,
             activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
-          }).catch(console.error)
+          }, newMsgId)
+            .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
+            .catch((err) => { console.error(err); setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.') })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           const hasSavedInResponse = updates.some(u => Object.keys(u.sections).length > 0)
           updates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
@@ -1280,12 +1624,13 @@ ${discussionSummary}
       )
     } catch (err) {
       console.error('Chat error:', err)
+      setChatError('AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.')
       // 에러 시에도 스트리밍 상태 정리
       if (streamingFlushRef.current) {
         clearInterval(streamingFlushRef.current)
         streamingFlushRef.current = null
       }
-      clearStreamingState(proj.id, currentActivity).catch(() => {})
+      clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? '').catch(() => {})
     }
     finally { setIsLoading(false) }
   }
@@ -1436,6 +1781,17 @@ ${discussionSummary}
         />
       )}
 
+      {/* 가드레일 경고 배너: A-2-3 미완성 시 Ds 설계 활동에서 표시 */}
+      {ACTIVITY_META[currentActivity]?.isGuardrailTarget && !project.isA23Completed && (
+        <div className="mx-4 mt-3 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-[#FFF8E1] border border-[#FFD54F]">
+          <Warning size={16} weight="fill" className="text-[#F9A825] flex-shrink-0 mt-0.5" />
+          <p className="text-[12px] text-[#795548] leading-snug">
+            <span className="font-bold">A-2-3 학습자·맥락 분석</span>이 아직 완성되지 않았습니다.
+            학습자 특성을 반영한 설계를 위해 A-2-3를 먼저 완료하는 것을 권장합니다.
+          </p>
+        </div>
+      )}
+
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative">
         {visibleMessages.length === 0 && !streamingText && !isLoading && (
@@ -1486,12 +1842,7 @@ ${discussionSummary}
                     const apiReply = uniqueOther.length > 0
                       ? `${displayReply} (수정/확정 대상 활동: ${uniqueOther[0]} — 반드시 [ARTIFACT_UPDATE@${uniqueOther[0]}:] 신호 사용)`
                       : displayReply
-                    setInput(displayReply)
-                    // 바로 전송
-                    setTimeout(() => {
-                      const el = document.querySelector<HTMLTextAreaElement>('textarea')
-                      if (el) el.form?.requestSubmit()
-                    }, 0)
+                    setInput('')
                     // 직접 handleSend 호출
                     const userMsg = {
                       id: Date.now().toString(),
@@ -1499,7 +1850,8 @@ ${discussionSummary}
                       content: displayReply, // 저장·표시에는 깔끔한 버전
                       activityCode: currentActivity,
                       userId: userProfile?.uid,
-                      createdAt: { toDate: () => new Date() } as any,
+                      displayName: userProfile?.displayName,
+                      createdAt: Timestamp.now(),
                     }
                     addMessage(userMsg)
                     saveMessage(proj.id, currentActivity, {
@@ -1512,7 +1864,7 @@ ${discussionSummary}
                     // API에는 힌트 포함 버전으로 전송
                     const apiMsg = { ...userMsg, content: apiReply }
                     streamFromAPI(
-                      [...messages, apiMsg].map(m => ({ role: m.role, content: m.content })),
+                      [...messages, apiMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
                       (text) => appendStreamingText(text),
                       (fullText) => {
                         const sig = parseDiscussionSignal(fullText)
@@ -1526,7 +1878,7 @@ ${discussionSummary}
                           role: 'assistant', content: cleanText,
                           activityCode: currentActivity, activityType: '판단',
                           agentType: 'orchestrator',
-                          createdAt: { toDate: () => new Date() } as any,
+                          createdAt: Timestamp.now(),
                         })
                         clearStreamingText()
                         saveMessage(proj.id, currentActivity, {
@@ -1534,9 +1886,14 @@ ${discussionSummary}
                           activityCode: currentActivity, activityType: '판단', agentType: 'orchestrator',
                         }).catch(console.error)
                         if (sig) setPendingTeamDiscussion({ topic: sig.topic })
+                        const hasArtifactSave = selUpdates.some(u => Object.keys(u.sections).length > 0)
                         selUpdates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
-                        if (selConfirmCodes.length > 0) applyArtifactConfirm(selConfirmCodes)
-                        if (adv) handleActivityAdvance(adv.nextActivity)
+                        // [ARTIFACT_UPDATE]가 있는 응답에서는 [ARTIFACT_CONFIRM]과 [ACTIVITY_ADVANCE]를 무시
+                        // → 팀장이 우측 패널에서 직접 확정해야 하고, 전진도 별도 메시지로만 가능
+                        if (!hasArtifactSave) {
+                          if (selConfirmCodes.length > 0) applyArtifactConfirm(selConfirmCodes)
+                          if (adv) handleActivityAdvance(adv.nextActivity)
+                        }
                       }
                     ).catch(console.error).finally(() => setIsLoading(false))
                   }}
@@ -1566,27 +1923,41 @@ ${discussionSummary}
           }
 
           return (
-            <MessageBubble
-              key={msg.id}
-              role={msg.role as 'user' | 'assistant'}
-              content={msg.content}
-              activityType={msg.activityType}
-              senderName={senderName}
-              senderColor={senderColor}
-              senderEmoji={senderEmoji}
-              isSelf={isSelf}
-              replyTo={msg.replyTo}
-              onReply={() => setReplyTo({
-                id: msg.id,
-                content: msg.content,
-                senderName: msg.role === 'user' ? senderName : 'AI',
-              })}
-            />
+            <div key={msg.id}>
+              <MessageBubble
+                role={msg.role as 'user' | 'assistant'}
+                content={msg.content}
+                activityType={msg.activityType}
+                senderName={senderName}
+                senderColor={senderColor}
+                senderEmoji={senderEmoji}
+                isSelf={isSelf}
+                replyTo={msg.replyTo}
+                stage={ACTIVITY_META[msg.activityCode]?.stage}
+                onReply={() => setReplyTo({
+                  id: msg.id,
+                  content: msg.content,
+                  senderName: msg.role === 'user' ? senderName : 'AI',
+                })}
+              />
+              {/* HELP_CARD 렌더링 */}
+              {msg.role === 'assistant' && helpCardMap[msg.id] && (
+                <HelpCard
+                  message={helpCardMap[msg.id]}
+                  onSearchStandards={() => sendMessageDirectly('현재 활동에 맞는 성취기준을 찾아주세요')}
+                  onShowExample={() => sendMessageDirectly('현재 활동의 다른 팀 사례나 예시를 보여주세요')}
+                  onShowGuide={() => sendMessageDirectly('현재 위치와 앞으로 해야 할 일을 안내해주세요')}
+                  onStartTeamDiscussion={() => {
+                    requestTeamDiscussion(proj.id, currentActivity, userProfile?.uid ?? '', userProfile?.displayName ?? '').catch(console.error)
+                  }}
+                />
+              )}
+            </div>
           )
         })}
 
         {/* 팀 채팅 시작 확인 카드 */}
-        {showDiscussionConfirm && !isTeamMode && (
+        {isHost && showDiscussionConfirm && !isTeamMode && (
           <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
@@ -1657,7 +2028,7 @@ ${discussionSummary}
         )}
 
         {/* 팀 토론 제안 카드 (AI가 제안한 경우) */}
-        {pendingTeamDiscussion && !isTeamMode && !showDiscussionConfirm && (
+        {isHost && pendingTeamDiscussion && !isTeamMode && !showDiscussionConfirm && (
           <TeamDiscussionProposal
             topic={pendingTeamDiscussion.topic}
             onAccept={handleAcceptDiscussion}
@@ -1723,6 +2094,7 @@ ${discussionSummary}
                         }
                       } catch (err) {
                         console.error('확정 저장 실패:', err)
+                        setChatError('산출물 확정 저장에 실패했습니다. 다시 시도해주세요.')
                       }
                     }
                     handleActivityAdvance(pendingAdvance)
@@ -1789,10 +2161,11 @@ ${discussionSummary}
         })()}
 
         {/* 스트리밍 - 내가 보낸 경우 (로컬) */}
-        <StreamingBubble text={streamingText} isAnalysis={isAnalyzing} />
+        <StreamingBubble text={streamingText} isAnalysis={isAnalyzing} stage={ACTIVITY_META[currentActivity]?.stage} />
         {/* 스트리밍 - 다른 팀원이 보낸 경우 (Firestore 공유) */}
-        {remoteStreamingText && !isLoading && (
-          <StreamingBubble text={remoteStreamingText} isAnalysis={false} />
+        {!isLoading && isRemoteLoading && !remoteStreamingText && <AIIdleBubble />}
+        {!isLoading && remoteStreamingText && (
+          <StreamingBubble text={remoteStreamingText} isAnalysis={false} stage={ACTIVITY_META[currentActivity]?.stage} />
         )}
         {(isLoading || isAnalyzing) && !streamingText && (
           <div className="flex gap-2 mb-3">
@@ -1878,6 +2251,20 @@ ${discussionSummary}
             </>
           )}
         </div>
+        {/* 채팅 에러 배너 */}
+        {chatError && (
+          <div className="flex items-center gap-2 mb-1.5 px-3 py-2 rounded-xl bg-[#FCE8E6] border border-[#F28B82]">
+            <Warning size={16} weight="fill" className="text-[#C5221F] flex-shrink-0" />
+            <span className="text-[12px] text-[#C5221F] flex-1">{chatError}</span>
+            <button
+              onClick={() => setChatError(null)}
+              className="text-[#C5221F] hover:text-[#a51c19] leading-none flex-shrink-0"
+            >
+              <X size={14} weight="regular" />
+            </button>
+          </div>
+        )}
+
         {/* 답글 미리보기 배너 */}
         {replyTo && (
           <div className="flex items-center gap-2 mb-1.5 px-2 py-1.5 rounded-xl bg-[#E8F0FE] border-l-4 border-[#1A73E8]">

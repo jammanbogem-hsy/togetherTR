@@ -1,10 +1,10 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query,
-  where, orderBy, serverTimestamp, onSnapshot, Unsubscribe, arrayUnion, deleteField
+  where, orderBy, serverTimestamp, onSnapshot, Unsubscribe, arrayUnion, deleteField,
+  type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { db } from './config'
 import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition } from '@/types'
-import { ACTIVITY_META } from '@/types'
 import { addJoinedProjectId } from '@/lib/inviteCode'
 
 // ─── 프로젝트 CRUD ───────────────────────────────────
@@ -28,7 +28,7 @@ export async function getUserProjects(userId: string): Promise<Project[]> {
   const seen = new Set<string>()
   const projects: Project[] = []
 
-  const merge = (docs: any[]) => {
+  const merge = (docs: QueryDocumentSnapshot<DocumentData>[]) => {
     for (const d of docs) {
       if (!seen.has(d.id)) {
         seen.add(d.id)
@@ -109,7 +109,7 @@ export interface LobbyMessage {
   color: string
   emoji: string
   content: string
-  createdAt: any
+  createdAt: Timestamp
 }
 
 export async function sendLobbyMessage(
@@ -307,6 +307,25 @@ export async function markECompleted(projectId: string): Promise<void> {
   })
 }
 
+export async function setAnalysisOpen(projectId: string, open: boolean): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    analysisOpen: open,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function setAnalysisReport(
+  projectId: string,
+  stage: string,
+  content: string,
+  generating: boolean
+): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    analysisReport: { stage, content, generating },
+    updatedAt: serverTimestamp(),
+  })
+}
+
 // ─── 실시간 구독 ─────────────────────────────────────
 
 export function watchProject(projectId: string, callback: (project: Project) => void): Unsubscribe {
@@ -370,16 +389,26 @@ export function watchArtifact(
 
 // ─── 대화 메시지 ─────────────────────────────────────
 
+// P3: 메시지 저장 전 Firestore ID 미리 생성 → 로컬 임시 메시지와 동일한 ID 사용
+export function generateMessageId(projectId: string, activityCode: ActivityCode): string {
+  return doc(collection(db, `projects/${projectId}/conversations/${activityCode}/messages`)).id
+}
+
 export async function saveMessage(
   projectId: string,
   activityCode: ActivityCode,
-  data: Omit<Message, 'id' | 'createdAt'>
+  data: Omit<Message, 'id' | 'createdAt'>,
+  id?: string  // 미리 생성한 ID를 넘기면 setDoc, 없으면 addDoc
 ): Promise<string> {
   // Firestore는 undefined 값을 허용하지 않으므로 제거
   const clean = Object.fromEntries(
     Object.entries({ ...data, createdAt: serverTimestamp() })
       .filter(([, v]) => v !== undefined)
   )
+  if (id) {
+    await setDoc(doc(db, `projects/${projectId}/conversations/${activityCode}/messages`, id), clean)
+    return id
+  }
   const ref = await addDoc(
     collection(db, `projects/${projectId}/conversations/${activityCode}/messages`),
     clean
@@ -392,58 +421,13 @@ export function watchMessages(
   activityCode: ActivityCode,
   callback: (messages: Message[]) => void
 ): Unsubscribe {
-  // 신규 경로: 활동별 저장
-  const newQ = query(
+  const q = query(
     collection(db, `projects/${projectId}/conversations/${activityCode}/messages`),
     orderBy('createdAt', 'asc')
   )
-  // 구버전 경로: 단계별 저장 (레거시 데이터 복구용)
-  const stageCode = ACTIVITY_META[activityCode]?.stage
-  // where + orderBy 조합은 복합 인덱스 필요 → orderBy만 쓰고 클라이언트에서 필터
-  const legacyQ = stageCode ? query(
-    collection(db, `projects/${projectId}/conversations/${stageCode}/messages`),
-    orderBy('createdAt', 'asc')
-  ) : null
-
-  let newMessages: Message[] = []
-  let legacyMessages: Message[] = []
-  let legacyLoaded = !legacyQ  // 레거시 없으면 즉시 완료
-
-  function merge() {
-    const seen = new Set<string>()
-    const all: Message[] = []
-    for (const m of [...legacyMessages, ...newMessages]) {
-      if (!seen.has(m.id)) { seen.add(m.id); all.push(m) }
-    }
-    all.sort((a, b) => {
-      const at = a.createdAt?.toDate?.()?.getTime?.() ?? 0
-      const bt = b.createdAt?.toDate?.()?.getTime?.() ?? 0
-      return at - bt
-    })
-    callback(all)
-  }
-
-  const unsubNew = onSnapshot(newQ, (snap) => {
-    newMessages = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message)
-    if (legacyLoaded) merge()
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message))
   })
-
-  let unsubLegacy: Unsubscribe | null = null
-  if (legacyQ) {
-    unsubLegacy = onSnapshot(legacyQ, (snap) => {
-      // 클라이언트에서 activityCode 필터 (인덱스 불필요)
-      legacyMessages = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }) as Message)
-        .filter(m => m.activityCode === activityCode)
-      legacyLoaded = true
-      merge()
-    })
-  }
-
-  return () => {
-    unsubNew()
-    unsubLegacy?.()
-  }
 }
 
 // ─── 단계 전환 이력 ──────────────────────────────────
@@ -471,6 +455,9 @@ export interface StreamingState {
   isStreaming: boolean
 }
 
+// 경로: streamingState/{activityCode}/{senderUid}
+// 사용자별 개별 문서로 동시 스트리밍 충돌 방지
+
 export async function setStreamingState(
   projectId: string,
   activityCode: ActivityCode,
@@ -478,31 +465,49 @@ export async function setStreamingState(
   senderUid: string
 ): Promise<void> {
   await setDoc(
-    doc(db, `projects/${projectId}/streamingState/${activityCode}`),
-    { text, senderUid, isStreaming: true }
+    doc(db, `projects/${projectId}/streamingState/${activityCode}/users/${senderUid}`),
+    { text, senderUid, isStreaming: true, updatedAt: Date.now() }
   )
 }
 
+// P2: 재시도 포함 — 실패해도 좀비 데이터 방지
 export async function clearStreamingState(
   projectId: string,
-  activityCode: ActivityCode
+  activityCode: ActivityCode,
+  senderUid: string
 ): Promise<void> {
-  await deleteDoc(doc(db, `projects/${projectId}/streamingState/${activityCode}`))
+  const ref = doc(db, `projects/${projectId}/streamingState/${activityCode}/users/${senderUid}`)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await deleteDoc(ref)
+      return
+    } catch {
+      if (attempt < 2) await new Promise(r => setTimeout(r, 400 * (attempt + 1)))
+    }
+  }
 }
+
+const STREAMING_TTL_MS = 3 * 60 * 1000  // 3분 이상 업데이트 없으면 좀비로 간주
 
 export function watchStreamingState(
   projectId: string,
   activityCode: ActivityCode,
-  callback: (state: StreamingState | null) => void
+  currentUid: string,
+  callback: (states: StreamingState[]) => void
 ): Unsubscribe {
   return onSnapshot(
-    doc(db, `projects/${projectId}/streamingState/${activityCode}`),
+    collection(db, `projects/${projectId}/streamingState/${activityCode}/users`),
     (snap) => {
-      if (snap.exists() && snap.data().isStreaming) {
-        callback(snap.data() as StreamingState)
-      } else {
-        callback(null)
-      }
+      const now = Date.now()
+      const states = snap.docs
+        .map(d => d.data() as StreamingState & { updatedAt?: number })
+        .filter(s =>
+          s.senderUid !== currentUid &&
+          s.isStreaming &&
+          // TTL: updatedAt이 없거나 3분 이내인 것만 유효
+          (s.updatedAt === undefined || now - s.updatedAt < STREAMING_TTL_MS)
+        )
+      callback(states)
     }
   )
 }

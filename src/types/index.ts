@@ -19,7 +19,7 @@ export interface StageInfo {
 
 export const STAGES: StageInfo[] = [
   { code: 'T',  label: '팀준비',    description: '협력 조건 구축',     activities: ['T-1-1','T-1-2','T-2-1','T-2-2','T-2-3'] },
-  { code: 'A',  label: '분석',      description: '주제·학습자 분석',   activities: ['A-1-1','A-1-2','A-2-1','A-2-2','A-2-3'] },
+  { code: 'A',  label: '분석',      description: '주제·학습자 분석',   activities: [/*'A-1-1',*/'A-1-2','A-2-1','A-2-2','A-2-3'] },
   { code: 'Ds', label: '설계',      description: '수업 구조 설계',     activities: ['Ds-1-1','Ds-1-2','Ds-1-3','Ds-2-1','Ds-2-2'] },
   { code: 'DI', label: '개발·실행', description: '자료 개발 및 수업',  activities: ['DI-1-1','DI-2-1'] },
   { code: 'E',  label: '평가',      description: '성찰·개선·새 주기', activities: ['E-1-1','E-2-1'] },
@@ -104,6 +104,12 @@ export interface Project {
   memberUids?: string[]
   memberInfo?: Record<string, { uid: string; displayName: string; color: string; emoji: string; joinedAt: number }>
   started?: boolean        // 방장이 시작 버튼을 눌러야 true
+  analysisOpen?: boolean   // 단계 분석 모달 팀 동기화
+  analysisReport?: {       // 방장이 생성한 보고서 (팀원 공유용)
+    stage: string
+    content: string
+    generating: boolean
+  }
   currentActivity?: ActivityCode  // 현재 활동 (팀 전체 공유)
   activityStatuses?: Partial<Record<ActivityCode, StageStatus>>  // 활동별 상태 (팀 전체 공유)
   teamDiscussion?: {
