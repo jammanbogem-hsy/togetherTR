@@ -1,0 +1,35 @@
+rules_version = '2';
+
+// ─── togethertr / T-CID Storage Security Rules ─────────────────────────────
+// 경로: projects/{projectId}/materials/{materialId}/{fileName}
+// 멤버십: Firestore projects/{pid}.memberUids 배열에 request.auth.uid 포함 여부로 판정
+// ───────────────────────────────────────────────────────────────────────────
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isProjectMember(pid) {
+      return isSignedIn()
+        && firestore.get(/databases/(default)/documents/projects/$(pid))
+             .data.memberUids.hasAny([request.auth.uid]);
+    }
+
+    // 프로젝트 자료함: PDF 업로드/읽기
+    match /projects/{projectId}/materials/{materialId}/{fileName=**} {
+      allow read: if isProjectMember(projectId);
+      allow write: if isProjectMember(projectId)
+                   && request.resource.size < 200 * 1024 * 1024
+                   && request.resource.contentType.matches('application/pdf');
+      allow delete: if isProjectMember(projectId);
+    }
+
+    // 그 외 모든 경로는 기본 거부
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

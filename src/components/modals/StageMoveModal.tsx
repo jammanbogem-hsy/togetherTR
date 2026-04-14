@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
-import { returnToActivity, advanceActivity } from '@/lib/firebase/projects'
+import { returnToActivity, advanceActivity, logStageTransition } from '@/lib/firebase/projects'
+import { auth } from '@/lib/firebase/config'
 import { cn } from '@/lib/utils'
 import { ArrowRight, X, Warning, ChartBar } from '@phosphor-icons/react'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
@@ -15,12 +16,18 @@ function getStageLabel(code: StageCode) {
 
 function getIncompleteActivities(
   fromStage: StageCode,
-  activityStatus: Record<string, string>
+  activityStatus: Record<string, string>,
+  artifacts: Record<string, { status?: string }> | undefined
 ): string[] {
   const stageInfo = STAGES.find(s => s.code === fromStage)
   if (!stageInfo) return []
   return stageInfo.activities
-    .filter(a => activityStatus[a] !== 'completed')
+    .filter(a => {
+      // 산출물이 confirmed이거나 activityStatus가 completed/warning이면 완료로 간주 (ActivitySidebar와 동일 기준)
+      const artifactConfirmed = artifacts?.[a]?.status === 'confirmed'
+      const statusDone = activityStatus[a] === 'completed' || activityStatus[a] === 'warning'
+      return !artifactConfirmed && !statusDone
+    })
     .map(a => ACTIVITY_META[a].label)
 }
 
@@ -32,16 +39,20 @@ export function StageMoveModal() {
     activityStatus,
     setCurrentActivity,
     setMessages,
+    userProfile,
   } = useProjectStore()
 
   const [reason, setReason] = useState('')
+  const [reasonError, setReasonError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [showAnalysis, setShowAnalysis] = useState(false)
 
   if (!project || !pendingStageMove) return null
 
   const fromStage = project.currentStage
   const toStage = pendingStageMove
-  const incompleteActivities = getIncompleteActivities(fromStage, activityStatus)
+  const incompleteActivities = getIncompleteActivities(fromStage, activityStatus, project.artifacts as Record<string, { status?: string }> | undefined)
   const isBackward = STAGES.findIndex(s => s.code === toStage) <
     STAGES.findIndex(s => s.code === fromStage)
   const isCycle = fromStage === 'E' && toStage === 'T'
@@ -49,29 +60,70 @@ export function StageMoveModal() {
   async function handleConfirm() {
     if (!project) return
 
+    const trimmedReason = reason.trim()
+    // spec(07.절차프롬프트_v2 "이동 사유 기록 필수") — 모든 방향에서 사유 필수화
+    if (!trimmedReason) {
+      setReasonError('이동 사유를 입력해주세요. (T-CID 모형: 단계 이동 사유 기록 필수)')
+      return
+    }
+    setReasonError(null)
+    setSubmitError(null)
+
     const targetStage = STAGES.find(s => s.code === toStage)
     if (!targetStage) return
 
     const firstActivity = targetStage.activities[0]
+    const direction: import('@/types').StageTransition['direction'] =
+      isCycle ? 'cycle' : isBackward ? 'backward' : 'forward'
+    const baseCycle = project.cycleCount ?? 1
+    const cycleNumber = isCycle ? baseCycle + 1 : baseCycle
+    // initiatedBy: Firestore rules가 request.auth.uid와 일치 강제 (data-architect 협의)
+    // userProfile.uid는 onAuthStateChanged 동기화 값이지만 race 안전을 위해 auth.currentUser 우선
+    const initiatedBy = auth?.currentUser?.uid ?? userProfile?.uid
+    if (!initiatedBy) {
+      setSubmitError('로그인 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해주세요.')
+      return
+    }
 
-    if (isBackward || isCycle) {
-      // 이전 단계로 이동: returnToActivity + currentStage 업데이트
-      await returnToActivity(project.id, firstActivity, toStage).catch(console.error)
-    } else {
-      // 다음 단계로 이동: 현재 스테이지 activities + 다음 스테이지 activities 합쳐서 advance
-      const currentStageInfo = STAGES.find(s => s.code === fromStage)!
-      const combinedActivities = [
-        ...currentStageInfo.activities,
-        ...targetStage.activities,
-      ] as import('@/types').ActivityCode[]
-      const currentActivityCode = project.currentActivity ?? currentStageInfo.activities[0]
-      await advanceActivity(
-        project.id,
-        combinedActivities,
-        currentActivityCode as import('@/types').ActivityCode,
-        firstActivity,
-        toStage
-      ).catch(console.error)
+    setSubmitting(true)
+    try {
+      // 이력을 먼저 기록 (실패 시 이동 중단 — 감사 추적이 spec 명시 사항이므로 데이터 정합성 우선)
+      await logStageTransition(project.id, {
+        fromStage,
+        toStage,
+        direction,
+        cycleNumber,
+        reason: trimmedReason,
+        ...(incompleteActivities.length > 0 && !isBackward
+          ? { missingItemsIgnored: incompleteActivities }
+          : {}),
+        initiatedBy,
+      })
+
+      if (isBackward || isCycle) {
+        // 이전 단계로 이동: returnToActivity + currentStage 업데이트
+        await returnToActivity(project.id, firstActivity, toStage)
+      } else {
+        // 다음 단계로 이동: 현재 스테이지 activities + 다음 스테이지 activities 합쳐서 advance
+        const currentStageInfo = STAGES.find(s => s.code === fromStage)!
+        const combinedActivities = [
+          ...currentStageInfo.activities,
+          ...targetStage.activities,
+        ] as import('@/types').ActivityCode[]
+        const currentActivityCode = project.currentActivity ?? currentStageInfo.activities[0]
+        await advanceActivity(
+          project.id,
+          combinedActivities,
+          currentActivityCode as import('@/types').ActivityCode,
+          firstActivity,
+          toStage
+        )
+      }
+    } catch (err) {
+      console.error('[StageMoveModal] handleConfirm failed:', err)
+      setSubmitError('이동 이력 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      setSubmitting(false)
+      return
     }
 
     // 로컬 상태도 즉시 반영
@@ -79,11 +131,14 @@ export function StageMoveModal() {
     setMessages([])
     setPendingStageMove(null)
     setReason('')
+    setSubmitting(false)
   }
 
   function handleCancel() {
     setPendingStageMove(null)
     setReason('')
+    setReasonError(null)
+    setSubmitError(null)
   }
 
   return (
@@ -148,14 +203,17 @@ export function StageMoveModal() {
             </div>
           )}
 
-          {/* 이동 이유 입력 */}
+          {/* 이동 이유 입력 (T-CID 모형: 이동 사유 기록 필수) */}
           <div>
             <label className="block text-sm font-medium text-[#202124] mb-1.5">
-              이동 이유 <span className="text-[#9AA0A6] font-normal">(선택)</span>
+              이동 이유 <span className="text-[#D93025] font-semibold">(필수)</span>
             </label>
             <textarea
               value={reason}
-              onChange={e => setReason(e.target.value)}
+              onChange={e => {
+                setReason(e.target.value)
+                if (reasonError && e.target.value.trim()) setReasonError(null)
+              }}
               placeholder={
                 isBackward
                   ? '어떤 부분을 수정하거나 보완하려 하시나요?'
@@ -164,10 +222,27 @@ export function StageMoveModal() {
                   : '다음 단계로 이동하는 이유를 간단히 적어주세요'
               }
               rows={3}
-              className="w-full resize-none rounded-2xl border border-[#DADCE0] px-3 py-2
-                         text-sm focus:outline-none focus:ring-2 focus:ring-[#1A73E8] text-[#202124]"
+              aria-invalid={!!reasonError}
+              className={cn(
+                'w-full resize-none rounded-2xl border px-3 py-2',
+                'text-sm focus:outline-none focus:ring-2 text-[#202124]',
+                reasonError
+                  ? 'border-[#D93025] focus:ring-[#D93025]'
+                  : 'border-[#DADCE0] focus:ring-[#1A73E8]'
+              )}
             />
+            {reasonError && (
+              <p className="mt-1.5 text-xs text-[#D93025]">{reasonError}</p>
+            )}
           </div>
+
+          {/* 이력 저장 실패 등 제출 에러 (인라인 표시 — 모달은 닫지 않음) */}
+          {submitError && (
+            <div className="flex gap-2 items-start bg-[#FCE8E6] border border-[#F28B82] rounded-2xl p-3">
+              <Warning size={16} weight="fill" className="text-[#C5221F] flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-[#C5221F]">{submitError}</p>
+            </div>
+          )}
 
           {/* 현재 단계 분석 제안 (다음 단계 이동 시만 표시) */}
           {!isBackward && !isCycle && (
@@ -236,21 +311,27 @@ export function StageMoveModal() {
           <div className="flex gap-3">
             <button
               onClick={handleCancel}
+              disabled={submitting}
               className="flex-1 py-2.5 rounded-full border border-[#DADCE0] text-sm
-                         font-medium text-[#5F6368] hover:bg-[#F1F3F4] transition-colors"
+                         font-medium text-[#5F6368] hover:bg-[#F1F3F4] transition-colors
+                         disabled:opacity-60 disabled:cursor-not-allowed"
             >
               취소
             </button>
             <button
               onClick={handleConfirm}
+              disabled={submitting || reason.trim() === ''}
               className={cn(
                 'flex-1 py-2.5 rounded-full text-sm font-bold text-white transition-colors',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
                 isCycle ? 'bg-[#34A853] hover:bg-[#2d9248]'
                   : isBackward ? 'bg-[#E65100] hover:bg-[#cc4700]'
                   : 'bg-[#1A73E8] hover:bg-[#1557b0]'
               )}
             >
-              {isCycle ? '새 주기 시작' : isBackward ? '이전으로 이동' : '다음으로 이동'}
+              {submitting
+                ? '저장 중...'
+                : isCycle ? '새 주기 시작' : isBackward ? '이전으로 이동' : '다음으로 이동'}
             </button>
           </div>
         </div>

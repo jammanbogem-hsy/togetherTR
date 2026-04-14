@@ -33,7 +33,7 @@ export default function JoinProjectPage() {
       const uid = userProfile?.uid ?? 'demo-user'
       // 이미 참여한 경우 바로 입장
       if (!project.memberUids?.includes(uid)) {
-        await joinProject(project.id, uid, userProfile ? {
+        await joinProject(project.id, uid, trimmed, userProfile ? {
           displayName: userProfile.displayName,
           color: userProfile.color ?? '#A0BCE8',
           emoji: userProfile.emoji ?? '👤',
@@ -41,7 +41,14 @@ export default function JoinProjectPage() {
       }
       router.push(`/projects/${project.id}`)
     } catch (err) {
-      setError('오류가 발생했습니다. 다시 시도해주세요.')
+      const message = err instanceof Error ? err.message : ''
+      if (message === 'duplicate-invite-code') {
+        setError('동일한 초대코드가 중복되어 있어 입장할 수 없습니다. 새 초대코드를 다시 받아주세요.')
+      } else if (message === 'invalid-invite-code') {
+        setError('초대코드가 일치하지 않습니다. 다시 확인해주세요.')
+      } else {
+        setError('오류가 발생했습니다. 다시 시도해주세요.')
+      }
       setIsLoading(false)
     }
   }

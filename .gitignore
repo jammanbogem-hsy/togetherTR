@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+/.tmp_hwpx_check/
+/.tmp_hwpx_sample/
 
 # debug
 npm-debug.log*
@@ -43,3 +45,8 @@ firebase-debug.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.claude/
+.moai/
+
+# local data caches (knowledge graph, embeddings)
+/data/

@@ -271,6 +271,21 @@ body {
 .analysis-report > *:first-child { margin-top: 0; }
 .analysis-report > *:last-child { margin-bottom: 0; }
 
+/* ── 지식 그래프 버튼 무지개 테두리 ───────────────────── */
+@keyframes kg-btn-rainbow-border {
+  0%   { border-color: #f97316; }
+  14%  { border-color: #eab308; }
+  28%  { border-color: #22c55e; }
+  42%  { border-color: #06b6d4; }
+  56%  { border-color: #6366f1; }
+  70%  { border-color: #a855f7; }
+  85%  { border-color: #ec4899; }
+  100% { border-color: #f97316; }
+}
+.kg-graph-btn-rainbow {
+  animation: kg-btn-rainbow-border 2.5s linear infinite;
+}
+
 /* ── Scrollbar ──────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

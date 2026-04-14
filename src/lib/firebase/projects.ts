@@ -4,18 +4,28 @@ import {
   type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { db } from './config'
-import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition } from '@/types'
-import { addJoinedProjectId } from '@/lib/inviteCode'
+import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard } from '@/types'
+import { ACTIVITY_META } from '@/types'
+import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
+import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
+import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
+import { extractImprovementText, parseNextCycleChoice } from '@/lib/activity/completion'
 
 // ─── 프로젝트 CRUD ───────────────────────────────────
 
-export async function createProject(data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-  const ref = await addDoc(collection(db, 'projects'), {
+export async function createProject(
+  data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<{ id: string; inviteCode: string }> {
+  const ref = doc(collection(db, 'projects'))
+  const baseInviteCode = (data.inviteCode?.trim() || generateInviteCode()).replace(/\s+/g, '')
+  const uniqueInviteCode = `${baseInviteCode}${ref.id.slice(0, 4).toUpperCase()}`
+  await setDoc(ref, {
     ...data,
+    inviteCode: uniqueInviteCode,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  return ref.id
+  return { id: ref.id, inviteCode: uniqueInviteCode }
 }
 
 export async function getProject(projectId: string): Promise<Project | null> {
@@ -38,13 +48,11 @@ export async function getUserProjects(userId: string): Promise<Project[]> {
   }
 
   // 1) memberUids에 포함된 프로젝트
-  // 2) createdBy == userId (레거시)
-  // 3) createdBy == 'demo-user' (개발 초기 데이터 복구용)
-  // 4) localStorage에 저장된 프로젝트 ID 직접 조회
+  // 2) createdBy == userId (레거시 호환)
+  // 3) localStorage에 저장된 프로젝트 ID 직접 조회
   const queries = [
     getDocs(query(collection(db, 'projects'), where('memberUids', 'array-contains', userId))),
     getDocs(query(collection(db, 'projects'), where('createdBy', '==', userId))),
-    getDocs(query(collection(db, 'projects'), where('createdBy', '==', 'demo-user'))),
   ]
 
   const results = await Promise.allSettled(queries)
@@ -80,15 +88,47 @@ export async function findProjectByInviteCode(code: string): Promise<Project | n
   const q = query(collection(db, 'projects'), where('inviteCode', '==', code))
   const snap = await getDocs(q)
   if (snap.empty) return null
+  if (snap.size > 1) {
+    throw new Error('duplicate-invite-code')
+  }
   const d = snap.docs[0]
   return { id: d.id, ...d.data() } as Project
 }
 
+/**
+ * 프로젝트에 참여한다.
+ *
+ * 보안 메모 (P0-4): 이전 버전은 inviteCode 인자 없이 누구든 projectId만 알면
+ * 본인을 memberUids에 추가할 수 있었다. firestore.rules의 isSelfJoinUpdate()는
+ * inviteCode 일치 검증이 불가하므로, 앱 레벨에서 이중 방어한다.
+ *
+ * 단, 이미 멤버인 사용자가 프로필(displayName/color/emoji)을 갱신하기 위해
+ * 이 함수를 다시 호출하는 경로(projects/[id]/page.tsx)에서는 inviteCode 검증을
+ * 스킵한다 — 멤버가 아니라면 애초에 프로젝트 문서를 read 할 수 없기 때문.
+ *
+ * 완전 차단(예: 클라이언트가 SDK를 직접 호출하여 검증 우회)은 Cloud Function
+ * 위임이 필요하다. 이번 변경은 1차 방어선이다.
+ */
 export async function joinProject(
   projectId: string,
   uid: string,
+  inviteCode: string,
   memberInfo?: { displayName: string; color: string; emoji: string }
 ): Promise<void> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) {
+    throw new Error('project-not-found')
+  }
+  const data = snap.data() as Project
+  const isAlreadyMember = (data.memberUids ?? []).includes(uid)
+  // 신규 가입자인 경우에만 inviteCode 일치를 강제한다.
+  if (!isAlreadyMember) {
+    if (!inviteCode || data.inviteCode !== inviteCode) {
+      throw new Error('invalid-invite-code')
+    }
+  }
+
   const updates: Record<string, unknown> = {
     memberUids: arrayUnion(uid),
     updatedAt: serverTimestamp(),
@@ -96,7 +136,7 @@ export async function joinProject(
   if (memberInfo) {
     updates[`memberInfo.${uid}`] = { ...memberInfo, uid, joinedAt: Date.now() }
   }
-  await updateDoc(doc(db, 'projects', projectId), updates)
+  await updateDoc(ref, updates)
   addJoinedProjectId(projectId)
 }
 
@@ -166,6 +206,48 @@ export async function requestTeamDiscussion(
 export async function clearTeamDiscussionRequest(projectId: string, activityCode: string): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
     [`teamDiscussionRequests.${activityCode}`]: { pending: false },
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// ─── Phase 1-b: ACTION_CARD skip 로깅 ──────────────────
+// Project 문서의 skippedActionCards 배열에 dismiss 이벤트 추가.
+// cardId는 ACTION_CARD가 첨부된 메시지 id. 재오픈 방지를 위해 렌더 시 렌더러가 이 배열을 조회.
+
+export async function recordActionCardSkip(
+  projectId: string,
+  entry: SkippedActionCard
+): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    skippedActionCards: arrayUnion(entry),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// 메시지에 첨부된 ACTION_CARD 선택 결과를 Firestore 메시지 문서에 저장.
+// 렌더 시 isSelected 판정 근거 — 방장이 primary/secondary를 고르면 팀원에게도 동기화.
+export async function updateMessageActionCardState(
+  projectId: string,
+  activityCode: ActivityCode,
+  messageId: string,
+  state: 'selected' | 'skipped',
+  selection: 'primary' | 'secondary' | 'skip'
+): Promise<void> {
+  await updateDoc(
+    doc(db, `projects/${projectId}/conversations/${activityCode}/messages`, messageId),
+    {
+      actionCardState: state,
+      actionCardSelection: selection,
+    }
+  )
+}
+
+// ─── 지식 그래프 공유 (방장 → 팀원) ─────────────────────────────────────────
+
+export async function setGraphOpen(projectId: string, open: boolean, keyword?: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    graphOpen: open,
+    ...(keyword !== undefined ? { graphKeyword: keyword } : {}),
     updatedAt: serverTimestamp(),
   })
 }
@@ -245,16 +327,37 @@ export async function setProjectArtifact(
     revisionNote?: string
     revisionRequestedBy?: string
     revisionRequestedAt?: number
+    _schemaVersion?: string
   }
 ): Promise<void> {
+  // P1-I: requiredSections 정의가 있는 활동(E-1-1/E-2-1)은 v2-sections 스키마로 자동 마킹.
+  // - 중앙 부착으로 호출처(applyArtifactUpdate/applyArtifactConfirm/handleAcceptArtifactSave 등)
+  //   누락 방지 — Lead 지시 "절대 누락 금지".
+  // - 호출부에서 명시적으로 _schemaVersion을 넘긴 경우에는 그 값을 우선.
+  // - non-E 활동은 부착하지 않음 (회귀 방지: 기존 산출물 grandfather 유지).
+  const shouldAttachSchema =
+    data._schemaVersion === undefined &&
+    (ACTIVITY_META[activityCode]?.requiredSections?.length ?? 0) > 0
+  const normalized = shouldAttachSchema
+    ? { ...data, _schemaVersion: 'v2-sections' as const }
+    : data
+
   // Firestore는 undefined 값을 허용하지 않으므로 제거
   const clean = Object.fromEntries(
-    Object.entries(data).filter(([, v]) => v !== undefined)
+    Object.entries(normalized).filter(([, v]) => v !== undefined)
   )
-  await updateDoc(doc(db, 'projects', projectId), {
+  const updates: Record<string, unknown> = {
     [`artifacts.${activityCode}`]: clean,
     updatedAt: serverTimestamp(),
-  })
+  }
+
+  // A-2-3는 "확정 완료" 이전이라도 저장된 프로필이 있으면 Ds 단계 가드레일로 활용한다.
+  if (activityCode === 'A-2-3') {
+    const hasContent = Object.keys((data.content ?? {}) as Record<string, unknown>).length > 0
+    updates.isA23Completed = hasContent && data.status !== 'ai_draft'
+  }
+
+  await updateDoc(doc(db, 'projects', projectId), updates)
 }
 
 // ─── 안(案) 선택지 투표 ──────────────────────────────
@@ -293,6 +396,13 @@ export async function updateProjectStage(projectId: string, stage: StageCode): P
   })
 }
 
+export async function saveCumulativeReport(projectId: string, content: string, savedBy: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    cumulativeReport: { content, savedAt: Date.now(), savedBy },
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export async function markA23Completed(projectId: string): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
     isA23Completed: true,
@@ -303,6 +413,15 @@ export async function markA23Completed(projectId: string): Promise<void> {
 export async function markECompleted(projectId: string): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
     isECompleted: true,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// P1-I 3-C: 새 주기의 T-1-1 첫 산출물 저장 감지 시 isECompleted 플래그를 내려
+// StageBar의 E→T 순환 화살표 표시를 종료. page.tsx의 useEffect에서 idempotent하게 호출.
+export async function clearECompleted(projectId: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    isECompleted: false,
     updatedAt: serverTimestamp(),
   })
 }
@@ -326,14 +445,146 @@ export async function setAnalysisReport(
   })
 }
 
+// 완료된 보고서를 stageReports에 영구 저장
+export async function saveStageReport(
+  projectId: string,
+  stage: string,
+  content: string
+): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    [`stageReports.${stage}`]: { content, savedAt: Date.now() },
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// ─── 그래프 중심 성취기준 추천 (팀원 동기화) ─────────────────────────────────
+
+export async function setGraphCenter(projectId: string, nodeId: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    graphCenterNodeId: nodeId,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function recommendGraphCenter(
+  projectId: string,
+  nodeId: string,
+  recommenderName: string,
+  recommenderUid?: string,
+): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    [`graphCenterRecommendations.${nodeId}`]: { recommenderName, recommenderUid: recommenderUid ?? null, nodeId },
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function setGraphSelectionState(
+  projectId: string,
+  data: Omit<GraphSelectionState, 'updatedAt'>
+): Promise<void> {
+  const normalized = normalizeGraphSelectionState({
+    ...data,
+    updatedAt: Date.now(),
+  })
+
+  await updateDoc(doc(db, 'projects', projectId), {
+    graphSelectionState: normalized,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// 지식 그래프 저장 (중심 노드 + 선택 성취기준 + Agent 분석)
+export async function saveGraphData(
+  projectId: string,
+  data: Omit<GraphSavedData, 'savedAt'>
+): Promise<void> {
+  const normalized = normalizeGraphSavedData({
+    ...data,
+    savedAt: Date.now(),
+  })
+
+  await updateDoc(doc(db, 'projects', projectId), {
+    'graphSavedData': normalized,
+    ...(normalized.centerNode ? { graphCenterNodeId: normalized.centerNode.id } : {}),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// 문제상황 디자이너 오픈 상태 설정 (팀원 자동 오픈)
+export async function setProblemSituationOpen(projectId: string, open: boolean): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    problemSituationOpen: open,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// 문제상황 데이터 저장
+export async function saveProblemSituationData(
+  projectId: string,
+  data: {
+    scenario: { title: string; row1: string; row2: string; row3: string }
+    drivingQuestion: string
+    essentialQuestions: string[]
+    fullResult?: Record<string, unknown>
+  }
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    scenario: data.scenario,
+    drivingQuestion: data.drivingQuestion,
+    essentialQuestions: data.essentialQuestions,
+    savedAt: Date.now(),
+  }
+  if (data.fullResult !== undefined) payload.fullResult = data.fullResult
+  await updateDoc(doc(db, 'projects', projectId), {
+    'problemSituationData': payload,
+    problemSituationOpen: false,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// 팀원이 방장에게 산출물 저장 제안
+export async function proposeArtifactToHost(
+  projectId: string,
+  activityCode: string,
+  sections: Record<string, string>,
+  proposedBy: string,
+  proposedByName: string
+): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    artifactProposal: { activityCode, sections, proposedBy, proposedByName, proposedAt: Date.now() },
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// 산출물 저장 제안 삭제 (수락 또는 거절 후)
+export async function clearArtifactProposal(projectId: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    artifactProposal: deleteField(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 // ─── 실시간 구독 ─────────────────────────────────────
 
-export function watchProject(projectId: string, callback: (project: Project) => void): Unsubscribe {
-  return onSnapshot(doc(db, 'projects', projectId), (snap) => {
-    if (snap.exists()) {
+export function watchProject(
+  projectId: string,
+  callback: (project: Project | null) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, 'projects', projectId),
+    (snap) => {
+      if (!snap.exists()) {
+        callback(null)
+        return
+      }
       callback({ id: snap.id, ...snap.data() } as Project)
+    },
+    (error) => {
+      console.error('watchProject failed:', error)
+      onError?.(error)
     }
-  })
+  )
 }
 
 // ─── 산출물 ──────────────────────────────────────────
@@ -419,15 +670,23 @@ export async function saveMessage(
 export function watchMessages(
   projectId: string,
   activityCode: ActivityCode,
-  callback: (messages: Message[]) => void
+  callback: (messages: Message[]) => void,
+  onError?: (error: Error) => void
 ): Unsubscribe {
   const q = query(
     collection(db, `projects/${projectId}/conversations/${activityCode}/messages`),
     orderBy('createdAt', 'asc')
   )
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message))
-  })
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message))
+    },
+    (error) => {
+      console.error('watchMessages failed:', error)
+      onError?.(error)
+    }
+  )
 }
 
 // ─── 단계 전환 이력 ──────────────────────────────────
@@ -440,10 +699,69 @@ export async function logStageTransition(
     ...data,
     createdAt: serverTimestamp(),
   })
-  // E→T 순환이면 isECompleted 플래그도 설정
+  // E→T 순환: isECompleted 플래그 + previousCycleImprovements 추출 + currentCycle 증가를
+  // 단일 updateDoc으로 통합 (이중 write 방지).
   if (data.direction === 'cycle') {
-    await markECompleted(projectId)
+    await finalizeCycleTransition(projectId, data.cycleNumber)
   }
+}
+
+/**
+ * E→T 순환 전환 시 호출. 다음 3가지를 한 번의 updateDoc으로 처리:
+ *  1. isECompleted = true (순환 화살표 UI 유지)
+ *  2. currentCycle / cycleCount 증가
+ *  3. 직전 주기 E-1-1/E-2-1 산출물에서 개선안 추출 → previousCycleImprovements 기록
+ *
+ * 추출 실패는 cycle 전환 자체를 막지 않음. best-effort.
+ * 레거시(_schemaVersion !== 'v2-sections') 산출물도 best-effort로 시도.
+ */
+async function finalizeCycleTransition(
+  projectId: string,
+  completedCycleNumber: number
+): Promise<void> {
+  // 현재 프로젝트 상태를 읽어 산출물 추출. 실패해도 cycle 자체는 이미 기록됐으므로 throw 금지.
+  const update: Record<string, unknown> = {
+    isECompleted: true,
+    currentCycle: completedCycleNumber + 1,
+    cycleCount: completedCycleNumber + 1,
+    updatedAt: serverTimestamp(),
+  }
+
+  try {
+    const snap = await getDoc(doc(db, 'projects', projectId))
+    if (snap.exists()) {
+      const proj = snap.data() as Project
+      const e11 = proj.artifacts?.['E-1-1']
+      const e21 = proj.artifacts?.['E-2-1']
+
+      // E-1-1: '수정안' 섹션에서 개선 텍스트
+      const e11Improvement = extractImprovementText(e11, ['수정안', '개선안', '다음 주기', '개선', '고칠 점', '다음엔'])
+      // E-2-1: '팀 개선안' 섹션
+      const e21Improvement = extractImprovementText(e21, ['팀 개선안', '개선안', '수정안', '다음 주기'])
+      // E-2-1: '다음 주기 선택' 섹션에서 A/B 판정
+      const nextCycleText = extractImprovementText(e21, ['다음 주기 선택', '다음주기', '선택', '다음 주기'])
+      const nextCycleChoice = parseNextCycleChoice(nextCycleText)
+
+      // undefined 필드는 Firestore 저장 불가 → 조건부로만 포함
+      const improvements: Record<string, unknown> = {
+        cycleNumber: completedCycleNumber,
+        extractedAt: serverTimestamp(),
+      }
+      if (e11Improvement) improvements.e11Improvement = e11Improvement
+      if (e21Improvement) improvements.e21Improvement = e21Improvement
+      if (nextCycleChoice) improvements.nextCycleChoice = nextCycleChoice
+
+      // 추출된 내용이 하나라도 있으면 기록. 전부 비었으면 필드 생략(덮어쓰기만 방지).
+      if (e11Improvement || e21Improvement || nextCycleChoice) {
+        update.previousCycleImprovements = improvements
+      }
+    }
+  } catch (err) {
+    // 추출 실패는 로그만 남기고 cycle 전환 자체는 계속 진행
+    console.warn('[finalizeCycleTransition] extract failed, continuing without improvements:', err)
+  }
+
+  await updateDoc(doc(db, 'projects', projectId), update)
 }
 
 // ─── AI 스트리밍 상태 공유 ────────────────────────────

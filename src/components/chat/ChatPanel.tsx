@@ -1,23 +1,63 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
-import { ACTIVITY_META, STAGES, type ActivityType, type ActivityCode } from '@/types'
+import { ACTIVITY_META, STAGES, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
+import type { GraphPinnedStandard, GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { TeamDiscussionBanner } from './TeamDiscussionBanner'
 import { TeamDiscussionProposal } from './TeamDiscussionProposal'
 import { HelpCard } from './HelpCard'
 import { ArtifactSaveProposal } from './ArtifactSaveProposal'
+import { ActionCard as ActionCardComponent } from './ActionCard'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, Chat,
-  Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X,
+  Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler,
 } from '@phosphor-icons/react'
+import dynamic from 'next/dynamic'
+
+const KnowledgeGraphViewer = dynamic(
+  () => import('@/components/knowledge-graph/KnowledgeGraphViewer'),
+  { ssr: false, loading: () => <div className="flex-1 flex items-center justify-center text-[#9AA0A6] text-sm">그래프 로딩 중…</div> },
+)
+
+const ProblemSituationDesigner = dynamic(
+  () => import('@/components/problem-situation/ProblemSituationDesigner'),
+  { ssr: false },
+)
+
+const GRAPH_ACTIVITIES: ActivityCode[] = ['A-2-1']
+
+function buildGraphSelectionFromSavedData(savedData?: GraphSavedData | null): {
+  pinnedStandards: GraphPinnedStandard[]
+  checkedStandardIds: string[]
+} {
+  if (!savedData) {
+    return { pinnedStandards: [], checkedStandardIds: [] }
+  }
+
+  const centerId = savedData.centerNode?.id
+  const pinnedStandards = savedData.selectedStandards
+    .filter((standard) => standard.id !== centerId)
+    .map((standard) => ({
+      stdId: standard.id,
+      addedBy: '저장됨',
+      source: 'manual' as const,
+    }))
+
+  const checkedStandardIds = [
+    ...(centerId ? [centerId] : []),
+    ...savedData.selectedStandards.map((standard) => standard.id),
+  ]
+
+  return { pinnedStandards, checkedStandardIds: [...new Set(checkedStandardIds)] }
+}
 
 const STAGE_CORNER: Record<string, string> = {
   T: 'rgba(26,115,232,0.09)', A: 'rgba(123,31,162,0.08)', Ds: 'rgba(0,137,123,0.08)',
@@ -350,7 +390,16 @@ function splitGuideLines(text: string): { before: string; lines: string[]; after
   return { before, lines: afterGuide.guide, after: afterGuide.after }
 }
 
-function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean }) {
+// 성취기준 코드 툴팁용 — React 노드에서 텍스트 추출
+function childrenToText(children: React.ReactNode): string {
+  if (typeof children === 'string') return children
+  if (typeof children === 'number') return String(children)
+  if (Array.isArray(children)) return children.map(childrenToText).join('')
+  if (React.isValidElement(children)) return childrenToText((children.props as { children?: React.ReactNode }).children)
+  return ''
+}
+
+function MarkdownContent({ text, dark = false, standardTextMap }: { text: string; dark?: boolean; standardTextMap?: Record<string, string> }) {
   // AI가 <br> 태그를 생성하는 경우 줄바꿈으로 치환
   // AI가 첫 줄에 [탐색] [팀+AI] 같은 활동유형/행위주체 태그를 출력하는 경우 제거
   const sanitized = text
@@ -359,9 +408,9 @@ function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean 
     // CommonMark 한계: **'text'**한국어 패턴에서 ' 뒤 ** 가 닫힘 기호로 인식 안 됨
     // → **'text'** 를 **text** 로 정규화
     .replace(/\*\*'([^'*\n]+)'\*\*/g, '**$1**')
-    // CommonMark 우측 플랭킹 규칙 한계: )**한국어 패턴 (닫는 구두점 뒤 **)
-    // → NBSP 삽입으로 강제 bold 닫힘 처리
-    .replace(/([)'"'"」』】）])\*\*([\uAC00-\uD7A3])/g, '$1**\u00A0$2')
+    // CommonMark 우측 플랭킹 규칙 한계: )**한국어 or 한국어**한국어 패턴
+    // → closing ** 뒤에 NBSP 삽입으로 강제 bold 닫힘 처리
+    .replace(/([)'"'"」』】）\uAC00-\uD7A3\d])\*\*([\uAC00-\uD7A3])/g, '$1**\u00A0$2')
 
   const guide = splitGuideLines(sanitized)
 
@@ -453,43 +502,27 @@ function MarkdownContent({ text, dark = false }: { text: string; dark?: boolean 
             {children}
           </th>
         ),
-        td: ({ children }) => (
-          <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed whitespace-nowrap">{children}</td>
-        ),
+        td: ({ children }) => {
+          if (standardTextMap) {
+            const cellText = childrenToText(children)
+            const codeMatch = /\[(\d[가-힣]{1,4}\d{2}-\d{2})\]/.exec(cellText)
+            const tooltipText = codeMatch ? standardTextMap[codeMatch[1]] : undefined
+            if (tooltipText) {
+              return (
+                <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed whitespace-nowrap cursor-help"
+                    title={tooltipText}>
+                  {children}
+                </td>
+              )
+            }
+          }
+          return <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed whitespace-nowrap">{children}</td>
+        },
       }}
     >
       {sanitized}
     </ReactMarkdown>
   )
-}
-
-// ─── 분석 결과 → 산출물 섹션 파싱 ───────────────────
-function parseAnalysisToSections(text: string): Record<string, string> {
-  const sections: Record<string, string> = {}
-  const lines = text.split('\n')
-  let currentKey = ''
-  let buffer: string[] = []
-
-  const flush = () => {
-    if (currentKey && buffer.length) {
-      sections[currentKey] = buffer.join('\n').trim()
-    }
-  }
-
-  for (const line of lines) {
-    if (/^1\.|^1\./.test(line) || line.includes('합의한 핵심')) {
-      flush(); currentKey = '토론 결과'; buffer = []
-    } else if (/^2\./.test(line) || line.includes('결정되지 않')) {
-      flush(); currentKey = '보완할 점'; buffer = []
-    } else if (/^3\./.test(line) || line.includes('추천 행동') || line.includes('다음 단계')) {
-      // "다음 행동"은 DISPLAY_BLOCKED_KEYS에 막혀 표시 안 됨 → 산출물에서 제외
-      flush(); currentKey = ''; buffer = []
-    } else if (currentKey && line.trim()) {
-      buffer.push(line.replace(/^[-·☐\s]+/, '').trim())
-    }
-  }
-  flush()
-  return sections
 }
 
 // ─── TEAM_DISCUSSION_READY 파싱 ──────────────────────
@@ -532,53 +565,92 @@ function parseHelpCard(text: string): { cleanText: string; helpMessage: string |
   }
 }
 
+// ─── ACTION_CARD 신호 파싱 (Phase 1-b) ──────────────────
+// 포맷: [ACTION_CARD: intent=... | primary=... | secondary=... | skip=...]
+// intent/primary/skip 필수. secondary 선택. 필수 키 누락 시 null 반환(조용한 실패 + dev warn).
+// 본 파서는 상호배제 규칙(§12-4)을 모름 — 호출 쪽에서 다른 신호 존재 여부를 체크한 뒤에 호출해야 함.
+function parseActionCard(text: string): { card: ActionCard; cleanText: string } | null {
+  const match = text.match(/\[ACTION_CARD:\s*([^\]]+)\]/)
+  if (!match) return null
+  const body = match[1]
+  const parts = body.split('|').map(s => s.trim()).filter(Boolean)
+  const fields: Record<string, string> = {}
+  for (const part of parts) {
+    const eqIdx = part.indexOf('=')
+    if (eqIdx <= 0) continue
+    const key = part.slice(0, eqIdx).trim().toLowerCase()
+    const value = part.slice(eqIdx + 1).trim()
+    if (key && value) fields[key] = value
+  }
+  const { intent, primary, secondary, skip } = fields
+  if (!intent || !primary || !skip) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[ACTION_CARD] 필수 키 누락으로 무시됨. 원본:', match[0], '파싱된 필드:', fields)
+    }
+    return null
+  }
+  const cleanText = text.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
+  return {
+    card: { intent, primary, secondary: secondary || undefined, skip },
+    cleanText,
+  }
+}
+
 // ─── 저장 의도 감지 (신호 없이 "저장하겠습니다"만 있는 경우) ──
 // "저장하겠습니다" 문장 주변 2문장만 스캔해서 실제 내용만 추출
-function parseSaveIntent(text: string): { title: string; sections: Record<string, string> } | null {
-  const savePattern = /저장하겠습니다|산출물에 저장|수정하여 저장|기록하겠습니다|저장해드리겠습니다|저장할게요|저장합니다/
-  const saveMatch = savePattern.exec(text)
-  if (!saveMatch) return null
+// ─── A-2-1 마크다운 표 자동 추출 ─────────────────────
+// AI 응답에서 마크다운 표를 찾아 산출물 저장 제안 데이터로 변환
+function extractA21TableForSave(text: string): { title: string; sections: Record<string, string> } | null {
+  const lines = text.split('\n')
 
-  // 저장 문장 앞뒤 300자만 스캔 (전체 텍스트 스캔 시 무관한 내용 오염 방지)
-  const start = Math.max(0, saveMatch.index - 300)
-  const end = Math.min(text.length, saveMatch.index + 300)
-  const localText = text.slice(start, end)
-
-  const isNoise = (val: string) => [
-    '저장', '보완', '유지하겠', '수정하겠', '진행하겠', '넘어가겠', '이동하겠',
-    '누락된', '다음 행동', '미결 사항', '역할 확인', '배정 필요', '역할 매핑',
-  ].some(w => val.includes(w))
-
-  const sections: Record<string, string> = {}
-
-  // 1순위: 큰따옴표 안의 핵심 문장 (비전, 합의 내용 등)
-  const quotedPattern = /"([^"]{8,120})"/g
-  const quoted: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = quotedPattern.exec(localText)) !== null) {
-    const val = m[1].trim()
-    if (!val.includes('[') && !val.includes(']') && !isNoise(val)) {
-      quoted.push(val)
+  // 1. 핵심아이디어 블록 추출 (> ★ 또는 > ** 형식 blockquote)
+  const coreIdeaLines: string[] = []
+  let inCoreIdea = false
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('>') && (trimmed.includes('핵심아이디어') || trimmed.includes('★') || inCoreIdea)) {
+      inCoreIdea = true
+      coreIdeaLines.push(line)
+    } else if (inCoreIdea && trimmed === '') {
+      // 빈 줄 하나는 허용
+      coreIdeaLines.push(line)
+    } else if (inCoreIdea && !trimmed.startsWith('>')) {
+      inCoreIdea = false
     }
   }
 
-  // 2순위: "변경 후:", "저장 내용:", "내용:" 뒤의 문장
-  const labelPattern = /(?:변경\s*후|저장\s*내용|내용|합의)\s*[:：]\s*"?([^"\n]{8,120})"?/g
-  const labeled: string[] = []
-  while ((m = labelPattern.exec(localText)) !== null) {
-    const val = m[1].trim()
-    if (!isNoise(val)) labeled.push(val)
+  // 2. 성취기준 분석표 추출 (첫 번째 마크다운 표)
+  const tableLines: string[] = []
+  let inTable = false
+  for (const line of lines) {
+    if (line.trim().startsWith('|')) {
+      inTable = true
+      tableLines.push(line)
+    } else if (inTable) {
+      break
+    }
   }
 
-  const content = quoted.length > 0
-    ? quoted.join('\n')
-    : labeled.length > 0
-    ? labeled.join('\n')
-    : null
+  // 헤더 + 구분선 + 최소 1행 이상
+  if (tableLines.length < 3) return null
 
-  if (!content) return null
-  sections['합의 내용'] = content
-  return { title: '산출물 저장 확인', sections }
+  // 3. 표 아래 융합 분석 섹션 추출
+  const tableStr = tableLines.join('\n')
+  const tableEnd = text.indexOf(tableLines[tableLines.length - 1]) + tableLines[tableLines.length - 1].length
+  const afterTable = text.slice(tableEnd).trim()
+  const fusionMatch = /(?:공통|융합|루브릭)[^\n]{0,20}\n[\s\S]{1,500}?(?=\n\n\n|$)/.exec(afterTable)
+
+  // 4. 전체 조합
+  const parts: string[] = []
+  if (coreIdeaLines.length > 0) parts.push(coreIdeaLines.join('\n').trim())
+  parts.push(tableStr)
+  if (fusionMatch) parts.push(fusionMatch[0].trim())
+  const fullContent = parts.join('\n\n')
+
+  return {
+    title: '핵심아이디어 및 성취기준 분석표',
+    sections: { '성취기준분석표': fullContent },
+  }
 }
 
 // ─── ARTIFACT_CONFIRM 파싱 ───────────────────────────
@@ -604,7 +676,7 @@ const ARTIFACT_BLOCKED_KEYS = [
   '다음 행동', '다음 단계', 'next step',
   '미결 사항', '미결', '보류 사항',
   'ai 제안', '추천 사항', '참고 사항',
-  '합의 내용', '논의 내용', '토론 내용', '확인 사항',
+  '합의 내용', '논의 내용', '토론 내용', '토의 내용', '확인 사항',
   '진행 내용', '진행 사항', '현황', '요약',
 ]
 
@@ -616,19 +688,68 @@ interface ArtifactUpdateItem {
 function parseArtifactUpdates(text: string): { updates: ArtifactUpdateItem[]; cleanText: string } {
   // actCode key → sections 버킷
   const buckets: Record<string, Record<string, string>> = {}
-  // [ARTIFACT_UPDATE@CODE: key=val] 또는 [ARTIFACT_UPDATE: key=val] (다중 줄 내용 포함)
-  const regex = /\[ARTIFACT_UPDATE(?:@([A-Za-z0-9-]+))?:\s*([^=\]]+)=([\s\S]+?)\]/g
-  let match
-  let cleanText = text
+  // 신호 위치 목록 (cleanText에서 제거용)
+  const signalRanges: Array<[number, number]> = []
 
-  while ((match = regex.exec(text)) !== null) {
-    const actKey = match[1] ?? '__current__'
-    const keyRaw = match[2].trim().toLowerCase()
-    if (ARTIFACT_BLOCKED_KEYS.some(k => keyRaw.includes(k))) continue
-    const key = match[2].trim()
-    const value = match[3].trim()
-    if (!buckets[actKey]) buckets[actKey] = {}
-    buckets[actKey][key] = value
+  // 브라켓 카운팅 파서: 내부에 [성취기준코드] 등이 있어도 올바르게 파싱
+  // [ARTIFACT_UPDATE@CODE: key=value] — value 내부의 ] 는 depth > 0 이므로 통과
+  const PREFIX = '[ARTIFACT_UPDATE'
+  let i = 0
+
+  while (i < text.length) {
+    const start = text.indexOf(PREFIX, i)
+    if (start === -1) break
+
+    let j = start + PREFIX.length
+    let actKey = '__current__'
+
+    // 선택적 @코드
+    if (text[j] === '@') {
+      j++
+      const codeStart = j
+      while (j < text.length && text[j] !== ':' && text[j] !== ']') j++
+      if (text[j] === ':') actKey = text.slice(codeStart, j)
+    }
+
+    // ':' 필수
+    if (text[j] !== ':') { i = start + 1; continue }
+    j++ // skip ':'
+
+    // 공백 건너뜀
+    while (j < text.length && (text[j] === ' ' || text[j] === '\t')) j++
+
+    // 키 파싱 (= 이전까지)
+    const keyStart = j
+    while (j < text.length && text[j] !== '=' && text[j] !== ']' && text[j] !== '\n') j++
+    if (text[j] !== '=') { i = start + 1; continue }
+    const key = text.slice(keyStart, j).trim()
+    j++ // skip '='
+
+    // 값 파싱: 브라켓 depth=1에서 시작, depth=0이 되는 ] 에서 종료
+    const valueStart = j
+    let depth = 1
+    while (j < text.length) {
+      if (text[j] === '[') depth++
+      else if (text[j] === ']') {
+        depth--
+        if (depth === 0) break
+      }
+      j++
+    }
+    // depth > 0: 스트림이 ] 전에 끊긴 경우 — 텍스트 끝까지를 값으로 best-effort 파싱
+    const incomplete = depth !== 0
+    if (incomplete) j = text.length
+    const value = text.slice(valueStart, j).trim()
+    const end = incomplete ? text.length : j + 1  // closing ] 포함 (incomplete면 텍스트 끝)
+
+    const keyRaw = key.toLowerCase()
+    if (!ARTIFACT_BLOCKED_KEYS.some(k => keyRaw.includes(k)) && key && value) {
+      if (!buckets[actKey]) buckets[actKey] = {}
+      buckets[actKey][key] = value
+      signalRanges.push([start, end])
+    }
+
+    i = end
   }
 
   const updates: ArtifactUpdateItem[] = Object.entries(buckets).map(([code, sections]) => ({
@@ -636,9 +757,16 @@ function parseArtifactUpdates(text: string): { updates: ArtifactUpdateItem[]; cl
     sections,
   }))
 
-  if (updates.some(u => Object.keys(u.sections).length > 0)) {
-    cleanText = text.replace(/\n*\[ARTIFACT_UPDATE(?:@[A-Za-z0-9-]+)?:[\s\S]+?\]/g, '').trimEnd()
+  let cleanText = text
+  if (signalRanges.length > 0) {
+    // 뒤에서부터 제거 (인덱스 보정 불필요)
+    const sorted = [...signalRanges].sort((a, b) => b[0] - a[0])
+    for (const [s, e] of sorted) {
+      cleanText = cleanText.slice(0, s).trimEnd() + cleanText.slice(e)
+    }
+    cleanText = cleanText.trimEnd()
   }
+
   return { updates, cleanText }
 }
 
@@ -731,7 +859,7 @@ function ContextMenuWrapper({ children, onReply, className }: {
 }
 
 // ─── 메시지 버블 ──────────────────────────────────────
-function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage }: {
+function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage, standardTextMap }: {
   role: 'user' | 'assistant'
   content: string
   activityType?: ActivityType
@@ -742,6 +870,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
   replyTo?: { id: string; content: string; senderName?: string }
   onReply?: () => void
   stage?: string
+  standardTextMap?: Record<string, string>
 }) {
   const isUser = role === 'user'
   const alignRight = isUser && isSelf
@@ -799,7 +928,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
         >
           {isUser
             ? <span className="whitespace-pre-wrap">{content}</span>
-            : <MarkdownContent text={content} />
+            : <MarkdownContent text={content} standardTextMap={standardTextMap} />
           }
         </div>
       </div>
@@ -816,7 +945,7 @@ function AnalysisBubble({ text }: { text: string }) {
           <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
             <Users size={14} weight="fill" className="text-white" />
           </div>
-          <span className="text-xs font-bold text-[#00695C]">팀 토론 분석 결과</span>
+          <span className="text-xs font-bold text-[#00695C]">팀 토의 분석 결과</span>
         </div>
         <div className="text-sm text-[#004D40] leading-relaxed">
           <MarkdownContent text={text} />
@@ -837,7 +966,7 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
             <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
               <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={14} className="text-white" /></span>
             </div>
-            <span className="text-xs font-bold text-[#00695C]">팀 토론 분석 중...</span>
+            <span className="text-xs font-bold text-[#00695C]">팀 토의 분석 중...</span>
           </div>
           <div className="text-sm text-[#004D40] leading-relaxed">
             <MarkdownContent text={text} />
@@ -900,29 +1029,25 @@ const SLASH_COMMANDS = [
   {
     id: 'team-chat',
     label: '팀 채팅',
-    desc: 'AI 없이 팀원끼리 자유 토론 시작',
-    icon: '💬',
-    keywords: ['팀채팅', '팀', 'team', 'chat', '토론'],
+    desc: 'AI 없이 팀원끼리 자유 토의 시작',
+    keywords: ['팀채팅', '팀', 'team', 'chat', '토의', '토론'],
   },
   {
     id: 'artifact',
     label: '산출물 저장',
-    desc: '선택한 메시지 또는 현재 대화를 산출물로 저장',
-    icon: '📋',
+    desc: '선택한 메시지 또는 현재 대화를 바로 산출물 저장 흐름으로 실행',
     keywords: ['산출물', '저장', 'artifact', 'save'],
   },
   {
     id: 'briefing',
     label: '이전 단계 브리핑',
-    desc: '지금까지 확정된 모든 활동 결과 요약',
-    icon: '📖',
+    desc: '지금까지 확정된 모든 활동 결과 요약을 즉시 요청',
     keywords: ['브리핑', '요약', 'briefing', '이전', '결과'],
   },
   {
     id: 'next',
     label: '다음 단계로',
-    desc: '현재 활동을 완료하고 다음으로 이동',
-    icon: '➡️',
+    desc: '저장·확정 후 이동할지 확인 창을 바로 띄움',
     keywords: ['다음', '전진', 'next', '이동', '진행'],
   },
 ] as const
@@ -941,6 +1066,7 @@ export function ChatPanel() {
     currentArtifact, setCurrentArtifact,
     setViewingActivity,
     userProfile,
+    setPendingStageMove,
   } = useProjectStore()
 
   const [input, setInput] = useState('')
@@ -957,8 +1083,109 @@ export function ChatPanel() {
   const [isRemoteLoading, setIsRemoteLoading] = useState(false) // 다른 팀원이 AI 요청 중
   // HELP_CARD: 마지막 AI 응답에 대한 도움 메시지 (messageId → helpMessage)
   const [helpCardMap, setHelpCardMap] = useState<Record<string, string>>({})
+  const [showGraphPanel, setShowGraphPanel] = useState(false)
+  const [showProblemSituationDesigner, setShowProblemSituationDesigner] = useState(false)
+  // 지식 그래프에 추가된 성취기준 (채팅 언급 + 수동 추가)
+  const [pinnedStandards, setPinnedStandards] = useState<GraphPinnedStandard[]>([])
+  const [checkedGraphStandardIds, setCheckedGraphStandardIds] = useState<string[]>([])
+  const lastGraphSelectionMutationAtRef = useRef(0)
+  const pinnedStandardsRef = useRef<GraphPinnedStandard[]>([])
+  const checkedGraphStandardIdsRef = useRef<string[]>([])
+
+  // ── 공유 그래프 키워드 (버튼 핸들러에서 사용) ─────────────────────────────
+  const graphKeywordForShare = useMemo(() => {
+    // 1순위: 산출물에서 주제 추출
+    let kw = ''
+    const artifacts = project?.artifacts ?? {}
+    for (const art of Object.values(artifacts)) {
+      const c = art.content as Record<string, unknown>
+      const topic = (c['선택 주제'] || c['주제'] || c['수업 목표']) as string | undefined
+      if (topic) { kw = topic.slice(0, 60); break }
+    }
+    // 2순위: 유저 메시지 중 주제 관련 내용 (짧은 메시지, 그래프/메타 관련 메시지 제외)
+    if (!kw) {
+      const SKIP_PATTERNS = /지식\s*그래프|확인해|넘어가|다음|ㅇㅇ|ㅎㅎ|네|좋아|감사|확인|저장/
+      const recentUser = [...messages].reverse().find(m =>
+        m.role === 'user' && m.content.length >= 8 && !SKIP_PATTERNS.test(m.content)
+      )
+      if (recentUser) {
+        kw = recentUser.content.replace(/[^\uAC00-\uD7A3a-zA-Z0-9\s]/g, ' ').trim().slice(0, 60)
+      }
+    }
+    // 3순위: 프로젝트 제목
+    if (!kw) kw = project?.title ?? ''
+    return kw
+  }, [project?.artifacts, messages, project?.title])
+
+  // 그래프가 열린 동안 keyword를 고정 — 채팅/산출물 업데이트에 의한 재fetch 방지
+  const [stableGraphKeyword, setStableGraphKeyword] = useState('')
+  const stableGraphKeywordRef = useRef('')
+
+  // ── 팀원: 방장이 문제상황 디자이너를 열면 자동으로 오픈 ──────────────────
+  useEffect(() => {
+    if (!project || !userProfile) return
+    const amHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
+    if (amHost) return
+    if (project.problemSituationOpen && currentActivity === 'Ds-1-2') {
+      setShowProblemSituationDesigner(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.problemSituationOpen])
+
+  // ── 팀원: 방장이 그래프를 열면 자동으로 오픈 ─────────────────────────────
+  useEffect(() => {
+    if (!project || !userProfile) return
+    const amHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
+    if (amHost) return  // 방장은 직접 제어
+    if (project.graphOpen && GRAPH_ACTIVITIES.includes(currentActivity)) {
+      setShowGraphPanel(true)
+      if (!stableGraphKeywordRef.current) {
+        const kw = project.graphKeyword || graphKeywordForShare
+        stableGraphKeywordRef.current = kw
+        setStableGraphKeyword(kw)
+      }
+      if (project.graphSelectionState) {
+        setPinnedStandards(project.graphSelectionState.pinnedStandards ?? [])
+        setCheckedGraphStandardIds(project.graphSelectionState.checkedStandardIds ?? [])
+      } else if (project.graphSavedData && pinnedStandards.length === 0 && checkedGraphStandardIds.length === 0) {
+        const restored = buildGraphSelectionFromSavedData(project.graphSavedData)
+        if (restored.pinnedStandards.length > 0) setPinnedStandards(restored.pinnedStandards)
+        if (restored.checkedStandardIds.length > 0) setCheckedGraphStandardIds(restored.checkedStandardIds)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.graphOpen])
+
+  useEffect(() => {
+    if (!project?.graphSelectionState) return
+    const shared = project.graphSelectionState
+    const amHost = project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid
+    const incomingUpdatedAt = shared.updatedAt ?? 0
+    if (amHost && incomingUpdatedAt < lastGraphSelectionMutationAtRef.current) return
+    setPinnedStandards(shared.pinnedStandards ?? [])
+    setCheckedGraphStandardIds(shared.checkedStandardIds ?? [])
+  }, [project?.graphSelectionState, project?.hostUid, project?.createdBy, userProfile?.uid])
+
+  useEffect(() => {
+    pinnedStandardsRef.current = pinnedStandards
+  }, [pinnedStandards])
+
+  useEffect(() => {
+    checkedGraphStandardIdsRef.current = checkedGraphStandardIds
+  }, [checkedGraphStandardIds])
+
+  // 채팅 메시지에서 성취기준 코드 파싱
+  const STD_CODE_RE = /\[(\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2})\]/g
+
+  // "반영하기" 버튼 클릭 시 해당 메시지의 코드만 저장
+  const [activeGraphCodes, setActiveGraphCodes] = useState<Array<{code: string; addedBy: string}>>([])
+
+  // 그래프에 전달할 코드: 버튼 클릭으로 지정된 코드 우선, 없으면 빈 배열
+  const chatMentionedStds = useMemo(() => {
+    return activeGraphCodes.map(c => ({ ...c, source: 'chat' as const }))
+  }, [activeGraphCodes])
   const bottomRef = useRef<HTMLDivElement>(null)
-  const introSentRef = useRef<Partial<Record<ActivityCode, true>>>({})
+
   // 스트리밍 중 Firestore 동기화용 interval ref
   const streamingFlushRef = useRef<NodeJS.Timeout | null>(null)
   const streamingAccumRef = useRef('')
@@ -975,6 +1202,19 @@ export function ChatPanel() {
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
   function applyArtifactUpdates(sections: Record<string, string>, actCode?: ActivityCode) {
     if (Object.keys(sections).length === 0) return
+
+    // 협업 모드에서 팀원 → 방장에게 저장 제안으로 전달 (직접 저장 금지)
+    if (project?.mode === 'collaborative' && !isHost) {
+      proposeArtifactToHost(
+        proj.id,
+        actCode ?? currentActivity,
+        sections,
+        userProfile?.uid ?? '',
+        userProfile?.displayName ?? '팀원'
+      ).catch(console.error)
+      return
+    }
+
     // actCode를 명시적으로 받아서 클로저 캡처 오류 방지
     const targetActivity = actCode ?? currentActivity
     const targetMeta = ACTIVITY_META[targetActivity]
@@ -1042,6 +1282,8 @@ export function ChatPanel() {
         confirmedBy: userProfile?.uid ?? undefined,
         confirmedAt: Date.now(),
       }).catch(console.error)
+      // 산출물 확정 → activityStatuses도 completed로 업데이트 (StageMoveModal 미완료 체크 정합성)
+      setActivityStatus(project.id, targetActivity, 'completed').catch(console.error)
       if (targetActivity === currentActivity && local) {
         setCurrentArtifact({ ...local, status: 'confirmed', confirmedContent: content })
       }
@@ -1067,6 +1309,9 @@ export function ChatPanel() {
   const proj = project  // non-null 확정 캡처
 
   const activityMeta = ACTIVITY_META[currentActivity]
+  const hasA23Guardrail = Object.keys(
+    ((proj.artifacts?.['A-2-3']?.content ?? {}) as Record<string, unknown>)
+  ).length > 0
 
   // ─── SSE 스트리밍 공통 함수 ──────────────────────────
   // 팀원 목록: AI가 누가 발언했는지 파악하기 위해 시스템 프롬프트에 주입
@@ -1076,10 +1321,23 @@ export function ChatPanel() {
 
   // 메시지 배열 → API 전송 형식 (user 메시지에 발신자 이름 주입)
   function buildApiMessages(msgs: Array<{ role: string; content: string; displayName?: string }>) {
-    return msgs.map(m => ({
+    const mapped = msgs.map(m => ({
       role: m.role,
       content: m.role === 'user' && m.displayName ? `[${m.displayName}]: ${m.content}` : m.content,
     }))
+    // 마지막 user 메시지 앞에 현재 활동 위치 리마인더를 삽입
+    // → 대화가 길어져도 AI가 현재 활동 코드를 잊지 않도록 강제
+    const actMeta = ACTIVITY_META[currentActivity]
+    const reminder = {
+      role: 'user' as const,
+      content: `[시스템 리마인더] 현재 활동: ${currentActivity} (${actMeta?.label}). 이 활동에서의 대화를 수행 중이며, [ACTIVITY_ADVANCE] 신호 없이는 아직 이동하지 않은 상태입니다.`,
+    }
+    // 마지막 user 메시지 바로 앞에 삽입
+    const lastUserIdx = mapped.map(m => m.role).lastIndexOf('user')
+    if (lastUserIdx >= 0) {
+      mapped.splice(lastUserIdx, 0, reminder)
+    }
+    return mapped
   }
 
   async function streamFromAPI(
@@ -1092,6 +1350,7 @@ export function ChatPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: buildApiMessages(msgs),
+        projectId: proj.id,
         stage: activityMeta.stage,
         activityCode: currentActivity,
         actorType: '팀+AI',
@@ -1102,35 +1361,58 @@ export function ChatPanel() {
           mode: proj.mode,
           isA23Completed: proj.isA23Completed,
           currentCycle: proj.currentCycle,
+          // P1-I: 이전 주기 E 개선안 (T-1-1 시스템 프롬프트 주입용, 없으면 undefined)
+          previousCycleImprovements: proj.previousCycleImprovements,
         },
         // 현재 활동의 기존 산출물 내용 전달 (AI가 수정 시 참조)
         currentArtifact: proj.artifacts?.[currentActivity] ?? null,
-        // 현재 활동 이전 확정 산출물만 전달 (미래 단계 산출물은 제외해 AI 혼선 방지)
+        // 이전 단계 산출물 전달: Ds/DI/E 단계에서는 A단계 산출물을 확정 여부와 무관하게 포함
+        // (확정을 안 했더라도 내용이 있으면 설계 근거로 전달, 미래 활동 산출물은 제외)
         confirmedArtifacts: proj.artifacts
           ? (() => {
               const allActivities = STAGES.flatMap(s => s.activities)
               const currentIdx = allActivities.indexOf(currentActivity)
+              const curStage = activityMeta.stage
               return Object.fromEntries(
                 Object.entries(proj.artifacts)
                   .filter(([code, a]) => {
                     const idx = allActivities.indexOf(code as ActivityCode)
-                    return a.status === 'confirmed' && idx < currentIdx
+                    if (idx >= currentIdx) return false
+                    // Ds/DI/E 단계: A단계 산출물은 내용만 있으면 확정 여부 무관하게 포함
+                    const codeStage = ACTIVITY_META[code as ActivityCode]?.stage
+                    if (['Ds', 'DI', 'E'].includes(curStage) && codeStage === 'A') {
+                      return Object.keys((a.content as Record<string, unknown>) ?? {}).length > 0
+                    }
+                    return a.status === 'confirmed'
                   })
                   .map(([code, a]) => [code, { title: a.title, content: a.content }])
               )
             })()
           : undefined,
+        // A-2-3 학습자 프로필을 별도 가드레일로 전달 (확정 여부 무관)
+        learnerProfileSummary: (() => {
+          const a23 = proj.artifacts?.['A-2-3']
+          if (!a23 || !Object.keys((a23.content as Record<string, unknown>) ?? {}).length) return undefined
+          return Object.entries(a23.content as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`).join('\n')
+        })(),
         teamMembers: teamMembersList,
         // 현재 활동 상태 (active_return이면 AI가 확정 산출물도 수정 가능)
         activityStatus: proj.activityStatuses?.[currentActivity] ?? undefined,
+        // A-2-1 및 Ds 단계: 지식 그래프 저장 데이터 전달 (설계 단계에서도 성취기준 구조 참조)
+        graphSavedData: (currentActivity === 'A-2-1' || activityMeta.stage === 'Ds') ? (proj.graphSavedData ?? null) : undefined,
       }),
     })
-    if (!response.ok) throw new Error('Stream request failed')
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({ error: 'unknown' }))
+      throw new Error(`Stream request failed: ${errBody?.error ?? response.status}`)
+    }
 
     const reader = response.body!.getReader()
     const decoder = new TextDecoder()
     let fullText = ''
     let buf = ''
+    // SSE 'error' 신호 도달 시 부분 누적 폐기 + 호출자 catch로 throw
+    let serverError: string | null = null
 
     while (true) {
       const { done, value } = await reader.read()
@@ -1140,12 +1422,25 @@ export function ChatPanel() {
       buf = lines.pop() ?? ''
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue
+        let data: { type?: string; text?: string; message?: string }
         try {
-          const data = JSON.parse(line.slice(6))
-          if (data.type === 'text') { fullText += data.text; onChunk(data.text) }
-          if (data.type === 'done') { onDone(fullText); return }
-        } catch { /* 잘못된 SSE 라인 무시 */ }
+          data = JSON.parse(line.slice(6))
+        } catch {
+          continue  // 잘못된 SSE 라인 무시
+        }
+        if (data.type === 'text') { fullText += data.text ?? ''; onChunk(data.text ?? '') }
+        else if (data.type === 'done') { onDone(fullText); return }
+        else if (data.type === 'error') {
+          // 서버 측 OpenAI 호출 실패 등 — 부분 누적은 폐기하고 호출자에게 위임
+          serverError = data.message ?? 'AI 응답 중 오류가 발생했습니다.'
+          break
+        }
       }
+      if (serverError) break
+    }
+    if (serverError) {
+      // 빈 메시지가 Firestore에 저장되지 않도록 onDone 호출하지 않음
+      throw new Error(serverError)
     }
     if (fullText) onDone(fullText)
   }
@@ -1169,22 +1464,12 @@ export function ChatPanel() {
       if (nextIdx <= currentIdx) return
       await advanceActivity(proj.id, allActivities, currentActivity, nextActivity)
         .catch((err) => { console.error(err); setChatError('다음 활동으로 이동하지 못했습니다. 다시 시도해주세요.') })
+      setCurrentActivity(nextActivity)
     } else {
-      // 크로스 스테이지: 현재 스테이지 나머지 + 다음 스테이지 활동을 합쳐서 처리
-      const combinedActivities = [
-        ...currentStageInfo.activities,
-        ...nextStageInfo.activities,
-      ] as ActivityCode[]
-      await advanceActivity(
-        proj.id,
-        combinedActivities,
-        currentActivity,
-        nextActivity,
-        nextStageInfo.code
-      ).catch((err) => { console.error(err); setChatError('다음 활동으로 이동하지 못했습니다. 다시 시도해주세요.') })
+      // 크로스 스테이지: StageMoveModal을 통해 이동 (단계 분석 기회 제공)
+      setPendingStageMove(nextStageInfo.code as import('@/types').StageCode)
+      setPendingAdvance(null)
     }
-
-    setCurrentActivity(nextActivity)
   }
 
   // ─── 활동 되돌아가기 처리 (Firestore 동기화 포함) ──────
@@ -1197,10 +1482,120 @@ export function ChatPanel() {
     setCurrentActivity(code)
   }
 
+  function getNextActivityCode(code: ActivityCode): ActivityCode | null {
+    const allActivities = STAGES.flatMap(stage => stage.activities)
+    const idx = allActivities.indexOf(code)
+    if (idx === -1 || idx >= allActivities.length - 1) return null
+    return allActivities[idx + 1] ?? null
+  }
+
+  async function ensureCurrentArtifactSavedAndConfirmed(): Promise<boolean> {
+    const fsArtifact = proj.artifacts?.[currentActivity]
+    const localArtifact = currentArtifact?.activityCode === currentActivity ? currentArtifact : null
+    const currentMeta = ACTIVITY_META[currentActivity]
+    const pendingForCurrent = pendingArtifactSave
+      && (((pendingArtifactSave.activityCode as ActivityCode | undefined) ?? currentActivity) === currentActivity)
+      ? pendingArtifactSave
+      : null
+
+    let sourceContent = (fsArtifact?.content ?? localArtifact?.aiDraft ?? {}) as Record<string, unknown>
+    let sourceTitle = fsArtifact?.title ?? localArtifact?.title ?? (currentMeta.label + ' 산출물')
+    let sourceVersion = fsArtifact?.version ?? localArtifact?.currentVersion ?? 1
+    let currentStatus = fsArtifact?.status ?? localArtifact?.status
+
+    if (pendingForCurrent) {
+      sourceContent = { ...sourceContent, ...pendingForCurrent.sections }
+      sourceVersion = (fsArtifact?.version ?? localArtifact?.currentVersion ?? 0) + 1
+      currentStatus = 'in_review'
+
+      await setProjectArtifact(proj.id, currentActivity, {
+        status: 'in_review',
+        title: sourceTitle,
+        content: sourceContent,
+        version: sourceVersion,
+      }).catch((err) => {
+        console.error('산출물 저장 실패:', err)
+        throw err
+      })
+
+      setCurrentArtifact({
+        id: localArtifact?.id ?? Date.now().toString(),
+        activityCode: currentActivity,
+        artifactType: currentMeta.label,
+        title: sourceTitle,
+        status: 'in_review',
+        currentVersion: sourceVersion,
+        aiDraft: sourceContent,
+        createdBy: localArtifact?.createdBy ?? userProfile?.uid ?? 'demo-user',
+        meta: {
+          author: pendingForCurrent.proposerName ? `${pendingForCurrent.proposerName} 제안` : 'AI 분석',
+          createdAt: localArtifact?.meta?.createdAt ?? Timestamp.now(),
+          updatedAt: Timestamp.now(),
+          evidence: localArtifact?.meta?.evidence ?? '팀 자유 토의 분석',
+          approvalStatus: 'pending',
+        },
+      })
+
+      if (project?.id && project.artifactProposal) {
+        clearArtifactProposal(project.id).catch(console.error)
+      }
+      setPendingArtifactSave(null)
+    }
+
+    if (!Object.keys(sourceContent).length) {
+      setChatError('현재 활동에 저장할 산출물이 없습니다. /산출물로 먼저 저장하거나 우측 패널에 직접 입력해주세요.')
+      return false
+    }
+
+    if (currentStatus !== 'confirmed') {
+      await setProjectArtifact(proj.id, currentActivity, {
+        status: 'confirmed',
+        title: sourceTitle,
+        content: sourceContent,
+        version: sourceVersion,
+        confirmedBy: userProfile?.uid ?? undefined,
+        confirmedAt: Date.now(),
+      }).catch((err) => {
+        console.error('산출물 확정 저장 실패:', err)
+        throw err
+      })
+
+      if (currentArtifact?.activityCode === currentActivity) {
+        setCurrentArtifact({
+          ...currentArtifact,
+          status: 'confirmed',
+          confirmedContent: sourceContent,
+          aiDraft: sourceContent,
+          currentVersion: sourceVersion,
+          title: sourceTitle,
+        })
+      }
+    }
+
+    return true
+  }
+
+  function handlePromptNextCommand() {
+    if (!isHost) {
+      setChatError('다음 단계 이동은 방장만 실행할 수 있습니다.')
+      return
+    }
+
+    const nextActivity = getNextActivityCode(currentActivity)
+    if (!nextActivity) {
+      setChatError('현재 활동이 마지막 단계입니다. 더 이상 이동할 다음 활동이 없습니다.')
+      return
+    }
+
+    setPendingAdvance(nextActivity)
+  }
+
   // ─── 활동 시작 환영 메시지 (API 호출 없음, 정적) ────────
   function showWelcomeMessage(welcomeText: string) {
+    // 고정 ID로 저장: Firestore 콜백이 재호출돼도 같은 ID로 dedup 됨
+    const msgId = 'welcome-' + currentActivity
     const msg = {
-      id: 'welcome-' + currentActivity,
+      id: msgId,
       role: 'assistant' as const,
       content: welcomeText,
       activityCode: currentActivity,
@@ -1210,75 +1605,81 @@ export function ChatPanel() {
     }
     addMessage(msg)
     setIsIdle(true)  // 환영 후 즉시 대기 상태
-    // Firestore에도 저장 (팀원 동기화)
+    // Firestore에도 동일 ID로 저장 → 중복 방지, 콜백 재진입 시 동일 문서 반환
     saveMessage(proj.id, currentActivity, {
       role: 'assistant', content: welcomeText,
       activityCode: currentActivity, activityType: '제시', agentType: 'orchestrator',
-    }).catch(console.error)
+    }, msgId).catch(console.error)
   }
 
   // Firestore 메시지가 로드된 후에만 환영 메시지 표시
   // 방장만 저장 → 팀원은 Firestore 실시간 동기화로 수신
+  // messages를 dep에 포함: stale closure 방지 + Firestore 재응답 시 재평가
   useEffect(() => {
     if (!project?.started) return
     if (!messagesLoaded) return
     const welcome = ACTIVITY_WELCOME[currentActivity]
     if (!welcome) return
-    // 이미 이 활동의 AI 메시지가 있으면 전송 안 함 (activityCode 무관, assistant 메시지 존재 여부)
+    // 이미 AI 메시지가 있으면 전송 안 함
     const hasAIMessage = messages.some(m => m.role === 'assistant')
     if (hasAIMessage) return
     // 방장만 환영 메시지 저장 (팀원은 Firestore로 받음)
     const amHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
     if (!amHost) return
-    if (introSentRef.current[currentActivity]) return
-    introSentRef.current[currentActivity] = true
+    // 로컬에 이미 같은 ID의 메시지가 있으면 중복 방지
+    // (introSentRef 대신 실제 messages 상태를 사용해 stale 방지)
+    const welcomeId = 'welcome-' + currentActivity
+    if (messages.some(m => m.id === welcomeId)) return
     showWelcomeMessage(welcome)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentActivity, project?.started, messagesLoaded])
+  }, [currentActivity, project?.started, messagesLoaded, messages])
 
   // ─── 산출물 저장 수락 ────────────────────────────────
   function handleAcceptArtifactSave() {
     if (!pendingArtifactSave) return
-    const existing = currentArtifact?.activityCode === currentActivity ? currentArtifact : null
-    const firestoreContent = (project?.artifacts?.[currentActivity]?.content ?? {}) as Record<string, unknown>
+    const targetActivity = (pendingArtifactSave.activityCode as ActivityCode | undefined) ?? currentActivity
+    const targetMeta = ACTIVITY_META[targetActivity]
+    const existing = currentArtifact?.activityCode === targetActivity ? currentArtifact : null
+    const firestoreContent = (project?.artifacts?.[targetActivity]?.content ?? {}) as Record<string, unknown>
     const baseContent = existing?.aiDraft ?? firestoreContent
-    const newContent = pendingArtifactSave.sections
-    const merged = { ...baseContent, ...newContent }
-    const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[currentActivity]?.version ?? 0)) + 1
+    const merged = { ...baseContent, ...pendingArtifactSave.sections }
+    const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[targetActivity]?.version ?? 0)) + 1
 
-    // 우측 패널을 현재 활동으로 먼저 전환 (setViewingActivity가 currentArtifact를 null로 초기화하므로 반드시 먼저 호출)
-    setViewingActivity(currentActivity)
-    // 그 다음 artifact 설정 (초기화 이후에 덮어씀)
+    // 우측 패널을 대상 활동으로 먼저 전환
+    setViewingActivity(targetActivity)
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
-      activityCode: currentActivity,
-      artifactType: activityMeta.label,
-      title: pendingArtifactSave.title,
+      activityCode: targetActivity,
+      artifactType: targetMeta.label,
+      title: targetMeta.label + ' 산출물',
       status: 'in_review',
       currentVersion: newVersion,
       aiDraft: merged,
       createdBy: userProfile?.uid ?? 'demo-user',
       meta: {
-        author: 'AI 분석',
+        author: pendingArtifactSave.proposerName ? `${pendingArtifactSave.proposerName} 제안` : 'AI 분석',
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-        evidence: '팀 자유 토론 분석',
+        evidence: '팀 자유 토의 분석',
         approvalStatus: 'pending',
       },
     })
-    // Firestore에도 저장
     if (project?.id) {
-      setProjectArtifact(project.id, currentActivity, {
+      setProjectArtifact(project.id, targetActivity, {
         status: 'in_review',
-        title: pendingArtifactSave.title,
+        title: targetMeta.label + ' 산출물',
         content: merged,
         version: newVersion,
       }).catch(console.error)
     }
+    // Firestore 제안도 함께 정리
+    if (project?.id && project.artifactProposal) {
+      clearArtifactProposal(project.id).catch(console.error)
+    }
     setPendingArtifactSave(null)
   }
 
-  // ─── 팀 토론 승낙 (AI 제안 카드) ────────────────────
+  // ─── 팀 토의 승낙 (AI 제안 카드) ────────────────────
   async function handleAcceptDiscussion() {
     setPendingTeamDiscussion(null)
     await setTeamDiscussion(proj.id, currentActivity, true, pendingTeamDiscussion?.topic).catch(console.error)
@@ -1286,7 +1687,7 @@ export function ChatPanel() {
     setTeamDiscussionStartIdx(messages.filter(m => m.role !== 'system').length)
   }
 
-  // ─── 팀 토론 종료 → AI 분석 ──────────────────────────
+  // ─── 팀 토의 종료 → AI 분석 ──────────────────────────
   async function handleEndDiscussion() {
     setDiscussionMode('ai_facilitated')
     setIsAnalyzing(true)
@@ -1301,37 +1702,43 @@ export function ChatPanel() {
       .map(m => `${m.role === 'user' ? '교사' : 'AI'}: ${m.content}`)
       .join('\n\n')
 
-    // 활동별 분석 지시: [ARTIFACT_UPDATE] 신호로 저장 형식을 명확히 지정
-    // 활동별 맞춤 분석 프롬프트 (없으면 공통 형식 사용)
+    // P0-phil1 (Task #27): 산출물 쓰기는 교사 명시적 허락 필요.
+    // 분석 응답에서 [ARTIFACT_UPDATE] 직접 방출 금지 → ACTION_CARD로 저장 제안만.
+    // 교사가 primary "산출물에 저장" 클릭 시 다음 턴에서 AI가 신호 방출.
     const activityAnalysisPrompt: Partial<Record<ActivityCode, string>> = {
-      'T-1-1': `다음 토론을 분석하여 합의된 팀 비전을 정리해주세요.
+      'T-1-1': `다음 토의를 분석하여 합의된 팀 비전을 정리해주세요.
 
 ---
 ${discussionSummary}
 ---
 
 출력 형식:
-1. 팀이 합의한 핵심 내용 (3줄 이내)
+1. 팀이 합의한 핵심 내용 (3줄 이내, 비전 문장 초안 포함)
 2. 보완이 필요한 부분 (없으면 생략)
 
-분석 후 반드시 아래 신호를 출력한다 (레이블 없이 신호만 단독 출력):
-[ARTIFACT_UPDATE: 팀 비전=비전 문장]`,
+충분히 저장 가능한 합의가 보이면 응답 맨 끝에 ACTION_CARD로 교사 팀의 허락을 구한다:
+[ACTION_CARD: intent=팀 비전 저장 제안 | primary=산출물에 저장 | secondary=조금 더 다듬기 | skip=지금은 넘기기]
 
-      'T-1-2': `다음 토론을 분석하여 합의된 교수학습 방향을 정리해주세요.
+합의가 아직 부족하면 ACTION_CARD 없이 보완 방향만 제시한다.
+⚠️ [ARTIFACT_UPDATE] 신호를 이 응답에 직접 출력하는 것 금지 — 교사가 primary 버튼을 눌러야만 다음 턴에서 방출한다.`,
+
+      'T-1-2': `다음 토의를 분석하여 합의된 교수학습 방향을 정리해주세요.
 
 ---
 ${discussionSummary}
 ---
 
 출력 형식:
-1. 팀이 합의한 핵심 내용 (3줄 이내)
+1. 팀이 합의한 핵심 내용 (3줄 이내, 키워드 + 통합 방향 문장 초안 포함)
 2. 보완이 필요한 부분 (없으면 생략)
 
-분석 후 반드시 아래 신호를 출력한다 (레이블 없이 신호만 단독 출력):
-[ARTIFACT_UPDATE: 교수학습 방향=키워드1 + 키워드2 — 한 줄 통합 방향 문장]
-합의가 완전하지 않아도 현재까지 논의된 키워드로 초안을 저장한다.`,
+충분히 저장 가능한 합의가 보이면 응답 맨 끝에 ACTION_CARD로 교사 팀의 허락을 구한다:
+[ACTION_CARD: intent=교수학습 방향 저장 제안 | primary=산출물에 저장 | secondary=조금 더 다듬기 | skip=지금은 넘기기]
 
-      'T-2-1': `다음 토론을 분석하여 합의된 역할 배분을 정리해주세요.
+합의가 아직 부족하면 ACTION_CARD 없이 보완 방향만 제시한다.
+⚠️ [ARTIFACT_UPDATE] 신호를 이 응답에 직접 출력하는 것 금지 — 교사가 primary 버튼을 눌러야만 다음 턴에서 방출한다.`,
+
+      'T-2-1': `다음 토의를 분석하여 합의된 역할 배분을 정리해주세요.
 
 ---
 ${discussionSummary}
@@ -1341,10 +1748,13 @@ ${discussionSummary}
 1. 팀이 합의한 핵심 내용 (역할별 담당자 명시)
 2. 보완이 필요한 부분 (없으면 생략)
 
-분석 후 배정된 역할별로 각각 아래 신호를 출력한다 (레이블 없이 신호만 단독 출력):
-[ARTIFACT_UPDATE: 역할명=담당자 이름 — 역할 내용]`,
+역할 배분이 충분히 합의되면 응답 맨 끝에 ACTION_CARD로 교사 팀의 허락을 구한다:
+[ACTION_CARD: intent=역할 배분 저장 제안 | primary=산출물에 저장 | secondary=조금 더 다듬기 | skip=지금은 넘기기]
 
-      'T-2-2': `다음 토론을 분석하여 합의된 팀 규칙을 정리해주세요.
+합의가 아직 부족하면 ACTION_CARD 없이 보완 방향만 제시한다.
+⚠️ [ARTIFACT_UPDATE] 신호를 이 응답에 직접 출력하는 것 금지 — 교사가 primary 버튼을 눌러야만 다음 턴에서 방출한다.`,
+
+      'T-2-2': `다음 토의를 분석하여 합의된 팀 규칙을 정리해주세요.
 
 ---
 ${discussionSummary}
@@ -1354,20 +1764,29 @@ ${discussionSummary}
 1. 팀이 합의한 규칙 목록 (규칙명 + 구체적 내용 + 위반 시 조치 포함)
 2. 보완이 필요한 부분 (없으면 생략)
 
-분석 후 합의된 규칙 전체를 아래 신호 하나로 출력한다 (레이블 없이 신호만 단독 출력):
-⚠️ 키워드 나열 금지. 위에서 정리한 규칙의 설명과 위반 시 조치를 빠짐없이 포함한다.
-[ARTIFACT_UPDATE: 팀 규칙=**규칙명1**: 규칙 설명 (위반 시: 조치) **규칙명2**: 규칙 설명 (위반 시: 조치) ...]`,
+⚠️ 키워드 나열 금지. 규칙 설명과 위반 시 조치를 빠짐없이 포함한다.
+
+규칙이 충분히 합의되면 응답 맨 끝에 ACTION_CARD로 교사 팀의 허락을 구한다:
+[ACTION_CARD: intent=팀 규칙 저장 제안 | primary=산출물에 저장 | secondary=조금 더 다듬기 | skip=지금은 넘기기]
+
+합의가 아직 부족하면 ACTION_CARD 없이 보완 방향만 제시한다.
+⚠️ [ARTIFACT_UPDATE] 신호를 이 응답에 직접 출력하는 것 금지 — 교사가 primary 버튼을 눌러야만 다음 턴에서 방출한다.`,
     }
 
-    const analysisPrompt = activityAnalysisPrompt[currentActivity] ?? `다음은 방금 진행된 팀 자유 토론 내용입니다. AI 개입 없이 교사들끼리 나눈 대화입니다.
+    const analysisPrompt = activityAnalysisPrompt[currentActivity] ?? `다음은 방금 진행된 팀 자유 토의 내용입니다. AI 개입 없이 교사들끼리 나눈 대화입니다.
 
 ---
 ${discussionSummary}
 ---
 
-이 토론을 분석하여 다음을 제시해주세요:
+이 토의를 분석하여 다음을 제시해주세요:
 1. 팀이 합의한 핵심 내용 (3줄 이내)
-2. 보완이 필요한 부분 (없으면 생략)`
+2. 보완이 필요한 부분 (없으면 생략)
+
+충분히 저장 가능한 합의가 보이면 응답 맨 끝에 ACTION_CARD로 교사 팀의 허락을 구한다:
+[ACTION_CARD: intent=분석 내용 저장 제안 | primary=산출물에 저장 | secondary=조금 더 다듬기 | skip=지금은 넘기기]
+
+⚠️ [ARTIFACT_UPDATE] 신호를 이 응답에 직접 출력하는 것 금지 — 교사가 primary 버튼을 눌러야만 다음 턴에서 방출한다.`
 
     try {
       await streamFromAPI(
@@ -1377,48 +1796,88 @@ ${discussionSummary}
         (fullText) => {
           const signal = parseDiscussionSignal(fullText)
           let text1 = signal ? signal.cleanText : fullText
+          // P0-phil1 (Task #27): 분석 응답은 ACTION_CARD 저장 제안 경로만 허용.
+          // 모델이 규칙 0-2를 위반하고 ARTIFACT_UPDATE/CONFIRM을 방출해도 구조적으로 버림.
           const { codes: confirmCodes, cleanText: text1c } = parseArtifactConfirm(text1)
-          const { updates: artifactUpdates, cleanText } = parseArtifactUpdates(text1c)
-          const displayText = cleanText
+          const { updates: artifactUpdates, cleanText: text1d } = parseArtifactUpdates(text1c)
+          if (artifactUpdates.length > 0) {
+            console.warn('[handleEndDiscussion] 규칙 0-2 위반: 분석 응답에 ARTIFACT_UPDATE 방출됨. 무시하고 ACTION_CARD 경로만 채택.', artifactUpdates)
+          }
+          if (confirmCodes.length > 0) {
+            console.warn('[handleEndDiscussion] 규칙 0-2 위반: 분석 응답에 ARTIFACT_CONFIRM 방출됨. 무시.', confirmCodes)
+          }
+          // P0-phil2 (Task #30): 분석 응답에서도 ACTION_CARD 파싱 → Message.actionCard 필드.
+          // 신호 블록은 displayText에서 strip (raw 텍스트 노출 방지) — Phase 1-b 메인 파서와 동일 처리.
+          const parsedActionCardAnalysis = parseActionCard(text1d)
+          const displayText = (parsedActionCardAnalysis ? parsedActionCardAnalysis.cleanText : text1d).trimEnd()
+          const newMsgIdAnalysis = Date.now().toString()
           addMessage({
-            id: Date.now().toString(),
+            id: newMsgIdAnalysis,
             role: 'assistant',
             content: displayText,
             activityCode: currentActivity,
             activityType: '성찰',
             agentType: 'orchestrator',
             createdAt: Timestamp.now(),
+            ...(parsedActionCardAnalysis ? { actionCard: parsedActionCardAnalysis.card, actionCardState: 'pending' as const } : {}),
           })
           clearStreamingText()
           saveMessage(proj.id, currentActivity, {
             role: 'assistant', content: displayText,
             activityCode: currentActivity, activityType: '성찰', agentType: 'orchestrator',
-          }).catch(console.error)
-          // ARTIFACT_UPDATE 신호가 있으면 바로 반영 (크로스 활동 포함)
-          const hasSavedAnalysis = artifactUpdates.some(u => Object.keys(u.sections).length > 0)
-          if (hasSavedAnalysis) {
-            artifactUpdates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
-          } else {
-            // 없으면 분석 내용을 섹션으로 파싱하여 저장 제안
-            const parsedSections = parseAnalysisToSections(displayText)
-            if (Object.keys(parsedSections).length > 0) {
-              setPendingArtifactSave({
-                title: `${activityMeta.label} - 팀 토론 분석`,
-                sections: parsedSections,
-              })
-            }
-          }
-          if (confirmCodes.length > 0) applyArtifactConfirm(confirmCodes)
+            ...(parsedActionCardAnalysis ? { actionCard: parsedActionCardAnalysis.card, actionCardState: 'pending' as const } : {}),
+          }, newMsgIdAnalysis).catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
 
         }
       )
-    } catch (err) { console.error('Analysis error:', err) }
+    } catch (err) {
+      console.error('Analysis error:', err)
+      setChatError('팀 토의 분석 중 오류가 발생했습니다. 다시 시도해 주세요.')
+      clearStreamingText()
+    }
     finally { setIsAnalyzing(false) }
   }
 
   const isTeamMode = discussionMode === 'team_discussion'
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
+
+  function pushGraphSelectionState(nextPinnedStandards: GraphPinnedStandard[], nextCheckedStandardIds: string[]) {
+    if (!project?.id || !isHost) return
+    lastGraphSelectionMutationAtRef.current = Date.now()
+    setGraphSelectionState(project.id, {
+      pinnedStandards: nextPinnedStandards,
+      checkedStandardIds: nextCheckedStandardIds,
+      updatedByUid: userProfile?.uid ?? null,
+    }).catch((err) => {
+      console.error('[setGraphSelectionState] 동기화 실패:', err)
+    })
+  }
+
+  function restoreGraphSelection(savedData?: GraphSavedData | null) {
+    const restored = buildGraphSelectionFromSavedData(savedData)
+    pinnedStandardsRef.current = restored.pinnedStandards
+    checkedGraphStandardIdsRef.current = restored.checkedStandardIds
+    setPinnedStandards(restored.pinnedStandards)
+    setCheckedGraphStandardIds(restored.checkedStandardIds)
+    return restored
+  }
+
+  // ─── Firestore 팀원 산출물 제안 → 방장 확인 카드 ────
+  const lastProposalAtRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!isHost) return
+    const proposal = proj.artifactProposal
+    if (!proposal) return
+    if (lastProposalAtRef.current === proposal.proposedAt) return
+    lastProposalAtRef.current = proposal.proposedAt
+    setPendingArtifactSave({
+      title: `${proposal.proposedByName}의 산출물 저장 제안`,
+      sections: proposal.sections,
+      activityCode: proposal.activityCode,
+      proposerName: proposal.proposedByName,
+    })
+  }, [isHost, proj.artifactProposal])
 
   const visibleMessages = useMemo(
     () => messages.filter(m => m.role !== 'system'),
@@ -1481,23 +1940,46 @@ ${discussionSummary}
           const t2 = ret ? ret.cleanText : t1
           const { codes: cCodes, cleanText: t2c } = parseArtifactConfirm(t2)
           const { updates: upd, cleanText: t2d } = parseArtifactUpdates(t2c)
-          const { cleanText: finalText, helpMessage: hm } = parseHelpCard(t2d)
+          const { cleanText: t2e, helpMessage: hm } = parseHelpCard(t2d)
+          // Phase 1-b: ACTION_CARD 파싱 (§12-4 상호배제 규칙)
+          const optionsPresentD = !!parseOptions(t2e)
+          const conflictingD =
+            signal ? 'TEAM_DISCUSSION_READY' :
+            advance ? 'ACTIVITY_ADVANCE' :
+            ret ? 'ACTIVITY_RETURN' :
+            hm ? 'HELP_CARD' :
+            optionsPresentD ? 'A안/B안' :
+            null
+          let parsedActionCardD: { card: ActionCard; cleanText: string } | null = null
+          if (conflictingD) {
+            if (process.env.NODE_ENV === 'development' && /\[ACTION_CARD:/.test(t2e)) {
+              console.warn('[ACTION_CARD] 상호배제 규칙 위반 — 무시.', { conflictingWith: conflictingD })
+            }
+          } else {
+            parsedActionCardD = parseActionCard(t2e)
+          }
+          const finalText = parsedActionCardD ? parsedActionCardD.cleanText : t2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
           if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
           const newMsgId = generateMessageId(proj.id, currentActivity)
-          addMessage({ id: newMsgId, role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now() })
+          addMessage({ id: newMsgId, role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now(),
+            ...(parsedActionCardD ? { actionCard: parsedActionCardD.card, actionCardState: 'pending' as const } : {}),
+          })
           if (hm) setHelpCardMap(prev => ({ ...prev, [newMsgId]: hm }))
           clearStreamingText()
           // 메시지 저장 완료 후 streaming 상태 삭제 → B 화면에서 공백 없이 메시지로 전환
-          saveMessage(proj.id, currentActivity, { role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator' }, newMsgId)
+          saveMessage(proj.id, currentActivity, {
+            role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
+            ...(parsedActionCardD ? { actionCard: parsedActionCardD.card, actionCardState: 'pending' as const } : {}),
+          }, newMsgId)
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           upd.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
           if (cCodes.length > 0) applyArtifactConfirm(cCodes)
-          if (!upd.some(u => Object.keys(u.sections).length > 0)) {
-            const saveIntent = parseSaveIntent(fullText)
-            if (saveIntent) setPendingArtifactSave(saveIntent)
-          }
+          // P0-phil2 (Task #30): parseSaveIntent fallback 제거.
+          // A안/B안 OptionsMessage가 이미 저장 결정을 묻는 중에 텍스트 패턴 매칭으로
+          // "산출물 초안으로 저장할까요?" 카드를 또 띄우는 중복 UI 발생. 규칙 0-2/A안 게이트와 충돌.
+          // 저장은 (a) A안/B안 명시 선택 또는 (b) ACTION_CARD primary 클릭 후 ARTIFACT_UPDATE 신호 경로만 허용.
           if (advance) setPendingAdvance(advance.nextActivity)
           else if (ret) handleActivityReturn(ret.targetActivity)
         }
@@ -1508,6 +1990,37 @@ ${discussionSummary}
       if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
       clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? '').catch(() => {})
     } finally { setIsLoading(false) }
+  }
+
+  // ─── Phase 1-b: ACTION_CARD 버튼 핸들러 ──────────────────
+  // primary/secondary: 라벨을 AI 채팅으로 전송 (방장만). skip: Firestore에 기록하고 메시지 상태 갱신 (모두 가능).
+  async function handleActionCardClick(
+    msg: Message,
+    selection: 'primary' | 'secondary' | 'skip',
+    label: string
+  ) {
+    if (!project || !msg.actionCard) return
+    // 메시지 상태 갱신 — Firestore 업데이트 실패해도 낙관적 UI는 ActionCard 내부 clicked 플래그로 처리
+    const state: 'selected' | 'skipped' = selection === 'skip' ? 'skipped' : 'selected'
+    updateMessageActionCardState(proj.id, msg.activityCode, msg.id, state, selection).catch(console.error)
+
+    if (selection === 'skip') {
+      // 가치중립 skip — Firestore skippedActionCards 배열에 익명 기록 (재오픈 방지는 renderer가 담당)
+      const entry: SkippedActionCard = {
+        cardId: msg.id,
+        activityCode: msg.activityCode,
+        intent: msg.actionCard.intent,
+        primary: msg.actionCard.primary,
+        dismissedBy: userProfile?.uid ?? 'unknown',
+        displayName: userProfile?.displayName ?? '팀원',
+        dismissedAt: Date.now(),
+      }
+      recordActionCardSkip(proj.id, entry).catch(console.error)
+      return
+    }
+
+    // primary/secondary — 방장만 도달. 라벨을 직접 채팅에 전송 (sendMessageDirectly 재사용)
+    await sendMessageDirectly(label)
   }
 
   // ─── 메시지 전송 ──────────────────────────────────────
@@ -1546,7 +2059,7 @@ ${discussionSummary}
     }, userMsgId).catch(console.error)
     setReplyTo(null)
 
-    // 팀 토론 모드 또는 선택 대기 중: AI 호출 없이 메시지만 저장
+    // 팀 토의 모드 또는 선택 대기 중: AI 호출 없이 메시지만 저장
     if (isTeamMode || isWaitingForChoice) return
 
     setIsLoading(true)
@@ -1578,7 +2091,30 @@ ${discussionSummary}
           const text2 = ret ? ret.cleanText : text1
           const { codes: confirmCodes2, cleanText: text2c } = parseArtifactConfirm(text2)
           const { updates, cleanText: text2d } = parseArtifactUpdates(text2c)
-          const { cleanText, helpMessage } = parseHelpCard(text2d)
+          const { cleanText: text2e, helpMessage } = parseHelpCard(text2d)
+          // ─ Phase 1-b: ACTION_CARD 파싱 (상호배제 규칙 §12-4 준수) ─
+          // 상위 체인에서 발견된 다른 신호(ADVANCE/RETURN/DISCUSSION_READY/HELP_CARD/A안·B안)가 있으면 ACTION_CARD 무시.
+          // ARTIFACT_UPDATE/CONFIRM과는 공존 허용(§12-2).
+          const optionsPresent = !!parseOptions(text2e)
+          const conflictingWith =
+            signal ? 'TEAM_DISCUSSION_READY' :
+            advance ? 'ACTIVITY_ADVANCE' :
+            ret ? 'ACTIVITY_RETURN' :
+            helpMessage ? 'HELP_CARD' :
+            optionsPresent ? 'A안/B안' :
+            null
+          let parsedActionCard: { card: ActionCard; cleanText: string } | null = null
+          if (conflictingWith) {
+            // ACTION_CARD 블록이 존재하더라도 drop. cleanText에서 제거만 수행.
+            if (/\[ACTION_CARD:/.test(text2e)) {
+              if (process.env.NODE_ENV === 'development') {
+                console.warn('[ACTION_CARD] 상호배제 규칙 위반 — 다른 신호와 동시 사용. ACTION_CARD 무시.', { conflictingWith })
+              }
+            }
+          } else {
+            parsedActionCard = parseActionCard(text2e)
+          }
+          const cleanText = parsedActionCard ? parsedActionCard.cleanText : text2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
           const displayText = cleanText
           // interval 정리 + Firestore 스트리밍 상태 삭제
           if (streamingFlushRef.current) {
@@ -1593,6 +2129,7 @@ ${discussionSummary}
             activityCode: currentActivity,
             activityType: '생성',
             agentType: 'orchestrator',
+            ...(parsedActionCard ? { actionCard: parsedActionCard.card, actionCardState: 'pending' as const } : {}),
             createdAt: Timestamp.now(),
           })
           if (helpMessage) setHelpCardMap(prev => ({ ...prev, [newMsgId]: helpMessage }))
@@ -1601,6 +2138,7 @@ ${discussionSummary}
           saveMessage(proj.id, currentActivity, {
             role: 'assistant', content: displayText,
             activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
+            ...(parsedActionCard ? { actionCard: parsedActionCard.card, actionCardState: 'pending' as const } : {}),
           }, newMsgId)
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch((err) => { console.error(err); setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.') })
@@ -1609,10 +2147,16 @@ ${discussionSummary}
           updates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
           if (confirmCodes2.length > 0) applyArtifactConfirm(confirmCodes2)
 
-          // [ARTIFACT_UPDATE] 없이 저장 의도만 있으면 → save proposal 자동 생성
-          if (!hasSavedInResponse) {
-            const saveIntent = parseSaveIntent(fullText)
-            if (saveIntent) setPendingArtifactSave(saveIntent)
+          // [ARTIFACT_UPDATE] 없이 저장 처리
+          // P0-phil2 (Task #30): A-2-1 외 활동의 parseSaveIntent fallback 제거.
+          // 일반 활동의 저장 경로는 (a) A안/B안 명시 선택 → ARTIFACT_UPDATE,
+          // (b) ACTION_CARD primary 클릭 → 다음 턴 ARTIFACT_UPDATE 둘만 허용.
+          // A-2-1은 마크다운 표 패턴 매칭으로 자동 산출물 추출하는 특수 경로 — 유지.
+          if (!hasSavedInResponse && currentActivity === 'A-2-1') {
+            const tableProposal = extractA21TableForSave(displayText)
+            if (tableProposal) {
+              setPendingArtifactSave({ ...tableProposal, activityCode: 'A-2-1' })
+            }
           }
 
           if (advance) {
@@ -1645,31 +2189,33 @@ ${discussionSummary}
     : []
 
   // ─── 슬래시 커맨드 실행 ─────────────────────────────
-  function executeSlashCommand(cmdId: SlashCommandId) {
+  async function executeSlashCommand(cmdId: SlashCommandId) {
     // /command 텍스트 제거
     const cleanInput = input.replace(/(?:^|\n)\/([\w가-힣]*)$/, '').trim()
     setInput(cleanInput)
     setSlashQuery(null)
 
+    if ((isLoading || isAnalyzing) && cmdId !== 'team-chat') {
+      setChatError('AI 응답이 진행 중입니다. 완료 후 다시 커맨드를 실행해주세요.')
+      return
+    }
+
     if (cmdId === 'team-chat') {
       if (isHost) setShowDiscussionConfirm(true)
-      else requestTeamDiscussion(proj.id, currentActivity, userProfile!.uid, userProfile!.displayName).catch(console.error)
+      else await requestTeamDiscussion(proj.id, currentActivity, userProfile!.uid, userProfile!.displayName).catch(console.error)
     } else if (cmdId === 'artifact') {
       if (replyTo) {
         // 답글 대상 메시지 내용을 산출물로 저장 제안
         const content = replyTo.content.replace(/\[.*?\]/g, '').trim()
-        setPendingArtifactSave({
-          title: activityMeta.label + ' - 선택 저장',
-          sections: { [activityMeta.label]: content },
-        })
+        applyArtifactUpdates({ [activityMeta.label]: content })
         setReplyTo(null)
       } else {
-        setInput('지금까지 논의된 내용을 산출물로 정리해서 저장해주세요')
+        await sendMessageDirectly('지금까지 논의된 내용을 산출물로 정리해서 저장해주세요')
       }
     } else if (cmdId === 'briefing') {
-      setInput('지금까지 완료된 모든 활동의 확정 산출물을 브리핑해주세요')
+      await sendMessageDirectly('지금까지 완료된 모든 활동의 확정 산출물을 브리핑해주세요')
     } else if (cmdId === 'next') {
-      setInput('다음 단계로 진행하겠습니다')
+      handlePromptNextCommand()
     }
   }
 
@@ -1688,7 +2234,7 @@ ${discussionSummary}
       }
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault()
-        executeSlashCommand(filteredSlashCmds[slashCmdIdx].id)
+        void executeSlashCommand(filteredSlashCmds[slashCmdIdx].id)
         return
       }
       if (e.key === 'Escape') {
@@ -1753,6 +2299,95 @@ ${discussionSummary}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {/* 끊긴 대화 재시도 버튼: 마지막 메시지가 user이고 로딩 중이 아닐 때 */}
+          {(() => {
+            const lastMsg = messages[messages.length - 1]
+            const canRetry = !isLoading && lastMsg && lastMsg.role === 'user'
+            if (!canRetry) return null
+            const retryContent = lastMsg.content
+            return (
+              <button
+                onClick={() => sendMessageDirectly(retryContent)}
+                className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full border border-[#F28B82] bg-[#FCE8E6] text-[#C5221F] hover:bg-[#f9d2cf] transition-colors"
+                title="AI 응답이 끊겼습니다. 다시 시도합니다"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.76-4.24L9 6h6V0l-1.35 2.35z"/>
+                </svg>
+                재시도
+              </button>
+            )
+          })()}
+          {/* 지식 그래프 토글 버튼 (A단계 활동에서만 표시) */}
+          {GRAPH_ACTIVITIES.includes(currentActivity) && (
+            <button
+              onClick={() => {
+                const next = !showGraphPanel
+                setShowGraphPanel(next)
+                if (next) {
+                  // 헤더 버튼: 저장된 그래프가 있으면 복원, 없으면 빈 상태
+                  // 키워드 검색 안 함 (사용자가 검색바에서 직접 입력)
+                  setActiveGraphCodes([])  // 반영하기 코드 초기화
+                  stableGraphKeywordRef.current = ' '
+                  setStableGraphKeyword(' ')
+                } else {
+                  stableGraphKeywordRef.current = ''
+                  setStableGraphKeyword('')
+                }
+                let selectionToShare = {
+                  pinnedStandards,
+                  checkedStandardIds: checkedGraphStandardIds,
+                }
+
+                if (next && !proj.graphSelectionState && proj.graphSavedData && pinnedStandards.length === 0 && checkedGraphStandardIds.length === 0) {
+                  selectionToShare = restoreGraphSelection(proj.graphSavedData)
+                }
+
+                if (isHost) {
+                  setGraphOpen(proj.id, next, next ? ' ' : undefined).catch(console.error)
+                  if (next) {
+                    pushGraphSelectionState(selectionToShare.pinnedStandards, selectionToShare.checkedStandardIds)
+                  }
+                }
+              }}
+              className={cn(
+                'flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-full transition-colors',
+                showGraphPanel
+                  ? 'bg-[#7B1FA2] text-white border-2 border-[#7B1FA2] shadow-md'
+                  : 'bg-white text-[#7B1FA2] border-2 border-[#CE93D8] hover:bg-[#F3E5F5] shadow-sm kg-graph-btn-rainbow',
+              )}
+              title="교육과정 지식 그래프"
+            >
+              <TreeStructure size={15} weight={showGraphPanel ? 'fill' : 'bold'} />
+              지식 그래프 확인
+              {isHost && <span className="text-[8px] opacity-70 ml-0.5">{showGraphPanel ? '공유중' : ''}</span>}
+            </button>
+          )}
+          {/* 문제상황 개발 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
+          {currentActivity === 'Ds-1-2' && (
+            <button
+              onClick={() => {
+                const next = !showProblemSituationDesigner
+                setShowProblemSituationDesigner(next)
+                if (isHost) {
+                  import('@/lib/firebase/projects').then(m =>
+                    m.setProblemSituationOpen(proj.id, next).catch(console.error)
+                  )
+                }
+              }}
+              className={cn(
+                'flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full border transition-colors',
+                showProblemSituationDesigner
+                  ? 'bg-[#00897B] text-white border-[#00897B]'
+                  : 'bg-white text-[#00897B] border-[#80CBC4] hover:bg-[#E0F2F1]',
+              )}
+              title="문제상황 개발 워크숍"
+            >
+              <PencilRuler size={13} weight={showProblemSituationDesigner ? 'fill' : 'regular'} />
+              문제상황 워크숍
+              {isHost && <span className="text-[8px] opacity-70 ml-0.5">{showProblemSituationDesigner ? '공유중' : ''}</span>}
+            </button>
+          )}
           {userProfile && (
             <div className="flex items-center gap-1.5">
               <div
@@ -1766,23 +2401,23 @@ ${discussionSummary}
           )}
           {isTeamMode && (
             <span className="text-[10px] bg-[#B2DFDB] text-[#00695C] px-2 py-0.5 rounded-full font-medium">
-              팀 자유 토론 중
+              팀 자유 토의 중
             </span>
           )}
         </div>
       </div>
 
-      {/* 팀 토론 배너 */}
+      {/* 팀 토의 배너 */}
       {isTeamMode && (
         <TeamDiscussionBanner
-          topic={project.teamDiscussions?.[currentActivity]?.topic || '팀 자유 토론'}
+          topic={project.teamDiscussions?.[currentActivity]?.topic || '팀 자유 토의'}
           onEnd={handleEndDiscussionAndAnalyze}
           isHost={isHost}
         />
       )}
 
       {/* 가드레일 경고 배너: A-2-3 미완성 시 Ds 설계 활동에서 표시 */}
-      {ACTIVITY_META[currentActivity]?.isGuardrailTarget && !project.isA23Completed && (
+      {ACTIVITY_META[currentActivity]?.isGuardrailTarget && !hasA23Guardrail && (
         <div className="mx-4 mt-3 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-[#FFF8E1] border border-[#FFD54F]">
           <Warning size={16} weight="fill" className="text-[#F9A825] flex-shrink-0 mt-0.5" />
           <p className="text-[12px] text-[#795548] leading-snug">
@@ -1792,9 +2427,380 @@ ${discussionSummary}
         </div>
       )}
 
+      {/* 문제상황 디자이너 — Portal로 document.body에 렌더링 */}
+      {/* currentActivity 조건 제거: Firestore 동기화로 currentActivity가 바뀌면 포털이 언마운트되어 상태가 초기화되는 버그 방지 */}
+      {showProblemSituationDesigner && typeof document !== 'undefined' && (() => {
+        const evalArtifact = proj.artifacts?.['Ds-1-1']
+        const evaluationPlan = evalArtifact
+          ? Object.entries(evalArtifact.content as Record<string, unknown>)
+              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          : undefined
+        const a21Artifact = proj.artifacts?.['A-2-1']
+        const achievementStandardsAnalysis = a21Artifact
+          ? Object.entries(a21Artifact.content as Record<string, unknown>)
+              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          : undefined
+        const a22Artifact = proj.artifacts?.['A-2-2']
+        const learningObjective = a22Artifact
+          ? Object.entries(a22Artifact.content as Record<string, unknown>)
+              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          : undefined
+        const a23Artifact = proj.artifacts?.['A-2-3']
+        const learnerProfile = a23Artifact
+          ? Object.entries(a23Artifact.content as Record<string, unknown>)
+              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          : undefined
+
+        return createPortal(
+          <ProblemSituationDesigner
+            projectId={proj.id}
+            projectTitle={proj.title}
+            targetGradeGroup={proj.targetGradeGroup}
+            targetSubjects={proj.targetSubjects}
+            graphSavedData={proj.graphSavedData as never}
+            achievementStandardsAnalysis={achievementStandardsAnalysis}
+            evaluationPlan={evaluationPlan}
+            learningObjective={learningObjective}
+            learnerProfile={learnerProfile}
+            savedData={proj.problemSituationData ?? null}
+            isLeader={isHost}
+            onSave={async (data) => {
+              const { saveProblemSituationData, setProjectArtifact } = await import('@/lib/firebase/projects')
+              await saveProblemSituationData(proj.id, {
+                scenario: data.scenario,
+                drivingQuestion: data.drivingQuestion,
+                essentialQuestions: data.essentialQuestions,
+                fullResult: data.fullResult as Record<string, unknown> | undefined,
+              })
+
+              // 산출물(artifacts['Ds-1-2'])에 워크숍 결과 구조 그대로 저장
+              const fr = data.fullResult as import('@/app/api/problem-situation/generate/route').ProblemSituationResult | undefined
+              if (fr) {
+                const artifactContent: Record<string, unknown> = {
+                  '문제상황 후보': fr.candidates.map((c, i) => ({
+                    번호: i + 1,
+                    제목: c.title,
+                    문제상황: c.scenario,
+                    데이터출처: c.dataSources,
+                    선정: fr.recommended.index === i,
+                  })),
+                  '선정 문제상황': {
+                    제목: fr.recommended.title,
+                    문제상황: fr.recommended.fullScenario,
+                    성취기준연결: fr.recommended.standardsAlignment,
+                    데이터출처: fr.recommended.realData,
+                    교과별학습내용: fr.recommended.learningContent,
+                    산출물: fr.recommended.artifacts,
+                    AI점검: fr.recommended.alignmentCheck,
+                  },
+                  '핵심 질문': fr.drivingQuestion,
+                  '탐구 질문': fr.essentialQuestions,
+                }
+                await setProjectArtifact(proj.id, 'Ds-1-2', {
+                  status: 'confirmed',
+                  title: fr.recommended.title,
+                  content: artifactContent,
+                  version: (proj.artifacts?.['Ds-1-2']?.version ?? 0) + 1,
+                  confirmedBy: userProfile?.uid,
+                  confirmedAt: Date.now(),
+                }).catch(console.error)
+              } else {
+                // fallback: fullResult 없는 경우 (기존 저장 데이터 로드 후 저장)
+                const eqList = data.essentialQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+                await setProjectArtifact(proj.id, 'Ds-1-2', {
+                  status: 'confirmed',
+                  title: data.scenario.title,
+                  content: {
+                    '문제상황': data.scenario.row1,
+                    '교과별 학습 내용 및 산출물': data.scenario.row2,
+                    '데이터 출처': data.scenario.row3,
+                    '핵심 질문': data.drivingQuestion,
+                    '탐구 질문': eqList,
+                  },
+                  version: (proj.artifacts?.['Ds-1-2']?.version ?? 0) + 1,
+                  confirmedBy: userProfile?.uid,
+                  confirmedAt: Date.now(),
+                }).catch(console.error)
+              }
+
+              setShowProblemSituationDesigner(false)
+              // 확정된 문제상황을 채팅 메시지로 주입
+              const eqList = data.essentialQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+              const chatContent = [
+                `✅ **문제상황이 확정 저장되었습니다**`,
+                ``,
+                `## 📋 ${data.scenario.title}`,
+                ``,
+                `**문제 상황**`,
+                data.scenario.row1,
+                ``,
+                `**교과별 학습 내용 및 산출물**`,
+                data.scenario.row2,
+                ``,
+                `**데이터 출처**`,
+                data.scenario.row3,
+                ``,
+                `---`,
+                ``,
+                `## 🎯 핵심 질문`,
+                data.drivingQuestion,
+                ``,
+                `## 🔍 탐구 질문`,
+                eqList,
+                ``,
+                `---`,
+                ``,
+                `수정하거나 보완할 내용이 있으면 여기서 바로 말씀해 주세요.`,
+              ].join('\n')
+              const newMsgId = generateMessageId(proj.id, 'Ds-1-2')
+              addMessage({ id: newMsgId, role: 'assistant', content: chatContent, activityCode: 'Ds-1-2', activityType: '제시', agentType: 'orchestrator', createdAt: Timestamp.now() })
+              saveMessage(proj.id, 'Ds-1-2', { role: 'assistant', content: chatContent, activityCode: 'Ds-1-2', activityType: '제시', agentType: 'orchestrator' }, newMsgId).catch(console.error)
+            }}
+            onClose={() => {
+              setShowProblemSituationDesigner(false)
+              if (isHost) {
+                import('@/lib/firebase/projects').then(m =>
+                  m.setProblemSituationOpen(proj.id, false).catch(console.error)
+                )
+              }
+            }}
+          />,
+          document.body,
+        )
+      })()}
+
+      {/* 지식 그래프 모달 — Portal로 document.body에 렌더링 */}
+      {showGraphPanel && GRAPH_ACTIVITIES.includes(currentActivity) && typeof document !== 'undefined' && (() => {
+        // 그래프가 열린 시점의 keyword 사용 (채팅/산출물 업데이트로 인한 재fetch 방지)
+        const graphKeyword = stableGraphKeyword || graphKeywordForShare
+
+        return createPortal(
+          <div
+            className="fixed inset-0 z-[9000] flex items-center justify-center"
+            style={{ background: 'rgba(0,0,0,0.55)' }}
+            onClick={() => {
+              setShowGraphPanel(false)
+              stableGraphKeywordRef.current = ''
+              setStableGraphKeyword('')
+              if (isHost) setGraphOpen(proj.id, false).catch(console.error)
+            }}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              style={{ width: '94vw', maxWidth: 1400, height: '88vh' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* 모달 헤더 */}
+              <div className="flex items-center justify-between px-5 py-3 bg-[#F3E5F5] border-b border-[#CE93D8] shrink-0">
+                <span className="text-sm font-semibold text-[#7B1FA2] flex items-center gap-2 flex-1 min-w-0">
+                  <TreeStructure size={16} weight="fill" className="shrink-0" />
+                  <span className="shrink-0">교육과정 융합 지식 그래프</span>
+                  {isHost && <span className="text-[9px] text-[#9C27B0] bg-white/70 px-1.5 py-0.5 rounded-full shrink-0">팀 공유 중</span>}
+                  <div className="flex-1 min-w-0 flex items-center gap-1">
+                    <input
+                      id="graph-topic-input"
+                      type="text"
+                      defaultValue={graphKeyword.trim() || ''}
+                      placeholder="수업 주제를 입력하고 검색을 누르면 관련 성취기준을 찾습니다"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          const val = (e.target as HTMLInputElement).value.trim()
+                          if (val && val !== stableGraphKeywordRef.current) {
+                            stableGraphKeywordRef.current = val
+                            setStableGraphKeyword(val)
+                            if (isHost) setGraphOpen(proj.id, true, val).catch(console.error)
+                          }
+                        }
+                      }}
+                      className="flex-1 min-w-0 text-[12px] font-normal text-[#3D1C72] bg-white/80 border border-[#CE93D8] rounded-lg px-2.5 py-1 outline-none focus:border-[#7B1FA2] focus:ring-1 focus:ring-[#7B1FA2]/30 placeholder:text-[#CE93D8]/60"
+                    />
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById('graph-topic-input') as HTMLInputElement | null
+                        const val = input?.value.trim()
+                        if (val && val !== stableGraphKeywordRef.current) {
+                          stableGraphKeywordRef.current = val
+                          setStableGraphKeyword(val)
+                          if (isHost) setGraphOpen(proj.id, true, val).catch(console.error)
+                        }
+                      }}
+                      className="shrink-0 px-2.5 py-1 bg-[#7B1FA2] hover:bg-[#6A1B9A] text-white text-[11px] font-bold rounded-lg transition-colors"
+                    >
+                      검색
+                    </button>
+                  </div>
+                </span>
+                <button
+                  onClick={() => {
+                    setShowGraphPanel(false)
+                    stableGraphKeywordRef.current = ''
+                    setStableGraphKeyword('')
+                    if (isHost) setGraphOpen(proj.id, false).catch(console.error)
+                  }}
+                  className="text-[#9E9E9E] hover:text-[#7B1FA2] transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              {/* 그래프 본문 */}
+              <div className="flex-1 min-h-0">
+                <KnowledgeGraphViewer
+                  keyword={graphKeyword}
+                  gradeGroup={proj.targetGradeGroup}
+                  height={undefined}
+                  currentUserName={userProfile?.displayName ?? '나'}
+                  currentUserUid={userProfile?.uid}
+                  isLeader={isHost}
+                  chatMentionedCodes={chatMentionedStds}
+                  pinnedStandards={pinnedStandards}
+                  onPinChange={(nextPins) => {
+                    pinnedStandardsRef.current = nextPins
+                    setPinnedStandards(nextPins)
+                    if (isHost) pushGraphSelectionState(nextPins, checkedGraphStandardIdsRef.current)
+                  }}
+                  externalCheckedStandardIds={checkedGraphStandardIds}
+                  onCheckedStandardsChange={(ids) => {
+                    checkedGraphStandardIdsRef.current = ids
+                    setCheckedGraphStandardIds(ids)
+                    if (isHost) pushGraphSelectionState(pinnedStandardsRef.current, ids)
+                  }}
+                  onClose={() => { setShowGraphPanel(false); stableGraphKeywordRef.current = ''; setStableGraphKeyword('') }}
+                  externalRecommendations={Object.values(proj.graphCenterRecommendations ?? {}).map(r => ({
+                    nodeId: r.nodeId,
+                    recommenderName: r.recommenderName,
+                    recommenderUid: r.recommenderUid ?? undefined,
+                  }))}
+                  externalCenterNodeId={proj.graphCenterNodeId}
+                  savedData={proj.graphSavedData ?? null}
+                  artifactContext={(() => {
+                    const parts: string[] = []
+                    if (proj.targetGradeGroup) parts.push(`학년군: ${proj.targetGradeGroup}`)
+                    if (proj.title) parts.push(`프로젝트: ${proj.title}`)
+                    const arts = proj.artifacts ?? {}
+                    for (const [code, art] of Object.entries(arts)) {
+                      const c = art.content as Record<string, unknown>
+                      const topic = (c['선택 주제'] || c['주제'] || c['수업 목표']) as string | undefined
+                      if (topic) parts.push(`${code} 산출물 — ${topic}`)
+                    }
+                    return parts.join('\n') || undefined
+                  })()}
+                  onSetCenter={(nodeId) => {
+                    setGraphCenter(proj.id, nodeId)
+                  }}
+                  onRecommendCenter={(nodeId) => {
+                    recommendGraphCenter(proj.id, nodeId, userProfile?.displayName ?? '팀원', userProfile?.uid)
+                  }}
+                  onSaveGraph={isHost ? async (data) => {
+                    // 방장만 저장 가능 — 상태/내용 저장만 (채팅 전송 없음)
+                    try {
+                      await saveGraphData(proj.id, data)
+                      setShowGraphPanel(false)
+                    } catch (e) {
+                      console.error('[saveGraphData] 저장 실패:', e)
+                    }
+                  } : undefined}
+                  onSendToChat={isHost ? async (data) => {
+                    // 저장 + 채팅으로 분석 전송
+                    saveGraphData(proj.id, data).catch(e => console.error('[saveGraphData] 저장 실패:', e))
+                    setShowGraphPanel(false)
+
+                    // 기본 정보 라인 구성
+                    const lines: string[] = ['[지식 그래프 저장]']
+                    if (data.centerNode) {
+                      lines.push(`중심 성취기준: ${data.centerNode.label} — ${data.centerNode.text}`)
+                    }
+                    if (data.selectedStandards.length > 0) {
+                      lines.push(`\n선택된 성취기준 (${data.selectedStandards.length}개):`)
+                      data.selectedStandards.forEach(s => {
+                        const rel = s.relationType ? ` | ${s.relationType}` : ''
+                        const pct = s.score ? ` (${Math.round(s.score)}%)` : ''
+                        lines.push(`• ${s.label} ${s.text}${rel}${pct}`)
+                      })
+                    }
+                    if (data.agentNotes.length > 0) {
+                      lines.push(`\nAgent 분석:`)
+                      data.agentNotes.forEach(n => {
+                        lines.push(`• ${n.explanation}${n.teachingNote ? ' → ' + n.teachingNote : ''}`)
+                      })
+                    }
+
+                    // A-2-1: 표를 로컬에서 직접 생성 → AI 메시지로 직접 주입
+                    try {
+                      const a21Res = await fetch('/api/analyze/a21', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          centerNode: data.centerNode,
+                          selectedStandards: data.selectedStandards,
+                        }),
+                      })
+                      type A21Result = {
+                        coreIdeas?: Array<{ subjectId: string; subjectName: string; selectedIdea: string; justification: string }>
+                        standardAnalyses?: Array<{ standardId: string; standardLabel: string; subjectName: string; isCenterStandard: boolean; coreIdea: string; knowledgeUnderstanding: string[]; processFunction: string[]; valueAttitude: string[]; relationType?: string }>
+                      }
+                      const a21: A21Result = a21Res.ok ? await a21Res.json() : {}
+
+                      if (a21.standardAnalyses && a21.standardAnalyses.length > 0) {
+                        const tableLines: string[] = []
+                        if (a21.coreIdeas && a21.coreIdeas.length > 0) {
+                          tableLines.push('## 성취기준 분석\n')
+                          a21.coreIdeas.forEach(ci => {
+                            const isCenterSubj = ci.subjectId === data.centerNode?.subjectId
+                            tableLines.push(`> ${isCenterSubj ? '★ ' : ''}**[${ci.subjectName}] 핵심아이디어**: ${ci.selectedIdea}`)
+                          })
+                          tableLines.push('')
+                        }
+                        tableLines.push('| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |')
+                        tableLines.push('|------|:----------:|-----------|---------|---------|---------|:----:|')
+                        a21.standardAnalyses.forEach(sa => {
+                          const centerMark = sa.isCenterStandard ? '★ ' : ''
+                          const bigo = sa.isCenterStandard ? '중심' : (sa.relationType ?? '연계')
+                          tableLines.push(`| ${sa.subjectName} | ${centerMark}[${sa.standardLabel}] | ${sa.coreIdea} | ${sa.knowledgeUnderstanding.join('<br/>')} | ${sa.processFunction.join('<br/>')} | ${sa.valueAttitude.join('<br/>')} | ${bigo} |`)
+                        })
+                        tableLines.push('')
+                        tableLines.push('**교과 간 융합 분석**\n')
+                        const centerIdea = a21.coreIdeas?.find(ci => ci.subjectId === data.centerNode?.subjectId)
+                        if (centerIdea) tableLines.push(`- **공통 핵심 개념**: ${centerIdea.selectedIdea}`)
+                        const allPF = a21.standardAnalyses.flatMap(sa => sa.processFunction)
+                        const pfFreq = new Map<string, number>()
+                        allPF.forEach(p => pfFreq.set(p, (pfFreq.get(p) ?? 0) + 1))
+                        const commonPF = [...pfFreq.entries()].filter(([, n]) => n > 1).map(([v]) => v).slice(0, 3)
+                        if (commonPF.length > 0) tableLines.push(`- **공통 수행 기능**: ${commonPF.join(', ')}`)
+                        const allKU = a21.standardAnalyses.flatMap(sa => sa.knowledgeUnderstanding)
+                        const centerSa = a21.standardAnalyses.find(sa => sa.isCenterStandard)
+                        tableLines.push(`- **루브릭 연계 핵심 지표**: ① ${allKU[0] ?? ''} ② ${centerSa?.processFunction[0] ?? ''} ③ ${centerSa?.valueAttitude[0] ?? ''}`)
+                        tableLines.push('\n분석표를 확인하신 후, 우측에 나타나는 저장 버튼으로 산출물에 저장하실 수 있습니다. 수정이 필요하시면 말씀해 주세요.')
+
+                        const localMsgId = generateMessageId(proj.id, currentActivity)
+                        const localContent = tableLines.join('\n')
+                        addMessage({ id: localMsgId, role: 'assistant', content: localContent, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now() })
+                        saveMessage(proj.id, currentActivity, { role: 'assistant', content: localContent, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator' }, localMsgId).catch(console.error)
+                        const tableProposal = extractA21TableForSave(localContent)
+                        if (tableProposal) setPendingArtifactSave({ ...tableProposal, activityCode: 'A-2-1' })
+                        const userTriggerContent = lines.join('\n')
+                        const userTriggerMsgId = generateMessageId(proj.id, currentActivity)
+                        addMessage({ id: userTriggerMsgId, role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName, createdAt: Timestamp.now() })
+                        saveMessage(proj.id, currentActivity, { role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName }, userTriggerMsgId).catch(console.error)
+                        return
+                      }
+                    } catch (e) {
+                      console.error('[a21 API]', e)
+                    }
+                    // API 실패 폴백
+                    lines.push('\n위 성취기준을 바탕으로 아래 형식으로 분석표를 즉시 작성해 주세요:\n\n① 각 교과 핵심아이디어를 blockquote(>) 형식으로 먼저 제시 (중심 성취기준 교과에 ★)\n\n② 아래 7열 표 (성취기준 내용 열 없음, 반드시 이 열 구조 유지):\n| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |\n|------|:----------:|-----------|---------|---------|---------|:----:|\n\n③ 교과 간 융합 분석 (공통 개념 / 공통 기능 / 루브릭 연계 지표)')
+                    sendMessageDirectly(lines.join('\n'))
+                  } : undefined}
+                />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      })()}
+
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative">
-        {visibleMessages.length === 0 && !streamingText && !isLoading && (
+        {visibleMessages.length === 0 && !streamingText && !isLoading && !messagesLoaded && (
           <div className="flex items-center justify-center h-full text-[#DADCE0]">
             <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={28} /></span>
           </div>
@@ -1803,11 +2809,35 @@ ${discussionSummary}
         {visibleMessages.map((msg) => {
           if (msg.role === 'system') return null
 
-          // 분석 결과 메시지 (토론 종료 후)
+          // 분석 결과 메시지 (토의 종료 후)
+          // P0-phil3 (Task #32): AnalysisBubble 포맷은 유지하면서 msg.actionCard가 있으면 ActionCard 3버튼을 바로 아래 렌더.
+          //   (공통 L3047 분기는 MessageBubble 경로라 AnalysisBubble 포맷이 사라지므로, 이 분기 내부에서 처리.)
           if (msg.activityType === '성찰' && msg.role === 'assistant') {
+            const stage = ACTIVITY_META[msg.activityCode]?.stage
+            const isSelected = msg.actionCardState === 'selected' || msg.actionCardState === 'skipped'
+            const selectedLabel = msg.actionCard
+              ? (msg.actionCardSelection === 'primary' ? msg.actionCard.primary :
+                 msg.actionCardSelection === 'secondary' ? (msg.actionCard.secondary ?? undefined) :
+                 msg.actionCardSelection === 'skip' ? msg.actionCard.skip :
+                 undefined)
+              : undefined
             return (
               <ContextMenuWrapper key={msg.id} onReply={() => setReplyTo({ id: msg.id, content: msg.content, senderName: 'AI' })}>
                 <AnalysisBubble text={msg.content} />
+                {msg.actionCard && stage && (
+                  <ActionCardComponent
+                    card={msg.actionCard}
+                    stage={stage}
+                    isHost={isHost}
+                    isSelected={isSelected}
+                    selectedLabel={selectedLabel}
+                    onPrimary={() => handleActionCardClick(msg, 'primary', msg.actionCard!.primary)}
+                    onSecondary={msg.actionCard.secondary
+                      ? () => handleActionCardClick(msg, 'secondary', msg.actionCard!.secondary!)
+                      : undefined}
+                    onSkip={() => handleActionCardClick(msg, 'skip', msg.actionCard!.skip)}
+                  />
+                )}
               </ContextMenuWrapper>
             )
           }
@@ -1872,7 +2902,9 @@ ${discussionSummary}
                         const adv = parseActivityAdvance(t1)
                         const t2 = adv ? adv.cleanText : t1
                         const { codes: selConfirmCodes, cleanText: t2c } = parseArtifactConfirm(t2)
-                        const { updates: selUpdates, cleanText } = parseArtifactUpdates(t2c)
+                        const { updates: selUpdates, cleanText: t2d } = parseArtifactUpdates(t2c)
+                        // Phase 1-b: 옵션 선택 응답에 ACTION_CARD는 의미 없음 — stray 블록 제거
+                        const cleanText = t2d.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
                         addMessage({
                           id: (Date.now() + 1).toString(),
                           role: 'assistant', content: cleanText,
@@ -1895,7 +2927,12 @@ ${discussionSummary}
                           if (adv) handleActivityAdvance(adv.nextActivity)
                         }
                       }
-                    ).catch(console.error).finally(() => setIsLoading(false))
+                    ).catch((err) => {
+                      console.error('Option-select chat error:', err)
+                      const msg = err instanceof Error ? err.message : 'AI 응답 중 오류가 발생했습니다.'
+                      setChatError(`${msg} 다시 시도해주세요.`)
+                      clearStreamingText()
+                    }).finally(() => setIsLoading(false))
                   }}
                 />
                 </ContextMenuWrapper>
@@ -1922,6 +2959,30 @@ ${discussionSummary}
             }
           }
 
+          // AI 메시지에 성취기준 코드가 2개 이상 포함됐는지 감지
+          // — "[6사03-01]" 형태 코드가 2개 이상이면 (표/번호목록/불릿 모두 포함)
+          const msgStdCodes = msg.role === 'assistant'
+            ? (msg.content.match(/\[\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2}\]/g) ?? []).map(s => s.slice(1, -1))
+            : []
+          const hasStandardsTable = msgStdCodes.length >= 2
+
+          // A-2-1: 산출물 저장 버튼 표시 조건
+          // — A-2-1 AI 메시지에 핵심아이디어+성취기준 분석표가 있고 방장인 경우
+          const isA21TableMsg = msg.role === 'assistant' && msg.activityCode === 'A-2-1' && !!extractA21TableForSave(msg.content)
+          const a21ArtifactSaved = !!(proj.artifacts?.['A-2-1'])
+
+          // A-2-1: 성취기준 코드 → 내용 툴팁 맵 (graphSavedData 기반)
+          const stdTooltipMap: Record<string, string> | undefined =
+            msg.role === 'assistant' && msg.activityCode === 'A-2-1' && proj.graphSavedData
+              ? (() => {
+                  const map: Record<string, string> = {}
+                  const gd = proj.graphSavedData!
+                  if (gd.centerNode) map[gd.centerNode.label] = gd.centerNode.text
+                  gd.selectedStandards.forEach(s => { map[s.label] = s.text })
+                  return map
+                })()
+              : undefined
+
           return (
             <div key={msg.id}>
               <MessageBubble
@@ -1934,12 +2995,66 @@ ${discussionSummary}
                 isSelf={isSelf}
                 replyTo={msg.replyTo}
                 stage={ACTIVITY_META[msg.activityCode]?.stage}
+                standardTextMap={stdTooltipMap}
                 onReply={() => setReplyTo({
                   id: msg.id,
                   content: msg.content,
                   senderName: msg.role === 'user' ? senderName : 'AI',
                 })}
               />
+              {/* 성취기준 코드가 2개 이상인 AI 메시지 → 지식 그래프 반영 + 산출물 저장 버튼 */}
+              {(hasStandardsTable && GRAPH_ACTIVITIES.includes(currentActivity) && isHost) || (isA21TableMsg && isHost) ? (
+                <div className="flex justify-start pl-10 -mt-1 mb-2 gap-2 flex-wrap">
+                  {hasStandardsTable && GRAPH_ACTIVITIES.includes(currentActivity) && isHost && (
+                    <button
+                      onClick={() => {
+                        // 이 메시지의 성취기준 코드만 그래프에 전달 — 완전 초기화
+                        setActiveGraphCodes(msgStdCodes.map(code => ({ code, addedBy: 'AI 추천' })))
+                        setPinnedStandards([])  // 이전 수동 추가 초기화
+                        pinnedStandardsRef.current = []
+                        setCheckedGraphStandardIds([])  // 이전 토글 초기화
+                        checkedGraphStandardIdsRef.current = []
+                        setShowGraphPanel(true)
+                        stableGraphKeywordRef.current = ' '
+                        setStableGraphKeyword(' ')
+                        if (isHost) {
+                          setGraphOpen(proj.id, true, ' ').catch(console.error)
+                          pushGraphSelectionState([], [])
+                        }
+                      }}
+                      className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-xl border-2 border-[#7B1FA2] text-[#7B1FA2] bg-[#F3E5F5] hover:bg-[#E8CEF0] transition-colors shadow-sm"
+                    >
+                      <TreeStructure size={13} weight="fill" />
+                      성취기준 {msgStdCodes.length}개를 지식 그래프에 반영하기
+                    </button>
+                  )}
+                  {isA21TableMsg && isHost && (
+                    a21ArtifactSaved ? (
+                      <button
+                        onClick={() => {
+                          const proposal = extractA21TableForSave(msg.content)
+                          if (proposal) setPendingArtifactSave({ ...proposal, activityCode: 'A-2-1' })
+                        }}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-[#81C995] text-[#1E8C3A] bg-[#E6F4EA] hover:bg-[#CEEAD6] transition-colors shadow-sm"
+                      >
+                        <CheckCircle size={12} weight="fill" />
+                        산출물 저장됨 · 다시 저장
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const proposal = extractA21TableForSave(msg.content)
+                          if (proposal) setPendingArtifactSave({ ...proposal, activityCode: 'A-2-1' })
+                        }}
+                        className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full border border-[#AECBFA] text-[#1A73E8] bg-[#E8F0FE] hover:bg-[#C9DAF8] transition-colors shadow-sm"
+                      >
+                        <CheckCircle size={12} weight="fill" />
+                        산출물에 저장
+                      </button>
+                    )
+                  )}
+                </div>
+              ) : null}
               {/* HELP_CARD 렌더링 */}
               {msg.role === 'assistant' && helpCardMap[msg.id] && (
                 <HelpCard
@@ -1952,6 +3067,31 @@ ${discussionSummary}
                   }}
                 />
               )}
+              {/* ACTION_CARD 렌더링 — Phase 1-b (flow-integrator) + Phase 1-c (ux-frontend-reviewer) */}
+              {msg.role === 'assistant' && msg.actionCard && (() => {
+                const stage = ACTIVITY_META[msg.activityCode]?.stage
+                if (!stage) return null
+                const isSelected = msg.actionCardState === 'selected' || msg.actionCardState === 'skipped'
+                const selectedLabel =
+                  msg.actionCardSelection === 'primary' ? msg.actionCard.primary :
+                  msg.actionCardSelection === 'secondary' ? (msg.actionCard.secondary ?? undefined) :
+                  msg.actionCardSelection === 'skip' ? msg.actionCard.skip :
+                  undefined
+                return (
+                  <ActionCardComponent
+                    card={msg.actionCard}
+                    stage={stage}
+                    isHost={isHost}
+                    isSelected={isSelected}
+                    selectedLabel={selectedLabel}
+                    onPrimary={() => handleActionCardClick(msg, 'primary', msg.actionCard!.primary)}
+                    onSecondary={msg.actionCard.secondary
+                      ? () => handleActionCardClick(msg, 'secondary', msg.actionCard!.secondary!)
+                      : undefined}
+                    onSkip={() => handleActionCardClick(msg, 'skip', msg.actionCard!.skip)}
+                  />
+                )
+              })()}
             </div>
           )
         })}
@@ -1967,7 +3107,7 @@ ${discussionSummary}
                 <p className="text-sm font-bold text-[#004D40] mb-1">팀 채팅을 시작할까요?</p>
                 <p className="text-xs text-[#00695C] mb-3 leading-relaxed">
                   AI 없이 팀원끼리 자유롭게 대화하는 시간입니다.<br />
-                  토론이 끝나면 AI가 내용을 분석해 드립니다.
+                  토의가 끝나면 AI가 내용을 분석해 드립니다.
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -2027,7 +3167,7 @@ ${discussionSummary}
           </div>
         )}
 
-        {/* 팀 토론 제안 카드 (AI가 제안한 경우) */}
+        {/* 팀 토의 제안 카드 (AI가 제안한 경우) */}
         {isHost && pendingTeamDiscussion && !isTeamMode && !showDiscussionConfirm && (
           <TeamDiscussionProposal
             topic={pendingTeamDiscussion.topic}
@@ -2042,7 +3182,12 @@ ${discussionSummary}
             title={pendingArtifactSave.title}
             sections={pendingArtifactSave.sections}
             onAccept={handleAcceptArtifactSave}
-            onDecline={() => setPendingArtifactSave(null)}
+            onDecline={() => {
+              setPendingArtifactSave(null)
+              if (project?.id && project.artifactProposal) {
+                clearArtifactProposal(project.id).catch(console.error)
+              }
+            }}
           />
         )}
 
@@ -2068,37 +3213,14 @@ ${discussionSummary}
                 </button>
                 <button
                   onClick={async () => {
-                    // Firestore snapshot 우선, 없으면 Zustand 로컬 상태 사용
-                    // (snapshot 전파 전에 버튼을 누를 경우 fsArtifact가 null일 수 있음)
-                    const fsArtifact = project?.artifacts?.[currentActivity]
-                    const localArtifact = currentArtifact?.activityCode === currentActivity ? currentArtifact : null
-                    const activityMeta = ACTIVITY_META[currentActivity]
-
-                    const sourceContent = (fsArtifact?.content ?? localArtifact?.aiDraft ?? {}) as Record<string, unknown>
-                    const sourceTitle = fsArtifact?.title ?? localArtifact?.title ?? (activityMeta.label + ' 산출물')
-                    const sourceVersion = fsArtifact?.version ?? localArtifact?.currentVersion ?? 1
-                    const alreadyConfirmed = fsArtifact?.status === 'confirmed'
-
-                    if (!alreadyConfirmed && proj.id) {
-                      try {
-                        await setProjectArtifact(proj.id, currentActivity, {
-                          status: 'confirmed',
-                          title: sourceTitle,
-                          content: sourceContent,
-                          version: sourceVersion,
-                          confirmedBy: userProfile?.uid ?? undefined,
-                          confirmedAt: Date.now(),
-                        })
-                        if (currentArtifact) {
-                          setCurrentArtifact({ ...currentArtifact, status: 'confirmed' })
-                        }
-                      } catch (err) {
-                        console.error('확정 저장 실패:', err)
-                        setChatError('산출물 확정 저장에 실패했습니다. 다시 시도해주세요.')
-                      }
+                    try {
+                      const ready = await ensureCurrentArtifactSavedAndConfirmed()
+                      if (!ready) return
+                      await handleActivityAdvance(pendingAdvance)
+                      setPendingAdvance(null)
+                    } catch {
+                      setChatError('산출물 확정 저장에 실패했습니다. 다시 시도해주세요.')
                     }
-                    handleActivityAdvance(pendingAdvance)
-                    setPendingAdvance(null)
                   }}
                   className="flex-1 py-2 rounded-full bg-[#34A853] text-white text-xs font-bold hover:bg-[#2d9248] transition-colors"
                 >
@@ -2303,10 +3425,9 @@ ${discussionSummary}
                   'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-[#F1F3F4] last:border-0',
                   i === slashCmdIdx ? 'bg-[#E8F0FE]' : 'hover:bg-[#F8F9FA]'
                 )}
-                onMouseDown={(e) => { e.preventDefault(); executeSlashCommand(cmd.id) }}
+                onMouseDown={(e) => { e.preventDefault(); void executeSlashCommand(cmd.id) }}
                 onMouseEnter={() => setSlashCmdIdx(i)}
               >
-                <span className="text-xl flex-shrink-0">{cmd.icon}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-[#202124]">{cmd.label}</p>
                   <p className="text-xs text-[#9AA0A6]">{cmd.desc}</p>
@@ -2316,6 +3437,37 @@ ${discussionSummary}
             ))}
             <p className="px-4 py-2 text-[11px] text-[#DADCE0]">↑↓ 이동 · Enter 실행 · Esc 닫기</p>
           </div>
+        )}
+
+        {/* 저장된 지식 그래프 확인 바 */}
+        {proj.graphSavedData && GRAPH_ACTIVITIES.includes(currentActivity) && !showGraphPanel && (
+          <button
+            onClick={() => {
+              setActiveGraphCodes([])
+              stableGraphKeywordRef.current = ' '
+              setStableGraphKeyword(' ')
+              setShowGraphPanel(true)
+              if (isHost) setGraphOpen(proj.id, true, ' ').catch(console.error)
+              // 저장된 선택 상태 복원 (호스트 포함)
+              if (proj.graphSelectionState) {
+                setPinnedStandards(proj.graphSelectionState.pinnedStandards ?? [])
+                setCheckedGraphStandardIds(proj.graphSelectionState.checkedStandardIds ?? [])
+              } else if (proj.graphSavedData) {
+                const restored = buildGraphSelectionFromSavedData(proj.graphSavedData)
+                if (restored.pinnedStandards.length > 0) setPinnedStandards(restored.pinnedStandards)
+                if (restored.checkedStandardIds.length > 0) setCheckedGraphStandardIds(restored.checkedStandardIds)
+              }
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 mb-2 rounded-xl bg-[#F3E5F5] border border-[#CE93D8] text-[#7B1FA2] text-[12px] font-semibold hover:bg-[#E8CEF0] transition-colors"
+          >
+            <TreeStructure size={14} weight="fill" />
+            저장된 지식 그래프 확인하기
+            {proj.graphSavedData.centerNode && (
+              <span className="text-[10px] font-normal text-[#9C27B0]">
+                (중심: {proj.graphSavedData.centerNode.label})
+              </span>
+            )}
+          </button>
         )}
 
         <div className="flex gap-2 items-end">

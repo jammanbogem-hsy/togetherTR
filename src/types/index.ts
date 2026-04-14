@@ -1,4 +1,5 @@
 import { Timestamp } from 'firebase/firestore'
+import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
 
 // ─── 단계 ───────────────────────────────────────────
 export type StageCode = 'T' | 'A' | 'Ds' | 'DI' | 'E'
@@ -40,6 +41,16 @@ export interface ActivityMeta {
   isGuardrailSource?: boolean   // A-2-3
   isGuardrailTarget?: boolean   // Ds 전체
   isBackwardDesignFirst?: boolean // Ds-1-1 (평가 먼저)
+  requiredSections?: RequiredSection[]  // 필수 섹션 정의 (E 단계 등), v2-sections 스키마로 저장된 산출물에만 적용
+}
+
+// 활동 산출물의 필수 섹션 정의. `artifacts[code].content`가 `Record<string, unknown>` 형태이므로
+// key는 실제 저장된 섹션명과 1:1 매칭됨 (한글 라벨 그대로 — AI의 [ARTIFACT_UPDATE: <label>=<값>] 신호가 그대로 키로 저장됨).
+export interface RequiredSection {
+  key: string           // content 맵의 키 (예: '사실', '해석', '수정안')
+  label: string         // UI/프롬프트 표시용 (대부분 key와 동일)
+  minChars: number      // 한국어 최소 글자 수 (기본 20자 — "ㅇㅇ" 등 nullity 차단)
+  required: 'all' | 'any' // 'all'=전부 필수 / 'any'=섹션 중 최소 1개 충족
 }
 
 export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
@@ -50,7 +61,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'T-2-3': { code: 'T-2-3', label: '팀 일정 협의',         stage: 'T' },
   'A-1-1': { code: 'A-1-1', label: '주제 선정 기준',        stage: 'A' },
   'A-1-2': { code: 'A-1-2', label: '주제 선정',            stage: 'A' },
-  'A-2-1': { code: 'A-2-1', label: '내용·기능요소 분석',   stage: 'A' },
+  'A-2-1': { code: 'A-2-1', label: '핵심아이디어 및 성취기준 분석', stage: 'A' },
   'A-2-2': { code: 'A-2-2', label: '통합 수업목표 진술',   stage: 'A' },
   'A-2-3': { code: 'A-2-3', label: '학습자·맥락 분석',     stage: 'A', isGuardrailSource: true },
   'Ds-1-1': { code: 'Ds-1-1', label: '평가 계획 수립',     stage: 'Ds', isBackwardDesignFirst: true },
@@ -60,8 +71,24 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'Ds-2-2': { code: 'Ds-2-2', label: '스캐폴딩 설계',       stage: 'Ds', isGuardrailTarget: true },
   'DI-1-1': { code: 'DI-1-1', label: '자료 탐색·개발',     stage: 'DI' },
   'DI-2-1': { code: 'DI-2-1', label: '수업 기록',           stage: 'DI' },
-  'E-1-1':  { code: 'E-1-1',  label: '수업 성찰·평가',     stage: 'E' },
-  'E-2-1':  { code: 'E-2-1',  label: '팀 활동 성찰·평가',  stage: 'E' },
+  'E-1-1':  {
+    code: 'E-1-1', label: '수업 성찰·평가', stage: 'E',
+    // P1-I: 사실/해석/수정안 중 최소 1개 섹션(각 20자 이상) 충족 시 완료 인정.
+    // Lead 결정 — E에 갇혀 cycle 진입 못 하는 상황을 막기 위한 완화 옵션.
+    requiredSections: [
+      { key: '사실',   label: '사실',   minChars: 20, required: 'any' },
+      { key: '해석',   label: '해석',   minChars: 20, required: 'any' },
+      { key: '수정안', label: '수정안', minChars: 20, required: 'any' },
+    ],
+  },
+  'E-2-1':  {
+    code: 'E-2-1', label: '팀 활동 성찰·평가', stage: 'E',
+    // 다음 주기 결정(A안/B안)만 필수, 팀 개선안은 선택.
+    requiredSections: [
+      { key: '다음 주기 선택', label: '다음 주기 선택', minChars: 10, required: 'all' },
+      { key: '팀 개선안',      label: '팀 개선안',      minChars: 20, required: 'any' },
+    ],
+  },
 }
 
 // ─── 활동유형 10종 ──────────────────────────────────
@@ -98,6 +125,11 @@ export interface Project {
     weeklyHours?: number
     totalSessions?: number
   }
+  demoExperience?: {
+    scenarioId: string
+    generatedAt: number
+    personaUids: string[]
+  }
   // 초대코드 & 팀 관련
   inviteCode?: string
   hostUid?: string
@@ -105,10 +137,19 @@ export interface Project {
   memberInfo?: Record<string, { uid: string; displayName: string; color: string; emoji: string; joinedAt: number }>
   started?: boolean        // 방장이 시작 버튼을 눌러야 true
   analysisOpen?: boolean   // 단계 분석 모달 팀 동기화
-  analysisReport?: {       // 방장이 생성한 보고서 (팀원 공유용)
+  analysisReport?: {       // 방장이 생성한 보고서 (팀원 공유용, 현재 진행 중)
     stage: string
     content: string
     generating: boolean
+  }
+  stageReports?: Partial<Record<StageCode, {  // 완료된 단계별 보고서 영구 저장
+    content: string
+    savedAt: number
+  }>>
+  cumulativeReport?: {  // T→DI-1-1 종합 설계 보고서 (팀장 생성 후 팀 공유)
+    content: string
+    savedAt: number
+    savedBy: string
   }
   currentActivity?: ActivityCode  // 현재 활동 (팀 전체 공유)
   activityStatuses?: Partial<Record<ActivityCode, StageStatus>>  // 활동별 상태 (팀 전체 공유)
@@ -137,6 +178,40 @@ export interface Project {
   }>
   // 안(案) 선택지 투표: msgId → uid → label ('A안' 등)
   optionVotes?: Record<string, Record<string, string>>
+  // 방장이 지식 그래프를 공유 중인지 (팀원 자동 오픈)
+  graphOpen?: boolean
+  graphKeyword?: string  // 방장이 설정한 그래프 키워드
+  // 팀원 중심 성취기준 추천 (nodeId → 추천 정보)
+  graphCenterRecommendations?: Record<string, { nodeId: string; recommenderName: string; recommenderUid?: string | null }>
+  // 팀장이 확정한 중심 노드 ID (팀원 화면에 자동 반영)
+  graphCenterNodeId?: string
+  // 방장의 그래프 선택/해제 상태 (팀원 실시간 동기화)
+  graphSelectionState?: GraphSelectionState
+  // 팀원이 방장에게 산출물 저장을 제안 (방장이 수락/거절)
+  artifactProposal?: {
+    activityCode: ActivityCode
+    sections: Record<string, string>
+    proposedBy: string
+    proposedByName: string
+    proposedAt: number
+  }
+  // 지식 그래프 저장 데이터
+  graphSavedData?: GraphSavedData
+  // 문제상황 디자이너 오픈 상태 (팀원 자동 오픈)
+  problemSituationOpen?: boolean
+  // 문제상황 저장 데이터
+  problemSituationData?: {
+    scenario: {
+      title: string
+      row1: string   // 문제 상황 서술
+      row2: string   // 학습내용+산출물
+      row3: string   // 데이터 출처
+    }
+    drivingQuestion: string
+    essentialQuestions: string[]
+    fullResult?: Record<string, unknown>  // 전체 생성 결과 (산출물 저장용)
+    savedAt: number
+  }
   // 활동별 확정 산출물: activityCode → 확정 내용
   artifacts?: Record<string, {
     status: ArtifactStatus
@@ -148,7 +223,114 @@ export interface Project {
     revisionNote?: string      // 팀원이 보낸 수정 요청 메모
     revisionRequestedBy?: string
     revisionRequestedAt?: number
+    // P1-I: 섹션 검증 스키마 버전. 'v2-sections' 이면 ACTIVITY_META[code].requiredSections 검증 적용.
+    // undefined 또는 다른 값이면 레거시(grandfather) — 기존 로직으로만 완료 판정.
+    _schemaVersion?: string
   }>
+  // P1-I: E→T 순환 시 직전 주기 E 산출물에서 추출된 개선안.
+  // 다음 주기 T-1-1 프롬프트에 주입되어 지식 누적의 흐름을 만든다.
+  // 단일 슬롯(덮어쓰기). 전체 이력은 별도 `cycle_history/{n}` 서브컬렉션으로 분리(P2).
+  previousCycleImprovements?: {
+    cycleNumber: number
+    extractedAt: Timestamp
+    e11Improvement?: string
+    e21Improvement?: string
+    nextCycleChoice?: 'A' | 'B'
+  }
+  // Phase 1-b: ACTION_CARD skip 로깅 (방장·팀원 모두 skip 가능, 분석용 누적)
+  skippedActionCards?: SkippedActionCard[]
+}
+
+// ─── ACTION_CARD 관련 타입 (Phase 1-b) ──────────────────
+// 파서가 추출한 순수 데이터 형태. ux-frontend-reviewer의 ActionCardProps는 이 타입을 포함한 컴포넌트 props.
+export interface ActionCard {
+  intent: string      // 필수 — 카드 목적 한 문장
+  primary: string     // 필수 — 권장 행동 라벨
+  secondary?: string  // 선택 — 대안 행동
+  skip: string        // 필수 — 건너뛰기 라벨
+}
+
+export interface SkippedActionCard {
+  cardId: string          // = messageId (ACTION_CARD가 첨부된 메시지 id)
+  activityCode: ActivityCode
+  intent: string          // 원본 intent (분석용)
+  primary: string         // 원본 primary 라벨 (분석용)
+  dismissedBy: string     // userId
+  displayName: string
+  dismissedAt: number     // Date.now()
+}
+
+// Phase 1-c: ActionCard 컴포넌트 props (UI 레이어 전용)
+// 데이터 타입 ActionCard와 분리 — flow-integrator가 Firestore에는 ActionCard만 저장,
+// 렌더 시 ChatPanel이 stage/isHost/isSelected 등 UI 맥락을 덧붙여 props 구성.
+export interface ActionCardProps {
+  card: ActionCard
+  stage: StageCode         // 단계 색상 매핑 (T=파랑, A=보라, Ds=청록, DI=주황, E=빨강)
+  isHost: boolean          // 방장만 primary/secondary 활성, 팀원은 skip만
+  isSelected?: boolean     // 이미 선택된 카드면 전체 비활성 + 배지 표시
+  selectedLabel?: string   // 선택된 버튼 라벨 (배지 문구에 사용)
+  onPrimary: () => void
+  onSecondary?: () => void
+  onSkip: () => void
+}
+
+// ─── 프로젝트 자료 / RAG ──────────────────────────────────
+export type ProjectMaterialStatus = 'uploaded' | 'processing' | 'ready' | 'failed'
+export type MaterialChunkType = 'front_matter' | 'body' | 'activity_material' | 'appendix'
+export type TextExtractQuality = 'high' | 'medium' | 'low'
+
+export interface ProjectMaterial {
+  id: string
+  projectId: string
+  fileName: string
+  mimeType: string
+  size: number
+  storagePath?: string
+  downloadURL?: string
+  status: ProjectMaterialStatus
+  pageCount?: number
+  chunkCount?: number
+  textPageCount?: number
+  imageOnlyPageCount?: number
+  textExtractQuality?: TextExtractQuality
+  summary?: string
+  error?: string
+  createdBy: string
+  createdByName?: string
+  createdAt?: Timestamp
+  updatedAt?: Timestamp
+  readyAt?: number
+}
+
+export interface MaterialChunk {
+  id: string
+  projectId: string
+  materialId: string
+  fileName: string
+  chunkIndex: number
+  chunkType: MaterialChunkType
+  pageStart: number
+  pageEnd: number
+  unitTitle?: string
+  topicTitle?: string
+  text: string
+  keywords: string[]
+  embedding: number[]
+  tokenCount: number
+  createdAt?: Timestamp
+}
+
+export interface MaterialSearchHit {
+  materialId: string
+  fileName: string
+  chunkIndex: number
+  pageStart: number
+  pageEnd: number
+  chunkType: MaterialChunkType
+  score: number
+  text: string
+  unitTitle?: string
+  topicTitle?: string
 }
 
 // ─── 산출물 ──────────────────────────────────────────
@@ -193,6 +375,11 @@ export interface Message {
   displayName?: string   // 발신자 실명 — AI에게 전달되어 누가 말했는지 파악
   replyTo?: { id: string; content: string; senderName?: string }
   relatedArtifactId?: string
+  // Phase 1-b: ACTION_CARD 첨부. 파서가 추출 → Firestore 저장 → 렌더 시 재구성.
+  // state는 클릭 후 갱신. selection은 어떤 버튼이 눌렸는지.
+  actionCard?: ActionCard
+  actionCardState?: 'pending' | 'selected' | 'skipped'
+  actionCardSelection?: 'primary' | 'secondary' | 'skip'
   createdAt: Timestamp
 }
 

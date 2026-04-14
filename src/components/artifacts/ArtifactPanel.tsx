@@ -1,15 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
-import { ACTIVITY_META } from '@/types'
-import type { ArtifactStatus } from '@/types'
-import { setProjectArtifact } from '@/lib/firebase/projects'
+import { ACTIVITY_META, STAGES } from '@/types'
+import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
+import { setProjectArtifact, setActivityStatus } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import { cn } from '@/lib/utils'
-import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, CheckSquare, Chat, Clock, X, PencilSimple, ClockCounterClockwise, type Icon } from '@phosphor-icons/react'
+import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretUp, Circle as CircleIcon, Lightbulb, type Icon } from '@phosphor-icons/react'
+import { createPortal } from 'react-dom'
+import { CumulativeReportModal } from '@/components/modals/CumulativeReportModal'
 
 const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; pulse: string; corner: string }> = {
   T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', pulse: 'rgba(26,115,232,0.35)',  corner: 'rgba(26,115,232,0.11)'  },
@@ -60,27 +62,279 @@ function EmptyState({ activityLabel }: { activityLabel: string }) {
   )
 }
 
-function ArtifactSection({ sectionKey, value, onDelete }: {
+interface ArtifactPreviewModalState {
+  title: string
+  subtitle?: string
+  content: Record<string, unknown>
+  status?: ArtifactStatus
+  stageCode: string
+  activityCode?: ActivityCode
+}
+
+function hasMarkdownTable(text: string): boolean {
+  return /^\s*\|.+\|\s*$/m.test(text) && /^\s*\|(?:\s*:?-{2,}:?\s*\|)+\s*$/m.test(text)
+}
+
+function ArtifactPreviewModal({
+  modal,
+  onClose,
+}: {
+  modal: ArtifactPreviewModalState | null
+  onClose: () => void
+}) {
+  if (!modal || typeof document === 'undefined') return null
+  const modalStageColor = STAGE_COLOR[modal.stageCode] ?? STAGE_COLOR.T
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className={cn(modalStageColor.light, 'px-6 py-4 flex items-center gap-3 border-b border-[#DADCE0] flex-shrink-0')}>
+          <div className={cn('w-9 h-9 flex items-center justify-center rounded-xl', modalStageColor.bg)}>
+            <FileText size={18} weight="fill" className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={cn('text-[11px] font-bold uppercase tracking-widest', modalStageColor.text)}>산출물 상세 보기</p>
+            <p className="text-[15px] font-bold text-[#202124] truncate">{modal.title}</p>
+            {modal.subtitle && (
+              <p className="text-[12px] text-[#5F6368] mt-0.5 truncate">{modal.subtitle}</p>
+            )}
+          </div>
+          {modal.status && <StatusBadge status={modal.status} />}
+          <button
+            onClick={onClose}
+            className="ml-2 p-1.5 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] transition-colors flex-shrink-0"
+          >
+            <X size={18} weight="regular" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <ArtifactContent content={modal.content} activityCode={modal.activityCode} />
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ─── P1-I 3-A: E 활동 필수 섹션 체크리스트 카드 ────────────────────
+// 읽기 전용 피드백 카드. ACTIVITY_META[code].requiredSections를 단일 출처로 하여
+// 각 섹션의 충족 여부를 시각화. 입력 경로는 추가하지 않음 — 기존 AI ARTIFACT_UPDATE
+// 파이프라인과 "직접 입력" 버튼이 content[key]를 채우면 여기서는 반영만.
+function countKoreanChars(raw: unknown): number {
+  if (typeof raw !== 'string') return 0
+  return raw.replace(/\s/g, '').length
+}
+
+function RequiredSectionsChecklist({
+  activityCode,
+  content,
+  schemaVersion,
+}: {
+  activityCode: ActivityCode
+  content: Record<string, unknown>
+  schemaVersion?: string
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+  const meta = ACTIVITY_META[activityCode]
+  const sections = meta.requiredSections
+  if (!sections || sections.length === 0) return null
+
+  const allSections = sections.filter(s => s.required === 'all')
+  const anySections = sections.filter(s => s.required === 'any')
+
+  function sectionInfo(sec: RequiredSection) {
+    const filled = countKoreanChars(content[sec.key])
+    const satisfied = filled >= sec.minChars
+    const pct = Math.min(100, Math.round((filled / sec.minChars) * 100))
+    return { filled, satisfied, pct }
+  }
+
+  const allSatisfied = allSections.every(s => sectionInfo(s).satisfied)
+  const anySatisfied = anySections.length === 0 || anySections.some(s => sectionInfo(s).satisfied)
+  const overallSatisfied = allSatisfied && anySatisfied
+
+  // 헤더 라벨 생성 (required 규칙 조합에 따라 동적)
+  let headerDesc = ''
+  if (allSections.length > 0 && anySections.length > 0) {
+    headerDesc = `필수 ${allSections.length}개 전부 + 선택 ${anySections.length}개 중 1개 이상 충족 시 완료 인정`
+  } else if (allSections.length > 0) {
+    headerDesc = `${allSections.length}개 섹션 모두 충족 시 완료 인정`
+  } else if (anySections.length > 0) {
+    headerDesc = `${anySections.length}개 중 최소 1개 충족 시 완료 인정`
+  }
+
+  // 레거시(grandfather) 산출물은 섹션 검증 미적용 — 안내 문구로 알려줌
+  const isLegacy = schemaVersion !== 'v2-sections'
+
+  const sectionOrder: RequiredSection[] = [...allSections, ...anySections]
+
+  return (
+    <div
+      className={cn(
+        'rounded-2xl border-2 p-4 mb-4 transition-colors',
+        overallSatisfied
+          ? 'border-[#34A853] bg-[#E6F4EA]/30'
+          : 'border-[#C62828] bg-[#FFEBEE]/30'
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setCollapsed(v => !v)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={cn(
+            'w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0',
+            overallSatisfied ? 'bg-[#34A853]' : 'bg-[#C62828]'
+          )}>
+            {overallSatisfied
+              ? <CheckCircle size={14} weight="fill" className="text-white" />
+              : <CircleIcon size={10} weight="bold" className="text-white" />}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[13px] font-extrabold text-[#202124] leading-tight">
+              {meta.label} 필수 섹션
+            </p>
+            <p className="text-[11px] text-[#5F6368] mt-0.5 leading-snug">{headerDesc}</p>
+          </div>
+        </div>
+        {collapsed
+          ? <CaretDown size={18} weight="bold" className="text-[#5F6368] flex-shrink-0" />
+          : <CaretUp   size={18} weight="bold" className="text-[#5F6368] flex-shrink-0" />}
+      </button>
+
+      {!collapsed && (
+        <div className="mt-3 space-y-2.5">
+          {sectionOrder.map((sec) => {
+            const { filled, satisfied, pct } = sectionInfo(sec)
+            const isAll = sec.required === 'all'
+            return (
+              <div key={sec.key} className="rounded-xl bg-white/70 border border-[#DADCE0] px-3 py-2">
+                <div className="flex items-center gap-2">
+                  {satisfied
+                    ? <CheckCircle size={16} weight="fill" className="text-[#34A853] flex-shrink-0" />
+                    : <CircleIcon  size={14} weight="bold" className="text-[#9AA0A6] flex-shrink-0" />}
+                  <span className="text-[12px] font-bold text-[#202124]">{sec.label}</span>
+                  {isAll && (
+                    <span className="text-[9px] font-extrabold bg-[#C62828] text-white px-1.5 py-0.5 rounded-full tracking-wide">
+                      필수
+                    </span>
+                  )}
+                  <span className="ml-auto text-[11px] text-[#5F6368] tabular-nums">
+                    {filled === 0
+                      ? <span className="text-[#9AA0A6]">입력 없음</span>
+                      : <>{filled}자 / {sec.minChars}자 이상{satisfied && <span className="text-[#34A853] ml-1">✓</span>}</>}
+                  </span>
+                </div>
+                {!satisfied && filled > 0 && (
+                  <div className="mt-1.5 h-1 rounded-full bg-[#F1F3F4] overflow-hidden">
+                    <div
+                      className="h-full bg-[#FBBC04] transition-all duration-300"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* 가이드 문구 */}
+          <div className="flex items-start gap-2 rounded-xl bg-white/70 border border-[#F1F3F4] px-3 py-2">
+            <Lightbulb size={15} weight="fill" className="text-[#F9AB00] flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-[#5F6368] leading-relaxed">
+              AI에게 <span className="font-semibold text-[#202124]">
+                &ldquo;{sections.map(s => s.label).join('·')} 순서로 정리해줘&rdquo;
+              </span>
+              라고 요청하면 자동으로 채워집니다.
+            </p>
+          </div>
+
+          {isLegacy && (
+            <p className="text-[10px] text-[#9AA0A6] italic leading-snug px-1">
+              이 산출물은 구 스키마로 저장되어 섹션 검증이 적용되지 않습니다. 완료 판정은 기존 규칙을 따릅니다.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand }: {
   sectionKey: string
   value: unknown
   onDelete?: () => void
+  onOpenPreview?: (modal: ArtifactPreviewModalState) => void
+  artifactTitle?: string
+  artifactStatus?: ArtifactStatus
+  stageCode?: string
+  activityCode?: ActivityCode
+  allowTableExpand?: boolean
 }) {
+  const canExpandTable = typeof value === 'string' && hasMarkdownTable(value)
+  const isSupportToolEnvironmentCheck = sectionKey === 'AI 점검' && activityCode === 'Ds-2-1' && typeof value === 'string'
+
   return (
     <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white md-shadow-1">
       <div className="bg-[#F8F9FA] px-4 py-2.5 border-b border-[#DADCE0] flex items-center justify-between">
-        <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider">{sectionKey}</span>
-        {onDelete && (
-          <button
-            onClick={onDelete}
-            className="ml-2 text-[#9AA0A6] hover:text-[#C62828] hover:bg-[#FFEBEE] rounded-full p-1 flex-shrink-0 transition-colors"
-            title="이 섹션 삭제"
-          >
-            <X size={16} weight="regular" />
-          </button>
-        )}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider truncate">{sectionKey}</span>
+          {canExpandTable && (
+            <span className="text-[10px] font-semibold text-[#1A73E8] bg-[#E8F0FE] px-2 py-0.5 rounded-full whitespace-nowrap">
+              표 클릭 확대
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {canExpandTable && allowTableExpand && onOpenPreview && typeof value === 'string' && (
+            <button
+              onClick={() => onOpenPreview({
+                title: artifactTitle ? `${artifactTitle} · ${sectionKey}` : sectionKey,
+                subtitle: '표가 포함된 섹션 확대 보기',
+                content: { [sectionKey]: value },
+                status: artifactStatus,
+                stageCode: stageCode ?? 'T',
+              })}
+              className="text-[#5F6368] hover:text-[#1A73E8] hover:bg-[#E8F0FE] rounded-full p-1 flex-shrink-0 transition-colors"
+              title="이 표를 크게 보기"
+            >
+              <ArrowsOut size={16} weight="regular" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="ml-1 text-[#9AA0A6] hover:text-[#C62828] hover:bg-[#FFEBEE] rounded-full p-1 flex-shrink-0 transition-colors"
+              title="이 섹션 삭제"
+            >
+              <X size={16} weight="regular" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="px-4 py-4 bg-white">
-        {typeof value === 'string' ? (
+        {isSupportToolEnvironmentCheck ? (
+          <div className="rounded-2xl border border-[#D7C9FF] bg-[#F6F1FF] px-4 py-4">
+            <div className="text-[11px] font-bold text-[#7C3AED] mb-2">AI 점검: 학습환경 적절성 검토</div>
+            <div className="artifact-md text-sm text-[#3D2A73] leading-relaxed">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                  strong: ({ children }) => <strong className="font-semibold text-[#5B34C7]">{children}</strong>,
+                }}
+              >
+                {value}
+              </ReactMarkdown>
+            </div>
+          </div>
+        ) : typeof value === 'string' ? (
           <div className="artifact-md text-sm text-[#202124] leading-relaxed">
             <ReactMarkdown remarkPlugins={[remarkGfm]}
               components={{
@@ -91,7 +345,44 @@ function ArtifactSection({ sectionKey, value, onDelete }: {
                 ),
                 p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
                 table: ({ children }) => (
-                  <div className="my-2 overflow-x-auto rounded-xl border border-[#DADCE0]">
+                  <div
+                    role={canExpandTable && allowTableExpand ? 'button' : undefined}
+                    tabIndex={canExpandTable && allowTableExpand ? 0 : undefined}
+                    onClick={
+                      canExpandTable && allowTableExpand && onOpenPreview
+                        ? () => onOpenPreview({
+                            title: artifactTitle ? `${artifactTitle} · ${sectionKey}` : sectionKey,
+                            subtitle: '표가 포함된 섹션 확대 보기',
+                            content: { [sectionKey]: value },
+                            status: artifactStatus,
+                            stageCode: stageCode ?? 'T',
+                          })
+                        : undefined
+                    }
+                    onKeyDown={
+                      canExpandTable && allowTableExpand && onOpenPreview
+                        ? (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              onOpenPreview({
+                                title: artifactTitle ? `${artifactTitle} · ${sectionKey}` : sectionKey,
+                                subtitle: '표가 포함된 섹션 확대 보기',
+                                content: { [sectionKey]: value },
+                                status: artifactStatus,
+                                stageCode: stageCode ?? 'T',
+                              })
+                            }
+                          }
+                        : undefined
+                    }
+                    className={cn(
+                      'my-2 w-full text-left overflow-x-auto rounded-xl border border-[#DADCE0] transition-colors',
+                      canExpandTable && allowTableExpand && onOpenPreview
+                        ? 'cursor-zoom-in hover:border-[#1A73E8] hover:bg-[#F8FBFF] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]'
+                        : ''
+                    )}
+                    title={canExpandTable && allowTableExpand ? '클릭하여 크게 보기' : undefined}
+                  >
                     <table className="min-w-full text-sm border-collapse">{children}</table>
                   </div>
                 ),
@@ -103,13 +394,30 @@ function ArtifactSection({ sectionKey, value, onDelete }: {
                     {children}
                   </th>
                 ),
-                td: ({ children }) => (
-                  <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed">{children}</td>
-                ),
+                td: ({ children }) => {
+                  const text = typeof children === 'string' ? children : String(children ?? '')
+                  const parts = text.split('\u2028')
+                  return (
+                    <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed">
+                      {parts.map((part, i) => (
+                        <span key={i}>{part}{i < parts.length - 1 && <br />}</span>
+                      ))}
+                    </td>
+                  )
+                },
               }}
             >
               {/* **항목**: 패턴 앞에 빈 줄 삽입 → 각 항목이 별도 단락으로 분리 */}
-              {value.replace(/([^.\n])\s+(\*\*[^*\n]+\*\*\s*:)/g, '$1\n\n$2')}
+              {/* 표 셀 안의 <br/>은 \u2028으로, 표 밖의 <br/>은 제거 */}
+              {value
+                .replace(/([^.\n])\s+(\*\*[^*\n]+\*\*\s*:)/g, '$1\n\n$2')
+                .split('\n')
+                .map(line => line.startsWith('|')
+                  ? line.replace(/<br\s*\/?>/gi, '\u2028')
+                  : line.replace(/<br\s*\/?>/gi, '')
+                )
+                .join('\n')
+              }
             </ReactMarkdown>
           </div>
         ) : Array.isArray(value) ? (
@@ -134,15 +442,21 @@ const DISPLAY_BLOCKED_KEYS = [
   '다음 행동', '다음 단계', 'next step',
   '미결 사항', '미결', '보류 사항',
   'ai 제안', '추천 사항', '참고 사항',
-  '합의 내용', '논의 내용', '토론 내용', '확인 사항',
+  '합의 내용', '논의 내용', '토론 내용', '토의 내용', '확인 사항',
   '진행 내용', '진행 사항', '현황', '요약',
   // 아래는 명시적 저장 경로(save proposal)에서 사용하는 키이므로 차단하지 않음
-  // '토론 결과', '보완할 점' → 표시 허용
+  // '토의 결과' / '토론 결과', '보완할 점' → 표시 허용
 ]
 
-function ArtifactContent({ content, onDeleteSection }: {
+function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand }: {
   content: Record<string, unknown>
   onDeleteSection?: (key: string) => void
+  onOpenPreview?: (modal: ArtifactPreviewModalState) => void
+  artifactTitle?: string
+  artifactStatus?: ArtifactStatus
+  stageCode?: string
+  activityCode?: ActivityCode
+  allowTableExpand?: boolean
 }) {
   const filteredEntries = Object.entries(content).filter(
     ([key]) => !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
@@ -168,6 +482,12 @@ function ArtifactContent({ content, onDeleteSection }: {
           sectionKey={key}
           value={value}
           onDelete={onDeleteSection ? () => onDeleteSection(key) : undefined}
+          onOpenPreview={onOpenPreview}
+          artifactTitle={artifactTitle}
+          artifactStatus={artifactStatus}
+          stageCode={stageCode}
+          activityCode={activityCode}
+          allowTableExpand={allowTableExpand}
         />
       ))}
     </div>
@@ -182,6 +502,9 @@ export function ArtifactPanel() {
   const [isSaving, setIsSaving] = useState(false)
   const [showDirectInput, setShowDirectInput] = useState(false)
   const [directInputText, setDirectInputText] = useState('')
+  const [selectedReferenceActivity, setSelectedReferenceActivity] = useState('')
+  const [previewModal, setPreviewModal] = useState<ArtifactPreviewModalState | null>(null)
+  const [showCumulativeReport, setShowCumulativeReport] = useState(false)
 
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
   const stageColor = STAGE_COLOR[project?.currentStage ?? 'T']
@@ -229,6 +552,44 @@ export function ArtifactPanel() {
   const effectiveStatus: ArtifactStatus = firestoreArtifact?.status as ArtifactStatus ?? displayArtifact?.status ?? 'in_review'
   const isConfirmed = effectiveStatus === 'confirmed'
 
+  const orderedActivities = useMemo(
+    () => STAGES.flatMap(stage => stage.activities),
+    []
+  )
+
+  const previousArtifacts = useMemo(() => {
+    if (!project?.artifacts) return []
+    const currentIdx = orderedActivities.indexOf(viewingActivity)
+    return Object.entries(project.artifacts)
+      .filter(([code, artifact]) => {
+        if (code === viewingActivity) return false
+        const activityIdx = orderedActivities.indexOf(code as ActivityCode)
+        if (activityIdx === -1) return false
+        if (currentIdx !== -1 && activityIdx >= currentIdx) return false
+        return Object.keys((artifact?.content ?? {}) as Record<string, unknown>).length > 0
+      })
+      .sort((a, b) => orderedActivities.indexOf(b[0] as ActivityCode) - orderedActivities.indexOf(a[0] as ActivityCode))
+      .map(([code, artifact]) => ({
+        code: code as ActivityCode,
+        title: artifact.title,
+        status: artifact.status as ArtifactStatus,
+        content: artifact.content as Record<string, unknown>,
+        version: artifact.version,
+        label: ACTIVITY_META[code as ActivityCode]?.label ?? code,
+        stageCode: ACTIVITY_META[code as ActivityCode]?.stage ?? 'T',
+      }))
+  }, [orderedActivities, project?.artifacts, viewingActivity])
+
+  useEffect(() => {
+    if (previousArtifacts.length === 0) {
+      setSelectedReferenceActivity('')
+      return
+    }
+    if (!previousArtifacts.some((artifact) => artifact.code === selectedReferenceActivity)) {
+      setSelectedReferenceActivity(previousArtifacts[0].code)
+    }
+  }, [previousArtifacts, selectedReferenceActivity])
+
   async function handleConfirm() {
     if (!project) return
     // Firestore snapshot 우선, 없으면 로컬 displayArtifact 사용
@@ -255,6 +616,8 @@ export function ArtifactPanel() {
         confirmedBy: userProfile?.uid ?? undefined,
         confirmedAt: Date.now(),
       })
+      // 산출물 확정 → activityStatuses도 completed 업데이트 (StageMoveModal 미완료 체크 정합성)
+      setActivityStatus(project.id, viewingActivity, 'completed').catch(console.error)
       if (currentArtifact) setCurrentArtifact({ ...currentArtifact, status: 'confirmed', confirmedContent: content })
     } catch (err) {
       console.error('산출물 확정 실패:', err)
@@ -346,6 +709,34 @@ export function ArtifactPanel() {
 
   const hasContent = Object.keys(displayContent).length > 0
 
+  function openArtifactPreview(modal: ArtifactPreviewModalState) {
+    setPreviewModal(modal)
+  }
+
+  function openCurrentArtifactPreview() {
+    openArtifactPreview({
+      title: displayArtifact?.title ?? activityMeta.label,
+      subtitle: `${activityMeta.label} · 버전 ${displayArtifact?.currentVersion ?? 1}`,
+      content: displayContent,
+      status: effectiveStatus,
+      stageCode: activityMeta.stage,
+      activityCode: viewingActivity,
+    })
+  }
+
+  function openPreviousArtifactPreview(activityCode: string) {
+    const artifact = previousArtifacts.find((item) => item.code === activityCode)
+    if (!artifact) return
+    openArtifactPreview({
+      title: artifact.title,
+      subtitle: `${artifact.label} · 버전 ${artifact.version}`,
+      content: artifact.content,
+      status: artifact.status,
+      stageCode: artifact.stageCode,
+      activityCode: artifact.code,
+    })
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden corner-wrap-artifact"
       style={{ '--cc': stageColor.corner } as React.CSSProperties}>
@@ -366,6 +757,34 @@ export function ArtifactPanel() {
             <p className="text-[13px] font-bold text-[#202124] leading-tight truncate">{activityMeta.label}</p>
           </div>
           {displayArtifact && <StatusBadge status={effectiveStatus} />}
+          {viewingActivity === 'DI-1-1' && (isHost ? (
+            <button
+              onClick={() => setShowCumulativeReport(true)}
+              title="현재까지 산출물 종합 보고서 제작"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E65100] hover:bg-[#BF360C] text-white text-[11px] font-bold transition-colors flex-shrink-0 shadow-sm"
+            >
+              <FileText size={14} weight="fill" />
+              보고서 제작하기
+            </button>
+          ) : project?.cumulativeReport && (
+            <button
+              onClick={() => setShowCumulativeReport(true)}
+              title="팀장이 공유한 종합 보고서 보기"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FBE9E7] hover:bg-[#FFCCBC] text-[#E65100] text-[11px] font-bold transition-colors flex-shrink-0"
+            >
+              <FileText size={14} weight="fill" />
+              보고서 보기
+            </button>
+          ))}
+          {hasContent && (
+            <button
+              onClick={openCurrentArtifactPreview}
+              title="전체 보기"
+              className="ml-1 p-1.5 rounded-full hover:bg-white/60 text-[#5F6368] hover:text-[#1A73E8] transition-colors flex-shrink-0"
+            >
+              <ArrowsOut size={16} weight="regular" />
+            </button>
+          )}
         </div>
 
         {/* 잠금 안내 (팀장 아닌 경우) */}
@@ -422,6 +841,45 @@ export function ArtifactPanel() {
 
       {/* 내용 */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
+        {previousArtifacts.length > 0 && (
+          <div className="mb-5 rounded-2xl border border-[#DADCE0] bg-[#F8F9FA] p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <p className="text-[12px] font-bold text-[#202124]">이전 산출물 참고</p>
+                <p className="text-[11px] text-[#5F6368] mt-1">
+                  이전 활동의 산출물을 열어보며 현재 설계를 이어갈 수 있습니다.
+                </p>
+              </div>
+              <span className="text-[10px] font-semibold text-[#1A73E8] bg-[#E8F0FE] px-2.5 py-1 rounded-full whitespace-nowrap">
+                {previousArtifacts.length}개 있음
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <select
+                  value={selectedReferenceActivity}
+                  onChange={e => setSelectedReferenceActivity(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-[#DADCE0] bg-white px-3 py-2.5 pr-9 text-sm text-[#202124] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]"
+                >
+                  {previousArtifacts.map((artifact) => (
+                    <option key={artifact.code} value={artifact.code}>
+                      [{artifact.code}] {artifact.label}
+                    </option>
+                  ))}
+                </select>
+                <CaretDown size={16} weight="bold" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#5F6368]" />
+              </div>
+              <button
+                onClick={() => openPreviousArtifactPreview(selectedReferenceActivity)}
+                disabled={!selectedReferenceActivity}
+                className="shrink-0 rounded-xl bg-[#E8F0FE] hover:bg-[#D2E3FC] disabled:opacity-50 px-4 py-2.5 text-sm font-semibold text-[#1A73E8] transition-colors"
+              >
+                내용 보기
+              </button>
+            </div>
+          </div>
+        )}
+
         {!displayArtifact || !hasContent ? (
           <>
             <EmptyState activityLabel={activityMeta.label} />
@@ -459,13 +917,47 @@ export function ArtifactPanel() {
                   </span>
                 </div>
                 <div className="border-l-4 border-[#1A73E8] pl-2">
-                  <ArtifactContent content={displayArtifact.aiDraft!} onDeleteSection={isHost ? handleDeleteSection : undefined} />
+                  {ACTIVITY_META[viewingActivity].requiredSections && (
+                    <RequiredSectionsChecklist
+                      activityCode={viewingActivity}
+                      content={displayArtifact.aiDraft as Record<string, unknown>}
+                      schemaVersion={firestoreArtifact?._schemaVersion}
+                    />
+                  )}
+                  <ArtifactContent
+                    content={displayArtifact.aiDraft!}
+                    onDeleteSection={isHost ? handleDeleteSection : undefined}
+                    onOpenPreview={openArtifactPreview}
+                    artifactTitle={displayArtifact.title}
+                    artifactStatus={effectiveStatus}
+                    stageCode={activityMeta.stage}
+                    activityCode={viewingActivity}
+                    allowTableExpand
+                  />
                 </div>
               </div>
             )}
 
             {effectiveStatus !== 'in_review' && (
-              <ArtifactContent content={displayContent} onDeleteSection={isHost ? handleDeleteSection : undefined} />
+              <>
+                {ACTIVITY_META[viewingActivity].requiredSections && (
+                  <RequiredSectionsChecklist
+                    activityCode={viewingActivity}
+                    content={displayContent as Record<string, unknown>}
+                    schemaVersion={firestoreArtifact?._schemaVersion}
+                  />
+                )}
+                <ArtifactContent
+                  content={displayContent}
+                  onDeleteSection={isHost ? handleDeleteSection : undefined}
+                  onOpenPreview={openArtifactPreview}
+                  artifactTitle={displayArtifact.title}
+                  artifactStatus={effectiveStatus}
+                  stageCode={activityMeta.stage}
+                  activityCode={viewingActivity}
+                  allowTableExpand
+                />
+              </>
             )}
 
             {/* 수정 요청 메모 배너 */}
@@ -611,6 +1103,11 @@ export function ArtifactPanel() {
             )
           )}
         </div>
+      )}
+
+      <ArtifactPreviewModal modal={previewModal} onClose={() => setPreviewModal(null)} />
+      {showCumulativeReport && (
+        <CumulativeReportModal onClose={() => setShowCumulativeReport(false)} />
       )}
     </div>
   )

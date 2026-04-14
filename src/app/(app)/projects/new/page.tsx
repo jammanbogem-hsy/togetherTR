@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createProject } from '@/lib/firebase/projects'
 import { useProjectStore } from '@/store/project'
-import { generateInviteCode, addJoinedProjectId } from '@/lib/inviteCode'
+import { addJoinedProjectId } from '@/lib/inviteCode'
 import type { GradeGroup, ProjectMode, SchoolLevel } from '@/types'
 import { cn } from '@/lib/utils'
 import { BookOpen, ArrowLeft, Loader2, Copy, Check, ArrowRight } from 'lucide-react'
@@ -69,12 +69,11 @@ export default function NewProjectPage() {
     if (!title.trim()) return
 
     const uid = userProfile?.uid ?? 'demo-user'
-    const inviteCode = generateInviteCode()
 
     setIsSubmitting(true)
     setError(null)
     try {
-      const projectId = await createProject({
+      const { id: projectId, inviteCode } = await createProject({
         title: title.trim(),
         mode,
         schoolLevel,
@@ -83,7 +82,6 @@ export default function NewProjectPage() {
         createdBy: uid,
         hostUid: uid,
         memberUids: [uid],
-        inviteCode,
         currentStage: 'T',
         currentCycle: 1,
         status: 'active',
@@ -91,7 +89,7 @@ export default function NewProjectPage() {
         isA23Completed: false,
         cycleCount: 1,
         metadata: { semester },
-      } as any)
+      })
 
       addJoinedProjectId(projectId)
       setCreatedProjectId(projectId)

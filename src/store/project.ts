@@ -50,7 +50,7 @@ interface ProjectStore {
   pendingStageMove: StageCode | null
   setPendingStageMove: (stage: StageCode | null) => void
 
-  // 팀 자유 토론 모드
+  // 팀 자유 토의 모드
   discussionMode: 'ai_facilitated' | 'team_discussion'
   setDiscussionMode: (mode: 'ai_facilitated' | 'team_discussion') => void
   pendingTeamDiscussion: { topic: string } | null
@@ -61,9 +61,11 @@ interface ProjectStore {
   // 분석 결과 → 산출물 저장 제안
   pendingArtifactSave: {
     title: string
-    sections: Record<string, string>  // { '합의 내용': '...', '미결 사항': '...' }
+    sections: Record<string, string>
+    activityCode?: string    // 크로스-활동 또는 Firestore 제안 시 명시
+    proposerName?: string    // 팀원이 제안한 경우 이름
   } | null
-  setPendingArtifactSave: (v: { title: string; sections: Record<string, string> } | null) => void
+  setPendingArtifactSave: (v: { title: string; sections: Record<string, string>; activityCode?: string; proposerName?: string } | null) => void
 
   // 프로젝트 전환 시 상태 초기화
   resetProjectState: () => void
@@ -81,23 +83,37 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     set((state) => ({ activityStatus: { ...state.activityStatus, [code]: status } })),
 
   currentActivity: 'T-1-1',
-  setCurrentActivity: (code) => set({
-    currentActivity: code,
-    currentArtifact: null,
-    pendingArtifactSave: null,
-    discussionMode: 'ai_facilitated',
-    pendingTeamDiscussion: null,
-    teamDiscussionStartIdx: 0,
-    messages: [],
-    messagesLoaded: false,
+  setCurrentActivity: (code) => set((state) => {
+    if (state.currentActivity === code) {
+      return state
+    }
+    return {
+      currentActivity: code,
+      currentArtifact: null,
+      pendingArtifactSave: null,
+      discussionMode: 'ai_facilitated',
+      pendingTeamDiscussion: null,
+      teamDiscussionStartIdx: 0,
+      messages: [],
+      messagesLoaded: false,
+    }
   }),
 
   viewingActivity: 'T-1-1',
   setViewingActivity: (code) => set({ viewingActivity: code, currentArtifact: null }),
 
   messages: [],
-  addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
-  setMessages: (msgs) => set({ messages: msgs }),
+  // P0-bug1: id 기반 중복 제거. 환영 메시지 등 낙관적 추가 + Firestore onSnapshot 재전달로
+  // 같은 id 메시지가 두 번 들어오는 경우 React key 중복 경고가 발생하던 문제 해결.
+  // (Map은 삽입 순서를 유지하므로 메시지 시간순 정렬은 안전)
+  addMessage: (msg) => set((state) =>
+    state.messages.some(m => m.id === msg.id)
+      ? state
+      : { messages: [...state.messages, msg] }
+  ),
+  setMessages: (msgs) => set({
+    messages: Array.from(new Map(msgs.map(m => [m.id, m])).values()),
+  }),
   messagesLoaded: false,
   setMessagesLoaded: (v) => set({ messagesLoaded: v }),
   streamingText: '',

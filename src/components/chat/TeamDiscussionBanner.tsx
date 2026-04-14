@@ -26,7 +26,7 @@ export function TeamDiscussionBanner({ topic, onEnd, isHost }: Props) {
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-[#00897B]"
               style={{ animation: 'pulse 1.5s ease-in-out infinite' }} />
-            <span className="text-[12px] font-bold text-[#004D40]">팀 자유 토론 중</span>
+            <span className="text-[12px] font-bold text-[#004D40]">팀 자유 토의 중</span>
           </div>
           {topic && (
             <p className="text-[11px] text-[#00695C] truncate">주제: {topic}</p>

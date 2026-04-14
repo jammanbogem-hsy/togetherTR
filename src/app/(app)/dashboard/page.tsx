@@ -5,11 +5,12 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUserProjects } from '@/lib/firebase/projects'
-import { getOrRestoreProfile } from '@/lib/auth'
 import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
 import { cn } from '@/lib/utils'
-import { Plus, BookOpen, Users, User, ChevronRight, Loader2, LogOut, UserPlus, Crown } from 'lucide-react'
+import { createDemoProject, type DemoProgress } from '@/lib/demo/createDemoProject'
+import { Plus, BookOpen, Users, User, ChevronRight, Loader2, LogOut, UserPlus, Crown, Play, Sparkles } from 'lucide-react'
+import { signOut } from '@/lib/auth'
 
 const STAGE_LABELS = { T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가' }
 const STAGE_CHIP: Record<string, string> = {
@@ -75,6 +76,11 @@ function ProjectCard({ project, onClick, isHost }: {
         <span className={cn('text-[12px] px-3 py-1 rounded-full font-bold shadow-sm', STAGE_CHIP[project.currentStage])}>
           {project.currentStage} · {STAGE_LABELS[project.currentStage]}
         </span>
+        {project.demoExperience && (
+          <span className="text-[12px] px-3 py-1 rounded-full bg-[#F3E8FF] text-[#7C3AED] font-bold">
+            DEMO
+          </span>
+        )}
         <span className="text-[12px] px-3 py-1 rounded-full bg-[#F1F3F4] text-[#5F6368] font-semibold">
           {project.targetGradeGroup}
         </span>
@@ -112,6 +118,11 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [demoState, setDemoState] = useState<{
+    open: boolean
+    progress: DemoProgress
+    error?: string | null
+  } | null>(null)
 
   useEffect(() => {
     if (!userProfile) return
@@ -123,10 +134,36 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [userProfile?.uid])
 
-  function handleLogout() {
-    localStorage.removeItem('tcid_user_profile')
+  async function handleLogout() {
+    await signOut()
     setUserProfile(null)
     router.replace('/login')
+  }
+
+  async function handleDemoExperience() {
+    if (!userProfile) return
+
+    setDemoState({
+      open: true,
+      progress: {
+        percent: 0,
+        stageLabel: '준비',
+        activityLabel: '데모 프로젝트 초기화',
+        detail: '교사 페르소나와 단계별 산출물을 준비하고 있습니다.',
+      },
+      error: null,
+    })
+
+    try {
+      const projectId = await createDemoProject(userProfile, (progress) => {
+        setDemoState((prev) => prev ? { ...prev, progress, error: null } : null)
+      })
+      router.push(`/projects/${projectId}`)
+    } catch (error) {
+      console.error('데모 프로젝트 생성 실패:', error)
+      const message = error instanceof Error ? error.message : '알 수 없는 오류'
+      setDemoState((prev) => prev ? { ...prev, error: `데모 생성 실패: ${message}` } : null)
+    }
   }
 
   return (
@@ -154,14 +191,29 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             {userProfile && (
               <div className="flex items-center gap-2">
-                <div
-                  className="w-10 h-10 rounded-full text-white text-[15px] font-extrabold flex items-center justify-center shadow-md flex-shrink-0 select-none"
-                  style={{ backgroundColor: userProfile.color }}
-                >
-                  {userProfile.displayName?.[0]?.toUpperCase() ?? '?'}
-                </div>
+                {userProfile.photoURL ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={userProfile.photoURL}
+                    alt=""
+                    className="w-10 h-10 rounded-full shadow-md flex-shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div
+                    className="w-10 h-10 rounded-full text-white text-[15px] font-extrabold flex items-center justify-center shadow-md flex-shrink-0 select-none"
+                    style={{ backgroundColor: userProfile.color }}
+                  >
+                    {userProfile.displayName?.[0]?.toUpperCase() ?? '?'}
+                  </div>
+                )}
                 <div className="hidden sm:block">
                   <p className="text-[13px] font-bold text-[#202124]">{userProfile.displayName}</p>
+                  {userProfile.schoolName && (
+                    <p className="text-[11px] text-[#9AA0A6]">
+                      {userProfile.schoolLevel && `${userProfile.schoolLevel} · `}{userProfile.schoolName}{userProfile.grade && ` · ${userProfile.grade}`}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={handleLogout}
@@ -178,6 +230,14 @@ export default function DashboardPage() {
             >
               <UserPlus className="w-4 h-4" />
               방 참여하기
+            </button>
+            <button
+              onClick={handleDemoExperience}
+              className="morph-btn flex items-center gap-1.5 bg-[#7C3AED] text-white text-[13px] font-bold px-4 py-2.5 hover:bg-[#6D28D9] transition-colors"
+              style={{ filter: 'drop-shadow(0 2px 8px rgba(124,58,237,0.32))' }}
+            >
+              <Play className="w-4 h-4" />
+              데모 체험
             </button>
             <button
               onClick={() => router.push('/projects/new')}
@@ -230,6 +290,14 @@ export default function DashboardPage() {
               <Plus className="w-4 h-4" />
               첫 프로젝트 시작하기
             </button>
+            <button
+              onClick={handleDemoExperience}
+              className="morph-btn flex items-center gap-2 bg-[#7C3AED] text-white text-[14px] font-bold px-6 py-3 hover:bg-[#6D28D9] transition-colors"
+              style={{ filter: 'drop-shadow(0 2px 8px rgba(124,58,237,0.32))' }}
+            >
+              <Play className="w-4 h-4" />
+              데모 체험하기
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -237,13 +305,72 @@ export default function DashboardPage() {
               <ProjectCard
                 key={p.id}
                 project={p}
-                isHost={p.hostUid === userProfile?.uid || p.createdBy === userProfile?.uid}
+                isHost={p.demoExperience?.scenarioId
+                  ? p.hostUid === userProfile?.uid
+                  : p.hostUid === userProfile?.uid || p.createdBy === userProfile?.uid}
                 onClick={() => router.push(`/projects/${p.id}`)}
               />
             ))}
           </div>
         )}
       </main>
+
+      {demoState?.open && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl border border-[#E8EAED] overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#E8EAED] bg-[#F8F5FF]">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#7C3AED] text-white flex items-center justify-center shadow-lg">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-extrabold tracking-[0.18em] text-[#7C3AED]">DEMO EXPERIENCE</p>
+                  <h2 className="text-[20px] font-extrabold text-[#202124]">교사 페르소나 데모를 생성하는 중입니다</h2>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-6 space-y-5">
+              <div className="rounded-2xl bg-[#F8F9FA] border border-[#E8EAED] px-4 py-4">
+                <div className="flex items-center justify-between gap-4 mb-3">
+                  <div>
+                    <p className="text-[12px] font-bold text-[#7C3AED]">{demoState.progress.stageLabel}</p>
+                    <p className="text-[17px] font-extrabold text-[#202124] mt-0.5">{demoState.progress.activityLabel}</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[#5F6368]">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#7C3AED]" />
+                    <span className="text-[18px] font-black tabular-nums text-[#202124]">{demoState.progress.percent}%</span>
+                  </div>
+                </div>
+                <div className="h-3 rounded-full bg-white border border-[#E8EAED] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] via-[#8B5CF6] to-[#A78BFA] transition-all duration-500"
+                    style={{ width: `${demoState.progress.percent}%` }}
+                  />
+                </div>
+                <p className="text-[13px] text-[#5F6368] mt-3 leading-relaxed">{demoState.progress.detail}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-[12px]">
+                <div className="rounded-2xl bg-[#F9FAFB] border border-[#E8EAED] px-4 py-3">
+                  <p className="font-bold text-[#202124]">참여 페르소나</p>
+                  <p className="text-[#5F6368] mt-1 leading-relaxed">잠만보선생님, 뚜벅초선생님, 이상해씨선생님, 꼬마돌선생님</p>
+                </div>
+                <div className="rounded-2xl bg-[#F9FAFB] border border-[#E8EAED] px-4 py-3">
+                  <p className="font-bold text-[#202124]">생성 내용</p>
+                  <p className="text-[#5F6368] mt-1 leading-relaxed">전 활동 대화, 산출물, 단계 보고서를 한 번에 생성합니다.</p>
+                </div>
+              </div>
+
+              {demoState.error && (
+                <div className="rounded-2xl bg-[#FFEBEE] border border-[#FFCDD2] px-4 py-3 text-[13px] text-[#B71C1C]">
+                  {demoState.error}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

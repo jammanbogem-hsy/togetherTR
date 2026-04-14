@@ -1,0 +1,140 @@
+/**
+ * 활동 완료 판정 헬퍼 (P1-I)
+ *
+ * 이전: `isEffectivelyDone`이 StageBar.tsx:335, ActivitySidebar.tsx:263 두 곳에 중복 존재.
+ * 현재: 여기로 중앙화 + E 단계 필수 섹션 검증 추가.
+ *
+ * ── 회귀 방지 원칙 ────────────────────────────────────────
+ * - non-E 활동(T/A/Ds/DI): 기존 로직(status + artifact 존재 여부)과 100% 동일.
+ * - E 활동: `_schemaVersion === 'v2-sections'` 인 산출물만 섹션 검증 수행.
+ *   레거시(undefined/기타) E 산출물은 grandfather — 기존 로직으로만 완료 판정.
+ */
+
+import type { ActivityCode, Project, StageStatus } from '@/types'
+import { ACTIVITY_META, type RequiredSection } from '@/types'
+
+type ActivityStatusMap = Partial<Record<ActivityCode, StageStatus>> | Record<string, StageStatus>
+type ArtifactsMap = Project['artifacts']
+
+/**
+ * 활동이 "실질적으로 완료"되었는지 판정.
+ * - 상태(status)가 completed 또는 warning 이면서
+ * - 해당 활동의 산출물이 존재하고
+ * - requiredSections 정의가 있고 v2-sections 스키마면 → 섹션 검증까지 통과해야 완료
+ */
+export function isEffectivelyDone(
+  code: ActivityCode,
+  activityStatus: ActivityStatusMap,
+  artifacts: ArtifactsMap
+): boolean {
+  const status = activityStatus[code]
+  const artifact = artifacts?.[code]
+  const hasArtifact = !!artifact
+
+  // 기존 로직 (non-E 활동은 여기서 판정 종료)
+  const baseDone = (status === 'completed' || status === 'warning') && hasArtifact
+  if (!baseDone) return false
+
+  // 섹션 검증은 requiredSections가 정의된 활동에만 적용
+  const meta = ACTIVITY_META[code]
+  if (!meta.requiredSections || meta.requiredSections.length === 0) return true
+
+  // Grandfather: v2-sections 스키마가 아니면 레거시 산출물로 간주 → 통과
+  if (artifact!._schemaVersion !== 'v2-sections') return true
+
+  // v2-sections: 실제 섹션 검증
+  return validateRequiredSections(
+    artifact!.content,
+    meta.requiredSections
+  )
+}
+
+/**
+ * artifact.content(Record<string, unknown>)에 대해 requiredSections 검증.
+ * content 키는 AI의 [ARTIFACT_UPDATE: <섹션명>=<값>] 신호에서 유래하므로
+ * RequiredSection.key와 자연스럽게 매칭됨(한글 라벨 그대로).
+ */
+export function validateRequiredSections(
+  content: Record<string, unknown> | undefined | null,
+  sections: RequiredSection[]
+): boolean {
+  if (!content) return false
+
+  const allMode = sections.every(s => s.required === 'all')
+  const anyMode = sections.some(s => s.required === 'any')
+
+  // 'all' 규칙: required==='all' 인 섹션은 모두 충족해야 함
+  const allRequired = sections.filter(s => s.required === 'all')
+  for (const sec of allRequired) {
+    if (!sectionSatisfies(content, sec)) return false
+  }
+
+  // 'any' 규칙: required==='any' 인 섹션 중 최소 1개만 충족하면 됨
+  const anyRequired = sections.filter(s => s.required === 'any')
+  if (anyRequired.length > 0) {
+    const atLeastOne = anyRequired.some(sec => sectionSatisfies(content, sec))
+    if (!atLeastOne) return false
+  }
+
+  // allMode 모두 통과 + anyMode 하나 이상 통과 → 완료
+  // (allMode/anyMode 참조는 lint 경고 회피용. 실제 판정은 위 두 루프가 담당)
+  void allMode; void anyMode
+  return true
+}
+
+/**
+ * content 맵에서 섹션 key 직접 접근 + 한국어 글자 수 검증.
+ * key가 없거나 값이 비어있으면 false.
+ */
+function sectionSatisfies(
+  content: Record<string, unknown>,
+  sec: RequiredSection
+): boolean {
+  const raw = content[sec.key]
+  if (typeof raw !== 'string') return false
+  // 공백 제거 후 글자 수 비교 (한국어 기준, 이모지/공백 nullity 방지)
+  const trimmed = raw.replace(/\s/g, '')
+  return trimmed.length >= sec.minChars
+}
+
+/**
+ * E 산출물에서 "수정안"/"개선안"/"팀 개선안" 섹션을 안전하게 추출.
+ * - v2-sections 스키마면 content[key] 직접 접근.
+ * - 레거시면 content의 모든 string 값 중 알려진 키 후보에 해당하는 것을 best-effort로 찾음.
+ *
+ * 결과: 추출 실패 시 undefined (호출부는 필드 미기록 처리).
+ */
+export function extractImprovementText(
+  artifact: { content: Record<string, unknown>; _schemaVersion?: string } | undefined,
+  candidateKeys: string[]
+): string | undefined {
+  if (!artifact?.content) return undefined
+  for (const k of candidateKeys) {
+    const v = artifact.content[k]
+    if (typeof v === 'string' && v.trim().length > 0) return v.trim()
+  }
+  // fallback: 키 정규화(공백/기호 제거) 비교
+  const normalized = (s: string) => s.replace(/[\s:·.-]/g, '').toLowerCase()
+  const normalizedCandidates = candidateKeys.map(normalized)
+  for (const [k, v] of Object.entries(artifact.content)) {
+    if (typeof v !== 'string' || v.trim().length === 0) continue
+    if (normalizedCandidates.includes(normalized(k))) return v.trim()
+  }
+  return undefined
+}
+
+/**
+ * E-2-1의 "다음 주기 선택" 값에서 A안/B안 판정.
+ * 'A안 ...', 'A', 'a안' 등 관대하게 해석. 판별 불가 시 undefined.
+ */
+export function parseNextCycleChoice(text: string | undefined): 'A' | 'B' | undefined {
+  if (!text) return undefined
+  const t = text.trim().toLowerCase()
+  // 가장 먼저 등장하는 A/B 단일 문자를 사용 (B안 먼저, A안 나중 등의 혼동 방지)
+  const aIdx = t.search(/\ba안\b|^a\b|\s+a\s+|\ba\s*안/)
+  const bIdx = t.search(/\bb안\b|^b\b|\s+b\s+|\bb\s*안/)
+  if (aIdx < 0 && bIdx < 0) return undefined
+  if (aIdx >= 0 && (bIdx < 0 || aIdx < bIdx)) return 'A'
+  if (bIdx >= 0) return 'B'
+  return undefined
+}

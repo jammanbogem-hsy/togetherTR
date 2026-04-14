@@ -1,9 +1,25 @@
+import {
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signOut as firebaseSignOut,
+  type User,
+} from 'firebase/auth'
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { auth, db } from '@/lib/firebase/config'
+
 export interface UserProfile {
   uid: string
   displayName: string
+  email?: string
+  photoURL?: string
   color: string
   emoji: string
   createdAt: number
+  // 교사 프로필
+  schoolLevel?: '초등' | '중등' | '고등'
+  schoolName?: string
+  grade?: string
 }
 
 // PCCS 파스텔톤 (p톤 — 彩度 낮고 明度 높음, 색상환 균등 배치)
@@ -23,10 +39,11 @@ const AVATAR_COLORS = [
 ]
 const AVATAR_EMOJIS = ['🍎', '🌿', '🌊', '☀️', '🌸', '🍊', '⭐', '🦋', '🎯', '🌙', '🔥', '🌈']
 
-// UID 전체를 사용한 분산 해시 (앞 2자리 'u_' 고정 문제 해결)
+// UID 전체를 사용한 분산 해시
 function hashUid(uid: string): number {
   let h = 0
-  for (let i = 2; i < uid.length; i++) {  // 'u_' 이후부터 사용
+  const start = uid.startsWith('u_') ? 2 : 0
+  for (let i = start; i < uid.length; i++) {
     h = (h * 31 + uid.charCodeAt(i)) >>> 0
   }
   return h
@@ -36,10 +53,6 @@ function getColorForUid(uid: string): string {
 }
 function getEmojiForUid(uid: string): string {
   return AVATAR_EMOJIS[(hashUid(uid) >> 4) % AVATAR_EMOJIS.length]
-}
-
-function generateUid(): string {
-  return 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 }
 
 const LS_PROFILE_KEY = 'tcid_user_profile'
@@ -55,19 +68,132 @@ export function saveLocalProfile(profile: UserProfile) {
   localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(profile))
 }
 
-export async function signInWithNickname(displayName: string): Promise<UserProfile> {
-  // Firebase Auth 없이 로컬 UID 생성
-  const uid = generateUid()
-  const profile: UserProfile = {
-    uid,
-    displayName,
-    color: getColorForUid(uid),
-    emoji: getEmojiForUid(uid),
-    createdAt: Date.now(),
+export function clearLocalProfile() {
+  localStorage.removeItem(LS_PROFILE_KEY)
+}
+
+// ─── Firestore 프로필 ─────────────────────────────────────────────────────────
+
+export async function loadFirestoreProfile(uid: string): Promise<UserProfile | null> {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid))
+    if (!snap.exists()) return null
+    return snap.data() as UserProfile
+  } catch {
+    return null
   }
+}
+
+// Firestore는 undefined 필드를 거부 — 제거 후 저장
+function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) clean[k] = v
+  }
+  return clean
+}
+
+export async function saveFirestoreProfile(profile: UserProfile): Promise<void> {
+  // 필수 필드 누락 방어 (Firestore 로드 시 구 프로필에 없을 수 있음)
+  const safe = {
+    ...profile,
+    color: profile.color || getColorForUid(profile.uid),
+    emoji: profile.emoji || getEmojiForUid(profile.uid),
+    updatedAt: serverTimestamp(),
+  }
+  const data = stripUndefined(safe)
+  await setDoc(doc(db, 'users', profile.uid), data, { merge: true })
+}
+
+// ─── Google 로그인 ────────────────────────────────────────────────────────────
+
+const googleProvider = new GoogleAuthProvider()
+
+/**
+ * Google 팝업 로그인.
+ * 기존 Firestore 프로필이 있으면 반환 (프로필 입력 스킵).
+ * 없으면 null 반환 — 호출자가 프로필 입력 UI를 표시해야 함.
+ */
+export async function signInWithGoogle(): Promise<{
+  firebaseUser: User
+  existingProfile: UserProfile | null
+}> {
+  const result = await signInWithPopup(auth, googleProvider)
+  const user = result.user
+  const existingProfile = await loadFirestoreProfile(user.uid)
+  return { firebaseUser: user, existingProfile }
+}
+
+/**
+ * 프로필 완성 후 저장.
+ * Firebase Auth 사용자 정보 + 입력 필드를 합쳐 Firestore + localStorage에 저장.
+ */
+export async function completeProfile(
+  firebaseUser: User,
+  fields: {
+    displayName: string
+    schoolLevel: '초등' | '중등' | '고등'
+    schoolName: string
+    grade: string
+  }
+): Promise<UserProfile> {
+  const profile: UserProfile = {
+    uid: firebaseUser.uid,
+    displayName: fields.displayName,
+    email: firebaseUser.email ?? undefined,
+    photoURL: firebaseUser.photoURL ?? undefined,
+    color: getColorForUid(firebaseUser.uid),
+    emoji: getEmojiForUid(firebaseUser.uid),
+    createdAt: Date.now(),
+    schoolLevel: fields.schoolLevel,
+    schoolName: fields.schoolName,
+    grade: fields.grade,
+  }
+  await saveFirestoreProfile(profile)
   saveLocalProfile(profile)
   return profile
 }
+
+export async function signOut(): Promise<void> {
+  await firebaseSignOut(auth)
+  clearLocalProfile()
+}
+
+// ─── 세션 복원 ────────────────────────────────────────────────────────────────
+
+/**
+ * 앱 진입 시 Firebase Auth 상태로 프로필 복원.
+ * 1) localStorage 캐시 확인 (빠른 초기 렌더)
+ * 2) Firebase Auth onAuthStateChanged → Firestore 프로필 로드
+ */
+export function onProfileRestored(
+  callback: (profile: UserProfile | null) => void
+): () => void {
+  return onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      // 비로그인: localStorage 캐시도 제거
+      clearLocalProfile()
+      callback(null)
+      return
+    }
+    // Firestore 프로필 우선
+    const firestoreProfile = await loadFirestoreProfile(user.uid)
+    if (firestoreProfile) {
+      // 구 프로필에 emoji/color 누락 시 보정
+      if (!firestoreProfile.emoji || !firestoreProfile.color || LEGACY_COLORS.has(firestoreProfile.color)) {
+        firestoreProfile.color = getColorForUid(firestoreProfile.uid)
+        firestoreProfile.emoji = getEmojiForUid(firestoreProfile.uid)
+      }
+      saveLocalProfile(firestoreProfile)
+      callback(firestoreProfile)
+    } else {
+      // Firestore 없음 → 프로필 입력 필요 (null 반환)
+      callback(null)
+    }
+  })
+}
+
+// ─── 레거시 지원 (닉네임 전용 UID — 기존 사용자 마이그레이션) ──────────────────
 
 // 구 팔레트 색상 — 이 색상이면 파스텔로 갱신
 const LEGACY_COLORS = new Set([
@@ -78,8 +204,8 @@ const LEGACY_COLORS = new Set([
 export async function getOrRestoreProfile(): Promise<UserProfile | null> {
   const profile = getLocalProfile()
   if (!profile) return null
-  // 구 팔레트 색상이면 새 파스텔 색상으로 갱신 후 저장
-  if (LEGACY_COLORS.has(profile.color)) {
+  // 구 팔레트 색상이거나 emoji 필드 누락이면 갱신 후 저장
+  if (LEGACY_COLORS.has(profile.color) || !profile.emoji) {
     const updated = {
       ...profile,
       color: getColorForUid(profile.uid),

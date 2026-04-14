@@ -1,0 +1,13 @@
+[
+  {
+    "origin": [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://togethertr.web.app",
+      "https://togethertr.firebaseapp.com"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["*"]
+  }
+]

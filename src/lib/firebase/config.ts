@@ -1,6 +1,7 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { initializeFirestore, getFirestore, persistentLocalCache } from 'firebase/firestore'
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore'
+import { getStorage } from 'firebase/storage'
 
 const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
 
@@ -21,16 +22,11 @@ const app: FirebaseApp = shouldInit
   : ({} as FirebaseApp)
 
 export const auth = shouldInit ? getAuth(app) : ({} as ReturnType<typeof getAuth>)
+export const storage = shouldInit ? getStorage(app) : ({} as ReturnType<typeof getStorage>)
 
-// 오프라인 캐시 내장 (오프라인 팀 지원)
+// 메모리 캐시 사용 (멀티탭 persistent 캐시 잠금 문제 회피)
 export const db = shouldInit
-  ? (() => {
-      try {
-        return initializeFirestore(app, { localCache: persistentLocalCache() })
-      } catch {
-        return getFirestore(app)
-      }
-    })()
-  : ({} as ReturnType<typeof getFirestore>)
+  ? initializeFirestore(app, { localCache: memoryLocalCache() })
+  : ({} as ReturnType<typeof initializeFirestore>)
 
 export default app

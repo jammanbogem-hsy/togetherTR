@@ -8,9 +8,11 @@ import { useProjectStore } from '@/store/project'
 import {
   watchProject, watchMessages, startProject, transferHost,
   sendLobbyMessage, watchLobbyMessages, joinProject, setTeamDiscussion,
+  clearECompleted,
   type LobbyMessage
 } from '@/lib/firebase/projects'
 import type { Project } from '@/types'
+import { STAGES } from '@/types'
 import type { UserProfile } from '@/lib/auth'
 import { StageBar } from '@/components/stage/StageBar'
 import { ActivitySidebar } from '@/components/activity/ActivitySidebar'
@@ -18,10 +20,13 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { StageMoveModal } from '@/components/modals/StageMoveModal'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
+import { StageReportsModal } from '@/components/modals/StageReportsModal'
+import { ProjectMaterialsModal } from '@/components/materials/ProjectMaterialsModal'
 import { setAnalysisOpen } from '@/lib/firebase/projects'
-import { DevJumpPanel } from '@/components/dev/DevJumpPanel'
 import { cn } from '@/lib/utils'
-import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight } from '@phosphor-icons/react'
+import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight, FileText, Books, Sparkle, X as XIcon, ArrowRight, CaretRight, CaretLeft, CaretDown } from '@phosphor-icons/react'
+import { PanelToggle } from '@/components/layout/PanelToggle'
+import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 
 // ─── 대기실 ──────────────────────────────────────────
 function WaitingRoom({
@@ -290,6 +295,89 @@ function WaitingRoom({
   )
 }
 
+// ─── P1-I 3-B: 다음 주기 T-1-1 진입 시 "이전 주기 개선안" 카드 ────
+// 지식 누적을 명시적으로 가시화. project.previousCycleImprovements는 cycle 이동 시
+// finalizeCycleTransition이 자동 저장하므로 여기서는 읽기만.
+function PrevCycleImprovementsCard({
+  projectId,
+  data,
+}: {
+  projectId: string
+  data: NonNullable<Project['previousCycleImprovements']>
+}) {
+  const dismissKey = `tcid-prev-cycle-card-dismissed:${projectId}:${data.cycleNumber}`
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return !!sessionStorage.getItem(dismissKey)
+  })
+  if (dismissed) return null
+
+  function handleClose() {
+    if (typeof window !== 'undefined') sessionStorage.setItem(dismissKey, '1')
+    setDismissed(true)
+  }
+
+  const choiceBadge = data.nextCycleChoice
+    ? (data.nextCycleChoice === 'A' ? 'A안' : 'B안')
+    : '미선택'
+
+  return (
+    <div className="rounded-2xl border-2 border-[#7B1FA2] bg-gradient-to-br from-[#F3E5F5] via-white to-[#F3E5F5] p-4 mb-3 shadow-sm relative">
+      <button
+        type="button"
+        onClick={handleClose}
+        aria-label="카드 닫기"
+        className="absolute top-3 right-3 w-7 h-7 rounded-full hover:bg-[#EADEEF] flex items-center justify-center text-[#7B1FA2] transition-colors"
+      >
+        <XIcon size={14} weight="bold" />
+      </button>
+      <div className="flex items-start gap-3 pr-8">
+        <div className="w-9 h-9 rounded-full bg-[#7B1FA2] flex items-center justify-center flex-shrink-0">
+          <Sparkle size={18} weight="fill" className="text-white" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[12px] font-extrabold text-[#6A1B9A] uppercase tracking-wider">
+              이전 주기({data.cycleNumber}주기) 개선안
+            </p>
+            <span className={cn(
+              'text-[10px] font-extrabold px-2 py-0.5 rounded-full',
+              data.nextCycleChoice
+                ? 'bg-[#7B1FA2] text-white'
+                : 'bg-[#F1F3F4] text-[#5F6368]'
+            )}>
+              다음 주기: {choiceBadge}
+            </span>
+          </div>
+          <div className="mt-2 space-y-1.5 text-[12px] text-[#202124] leading-relaxed">
+            {data.e11Improvement && (
+              <p>
+                <span className="font-bold text-[#6A1B9A]">수업 성찰 수정안</span>
+                {' — '}
+                <span className="text-[#3C4043]">{data.e11Improvement}</span>
+              </p>
+            )}
+            {data.e21Improvement && (
+              <p>
+                <span className="font-bold text-[#6A1B9A]">팀 활동 개선안</span>
+                {' — '}
+                <span className="text-[#3C4043]">{data.e21Improvement}</span>
+              </p>
+            )}
+            {!data.e11Improvement && !data.e21Improvement && (
+              <p className="text-[#5F6368] italic">기록된 개선안이 없습니다.</p>
+            )}
+          </div>
+          <div className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#6A1B9A] bg-white/80 px-2.5 py-1 rounded-full border border-[#CE93D8]">
+            <ArrowRight size={12} weight="bold" />
+            이번 주기 비전 설정에 반영하세요
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── 메인 페이지 ─────────────────────────────────────
 const STAGE_PANEL_BORDER: Record<string, string> = {
   T:  'border-[2.5px] border-[#4285F4] shadow-[0_2px_12px_rgba(26,115,232,0.18)]',
@@ -306,7 +394,7 @@ export default function ProjectPage() {
 
   const {
     project, setProject, setMessages, setMessagesLoaded,
-    pendingStageMove, userProfile,
+    pendingStageMove, setPendingStageMove, userProfile,
     setDiscussionMode, setTeamDiscussionStartIdx, messages,
     currentActivity, setCurrentActivity,
     viewingActivity, setViewingActivity,
@@ -317,14 +405,37 @@ export default function ProjectPage() {
   const [claimingHost, setClaimingHost] = useState(false)
   const [activePanel, setActivePanel] = useState<string | null>(null)
   const [showMembers, setShowMembers] = useState(false)
+  const [showReports, setShowReports] = useState(false)
+  const [showMaterials, setShowMaterials] = useState(false)
+  const [projectLoadError, setProjectLoadError] = useState<string | null>(null)
+  // Task #34: 레이아웃 패널 접기/펼치기 (localStorage 영속). projectId별 독립.
+  const layout = useLayoutToggle(projectId)
 
   useEffect(() => {
     if (!projectId) return
     resetProjectState()  // 프로젝트 전환 시 이전 프로젝트 상태 초기화
-    const unsubProject = watchProject(projectId, (p) => {
-      if (p) setProject(p)
-      else router.push('/dashboard')
-    })
+    setProjectLoadError(null)
+    const unsubProject = watchProject(
+      projectId,
+      (p) => {
+        if (p) {
+          setProjectLoadError(null)
+          setProject(p)
+        } else {
+          setProject(null)
+          setProjectLoadError('프로젝트를 찾을 수 없습니다. 삭제되었거나 접근할 수 없는 프로젝트입니다.')
+        }
+      },
+      (error) => {
+        setProject(null)
+        const message = error.message.toLowerCase()
+        if (message.includes('permission') || message.includes('permission-denied')) {
+          setProjectLoadError('이 프로젝트에 접근할 수 없습니다. 권한을 확인한 뒤 다시 시도해주세요.')
+          return
+        }
+        setProjectLoadError('프로젝트를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
+      }
+    )
     return () => unsubProject()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
@@ -348,6 +459,44 @@ export default function ProjectPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.activityStatuses])
 
+  // E→T 순환 모달 자동 트리거: E 단계 모든 활동이 완료(또는 경고+산출물)되면
+  // pendingStageMove='T'를 설정하여 StageMoveModal(cycle 모드)을 띄움.
+  // 한 번 띄운 뒤에는 sessionStorage로 무시 표시 (per-user, per-session, per-project)
+  useEffect(() => {
+    if (!project) return
+    if (project.currentStage !== 'E') return
+    if (pendingStageMove) return
+    if (typeof window === 'undefined') return
+    const dismissKey = `tcid-cycle-dismissed:${projectId}`
+    if (sessionStorage.getItem(dismissKey)) return
+
+    const eStage = STAGES.find(s => s.code === 'E')!
+    const eAllDone = eStage.activities.every(a => {
+      const status = project.activityStatuses?.[a]
+      const hasArtifact = !!project.artifacts?.[a]
+      return (status === 'completed' || status === 'warning') && hasArtifact
+    })
+    if (eAllDone) {
+      sessionStorage.setItem(dismissKey, '1')
+      setPendingStageMove('T')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.currentStage, project?.activityStatuses, project?.artifacts, projectId])
+
+  // P1-I 3-C: 새 주기 T-1-1의 첫 산출물 저장 감지 → isECompleted false 복귀.
+  // 방장이 단독으로 write하며, `clearECompleted`는 idempotent하므로 race condition 무해.
+  useEffect(() => {
+    if (!project) return
+    if (project.isECompleted !== true) return
+    if (!project.artifacts?.['T-1-1']) return
+    const isHost = project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid
+    if (!isHost) return
+    clearECompleted(projectId).catch(err => {
+      console.warn('clearECompleted failed:', err)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.isECompleted, project?.artifacts?.['T-1-1'], projectId, userProfile?.uid])
+
   // Firestore teamDiscussions[currentActivity] → Zustand 동기화
   useEffect(() => {
     if (!project || !currentActivity) return
@@ -367,25 +516,49 @@ export default function ProjectPage() {
   }, [project?.teamDiscussions?.[currentActivity]?.active, project?.teamDiscussions?.[currentActivity]?.startedAt, currentActivity])
 
   useEffect(() => {
-    if (!projectId || !currentActivity) return
+    if (!projectId || !currentActivity || projectLoadError) return
     setMessagesLoaded(false)  // 활동 전환 시 리셋
     setMessages([])
-    const unsubMessages = watchMessages(projectId, currentActivity, (msgs) => {
-      setMessages(msgs)
-      setMessagesLoaded(true)   // Firestore 첫 응답 확인
-    })
-    return () => unsubMessages()
+    let didReceiveFirstSnapshot = false
+    const loadingFallback = window.setTimeout(() => {
+      if (!didReceiveFirstSnapshot) {
+        console.warn('watchMessages timed out before first snapshot:', { projectId, currentActivity })
+        setMessagesLoaded(true)
+      }
+    }, 5000)
+    const unsubMessages = watchMessages(
+      projectId,
+      currentActivity,
+      (msgs) => {
+        didReceiveFirstSnapshot = true
+        window.clearTimeout(loadingFallback)
+        setMessages(msgs)
+        setMessagesLoaded(true)   // Firestore 첫 응답 확인
+      },
+      () => {
+        didReceiveFirstSnapshot = true
+        window.clearTimeout(loadingFallback)
+        setMessagesLoaded(true)
+      }
+    )
+    return () => {
+      window.clearTimeout(loadingFallback)
+      unsubMessages()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, currentActivity])
+  }, [projectId, currentActivity, projectLoadError])
 
   // 대기실 진입 시 멤버 정보 등록 (색상이 바뀐 경우 항상 업데이트)
   useEffect(() => {
     if (!project || !userProfile) return
+    if (project.demoExperience?.scenarioId) return
     const uid = userProfile.uid
     const stored = project.memberInfo?.[uid]
     // 미등록이거나 색상이 현재 프로필과 다르면 업데이트
     if (stored && stored.color === userProfile.color) return
-    joinProject(projectId, uid, {
+    // 이 경로는 이미 멤버인 사용자의 프로필 갱신 — joinProject 내부에서
+    // memberUids 포함 여부를 확인하고 inviteCode 검증을 스킵한다. 빈 문자열 OK.
+    joinProject(projectId, uid, project.inviteCode ?? '', {
       displayName: userProfile.displayName,
       color: userProfile.color ?? '#A0BCE8',
       emoji: userProfile.emoji ?? '👤',
@@ -394,6 +567,23 @@ export default function ProjectPage() {
   }, [project?.id, userProfile?.uid, userProfile?.color])
 
   if (!project) {
+    if (projectLoadError) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-[#F8F9FA] px-4">
+          <div className="max-w-md w-full rounded-3xl bg-white border border-[#E8EAED] shadow-xl p-7 text-center">
+            <p className="text-[18px] font-extrabold text-[#202124]">프로젝트를 열 수 없습니다</p>
+            <p className="text-sm text-[#5F6368] mt-3 leading-relaxed">{projectLoadError}</p>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="mt-6 inline-flex items-center justify-center px-5 py-3 rounded-2xl bg-[#1A73E8] text-white text-sm font-bold hover:bg-[#1557B0] transition-colors"
+            >
+              대시보드로 돌아가기
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex items-center justify-center h-screen bg-[#F8F9FA]">
         <div className="flex flex-col items-center gap-4 text-[#5F6368]">
@@ -405,7 +595,9 @@ export default function ProjectPage() {
   }
 
   const uid = userProfile?.uid ?? ''
-  const isHost = project.hostUid === uid || project.createdBy === uid
+  const isHost = project.demoExperience?.scenarioId
+    ? project.hostUid === uid
+    : project.hostUid === uid || project.createdBy === uid
 
   async function handleClaimHost() {
     if (!window.confirm('방장 권한을 가져오시겠습니까?\n기존 방장은 방장 권한을 잃게 됩니다.')) return
@@ -444,58 +636,126 @@ export default function ProjectPage() {
   return (
     <div className="flex h-screen bg-[#F8F9FA] overflow-hidden p-3 gap-2">
 
-      {/* ══ 좌측 컬럼: 내비 + ActivitySidebar ══ */}
+      {/* ══ 좌측 컬럼: 내비 + ActivitySidebar (Task #34: 토글 가능) ══ */}
       <div
-        className={cn('flex-shrink-0 flex flex-col rounded-2xl overflow-hidden', panelBorder('left'))}
+        className={cn('flex-shrink-0 flex flex-col rounded-2xl overflow-hidden transition-all duration-300',
+          layout.sidebar ? '' : 'w-10', panelBorder('left'))}
         onMouseEnter={() => setActivePanel('left')}
         onMouseLeave={() => setActivePanel(null)}
       >
-        {/* 좌측 상단: 내비게이션 */}
-        <div className="flex items-center gap-2 px-3 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
+        {layout.sidebar ? (
+          <>
+            {/* 좌측 상단: 내비게이션 */}
+            <div className="flex items-center gap-2 px-3 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="flex items-center gap-1 text-[#5F6368] hover:text-[#202124] hover:bg-[#F1F3F4]
+                  rounded-full px-2.5 py-1.5 text-[13px] font-medium transition-all"
+              >
+                <ArrowLeft size={16} weight="regular" />
+                대시보드
+              </button>
+              <div className="h-4 w-px bg-[#DADCE0]" />
+              <h1 className="text-[13px] font-semibold text-[#202124] truncate max-w-[100px]">{project.title}</h1>
+              {isHost ? (
+                <span className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
+                  px-2 py-1 rounded-full font-semibold flex-shrink-0">
+                  <Crown size={13} weight="fill" className="text-[#F9AB00]" />
+                  방장
+                </span>
+              ) : (
+                <button
+                  onClick={handleClaimHost}
+                  disabled={claimingHost}
+                  className="flex items-center gap-1 text-[11px] border border-[#FBBC04] text-[#B06000]
+                    px-2 py-1 rounded-full font-medium hover:bg-[#FEF7E0] transition-all disabled:opacity-50 flex-shrink-0"
+                >
+                  <Crown size={13} weight="fill" className="text-[#F9AB00]" />
+                  {claimingHost ? '처리 중...' : '방장 되기'}
+                </button>
+              )}
+              <div className="ml-auto">
+                <PanelToggle direction="left" onClick={() => layout.toggle('sidebar')} label="활동 목록 접기" />
+              </div>
+            </div>
+            {/* 좌측 하단: 활동 사이드바 */}
+            <div className="flex-1 overflow-hidden">
+              <ActivitySidebar />
+            </div>
+          </>
+        ) : (
+          // Task #34: 접힌 상태 — 32px strip + 펼치기 버튼 + 현재 활동 코드 세로 표시
           <button
-            onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-1 text-[#5F6368] hover:text-[#202124] hover:bg-[#F1F3F4]
-              rounded-full px-2.5 py-1.5 text-[13px] font-medium transition-all"
+            type="button"
+            onClick={() => layout.toggle('sidebar')}
+            aria-label="활동 목록 펼치기"
+            title="활동 목록 펼치기"
+            className="flex-1 flex flex-col items-center justify-start gap-3 pt-3 bg-white hover:bg-[#F8F9FA] transition-colors"
           >
-            <ArrowLeft size={16} weight="regular" />
-            대시보드
-          </button>
-          <div className="h-4 w-px bg-[#DADCE0]" />
-          <h1 className="text-[13px] font-semibold text-[#202124] truncate max-w-[100px]">{project.title}</h1>
-          {isHost ? (
-            <span className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
-              px-2 py-1 rounded-full font-semibold flex-shrink-0">
-              <Crown size={13} weight="fill" className="text-[#F9AB00]" />
-              방장
-            </span>
-          ) : (
-            <button
-              onClick={handleClaimHost}
-              disabled={claimingHost}
-              className="flex items-center gap-1 text-[11px] border border-[#FBBC04] text-[#B06000]
-                px-2 py-1 rounded-full font-medium hover:bg-[#FEF7E0] transition-all disabled:opacity-50 flex-shrink-0"
+            <span
+              className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
+              aria-hidden="true"
             >
-              <Crown size={13} weight="fill" className="text-[#F9AB00]" />
-              {claimingHost ? '처리 중...' : '방장 되기'}
-            </button>
-          )}
-        </div>
-        {/* 좌측 하단: 활동 사이드바 */}
-        <div className="flex-1 overflow-hidden">
-          <ActivitySidebar />
-        </div>
+              <CaretRight size={14} weight="bold" />
+            </span>
+            {currentActivity && (
+              <span
+                className="text-[12px] font-extrabold text-[#5F6368] tracking-widest"
+                style={{ writingMode: 'vertical-rl' }}
+              >
+                {currentActivity}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* ══ 중앙 컬럼: 단계 섹션 + ChatPanel ══ */}
       <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
-        {/* 중앙 상단: 단계 바 — 전용 공간, 크게 */}
+        {/* 중앙 상단: 단계 바 — 전용 공간 (Task #34: 토글 가능) */}
         <div
-          className={cn('rounded-2xl bg-white flex-shrink-0 py-3', panelBorder('stage'))}
+          className={cn('rounded-2xl bg-white flex-shrink-0 transition-all duration-300',
+            layout.stage ? 'py-3' : 'py-0', panelBorder('stage'))}
           onMouseEnter={() => setActivePanel('stage')}
           onMouseLeave={() => setActivePanel(null)}
         >
-          <StageBar />
+          {layout.stage ? (
+            <div className="relative">
+              <StageBar />
+              <div className="absolute top-1 right-2">
+                <PanelToggle direction="up" onClick={() => layout.toggle('stage')} label="단계 바 접기" />
+              </div>
+            </div>
+          ) : (
+            // Task #34: 접힌 상태 — h-10 strip + 현재 단계 코드/라벨 미니 표시
+            <button
+              type="button"
+              onClick={() => layout.toggle('stage')}
+              aria-label="단계 바 펼치기"
+              title="단계 바 펼치기"
+              className="w-full h-10 flex items-center justify-center gap-3 hover:bg-[#F8F9FA] transition-colors rounded-2xl"
+            >
+              <span className="text-[12px] font-extrabold text-[#202124]">
+                현재 단계: <span className="text-[#1A73E8]">{currentStage}</span>
+                {' · '}
+                <span className="text-[#5F6368]">{STAGES.find(s => s.code === currentStage)?.label}</span>
+              </span>
+              <span
+                className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
+                aria-hidden="true"
+              >
+                <CaretDown size={14} weight="bold" />
+              </span>
+            </button>
+          )}
         </div>
+        {/* P1-I 3-B: T-1-1 진입 시 이전 주기 개선안 카드 */}
+        {currentActivity === 'T-1-1' && project.previousCycleImprovements && (
+          <PrevCycleImprovementsCard
+            projectId={projectId}
+            data={project.previousCycleImprovements}
+          />
+        )}
         {/* 중앙 하단: 채팅 패널 */}
         <div
           className={cn('flex-1 overflow-hidden rounded-2xl', panelBorder('chat'))}
@@ -506,14 +766,36 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* ══ 우측 컬럼: 정보 + ArtifactPanel ══ */}
+      {/* ══ 우측 컬럼: 정보 + ArtifactPanel (Task #34: 토글 가능) ══ */}
       <div
-        className={cn('w-[418px] flex-shrink-0 flex flex-col rounded-2xl overflow-hidden', panelBorder('right'))}
+        className={cn('flex-shrink-0 flex flex-col rounded-2xl overflow-hidden transition-all duration-300',
+          layout.artifact ? 'w-[418px]' : 'w-10', panelBorder('right'))}
         onMouseEnter={() => setActivePanel('right')}
         onMouseLeave={() => setActivePanel(null)}
       >
+        {layout.artifact ? (
+        <>
         {/* 우측 상단: 프로젝트 정보 */}
         <div className="flex items-center justify-end gap-2 px-3 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
+          <PanelToggle direction="right" onClick={() => layout.toggle('artifact')} label="산출물 패널 접기" className="mr-auto" />
+          <button
+            onClick={() => setShowMaterials(true)}
+            className="flex items-center gap-1.5 text-[12px] bg-[#E8F0FE] text-[#1A73E8]
+              px-3 py-1.5 rounded-full font-semibold hover:bg-[#D2E3FC] transition-colors"
+          >
+            <Books size={14} weight="fill" />
+            자료함
+          </button>
+          {project.stageReports && Object.keys(project.stageReports).length > 0 && (
+            <button
+              onClick={() => setShowReports(true)}
+              className="flex items-center gap-1.5 text-[12px] bg-[#E0F2F1] text-[#00897B]
+                px-3 py-1.5 rounded-full font-semibold hover:bg-[#B2DFDB] transition-colors"
+            >
+              <FileText size={14} weight="fill" />
+              보고서 확인
+            </button>
+          )}
           {project.inviteCode && (
             <span className="flex items-center gap-1.5 text-[12px] bg-[#E8F0FE] text-[#1A73E8]
               px-3 py-1.5 rounded-full font-semibold">
@@ -586,9 +868,46 @@ export default function ProjectPage() {
         <div className="flex-1 overflow-hidden">
           <ArtifactPanel />
         </div>
+        </>
+        ) : (
+          // Task #34: 접힌 상태 — 32px strip + 펼치기 버튼 + 산출물 아이콘
+          <button
+            type="button"
+            onClick={() => layout.toggle('artifact')}
+            aria-label="산출물 패널 펼치기"
+            title="산출물 패널 펼치기"
+            className="flex-1 flex flex-col items-center justify-start gap-3 pt-3 bg-white hover:bg-[#F8F9FA] transition-colors"
+          >
+            <span
+              className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
+              aria-hidden="true"
+            >
+              <CaretLeft size={14} weight="bold" />
+            </span>
+            <FileText size={16} weight="fill" className="text-[#5F6368]" />
+            <span
+              className="text-[12px] font-extrabold text-[#5F6368] tracking-widest"
+              style={{ writingMode: 'vertical-rl' }}
+            >
+              산출물
+            </span>
+          </button>
+        )}
       </div>
 
       {pendingStageMove && <StageMoveModal />}
+
+      {showReports && (
+        <StageReportsModal onClose={() => setShowReports(false)} />
+      )}
+
+      {showMaterials && (
+        <ProjectMaterialsModal
+          projectId={projectId}
+          userProfile={userProfile}
+          onClose={() => setShowMaterials(false)}
+        />
+      )}
 
       {/* 팀원: 방장이 분석 모달을 열면 동기화하여 표시 */}
       {!isHost && project?.analysisOpen && (
@@ -598,10 +917,6 @@ export default function ProjectPage() {
         />
       )}
 
-      {/* 개발용 활동 빠른 이동 패널 — 방장만 표시 */}
-      {isHost && currentActivity && (
-        <DevJumpPanel projectId={projectId} currentActivity={currentActivity} />
-      )}
     </div>
   )
 }

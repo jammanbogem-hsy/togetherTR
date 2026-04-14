@@ -1,0 +1,16 @@
+[
+  {
+    "theme": "학생들이 법의 의미와 역할을 이해하고 인권을 존중하는 시민으로 성장하기",
+    "gradeGroup": "초5-6",
+    "expectedCenterCodes": ["6사03-01"],
+    "expectedConnectionCodes": ["6사03-02", "6도03-02", "6국01-07"],
+    "expectedSubjects": ["사회", "도덕", "국어"]
+  },
+  {
+    "theme": "기후 변화와 책임 있는 실천",
+    "gradeGroup": "초5-6",
+    "expectedCenterCodes": [],
+    "expectedConnectionCodes": [],
+    "expectedSubjects": ["과학", "사회", "도덕"]
+  }
+]

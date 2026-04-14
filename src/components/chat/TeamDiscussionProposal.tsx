@@ -22,7 +22,7 @@ export function TeamDiscussionProposal({ topic, onAccept, onDecline }: Props) {
           <UsersThree size={18} weight="fill" className="text-white" />
         </div>
         <div>
-          <p className="text-[14px] font-extrabold text-[#004D40]">팀 자유 토론을 시작할까요?</p>
+          <p className="text-[14px] font-extrabold text-[#004D40]">팀 자유 토의를 시작할까요?</p>
           <p className="text-[11px] text-[#00695C]">지금은 AI 없이 팀원끼리 직접 대화하기 좋은 시점입니다</p>
         </div>
       </div>
@@ -35,7 +35,7 @@ export function TeamDiscussionProposal({ topic, onAccept, onDecline }: Props) {
         </div>
         <p className="text-[11px] text-[#00897B] mt-2 flex items-center gap-1">
           <span>💡</span>
-          <span>토론이 끝나면 AI가 대화 내용을 분석해 인사이트를 제공합니다</span>
+          <span>토의가 끝나면 AI가 대화 내용을 분석해 인사이트를 제공합니다</span>
         </p>
       </div>
 

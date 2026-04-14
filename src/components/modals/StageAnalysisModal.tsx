@@ -7,7 +7,8 @@ import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { cn } from '@/lib/utils'
 import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar, ArrowRight } from '@phosphor-icons/react'
-import { setAnalysisReport } from '@/lib/firebase/projects'
+import { setAnalysisReport, saveStageReport } from '@/lib/firebase/projects'
+import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 
 const STAGE_COLOR: Record<string, { bg: string; text: string; light: string }> = {
   T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]' },
@@ -126,9 +127,10 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
           }
         }
         setStatus('done')
-        // 완료 후 Firestore 저장 → 팀원 공유
+        // 완료 후 Firestore 저장 → 팀원 공유 + 단계별 영구 저장
         if (p.id && fullText) {
           await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
+          await saveStageReport(p.id, stage, fullText).catch(console.error)
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') return
@@ -206,7 +208,10 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
           }
         }
         setStatus('done')
-        if (p.id && fullText) await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
+        if (p.id && fullText) {
+          await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
+          await saveStageReport(p.id, stage, fullText).catch(console.error)
+        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') return
         setStatus('error')
@@ -286,6 +291,24 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
     win.document.close()
   }
 
+  async function downloadHwpx() {
+    if (!markdown) return
+
+    try {
+      const filename = `${project?.title ?? 'report'}_${STAGE_LABELS[stage]}_분석.hwpx`
+      const blob = await generateHwpx(markdown, `${project?.title ?? '프로젝트'} ${STAGE_LABELS[stage]} 분석 보고서`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Stage analysis HWPX export failed:', error)
+      window.alert('HWPX 생성에 실패했습니다. 현재는 PDF 또는 Markdown 공유를 사용해주세요.')
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(32,33,36,0.6)', backdropFilter: 'blur(4px)' }}
@@ -323,6 +346,16 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
                 >
                   <FilePdf size={15} weight="fill" />
                   PDF 저장
+                </button>
+                <button onClick={downloadHwpx}
+                  className="morph-btn flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-white border-2 border-[#DADCE0] text-[#5F6368] hover:border-[#00AEEF] hover:text-[#00AEEF] transition-colors"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 4a2 2 0 012-2h10l6 6v12a2 2 0 01-2 2H5a2 2 0 01-2-2V4z" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M13 2v6h6" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                    <text x="5" y="18" fontSize="7" fontWeight="bold" fill="currentColor">H</text>
+                  </svg>
+                  HWPX 베타
                 </button>
               </>
             )}
@@ -418,14 +451,27 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
                     <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', whiteSpace: 'nowrap' }}>{children}</th>
                   ),
                   tr: ({ children }) => <tr>{children}</tr>,
-                  td: ({ children }) => (
-                    <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', whiteSpace: 'nowrap' }}>{children}</td>
-                  ),
+                  td: ({ children }) => {
+                    const text = typeof children === 'string' ? children : null
+                    if (text && text.includes('\u2028')) {
+                      return (
+                        <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6 }}>
+                          {text.split('\u2028').filter(Boolean).map((line, i) => (
+                            <span key={i} style={{ display: 'block' }}>{line}</span>
+                          ))}
+                        </td>
+                      )
+                    }
+                    return <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', whiteSpace: 'nowrap' }}>{children}</td>
+                  },
                   hr: () => (
                     <hr style={{ border: 'none', borderTop: '1.5px solid #F1F3F4', margin: '1.8rem 0' }} />
                   ),
                   em: ({ children }) => (
-                    <em style={{ fontStyle: 'normal', color: '#5F6368', fontSize: '0.88rem' }}>{children}</em>
+                    <em style={{ fontStyle: 'italic', color: '#5F6368', fontSize: '0.88rem' }}>{children}</em>
+                  ),
+                  code: ({ children }) => (
+                    <code style={{ background: '#F8F9FA', border: '1px solid #DADCE0', borderRadius: '4px', padding: '0.1rem 0.4rem', fontSize: '0.85rem', color: '#202124' }}>{children}</code>
                   ),
                 }}
               >
@@ -462,10 +508,14 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
           <div className="px-6 py-3 flex-shrink-0 flex items-center justify-between gap-3 border-t border-[#F1F3F4] bg-[#F8F9FA]">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <span className="text-[12px] text-[#34A853] font-semibold whitespace-nowrap">✓ 분석 완료</span>
-              <span className="text-[11px] text-[#9AA0A6] hidden sm:inline">MD 또는 PDF로 저장하세요</span>
+              {isHost && (
+                <span className="text-[11px] text-[#00897B] font-semibold hidden sm:inline">
+                  💾 보고서가 저장됐습니다 · 우측 상단 &ldquo;보고서 확인&rdquo;에서 다시 볼 수 있어요
+                </span>
+              )}
               {isHost && (
                 <button onClick={rerunAnalysis}
-                  className="text-[11px] text-[#9AA0A6] hover:text-[#5F6368] underline transition-colors whitespace-nowrap">
+                  className="text-[11px] text-[#9AA0A6] hover:text-[#5F6368] underline transition-colors whitespace-nowrap ml-auto">
                   다시 생성
                 </button>
               )}
