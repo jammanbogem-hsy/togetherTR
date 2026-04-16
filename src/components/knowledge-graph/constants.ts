@@ -116,11 +116,35 @@ export function classifyRelation(center: GNode, other: GNode): GraphRelationType
 
 // ─── 폴백 텍스트 생성 ────────────────────────────────────────────────────
 
+/**
+ * 한국어 텍스트를 의미 단위로 스마트 절단.
+ * slice(0, N)은 어절 중간에서 자르는 문제가 있어 띄어쓰기·구두점 경계 우선 탐색.
+ */
+function truncateSmart(text: string | undefined, maxChars: number): string {
+  if (!text) return ''
+  const t = text.trim()
+  if (t.length <= maxChars) return t
+  // 절단 후보 경계: 구두점 → 띄어쓰기 → 강제 자르기
+  const cut = t.slice(0, maxChars)
+  // 문장 종결 부호에서 자르는 것이 가장 자연스러움
+  const sentenceEnd = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '), cut.lastIndexOf('; '), cut.lastIndexOf(', '))
+  if (sentenceEnd >= Math.floor(maxChars * 0.6)) {
+    return cut.slice(0, sentenceEnd + 1).trim() + '…'
+  }
+  // 띄어쓰기에서 자르기
+  const lastSpace = cut.lastIndexOf(' ')
+  if (lastSpace >= Math.floor(maxChars * 0.6)) {
+    return cut.slice(0, lastSpace).trim() + '…'
+  }
+  // 그래도 안 되면 강제 자르되 "…" 추가로 부자연스러운 느낌 완화
+  return cut.trim() + '…'
+}
+
 export function buildFallbackTeachingHint(center: GNode, other: GNode, relationType: GraphRelationType): string {
   const cSubj = subjectName(center.subject_id) || center.label
   const oSubj = subjectName(other.subject_id) || other.label
-  const cText = center.text?.slice(0, 50) || center.label
-  const oText = other.text?.slice(0, 50) || other.label
+  const cText = truncateSmart(center.text, 80) || center.label
+  const oText = truncateSmart(other.text, 80) || other.label
   const oKw = other.keywords?.slice(0, 2).join('·') || ''
   switch (relationType) {
     case '도구-활용':
@@ -146,8 +170,8 @@ export function buildFallbackTeachingHint(center: GNode, other: GNode, relationT
 export function buildFallbackRelationExplanation(center: GNode, other: GNode, relationType: GraphRelationType): string {
   const cSubj = subjectName(center.subject_id) || center.label
   const oSubj = subjectName(other.subject_id) || other.label
-  const cText = center.text?.slice(0, 50) || center.label
-  const oText = other.text?.slice(0, 50) || other.label
+  const cText = truncateSmart(center.text, 80) || center.label
+  const oText = truncateSmart(other.text, 80) || other.label
   const oKw = other.keywords?.slice(0, 2).join('·') || ''
   switch (relationType) {
     case '도구-활용':

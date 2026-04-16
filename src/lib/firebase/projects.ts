@@ -1,17 +1,60 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query,
-  where, orderBy, serverTimestamp, onSnapshot, Unsubscribe, arrayUnion, deleteField,
+  where, orderBy, limit, serverTimestamp, onSnapshot, Unsubscribe, arrayUnion, deleteField,
   type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { db } from './config'
-import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard } from '@/types'
+import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
 import { extractImprovementText, parseNextCycleChoice } from '@/lib/activity/completion'
 
+// ─── 대시보드 폴더 ──────────────────────────────────
+
+export interface DashboardFolder {
+  id: string
+  name: string
+  color: string
+  projectIds: string[]
+}
+
+export async function getUserFolders(uid: string): Promise<DashboardFolder[]> {
+  const ref = doc(db, 'user_settings', uid)
+  const snap = await getDoc(ref)
+  return (snap.data()?.folders as DashboardFolder[] | undefined) ?? []
+}
+
+export async function saveUserFolders(uid: string, folders: DashboardFolder[]): Promise<void> {
+  const ref = doc(db, 'user_settings', uid)
+  await setDoc(ref, { folders }, { merge: true })
+}
+
+// 비호스트가 대시보드에서 안 보이게 숨긴 프로젝트 ID 목록
+export async function getUserHiddenProjects(uid: string): Promise<string[]> {
+  const ref = doc(db, 'user_settings', uid)
+  const snap = await getDoc(ref)
+  return (snap.data()?.hiddenProjectIds as string[] | undefined) ?? []
+}
+
+export async function hideProjectFromDashboard(uid: string, projectId: string): Promise<void> {
+  const ref = doc(db, 'user_settings', uid)
+  await setDoc(ref, { hiddenProjectIds: arrayUnion(projectId) }, { merge: true })
+}
+
+export async function unhideProjectFromDashboard(uid: string, projectId: string): Promise<void> {
+  const ref = doc(db, 'user_settings', uid)
+  const snap = await getDoc(ref)
+  const current = (snap.data()?.hiddenProjectIds as string[] | undefined) ?? []
+  await setDoc(ref, { hiddenProjectIds: current.filter(id => id !== projectId) }, { merge: true })
+}
+
 // ─── 프로젝트 CRUD ───────────────────────────────────
+
+export async function deleteProject(projectId: string): Promise<void> {
+  await deleteDoc(doc(db, 'projects', projectId))
+}
 
 export async function createProject(
   data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>
@@ -50,17 +93,20 @@ export async function getUserProjects(userId: string): Promise<Project[]> {
   // 1) memberUids에 포함된 프로젝트
   // 2) createdBy == userId (레거시 호환)
   // 3) localStorage에 저장된 프로젝트 ID 직접 조회
+  // rules의 `request.query.limit <= 50` 조건 충족을 위해 limit(50) 명시
   const queries = [
-    getDocs(query(collection(db, 'projects'), where('memberUids', 'array-contains', userId))),
-    getDocs(query(collection(db, 'projects'), where('createdBy', '==', userId))),
+    getDocs(query(collection(db, 'projects'), where('memberUids', 'array-contains', userId), limit(50))),
+    getDocs(query(collection(db, 'projects'), where('createdBy', '==', userId), limit(50))),
   ]
 
   const results = await Promise.allSettled(queries)
   for (const r of results) {
     if (r.status === 'fulfilled') merge(r.value.docs)
+    else console.error('[getUserProjects] query 실패:', r.reason)
   }
 
   // localStorage 멤버십 (초대받은 방)
+  // rules.list가 정상 동작하면 위 두 query 로 충분하지만, 회귀/오프라인 대비 보조 fetch.
   const { getJoinedProjectIds } = await import('@/lib/inviteCode')
   const localIds = getJoinedProjectIds()
   const localFetches = localIds
@@ -85,7 +131,7 @@ export async function getUserProjects(userId: string): Promise<Project[]> {
 }
 
 export async function findProjectByInviteCode(code: string): Promise<Project | null> {
-  const q = query(collection(db, 'projects'), where('inviteCode', '==', code))
+  const q = query(collection(db, 'projects'), where('inviteCode', '==', code), limit(2))
   const snap = await getDocs(q)
   if (snap.empty) return null
   if (snap.size > 1) {
@@ -401,6 +447,9 @@ export async function saveCumulativeReport(projectId: string, content: string, s
     cumulativeReport: { content, savedAt: Date.now(), savedBy },
     updatedAt: serverTimestamp(),
   })
+  // 공개 중이면 자동으로 공개 스냅샷도 갱신 (호스트가 저장한 경우만 실제 동기화됨)
+  const { autoSyncIfPublic } = await import('./publicReports')
+  autoSyncIfPublic(projectId, savedBy).catch(() => {})
 }
 
 export async function markA23Completed(projectId: string): Promise<void> {
@@ -445,16 +494,47 @@ export async function setAnalysisReport(
   })
 }
 
+// ─── 중요 노트 (포스트잇) ──────────────────────────────
+// arrayUnion으로 append, 삭제는 전체 배열 교체 (arrayRemove 는 객체 equality 요구로 까다로움)
+
+export async function addKeyNote(projectId: string, note: KeyNote): Promise<void> {
+  // Firestore는 arrayUnion 요소의 undefined 필드를 거부 — 전송 전 제거
+  const cleanNote = Object.fromEntries(
+    Object.entries(note).filter(([, v]) => v !== undefined),
+  ) as KeyNote
+  await updateDoc(doc(db, 'projects', projectId), {
+    keyNotes: arrayUnion(cleanNote),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function removeKeyNote(projectId: string, noteId: string): Promise<void> {
+  const snap = await getDoc(doc(db, 'projects', projectId))
+  if (!snap.exists()) return
+  const data = snap.data() as Project
+  const filtered = (data.keyNotes ?? []).filter(n => n.id !== noteId)
+  await updateDoc(doc(db, 'projects', projectId), {
+    keyNotes: filtered,
+    updatedAt: serverTimestamp(),
+  })
+}
+
 // 완료된 보고서를 stageReports에 영구 저장
+// uid를 넘기면 공개 중 프로젝트의 공개 스냅샷도 자동 동기화 (호스트일 때만 실제 실행).
 export async function saveStageReport(
   projectId: string,
   stage: string,
-  content: string
+  content: string,
+  uid?: string,
 ): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
     [`stageReports.${stage}`]: { content, savedAt: Date.now() },
     updatedAt: serverTimestamp(),
   })
+  if (uid) {
+    const { autoSyncIfPublic } = await import('./publicReports')
+    autoSyncIfPublic(projectId, uid).catch(() => {})
+  }
 }
 
 // ─── 그래프 중심 성취기준 추천 (팀원 동기화) ─────────────────────────────────

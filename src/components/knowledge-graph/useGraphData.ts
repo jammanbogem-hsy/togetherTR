@@ -27,6 +27,7 @@ interface PendingData {
     relationType?: GraphRelationType
     relationScore?: number
     explanation?: string
+    ideas?: string[]
     teachingNote?: string
   }>
   centerStdId: string | null
@@ -303,7 +304,7 @@ export function useGraphData({
       body: JSON.stringify({ theme: keyword, gradeGroup, centerId: centerNodeId, candidateIds: connectedIds }),
     })
       .then(r => r.json())
-      .then((data: { relations?: Array<{ sourceId: string; targetId: string; relationType: GraphRelationType; score: number; explanation: string; teachingNote?: string; source: 'claude' | 'rule' }> }) => {
+      .then((data: { relations?: Array<{ sourceId: string; targetId: string; relationType: GraphRelationType; score: number; explanation: string; ideas?: string[]; teachingNote?: string; source: 'claude' | 'rule' }> }) => {
         if (!data.relations) return
         const next = new Map<string, GraphRelationAnalysis>()
         for (const r of data.relations) {
@@ -312,6 +313,7 @@ export function useGraphData({
             relationType: normalizeGraphRelationType(r.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE,
             score: r.score,
             explanation: r.explanation,
+            ideas: r.ideas,
             teachingNote: r.teachingNote,
             source: r.source,
           })
@@ -357,12 +359,13 @@ export function useGraphData({
             if (!data.relations) return
             setClaudeRelations(prev => {
               const next = new Map(prev)
-              for (const rel of data.relations as Array<{ standardId: string; relationType: GraphRelationType; score: number; explanation: string; teachingNote?: string }>) {
+              for (const rel of data.relations as Array<{ standardId: string; relationType: GraphRelationType; score: number; explanation: string; ideas?: string[]; teachingNote?: string }>) {
                 const key = [centerNodeId, rel.standardId].sort().join('||')
                 next.set(key, {
                   relationType: normalizeGraphRelationType(rel.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE,
                   score: rel.score,
                   explanation: rel.explanation,
+                  ideas: rel.ideas,
                   teachingNote: rel.teachingNote,
                   source: 'claude' as const,
                 })
@@ -376,30 +379,34 @@ export function useGraphData({
   }, [keyword, gradeGroup, nodesRef, artifactContext])
 
   // ── 팝업 단건 분석 ────────────────────────────────────────────────────
-  const analyzePopupNode = useCallback((popupId: string, centerNodeId: string) => {
-    if (!keyword.trim()) return
+  // force=true 로 호출하면 캐시를 무시하고 Claude를 다시 부른다 (사용자가 "다시 분석" 클릭 시).
+  // 키워드가 없어도 Claude에 맡겨 교차점을 찾게 한다 (빈 테마로 호출).
+  const analyzePopupNode = useCallback((popupId: string, centerNodeId: string, force = false) => {
     const claudeKey = [centerNodeId, popupId].sort().join('||')
-    if (claudeRelations.get(claudeKey)?.explanation) return
+    const existing = claudeRelations.get(claudeKey)
+    // 이미 ideas가 채워진 완전한 Claude 분석이면 스킵. 빈 explanation/ideas면 재시도.
+    if (!force && existing?.explanation?.trim() && (existing.ideas?.length ?? 0) > 0) return
     fetchedPopupKeys.current.add(claudeKey)
     setPopupAnalysisLoading(true)
     fetch('/api/ontology/relate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ theme: keyword, gradeGroup, centerId: centerNodeId, candidateIds: [popupId] }),
+      body: JSON.stringify({ theme: keyword || '', gradeGroup, centerId: centerNodeId, candidateIds: [popupId], force, artifactContext }),
     })
       .then(r => r.json())
       .then(data => {
         if (!data.relations) return
         setClaudeRelations(prev => {
           const next = new Map(prev)
-          for (const rel of data.relations as Array<{ standardId: string; relationType: GraphRelationType; score: number; explanation: string; teachingNote?: string }>) {
+          for (const rel of data.relations as Array<{ standardId: string; relationType: GraphRelationType; score: number; explanation: string; ideas?: string[]; teachingNote?: string; source?: 'claude' | 'rule' }>) {
             const key = [centerNodeId, rel.standardId].sort().join('||')
             next.set(key, {
               relationType: normalizeGraphRelationType(rel.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE,
               score: rel.score,
               explanation: rel.explanation,
+              ideas: rel.ideas,
               teachingNote: rel.teachingNote,
-              source: 'claude' as const,
+              source: rel.source ?? 'claude',
             })
           }
           return next
@@ -407,11 +414,11 @@ export function useGraphData({
       })
       .catch(() => {})
       .finally(() => setPopupAnalysisLoading(false))
-  }, [keyword, gradeGroup, claudeRelations])
+  }, [keyword, gradeGroup, claudeRelations, artifactContext])
 
-  // ── 저장 데이터 복원 ──────────────────────────────────────────────────
+  // ── 저장 데이터 복원 (이미 분석된 쌍은 보존하고, 비어있는 쌍만 채운다) ──
   const restoreFromSavedData = useCallback((centerNodeId: string) => {
-    if (!savedData || claudeRelations.size > 0) return
+    if (!savedData) return
     const relTypeMap = new Map(
       savedData.selectedStandards.map((standard) => [
         standard.id,
@@ -424,22 +431,31 @@ export function useGraphData({
     const noteMap = new Map(
       savedData.agentNotes.map((note) => [note.standardId, note])
     )
-    const restoredMap = new Map<string, GraphRelationAnalysis>()
-    // 모든 selectedStandards에 대해 관계 엔트리 생성 (agentNotes 없어도)
-    for (const [stdId, meta] of relTypeMap) {
-      if (stdId === centerNodeId) continue
-      const key = [centerNodeId, stdId].sort().join('||')
-      const note = noteMap.get(stdId)
-      restoredMap.set(key, {
-        relationType: meta.relationType,
-        score: meta.score,
-        explanation: note?.explanation ?? '',
-        teachingNote: note?.teachingNote,
-        source: 'claude',
-      })
-    }
-    if (restoredMap.size > 0) setClaudeRelations(restoredMap)
-  }, [savedData, claudeRelations.size])
+    let addedAny = false
+    setClaudeRelations(prev => {
+      const next = new Map(prev)
+      for (const [stdId, meta] of relTypeMap) {
+        if (stdId === centerNodeId) continue
+        const key = [centerNodeId, stdId].sort().join('||')
+        const existing = next.get(key)
+        // 이미 분석 완료된 엔트리는 건너뜀
+        if (existing?.explanation?.trim() && (existing.ideas?.length ?? 0) > 0) continue
+        const note = noteMap.get(stdId)
+        // 저장 데이터에도 설명이 없으면 스킵
+        if (!note?.explanation && !note?.ideas?.length) continue
+        next.set(key, {
+          relationType: meta.relationType,
+          score: meta.score,
+          explanation: note?.explanation ?? '',
+          ideas: note?.ideas,
+          teachingNote: note?.teachingNote,
+          source: 'claude',
+        })
+        addedAny = true
+      }
+      return addedAny ? next : prev
+    })
+  }, [savedData])
 
   return {
     rawNodes,

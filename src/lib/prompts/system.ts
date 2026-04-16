@@ -1,4 +1,4 @@
-import type { StageCode, ActivityCode, ActorType, Project } from '@/types'
+import type { StageCode, ActivityCode, ActorType, Project, ActivityMeta } from '@/types'
 import { ACTIVITY_META } from '@/types'
 
 // ─── 공통 시스템 프롬프트 ────────────────────────────
@@ -405,6 +405,28 @@ AI가 스스로 "산출물에 저장할 만한 내용이 모였다"고 판단한
 - ACTION_CARD 저장 제안 + A안/B안 동시 제시 (§12-4 상호배제)
 - ACTION_CARD 없이 AI가 "저장하겠습니다"로 시작하면서 [ARTIFACT_UPDATE] 선제 방출
 - primary 라벨을 "산출물에 저장" 이외의 표현으로 변경 (파서 식별 실패)
+
+### 규칙 0-3: "조기 저장 제안" 절대 금지 (⚠️ 매우 중요)
+
+**새 활동 진입 직후의 첫 질문 ("뭘 해야 해?", "어떻게 진행해?", "시작해요", "설명해줘" 등 절차·안내 요청 유형) 에 대해서는 ACTION_CARD [산출물 저장 제안]을 절대 방출하지 않는다.**
+
+- 첫 턴 올바른 응답: ACTIVITY_PROCEDURE의 **Step 1 절차 안내** + 팀이 답해야 할 **한 가지 질문** 제시로 끝.
+- 팀이 실제로 산출물 재료(비전 키워드, 주제 후보, 평가 기준, 학습자 특성 등)를 **생산한 뒤에만** 저장 제안 가능.
+
+판단 기준 — 다음 조건을 **모두 만족할 때만** 저장 제안 가능:
+1. 사용자 메시지가 안내 요청이 아닌 **실제 내용 생산**(후보 제시, 의견, 합의 등)
+2. 해당 활동에서 **최소 1개 핵심 산출물 요소**가 대화상 확정되어 있음
+3. 사용자가 "저장해", "마무리하자" 등 **저장 의사를 직접 표명**했거나 절차가 Step 저장 지점에 도달
+
+조건 미충족 시 저장 제안 대신 **다음 진행 질문**으로 응답을 마친다.
+
+**잘못된 예**:
+- 사용자: "주제 선정을 어떻게 해?"
+- AI: "(절차 설명) ... ACTION_CARD: 산출물 저장 제안 ..." ❌
+
+**올바른 예**:
+- 사용자: "주제 선정을 어떻게 해?"
+- AI: "주제 선정은 기준 합의 → 후보 제시 → 비교표 → 최종 선택 순으로 진행합니다. 먼저 ... 어떤 기준을 가장 중요하게 생각하시나요?" ✅ (ACTION_CARD 없음)
 
 ### 규칙 1: "저장하겠습니다" = 반드시 신호 포함
 "저장하겠습니다"라고 말하는 그 응답에 [ARTIFACT_UPDATE: 섹션=내용]이 없으면 실제로는 아무것도 저장되지 않는다. 반드시 같은 응답 마지막 줄에 포함할 것.
@@ -2331,6 +2353,11 @@ ${hasLearnerProfile
     ? `\n## 활동 특별 지시\n${ACTIVITY_CONTEXT[activityCode]}`
     : ''
 
+  // Task #10: recommendedSections 기반 권장 산출물 섹션 힌트 (내부 지침 — 교사 노출 금지).
+  // - 대상: T/A/Ds/DI 16개 활동. E-1-1/E-2-1(requiredSections)는 기존 ACTIVITY_PROCEDURE에 위임 → 이 경로에서 참조 안 함.
+  // - A-2-1은 ARTIFACT_UPDATE 신호를 쓰지 않는 유일한 활동(system.ts:1298) → 별도 포맷.
+  const recommendedSectionsHint = buildRecommendedSectionsHint(activityCode, activityMeta)
+
   // P1-I: T-1-1 진입 시 이전 주기 E 개선안 주입 (cycle 지식 누적)
   // - 대상: T-1-1 활동만 (다른 활동은 비전 재설정 지점이 아님)
   // - 노출 조건: previousCycleImprovements 존재 + (e11Improvement 또는 e21Improvement 중 하나 이상 실질 내용)
@@ -2339,7 +2366,36 @@ ${hasLearnerProfile
   const cycleImprovementsSection =
     activityCode === 'T-1-1' ? buildCycleImprovementsSection(project.previousCycleImprovements) : ''
 
-  return [BASE_SYSTEM_PROMPT, contextSection, STAGE_PROMPTS[stage], procedure, activityContext, cycleImprovementsSection].join('\n\n')
+  return [BASE_SYSTEM_PROMPT, contextSection, STAGE_PROMPTS[stage], procedure, activityContext, recommendedSectionsHint, cycleImprovementsSection].join('\n\n')
+}
+
+// Task #10: ACTIVITY_META.recommendedSections 기반 권장 섹션 힌트 블록 생성.
+// - recommendedSections가 없거나 빈 배열이면 '' 반환 (E-1-1/E-2-1 포함 → 기존 procedure에 위임).
+// - A-2-1은 extractA21TableForSave 경로라 ARTIFACT_UPDATE 문구 금지 → 별도 포맷.
+// - 교사에게 key 원문을 그대로 노출하지 말도록 내부 지침 명시.
+function buildRecommendedSectionsHint(
+  activityCode: ActivityCode,
+  meta: ActivityMeta | undefined
+): string {
+  const sections = meta?.recommendedSections
+  if (!sections || sections.length === 0) return ''
+
+  if (activityCode === 'A-2-1') {
+    return `## 권장 산출물 구성 (내부 지침 — 사용자에게 그대로 노출 금지)
+⚠️ A-2-1은 [ARTIFACT_UPDATE] 신호를 사용하지 않는다. 시스템이 채팅 응답의 마크다운 표를 자동 추출해 \`성취기준분석표\` 키로 저장한다.
+저장이 성공하려면 응답 안에 다음 세 요소가 모두 포함돼야 한다:
+- 핵심아이디어 블록 (\`> ★\`로 시작하는 인용 블록)
+- 7열 성취기준 분석표
+- 융합 분석 3요소 (공통 개념 · 수행 기능 · 루브릭 연계)
+셋 중 하나라도 누락되면 자동 추출이 매칭되지 않아 저장이 실행되지 않는다. 교사에게는 내부 키 이름(\`성취기준분석표\`) 대신 "핵심아이디어 및 성취기준 분석"처럼 자연스러운 표현을 사용한다.`
+  }
+
+  const keyLines = sections.map(s => `- ${s.key}`).join('\n')
+  return `## 권장 산출물 섹션 (내부 지침 — 사용자에게 그대로 노출 금지)
+이 활동이 진행되면서 팀 대화 맥락상 자연스러운 시점에 다음 섹션을 [ARTIFACT_UPDATE: <섹션명>=<내용>] 형식으로 기록하면 산출물이 충실해진다. 엄격한 틀이 아니며 한 번에 모두 채우도록 강요하지 말 것. 팀 상황에 따라 순서·범위를 조정할 수 있다.
+${keyLines}
+
+⚠️ 위 섹션명은 [ARTIFACT_UPDATE] 신호의 키로 사용되는 내부 식별자이다. 교사와의 대화 문장에 그대로 노출하지 말고, 같은 의미를 자연스러운 한국어로 풀어 설명한다.`
 }
 
 // P1-I: T-1-1에 주입할 이전 주기 개선안 블록 생성

@@ -36,8 +36,9 @@ export interface RelationResult {
   targetId: string
   relationType: RelationType
   score: number          // 0–1 (Claude 판단 강도)
-  explanation: string    // 교육적 연결 이유 (1~2문장)
-  teachingNote?: string  // 수업 설계 제안 (1문장)
+  explanation: string    // 관계 근거 (1문장)
+  ideas?: string[]       // 수업 아이디어 2~3개 (콘텐츠 접근: 보편/창의 혼합)
+  teachingNote?: string  // 수업 제안: 차시·역할·산출물이 있는 융합 수업 구조
   source: 'claude' | 'rule'
 }
 
@@ -183,15 +184,16 @@ export async function classifyRelations(
   center: StandardMeta,
   candidates: StandardMeta[],
   artifactContext?: string,
+  options?: { force?: boolean },
 ): Promise<RelationResult[]> {
   const cache = loadCache()
   const results: RelationResult[] = []
   const toClassify: StandardMeta[] = []
 
-  // 캐시 확인
+  // 캐시 확인 (force=true 면 전부 재호출)
   for (const cand of candidates) {
     const key = cacheKey(theme, center.id, cand.id)
-    if (cache[key]) {
+    if (!options?.force && cache[key]) {
       const relationType = normalizeGraphRelationType(cache[key].relationType) ?? DEFAULT_GRAPH_RELATION_TYPE
       const fallback = ruleBasedRelation(center, cand)
       results.push({
@@ -227,9 +229,10 @@ export async function classifyRelations(
     .join('\n\n')
 
   const prompt = `당신은 초등 교육과정 융합 수업 설계 전문가입니다.
+이 요청의 목적은 두 성취기준을 묶었을 때 **교사에게 인사이트를 주는 구체적인 수업 설계**를 제시하는 것입니다. 상식적이고 보편적인 문장(예: "~탐구 후 ~로 표현한다")만 내놓으면 실패입니다.
 
 ## 수업 주제
-${theme}
+${theme || '(주제 미지정 — 두 성취기준의 교차점을 직접 포착하라)'}
 ${artifactContext ? `\n## 수업 설계 맥락\n${artifactContext}\n` : ''}
 
 ## 중심 성취기준
@@ -243,33 +246,44 @@ ${center.code} (${center.subjectName})
 ## 연결 후보 성취기준
 ${candidatesList}
 
-## 과제
-각 후보와 중심 성취기준의 교육적 관계를 판별하고, 이 수업 주제에 맞는 **구체적인 수업 시나리오**를 제안하십시오.
+## 출력 스펙
+각 후보마다 다음 JSON 필드를 생성하라.
 
-⚠️ 중요 규칙:
-- 성취기준의 실제 내용(시대, 주제, 개념)을 정확히 확인하고 수업 주제와의 연결이 자연스러운지 판단하라
-- 수업 주제와 시대·맥락이 맞지 않는 성취기준은 score를 낮게 부여하라 (예: "세종대왕" 주제에 "조선 후기" 성취기준은 부적합)
-- teachingNote에 반드시 학생이 수행할 **구체적인 활동 시나리오**를 포함하라 (예: "모둠별로 ~를 조사한 뒤 ~를 만들어 발표한다")
+### explanation (1문장, 관계 근거)
+두 성취기준의 **실제 문장에서 구절을 각각 인용**하여 왜 이 관계 유형인지 한 문장으로. 교과명만 반복하는 추상적 설명 금지.
 
-관계 유형 (반드시 아래 중 하나 선택):
-- 의미연결: 개념이나 주제가 본질적으로 가까운 관계
-- 도구-활용: 한 교과의 기능이 다른 교과의 수행 도구가 되는 관계
-- 현상-가치: 현상 분석이 가치 판단과 연결되는 관계
-- 내용-표현: 한 교과의 탐구 내용을 다른 교과가 표현하는 관계
-- 문제-해결: 여러 교과가 동일 문제를 함께 해결하는 관계
-- 탐구-실천: 탐구가 실천 활동으로 이어지는 관계
-- 개념-적용: 한쪽 개념 이해 ↔ 다른 쪽 적용·실천
-- 원인-결과: 인과 구조로 이어지는 관계
+### ideas (배열, 2~3개의 수업 아이디어)
+각 아이디어는 **구체적 콘텐츠**(무엇을 다룰지 — 사례, 소재, 질문, 데이터)를 15~40자로. "보편형 1개 + 창의형 1~2개" 혼합 필수. 교사가 "오 이건 생각 못 했는데" 할 만한 앵글을 적어도 하나 포함.
+- 예 좋은 형태: "TV 시청률 Top10을 원그래프로 그리고 상위 3개 프로그램의 광고 노출 빈도 비교"
+- 예 나쁜 형태: "미디어 자료를 조사해 그래프로 나타낸다" (너무 보편, 인사이트 없음)
 
-다음 JSON만 출력하십시오 (설명 없이):
+### teachingNote (수업 제안: 2~3문장, 융합 구조)
+두 성취기준을 **한 수업 시퀀스로 엮는 구조**를 설계. 반드시 포함:
+(1) 차시 수 또는 단계 (예: "3차시 프로젝트")
+(2) 각 차시/단계의 역할 (중심 교과 ↔ 후보 교과)
+(3) 최종 산출물과 공유 방식
+같은 세트 안에서 **후보마다 다른 수업 형태**를 쓸 것: 프로젝트·토론·현장조사·제작전시·시뮬레이션·데이터시각화·캠페인·역할극 중 선택.
+- 예 좋은 형태: "3차시 구성. 1차시 사회에서 가짜뉴스 사례 3건을 비판적으로 분석해 '의심 지점' 목록 작성 → 2차시 수학에서 반 친구들의 SNS 정보 신뢰 설문을 띠그래프로 시각화 → 3차시 두 결과를 결합한 '우리 반 미디어 리터러시 지도'를 공동 전시, 루브릭으로 상호평가."
+- 예 나쁜 형태: "사회에서 탐구한 후 수학으로 표현한다" (구조 없음, 평가 없음)
+
+## 천편일률 금지 (강한 제약)
+- 같은 동사구("탐구한다", "발표한다", "조사한다")를 세트 전체에서 2회 이상 쓰지 말 것
+- 산출물을 후보별로 다르게 선택: 포스터·영상·그래프·모형·공연·전시·정책제안서·인포그래픽·지도·데이터대시보드 등
+- 평가 방식도 달리 언급: 루브릭·자기평가·동료평가·체크리스트·포트폴리오·관찰기록 등
+
+## 관계 유형 (필수 선택)
+의미연결 / 도구-활용 / 현상-가치 / 내용-표현 / 문제-해결 / 탐구-실천 / 개념-적용 / 원인-결과
+
+## 출력 형식 (JSON만, 주석·설명 금지)
 {
   "relations": [
     {
       "index": 1,
       "relationType": "관계유형",
-      "score": 0.75,
-      "explanation": "이 두 성취기준이 수업 주제 안에서 어떻게 연결되는지 구체적으로 서술 (2~3문장, 실제 성취기준 내용과 수업 주제 맥락 언급)",
-      "teachingNote": "학생들이 수행할 구체적인 수업 활동 시나리오 (2~3문장, 예: '모둠별로 ~를 조사한 뒤 ~그래프를 그리고, 분석 결과를 바탕으로 ~를 발표한다')"
+      "score": 0.78,
+      "explanation": "두 성취기준의 실문을 인용하며 관계 유형 근거를 한 문장으로.",
+      "ideas": ["아이디어1 (보편형, 15~40자)", "아이디어2 (창의형)", "아이디어3 (선택)"],
+      "teachingNote": "차시·역할·산출물·평가가 드러나는 2~3문장 수업 구조."
     }
   ]
 }`
@@ -277,7 +291,8 @@ ${candidatesList}
   try {
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
+      max_tokens: 2500,
+      temperature: 0.8,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -291,6 +306,7 @@ ${candidatesList}
         relationType: RelationType
         score: number
         explanation: string
+        ideas?: string[]
         teachingNote?: string
       }>
     }
@@ -302,6 +318,9 @@ ${candidatesList}
       handled.add(cand.id)
       const relationType = normalizeGraphRelationType(rel.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE
       const fallback = ruleBasedRelation(center, cand)
+      const cleanedIdeas = Array.isArray(rel.ideas)
+        ? rel.ideas.map(s => String(s).trim()).filter(Boolean).slice(0, 3)
+        : undefined
 
       const result: RelationResult = {
         sourceId: center.id,
@@ -309,6 +328,7 @@ ${candidatesList}
         relationType,
         score: Math.min(1, Math.max(0, rel.score)),
         explanation: rel.explanation?.trim() || buildFallbackExplanation(center, cand, relationType) || fallback.explanation,
+        ideas: cleanedIdeas && cleanedIdeas.length > 0 ? cleanedIdeas : undefined,
         teachingNote: rel.teachingNote?.trim() || buildFallbackTeachingNote(center, cand, relationType),
         source: 'claude',
       }
@@ -316,18 +336,16 @@ ${candidatesList}
       cache[cacheKey(theme, center.id, cand.id)] = result
     }
 
+    // Claude가 인덱스를 빠뜨린 후보는 룰 폴백을 돌려주되, 다음 호출에서 재시도되도록 캐시에 남기지 않는다.
     for (const cand of toClassify) {
       if (handled.has(cand.id)) continue
-      const fallback = ruleBasedRelation(center, cand)
-      results.push(fallback)
-      cache[cacheKey(theme, center.id, cand.id)] = fallback
+      results.push(ruleBasedRelation(center, cand))
     }
   } catch (err) {
     console.error('[ontologyRelation] Claude 오류, 규칙 기반 폴백:', err)
+    // 전역 실패는 캐시하지 않음 — 이후 호출에서 Claude 재시도 기회를 열어둔다.
     for (const cand of toClassify) {
-      const fallback = ruleBasedRelation(center, cand)
-      results.push(fallback)
-      cache[cacheKey(theme, center.id, cand.id)] = fallback
+      results.push(ruleBasedRelation(center, cand))
     }
   }
 

@@ -38,7 +38,11 @@ export interface GEdge {
 export interface GraphRelationAnalysis {
   relationType: GraphRelationType
   score: number
+  /** 관계 근거 한 줄 (팝업에선 보조 역할) */
   explanation: string
+  /** 수업 아이디어: 2~3개의 구체적 콘텐츠 접근 (보편/창의 혼합) */
+  ideas?: string[]
+  /** 수업 제안: 2개 성취기준을 융합한 수업 구조 (차시·역할·산출물 포함) */
   teachingNote?: string
   source: 'claude' | 'rule'
 }

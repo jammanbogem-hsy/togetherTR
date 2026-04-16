@@ -30,6 +30,7 @@ interface ProjectStore {
   // 메시지
   messages: Message[]
   addMessage: (msg: Message) => void
+  replaceMessage: (id: string, content: string) => void
   setMessages: (msgs: Message[]) => void
   messagesLoaded: boolean          // Firestore 첫 응답 여부
   setMessagesLoaded: (v: boolean) => void
@@ -66,6 +67,10 @@ interface ProjectStore {
     proposerName?: string    // 팀원이 제안한 경우 이름
   } | null
   setPendingArtifactSave: (v: { title: string; sections: Record<string, string>; activityCode?: string; proposerName?: string } | null) => void
+
+  // 산출물 패널 등에서 채팅 입력창에 프롬프트를 "주입 요청"할 때 사용 (ChatPanel이 consume 후 null로 리셋)
+  chatInputRequest: string | null
+  setChatInputRequest: (text: string | null) => void
 
   // 프로젝트 전환 시 상태 초기화
   resetProjectState: () => void
@@ -111,6 +116,9 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       ? state
       : { messages: [...state.messages, msg] }
   ),
+  replaceMessage: (id, content) => set((state) => ({
+    messages: state.messages.map(m => m.id === id ? { ...m, content } : m),
+  })),
   setMessages: (msgs) => set({
     messages: Array.from(new Map(msgs.map(m => [m.id, m])).values()),
   }),
@@ -141,6 +149,9 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   pendingArtifactSave: null,
   setPendingArtifactSave: (v) => set({ pendingArtifactSave: v }),
 
+  chatInputRequest: null,
+  setChatInputRequest: (text) => set({ chatInputRequest: text }),
+
   resetProjectState: () => set({
     project: null,
     activityStatus: {},
@@ -156,5 +167,6 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     pendingTeamDiscussion: null,
     teamDiscussionStartIdx: 0,
     pendingArtifactSave: null,
+    chatInputRequest: null,
   }),
 }))

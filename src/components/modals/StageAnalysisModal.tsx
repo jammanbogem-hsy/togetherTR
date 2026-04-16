@@ -23,7 +23,8 @@ const STAGE_LABELS: Record<string, string> = {
 }
 
 export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => void; isHost?: boolean }) {
-  const { project, setPendingStageMove } = useProjectStore()
+  const { project, setPendingStageMove, userProfile } = useProjectStore()
+  const callerUid = userProfile?.uid
   const [markdown, setMarkdown] = useState('')
   const [status, setStatus] = useState<'loading' | 'streaming' | 'done' | 'error'>('loading')
   const [errorMsg, setErrorMsg] = useState('')
@@ -130,7 +131,7 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
         // 완료 후 Firestore 저장 → 팀원 공유 + 단계별 영구 저장
         if (p.id && fullText) {
           await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
-          await saveStageReport(p.id, stage, fullText).catch(console.error)
+          await saveStageReport(p.id, stage, fullText, callerUid).catch(console.error)
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') return
@@ -210,7 +211,7 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
         setStatus('done')
         if (p.id && fullText) {
           await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
-          await saveStageReport(p.id, stage, fullText).catch(console.error)
+          await saveStageReport(p.id, stage, fullText, callerUid).catch(console.error)
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') return
@@ -440,29 +441,30 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
                     </li>
                   ),
                   table: ({ children }) => (
-                    <div style={{ margin: '1rem 0', borderRadius: '12px', overflowX: 'auto', border: '1.5px solid #DADCE0' }}>
-                      <table style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>{children}</table>
+                    <div style={{ margin: '1rem 0', borderRadius: '12px', border: '1.5px solid #DADCE0', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', tableLayout: 'auto' }}>{children}</table>
                     </div>
                   ),
                   thead: ({ children }) => (
                     <thead style={{ background: '#1A73E8', color: 'white' }}>{children}</thead>
                   ),
                   th: ({ children }) => (
-                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', whiteSpace: 'nowrap' }}>{children}</th>
+                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', wordBreak: 'keep-all', overflowWrap: 'anywhere', verticalAlign: 'top' }}>{children}</th>
                   ),
                   tr: ({ children }) => <tr>{children}</tr>,
                   td: ({ children }) => {
+                    const baseStyle: React.CSSProperties = { padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6, wordBreak: 'keep-all', overflowWrap: 'anywhere' }
                     const text = typeof children === 'string' ? children : null
                     if (text && text.includes('\u2028')) {
                       return (
-                        <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6 }}>
+                        <td style={baseStyle}>
                           {text.split('\u2028').filter(Boolean).map((line, i) => (
                             <span key={i} style={{ display: 'block' }}>{line}</span>
                           ))}
                         </td>
                       )
                     }
-                    return <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', whiteSpace: 'nowrap' }}>{children}</td>
+                    return <td style={baseStyle}>{children}</td>
                   },
                   hr: () => (
                     <hr style={{ border: 'none', borderTop: '1.5px solid #F1F3F4', margin: '1.8rem 0' }} />

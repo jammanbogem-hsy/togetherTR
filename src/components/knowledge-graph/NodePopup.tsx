@@ -21,11 +21,12 @@ interface NodePopupProps {
   claudeLoading: boolean
   popupAnalysisLoading: boolean
   onClose: () => void
+  onReanalyze?: (popupId: string, centerNodeId: string) => void
 }
 
 export default function NodePopup({
   node, centerNodeId, rawNodes, visibleNodes, visibleEdges,
-  claudeRelations, claudeLoading, popupAnalysisLoading, onClose,
+  claudeRelations, claudeLoading, popupAnalysisLoading, onClose, onReanalyze,
 }: NodePopupProps) {
   if (typeof document === 'undefined' || node.type !== 'standard') return null
 
@@ -134,25 +135,23 @@ export default function NodePopup({
             const claudeRel = claudeRelations.get(claudeKey)
             const centerNode = centerNodeId ? rawNodes.find(n => n.id === centerNodeId) : null
             const hasAnalyzed = hasCompletedRelationAnalysis(claudeRel)
+            const ideas = claudeRel?.ideas && claudeRel.ideas.length > 0 ? claudeRel.ideas : undefined
             const relationType = centerNode
               ? (claudeRel?.relationType ?? classifyRelation(centerNode, node))
               : undefined
-            // AI 분석 완료 시 우선, 아니면 폴백 설명 제공 (빈 상태 없음)
-            const relationExplanation = centerNode
-              ? (hasAnalyzed
-                  ? (claudeRel.explanation?.trim() || buildFallbackRelationExplanation(centerNode, node, relationType ?? DEFAULT_GRAPH_RELATION_TYPE))
-                  : buildFallbackRelationExplanation(centerNode, node, relationType ?? DEFAULT_GRAPH_RELATION_TYPE))
-              : ''
             const teachingNote = centerNode
               ? (hasAnalyzed
                   ? (claudeRel?.teachingNote ?? buildFallbackTeachingHint(centerNode, node, relationType ?? DEFAULT_GRAPH_RELATION_TYPE))
                   : buildFallbackTeachingHint(centerNode, node, relationType ?? DEFAULT_GRAPH_RELATION_TYPE))
               : undefined
+            const relationRationale = claudeRel?.explanation?.trim()
+              || (centerNode ? buildFallbackRelationExplanation(centerNode, node, relationType ?? DEFAULT_GRAPH_RELATION_TYPE) : '')
             const relationStatus = getRelationStatusMeta(getRelationDisplayState(claudeRel))
+            const loading = (popupAnalysisLoading || claudeLoading) && !hasAnalyzed
             if (!centerNodeId) return null
             return (
               <div className="rounded-xl bg-[#F3E5F5]/60 border border-[#CE93D8]/50 px-4 py-3">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="text-xs font-bold text-[#7B1FA2]">수업 아이디어</span>
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${relationStatus.className}`}>{relationStatus.label}</span>
                   {relationType && (
@@ -160,19 +159,54 @@ export default function NodePopup({
                       {relationType}
                     </span>
                   )}
+                  {onReanalyze && centerNodeId && !loading && (
+                    <button
+                      onClick={() => onReanalyze(node.id, centerNodeId)}
+                      className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white text-[#7B1FA2] border border-[#CE93D8] hover:bg-[#F3E5F5] transition"
+                      title="캐시를 무시하고 Claude로 다시 분석"
+                    >
+                      ↻ 다시 분석
+                    </button>
+                  )}
                 </div>
-                {(popupAnalysisLoading || claudeLoading) && !hasAnalyzed ? (
+                {loading ? (
                   <div className="flex items-center gap-2 text-[12px] text-[#7B1FA2] animate-pulse">
                     <span className="w-3.5 h-3.5 rounded-full border-2 border-[#CE93D8] border-t-[#7B1FA2] animate-spin inline-block" />
-                    수업 아이디어 생성 중…
+                    AI가 두 성취기준의 교차점을 분석 중…
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm text-gray-700 leading-relaxed mb-2">{relationExplanation}</p>
+                    {/* 수업 아이디어 — 콘텐츠 접근 (보편+창의) */}
+                    {ideas ? (
+                      <ul className="text-sm text-gray-800 leading-relaxed mb-3 space-y-1.5 list-none">
+                        {ideas.map((idea, i) => (
+                          <li key={i} className="flex gap-2">
+                            <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: i === 0 ? '#9E9E9E' : '#7B1FA2' }}>
+                              {i === 0 ? '보' : '창'}
+                            </span>
+                            <span className="flex-1">{idea}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-gray-500 italic mb-3">
+                        AI 분석이 아직 없어요. ↻ 다시 분석을 눌러 구체적인 아이디어를 받아보세요.
+                      </p>
+                    )}
+
+                    {/* 수업 제안 — 융합 수업 구조 */}
                     {teachingNote && (
+                      <div className="border-t border-[#CE93D8]/30 pt-2.5 mb-2">
+                        <p className="text-xs font-semibold text-[#7B1FA2] mb-1">수업 제안 <span className="font-normal text-gray-400">· 융합 구조</span></p>
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{teachingNote}</p>
+                      </div>
+                    )}
+
+                    {/* 관계 근거 — 작게 */}
+                    {relationRationale && (
                       <div className="border-t border-[#CE93D8]/30 pt-2">
-                        <p className="text-xs font-semibold text-[#7B1FA2] mb-0.5">수업 제안</p>
-                        <p className="text-sm text-gray-600 leading-relaxed">{teachingNote}</p>
+                        <p className="text-[10px] font-semibold text-gray-400 mb-0.5 uppercase tracking-wide">관계 근거</p>
+                        <p className="text-xs text-gray-500 leading-relaxed">{relationRationale}</p>
                       </div>
                     )}
                   </>

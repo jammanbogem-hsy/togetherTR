@@ -22,6 +22,7 @@ const DEFAULT_ROW_HEIGHT = 1800
 const MAX_TABLE_CHUNK_HEIGHT = 62000
 const TABLE_BORDER_FILL_ID = 3
 const TABLE_HEADER_BORDER_FILL_ID = 4
+const BLOCKQUOTE_BORDER_FILL_ID = 5
 const REQUIRED_ENTRIES = [
   'mimetype',
   'META-INF/container.xml',
@@ -498,8 +499,10 @@ function makeTable(rows: Run[][][], tableIndex: number, columnWidths: number[]):
       const charPrId = rowIndex === 0 ? typography.headerCharPrId : typography.bodyCharPrId
       const paraPrId = rowIndex === 0 ? typography.headerParaPrId : typography.bodyParaPrId
       const cellLines = splitRunsIntoLines(cellRuns)
+      // 헤더 셀은 styleIDRef=1 (표 머리글 — parPrIDRef=7 CENTER) 적용해 셀 내부 중앙정렬 보장
+      const cellStyleId = rowIndex === 0 ? 1 : 0
       const paragraphs = cellLines
-        .map(line => makeSingleParagraph(line, charPrId, paraPrId).replace('<hp:p id="0"', '<hp:p id="2147483648"'))
+        .map(line => makeSingleParagraph(line, charPrId, paraPrId, cellStyleId).replace('<hp:p id="0"', '<hp:p id="2147483648"'))
         .join('')
       const columnWidth = normalizedWidths[columnIndex]
 
@@ -509,7 +512,9 @@ function makeTable(rows: Run[][][], tableIndex: number, columnWidths: number[]):
         ? '<hp:cellMargin left="150" right="150" top="150" bottom="150"/>'
         : '<hp:cellMargin left="120" right="120" top="90" bottom="90"/>'
 
-      return `<hp:tc name="" header="${rowIndex === 0 ? 1 : 0}" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="${borderFillId}"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${paragraphs}</hp:subList><hp:cellAddr colAddr="${columnIndex}" rowAddr="${rowIndex}"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${columnWidth}" height="${rowHeight}"/>${cellMargin}</hp:tc>`
+      // 헤더 셀 vertAlign="CENTER" — 짧은 헤더 텍스트가 셀 높이 중앙에 오도록
+      const subListVertAlign = rowIndex === 0 ? 'CENTER' : 'TOP'
+      return `<hp:tc name="" header="${rowIndex === 0 ? 1 : 0}" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="${borderFillId}"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="${subListVertAlign}" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${paragraphs}</hp:subList><hp:cellAddr colAddr="${columnIndex}" rowAddr="${rowIndex}"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${columnWidth}" height="${rowHeight}"/>${cellMargin}</hp:tc>`
     }).join('')
 
     return `<hp:tr>${cells}</hp:tr>`
@@ -518,15 +523,40 @@ function makeTable(rows: Run[][][], tableIndex: number, columnWidths: number[]):
   return `<hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:tbl id="${100000 + tableIndex}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="NONE" repeatHeader="1" rowCnt="${rows.length}" colCnt="${columnCount}" cellSpacing="0" borderFillIDRef="${TABLE_BORDER_FILL_ID}" noAdjust="0"><hp:sz width="${normalizedWidths.reduce((sum, width) => sum + width, 0)}" widthRelTo="ABSOLUTE" height="${Math.max(totalHeight, DEFAULT_ROW_HEIGHT)}" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="320" right="320" top="120" bottom="120"/>${tableRows}</hp:tbl><hp:t/></hp:run></hp:p>`
 }
 
+/**
+ * Blockquote 박스 — 1x1 표로 구현.
+ * 좌측 두꺼운 파란 bar + 나머지는 연한 회색 경계 + 연블루 배경.
+ * 화면 상의 블록쿼트 박스와 시각적으로 유사한 효과.
+ */
+function makeBlockquoteBox(runs: Run[], boxIndex: number): string {
+  const width = TOTAL_TABLE_WIDTH
+  const lineCount = estimateWrappedLines(runs, width)
+  const height = Math.max(DEFAULT_ROW_HEIGHT, 1400 + lineCount * 850)
+
+  const cellLines = splitRunsIntoLines(runs)
+  const paragraphs = cellLines
+    .map(line => makeSingleParagraph(line, 0, 0).replace('<hp:p id="0"', '<hp:p id="2147483648"'))
+    .join('')
+
+  const cellMargin = '<hp:cellMargin left="320" right="240" top="220" bottom="220"/>'
+
+  return `<hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:tbl id="${200000 + boxIndex}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="NONE" repeatHeader="0" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="${BLOCKQUOTE_BORDER_FILL_ID}" noAdjust="0"><hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="120" bottom="120"/><hp:inMargin left="320" right="320" top="120" bottom="120"/><hp:tr><hp:tc name="" header="0" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="${BLOCKQUOTE_BORDER_FILL_ID}"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${paragraphs}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${width}" height="${height}"/>${cellMargin}</hp:tc></hp:tr></hp:tbl><hp:t/></hp:run></hp:p>`
+}
+
 function blocksToXml(blocks: Block[]): string {
   let tableIndex = 0
+  let blockquoteIndex = 0
   const xmlBlocks: string[] = []
 
   for (const block of blocks) {
     switch (block.type) {
       case 'heading':
         xmlBlocks.push(makeHeading(block.level, block.text))
+        // H2 뒤에는 여유 공간 하나 더 (섹션 구분 강조)
         xmlBlocks.push(makeEmptyParagraph())
+        if (block.level === 1 || block.level === 2) {
+          xmlBlocks.push(makeEmptyParagraph())
+        }
         break
       case 'paragraph':
         xmlBlocks.push(makeParagraph(block.runs))
@@ -539,8 +569,9 @@ function blocksToXml(blocks: Block[]): string {
         xmlBlocks.push(makeParagraph(block.runs, { prefix: `${block.index}. `, paraPrId: 5 }))
         break
       case 'blockquote':
-        xmlBlocks.push(makeParagraph(block.runs, { prefix: '인용: ', paraPrId: 6, charPrId: 5 }))
-        xmlBlocks.push(makeEmptyParagraph(6))
+        xmlBlocks.push(makeBlockquoteBox(block.runs, blockquoteIndex))
+        xmlBlocks.push(makeEmptyParagraph())
+        blockquoteIndex += 1
         break
       case 'rule':
         xmlBlocks.push(makeRule())
@@ -582,7 +613,9 @@ function createHeaderXml(): string {
 
   const extraBorderFills = [
     '<hh:borderFill id="3" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.18 mm" color="#B8C1D1"/><hh:rightBorder type="SOLID" width="0.18 mm" color="#B8C1D1"/><hh:topBorder type="SOLID" width="0.18 mm" color="#8B96A8"/><hh:bottomBorder type="SOLID" width="0.18 mm" color="#8B96A8"/><hh:diagonal type="NONE" width="0.1 mm" color="#000000"/></hh:borderFill>',
-    '<hh:borderFill id="4" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.18 mm" color="#9EBFBC"/><hh:rightBorder type="SOLID" width="0.18 mm" color="#9EBFBC"/><hh:topBorder type="SOLID" width="0.18 mm" color="#7FA8A4"/><hh:bottomBorder type="SOLID" width="0.18 mm" color="#7FA8A4"/><hh:diagonal type="NONE" width="0.1 mm" color="#000000"/><hc:fillBrush><hc:winBrush faceColor="#DDF3F1" hatchColor="#DDF3F1"/></hc:fillBrush></hh:borderFill>',
+    '<hh:borderFill id="4" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.22 mm" color="#1557B0"/><hh:rightBorder type="SOLID" width="0.22 mm" color="#1557B0"/><hh:topBorder type="SOLID" width="0.22 mm" color="#0D47A1"/><hh:bottomBorder type="SOLID" width="0.22 mm" color="#0D47A1"/><hh:diagonal type="NONE" width="0.1 mm" color="#000000"/><hc:fillBrush><hc:winBrush faceColor="#1A73E8" hatchColor="#1A73E8"/></hc:fillBrush></hh:borderFill>',
+    // id=5 — blockquote 박스용 (좌측 파란 바 + 연한 블루 배경)
+    '<hh:borderFill id="5" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="1.0 mm" color="#1A73E8"/><hh:rightBorder type="SOLID" width="0.15 mm" color="#DADCE0"/><hh:topBorder type="SOLID" width="0.15 mm" color="#DADCE0"/><hh:bottomBorder type="SOLID" width="0.15 mm" color="#DADCE0"/><hh:diagonal type="NONE" width="0.1 mm" color="#000000"/><hc:fillBrush><hc:winBrush faceColor="#F1F8FF" hatchColor="#F1F8FF"/></hc:fillBrush></hh:borderFill>',
   ].join('')
 
   const extraCharProperties = [
@@ -591,13 +624,17 @@ function createHeaderXml(): string {
     '<hh:charPr id="7" height="1000" textColor="#202124" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:italic/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
     '<hh:charPr id="8" height="900" textColor="#202124" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
     '<hh:charPr id="9" height="900" textColor="#202124" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
-    '<hh:charPr id="10" height="2000" textColor="#1A237E" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
-    '<hh:charPr id="11" height="1500" textColor="#E65100" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
-    '<hh:charPr id="12" height="1250" textColor="#1565C0" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
-    '<hh:charPr id="13" height="1120" textColor="#455A64" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
+    // H1 — 프로젝트/보고서 대표 제목: 아주 크고 진한 네이비 + 볼드 + 밑줄 효과
+    '<hh:charPr id="10" height="2600" textColor="#0D47A1" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="BOTTOM" shape="DOUBLE" color="#0D47A1"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
+    // H2 — 섹션 제목: 크게, 브랜드 블루, 볼드, 얇은 밑줄
+    '<hh:charPr id="11" height="2000" textColor="#1A73E8" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="BOTTOM" shape="SOLID" color="#1A73E8"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
+    // H3 — 서브 제목: 중간 크기, 짙은 블루, 볼드
+    '<hh:charPr id="12" height="1500" textColor="#1557B0" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
+    // H4 — 최소 제목: 본문보다 약간 큰 진한 회색, 볼드
+    '<hh:charPr id="13" height="1250" textColor="#3C4043" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
     '<hh:charPr id="14" height="1000" textColor="#0B57D0" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
-    '<hh:charPr id="15" height="1000" textColor="#155E63" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
-    '<hh:charPr id="16" height="900" textColor="#155E63" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
+    '<hh:charPr id="15" height="1000" textColor="#FFFFFF" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
+    '<hh:charPr id="16" height="900" textColor="#FFFFFF" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:bold/><hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/></hh:charPr>',
   ].join('')
 
   const extraParShapes = [
@@ -611,13 +648,20 @@ function createHeaderXml(): string {
     '<hh:parShape id="8" tabIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0"><hh:margin left="0" right="0" prev="0" next="0" indent="0"/><hh:lineSpacing type="PERCENT" value="138"/><hh:align horizontal="LEFT" vertical="BASELINE"/><hh:heading type="NONE" idRef="0" level="0"/></hh:parShape>',
   ].join('')
 
+  // 표 헤더 중앙정렬 전용 스타일 — paraPrIDRef만으로 셀 내부 정렬이 잘 먹지 않는 이슈를 style 경유로 우회
+  const extraStyles = [
+    '<hh:style id="1" type="PARA" name="표 머리글" engName="TableHeader" parPrIDRef="7" charPrIDRef="15" nextStyleIDRef="0" langIDRef="0" lockForm="0"/>',
+  ].join('')
+
   return baseHeader
-    .replace('hh:borderFills itemCnt="2"', 'hh:borderFills itemCnt="4"')
+    .replace('hh:borderFills itemCnt="2"', 'hh:borderFills itemCnt="5"')
     .replace('</hh:borderFills>', `${extraBorderFills}</hh:borderFills>`)
     .replace('hh:charProperties itemCnt="5"', 'hh:charProperties itemCnt="17"')
     .replace('</hh:charProperties>', `${extraCharProperties}</hh:charProperties>`)
     .replace('hh:parShapes itemCnt="1"', 'hh:parShapes itemCnt="9"')
     .replace('</hh:parShapes>', `${extraParShapes}</hh:parShapes>`)
+    .replace('hh:styles itemCnt="1"', 'hh:styles itemCnt="2"')
+    .replace('</hh:styles>', `${extraStyles}</hh:styles>`)
 }
 
 function createContentHpf(title: string): string {

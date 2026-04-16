@@ -5,17 +5,8 @@ import { useProjectStore } from '@/store/project'
 import { STAGES, type StageCode, type StageStatus, type ActivityCode } from '@/types'
 import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
 import { cn } from '@/lib/utils'
+import { STAGE_COLOR } from '@/lib/ui/stageColors'
 import { UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy, Check, Shield, ArrowsClockwise, type Icon } from '@phosphor-icons/react'
-
-const STAGE_COLOR: Record<StageCode, {
-  chip: string; done: string; doneText: string; pulse: string
-}> = {
-  T:  { chip: 'bg-[#1A73E8]', done: 'bg-[#AECBFA]', doneText: 'text-[#1558D6]', pulse: 'rgba(26,115,232,0.4)'  },
-  A:  { chip: 'bg-[#7B1FA2]', done: 'bg-[#CE93D8]', doneText: 'text-[#6A1B9A]', pulse: 'rgba(123,31,162,0.4)'  },
-  Ds: { chip: 'bg-[#00897B]', done: 'bg-[#80CBC4]', doneText: 'text-[#00695C]', pulse: 'rgba(0,137,123,0.4)'   },
-  DI: { chip: 'bg-[#E65100]', done: 'bg-[#FFAB91]', doneText: 'text-[#BF360C]', pulse: 'rgba(230,81,0,0.4)'    },
-  E:  { chip: 'bg-[#C62828]', done: 'bg-[#EF9A9A]', doneText: 'text-[#B71C1C]', pulse: 'rgba(198,40,40,0.4)'   },
-}
 
 const STAGE_MORPH_DELAY: Record<StageCode, string> = {
   T: '0s', A: '-2.8s', Ds: '-5.6s', DI: '-8.4s', E: '-11.2s',
@@ -216,7 +207,7 @@ function StageChip({
       <button onClick={onClick} className="flex flex-col items-center gap-1 select-none group">
         <div className={cn('relative', NODE_SLOT)}>
           <div
-            className={cn('w-14 h-14 flex items-center justify-center relative overflow-hidden', color.chip)}
+            className={cn('relative w-14 h-14 flex items-center justify-center overflow-hidden', color.bg)}
             style={{
               animation: `morph-shape 7s ease-in-out ${delay} infinite, stage-bounce 2.8s ease-in-out 0s infinite`,
               filter: `drop-shadow(0 4px 14px ${color.pulse})`,
@@ -241,10 +232,10 @@ function StageChip({
       >
         <div className={cn('relative', NODE_SLOT)}>
           <div
-            className={cn('w-10 h-10 flex items-center justify-center relative', color.done)}
+            className={cn('w-11 h-11 flex items-center justify-center relative', color.done)}
             style={{ animation: `morph-shape 9s ease-in-out ${delay} infinite` }}
           >
-            <StageIcon size={20} weight="fill" className={color.doneText} />
+            <StageIcon size={22} weight="fill" className={color.doneText} />
             <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#34A853] flex items-center justify-center shadow">
               <Check size={9} weight="bold" className="text-white" />
             </div>

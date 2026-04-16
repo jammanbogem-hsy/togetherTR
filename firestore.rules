@@ -73,17 +73,16 @@ service cloud.firestore {
           || resource.data.inviteCode != null
         );
 
-      // list/query: 다음 3개 query 패턴만 허용 (코드 사용처 한정)
-      //   - where('memberUids', 'array-contains', uid)  → getUserProjects
-      //   - where('createdBy', '==', uid)               → getUserProjects (레거시)
-      //   - where('inviteCode', '==', code)             → findProjectByInviteCode
-      allow list: if isSignedIn()
-        && request.query.limit <= 50
-        && (
-          'memberUids' in request.query.where
-          || 'createdBy' in request.query.where
-          || 'inviteCode' in request.query.where
-        );
+      // list/query: 인증된 사용자에게 제한된 limit 으로만 허용.
+      // (Firebase rules는 request.query.where 를 노출하지 않으므로 where 절 검증은 불가.
+      //  따라서 클라이언트 side에서 적절한 where 를 항상 사용해야 한다 — 코드 컨벤션으로 강제.)
+      //
+      // TODO(P1, security): 악의적 클라이언트가 다른 사용자의 uid 로 array-contains
+      //   query 를 보내면 그 사용자의 프로젝트 메타데이터(title/inviteCode 등)가 노출될 수
+      //   있다. 콘텐츠(messages/artifacts) 는 멤버십 보호로 안전하지만 메타데이터 누설은 막지
+      //   못한다. 해결책: 별도 인덱스 컬렉션 user_projects/{uid}/{pid} 도입 → 그쪽만 list 허용
+      //   하고 projects 컬렉션은 get-only 로 잠금. 본인 컬렉션만 list 가능 → where 검증 불필요.
+      allow list: if isSignedIn() && request.query.limit <= 50;
 
       // create: 본인이 createdBy + memberUids에 본인 포함
       allow create: if isSignedIn()
@@ -149,6 +148,30 @@ service cloud.firestore {
       match /{document=**} {
         allow read, write: if false;
       }
+    }
+
+    // ─── public_reports ───────────────────────────────────────────────────
+    // 공개 배포된 보고서 스냅샷. 원본 projects/{pid}와 분리하여 민감 데이터 차단.
+    // read: 공개 (로그인 불필요) — "공개 링크" 기능의 핵심.
+    // write: 해당 프로젝트의 호스트(hostUid) 또는 createdBy만.
+    //
+    // 보안 전제:
+    //  - 이 컬렉션 문서는 앱이 민감 필드(memberUids/memberInfo/messages/inviteCode/
+    //    hostUid/createdBy 등)를 제외하고 추린 스냅샷만 담는다. publicReports.ts의
+    //    buildPublicReport() 참조.
+    //  - 즉 규칙 레벨에서 필드 검사까진 하지 않고, 앱 레벨에서 복사 경로를 강제한다.
+    match /public_reports/{pid} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn()
+        && (
+          get(/databases/$(database)/documents/projects/$(pid)).data.hostUid == request.auth.uid
+          || get(/databases/$(database)/documents/projects/$(pid)).data.createdBy == request.auth.uid
+        );
+    }
+
+    // ─── 사용자 설정 (대시보드 폴더 등) ──────────────────────────────────
+    match /user_settings/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
     }
 
     // ─── 그 외 모든 경로 차단 ────────────────────────────────────────────

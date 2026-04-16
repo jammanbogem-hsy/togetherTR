@@ -41,7 +41,18 @@ export interface ActivityMeta {
   isGuardrailSource?: boolean   // A-2-3
   isGuardrailTarget?: boolean   // Ds 전체
   isBackwardDesignFirst?: boolean // Ds-1-1 (평가 먼저)
-  requiredSections?: RequiredSection[]  // 필수 섹션 정의 (E 단계 등), v2-sections 스키마로 저장된 산출물에만 적용
+  /**
+   * 완료 판정에 쓰이는 강제 섹션. `projects.ts`의 v2-sections 자동 승격 트리거이기도 하다.
+   * 현재는 E-1-1/E-2-1 두 활동만 정의 (cycle 진입 조건으로 쓰임).
+   */
+  requiredSections?: RequiredSection[]
+  /**
+   * UI chip·AI 프롬프트 힌트용 "권장 섹션". 완료 판정에는 영향 없음.
+   * - `completion.ts`는 requiredSections만 검증 → recommendedSections는 grandfather·완료 로직에 무영향.
+   * - `projects.ts:338~340` 자동 v2-sections 승격도 requiredSections 기준이라 신규 산출물이 강제 검증으로 승격되지 않음.
+   * - UI는 `requiredSections ?? recommendedSections` fallback + variant prop으로 "권장"/"필수" 톤 분기.
+   */
+  recommendedSections?: RequiredSection[]
 }
 
 // 활동 산출물의 필수 섹션 정의. `artifacts[code].content`가 `Record<string, unknown>` 형태이므로
@@ -54,23 +65,120 @@ export interface RequiredSection {
 }
 
 export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
-  'T-1-1': { code: 'T-1-1', label: '팀 공통 비전 설정',    stage: 'T' },
-  'T-1-2': { code: 'T-1-2', label: '수업설계 방향 설정',   stage: 'T' },
-  'T-2-1': { code: 'T-2-1', label: '역할 배분',            stage: 'T' },
-  'T-2-2': { code: 'T-2-2', label: '팀 규칙 수립',         stage: 'T' },
-  'T-2-3': { code: 'T-2-3', label: '팀 일정 협의',         stage: 'T' },
-  'A-1-1': { code: 'A-1-1', label: '주제 선정 기준',        stage: 'A' },
-  'A-1-2': { code: 'A-1-2', label: '주제 선정',            stage: 'A' },
-  'A-2-1': { code: 'A-2-1', label: '핵심아이디어 및 성취기준 분석', stage: 'A' },
-  'A-2-2': { code: 'A-2-2', label: '통합 수업목표 진술',   stage: 'A' },
-  'A-2-3': { code: 'A-2-3', label: '학습자·맥락 분석',     stage: 'A', isGuardrailSource: true },
-  'Ds-1-1': { code: 'Ds-1-1', label: '평가 계획 수립',     stage: 'Ds', isBackwardDesignFirst: true },
-  'Ds-1-2': { code: 'Ds-1-2', label: '문제상황 개발',       stage: 'Ds', isGuardrailTarget: true },
-  'Ds-1-3': { code: 'Ds-1-3', label: '학습활동 설계',       stage: 'Ds', isGuardrailTarget: true },
-  'Ds-2-1': { code: 'Ds-2-1', label: '지원 도구 설계',      stage: 'Ds', isGuardrailTarget: true },
-  'Ds-2-2': { code: 'Ds-2-2', label: '스캐폴딩 설계',       stage: 'Ds', isGuardrailTarget: true },
-  'DI-1-1': { code: 'DI-1-1', label: '자료 탐색·개발',     stage: 'DI' },
-  'DI-2-1': { code: 'DI-2-1', label: '수업 기록',           stage: 'DI' },
+  // ── recommendedSections (가이드 전용) — Task #9 / pedagogy-auditor 제안서 기준 ──
+  // 원칙: required='any', minChars 10~20, key는 ARTIFACT_UPDATE 키 원문과 문자 단위 일치.
+  // `AI 분석`·`AI 점검` 섹션은 제외(AI 자동 생성 메타).
+  'T-1-1': {
+    code: 'T-1-1', label: '팀 공통 비전 설정', stage: 'T',
+    recommendedSections: [
+      { key: '개인 비전',    label: '개인 비전 키워드·정교화 문장', minChars: 20, required: 'any' },
+      { key: '팀 공통 비전', label: '팀 공통 비전 문장',          minChars: 10, required: 'any' },
+    ],
+  },
+  'T-1-2': {
+    code: 'T-1-2', label: '수업설계 방향 설정', stage: 'T',
+    recommendedSections: [
+      { key: '설계 방향', label: '설계 방향 (방향·근거 표)', minChars: 20, required: 'any' },
+    ],
+  },
+  'T-2-1': {
+    code: 'T-2-1', label: '역할 배분', stage: 'T',
+    recommendedSections: [
+      { key: '역할 배분', label: '역할 배분 (교사별 5열 표)', minChars: 20, required: 'any' },
+    ],
+  },
+  'T-2-2': {
+    code: 'T-2-2', label: '팀 규칙 수립', stage: 'T',
+    recommendedSections: [
+      { key: '팀 규칙', label: '팀 규칙 (규칙명·설명·위반 시 조치)', minChars: 20, required: 'any' },
+    ],
+  },
+  'T-2-3': {
+    code: 'T-2-3', label: '팀 일정 협의', stage: 'T',
+    recommendedSections: [
+      { key: '팀 일정', label: '팀 일정 (기간·활동·마감·담당자)', minChars: 20, required: 'any' },
+    ],
+  },
+  'A-1-1': { code: 'A-1-1', label: '주제 선정 기준', stage: 'A' },
+  'A-1-2': {
+    code: 'A-1-2', label: '주제 선정', stage: 'A',
+    // minChars: 주제명·기준명은 본질적으로 짧은 명사구라 낮게 조정.
+    // "가중치" 표현은 AI가 자의적 숫자를 박아 교사 판단을 구속하는 부작용이 있어 라벨에서 제거 (우선순위 표현 자율).
+    recommendedSections: [
+      { key: '주제 선정 기준', label: '주제 선정 기준 (기준·설명·우선순위)', minChars: 10, required: 'any' },
+      { key: '주제 후보',      label: '주제 후보 (비교표)',                   minChars: 10, required: 'any' },
+      { key: '최종 선정 주제', label: '최종 선정 주제',                       minChars: 3,  required: 'any' },
+      { key: '선정 근거',      label: '선정 근거 (비전·교과·학생 맥락)',      minChars: 15, required: 'any' },
+    ],
+  },
+  'A-2-1': {
+    code: 'A-2-1', label: '핵심아이디어 및 성취기준 분석', stage: 'A',
+    // ⚠️ key는 `성취기준분석표` (띄어쓰기 없음). ChatPanel.tsx:660 extractA21TableForSave 출력과 1:1 일치.
+    // ARTIFACT_UPDATE 신호 경로를 쓰지 않는 유일한 활동이라 Task #10 프롬프트 힌트도 별도 포맷 필요.
+    recommendedSections: [
+      { key: '성취기준분석표', label: '핵심아이디어 + 성취기준 분석표 + 융합 분석', minChars: 20, required: 'any' },
+    ],
+  },
+  'A-2-2': {
+    code: 'A-2-2', label: '통합 수업목표 진술', stage: 'A',
+    recommendedSections: [
+      { key: '교과별 세부 목표', label: '교과별 세부 목표 (교과·학습목표)', minChars: 20, required: 'any' },
+      { key: '통합 학습목표',    label: '통합 학습목표 (3~5개)',           minChars: 20, required: 'any' },
+    ],
+  },
+  'A-2-3': {
+    code: 'A-2-3', label: '학습자·맥락 분석', stage: 'A', isGuardrailSource: true,
+    // Ds 가드레일 카드 연동 시 이 단일 key를 참조.
+    recommendedSections: [
+      { key: '학습자 프로필', label: '학습자 프로필 (팀 공통 + 교사별 맞춤)', minChars: 20, required: 'any' },
+    ],
+  },
+  'Ds-1-1': {
+    code: 'Ds-1-1', label: '평가 계획 수립', stage: 'Ds', isBackwardDesignFirst: true,
+    recommendedSections: [
+      { key: '평가 계획', label: '평가 계획 (평가 항목·방법·시점·상중하 루브릭)', minChars: 20, required: 'any' },
+    ],
+  },
+  'Ds-1-2': {
+    code: 'Ds-1-2', label: '문제상황 개발', stage: 'Ds', isGuardrailTarget: true,
+    recommendedSections: [
+      { key: '문제상황',  label: '문제상황 시나리오 (제목·실제성·학습내용+산출물·청중+행위)', minChars: 20, required: 'any' },
+      { key: '핵심 질문', label: '핵심 질문 (Driving Question)',                          minChars: 10, required: 'any' },
+    ],
+  },
+  'Ds-1-3': {
+    code: 'Ds-1-3', label: '학습활동 설계', stage: 'Ds', isGuardrailTarget: true,
+    recommendedSections: [
+      { key: '학습 활동', label: '학습 활동 (순서·활동명·설명·교과·누적 차시)', minChars: 20, required: 'any' },
+    ],
+  },
+  'Ds-2-1': {
+    code: 'Ds-2-1', label: '지원 도구 설계', stage: 'Ds', isGuardrailTarget: true,
+    recommendedSections: [
+      { key: '경험한 도구 정리',   label: '경험한 도구 정리 (도구명·활용 경험)',           minChars: 20, required: 'any' },
+      { key: '학습활동-도구 매칭', label: '학습활동-도구 매칭 (활동·도구·활용 방안·대안)', minChars: 20, required: 'any' },
+    ],
+  },
+  'Ds-2-2': {
+    code: 'Ds-2-2', label: '스캐폴딩 설계', stage: 'Ds', isGuardrailTarget: true,
+    recommendedSections: [
+      { key: '지원 방안 정리', label: '지원 방안 정리 (지원 방안·대상 활동)',                   minChars: 20, required: 'any' },
+      { key: '스캐폴딩 계획',  label: '스캐폴딩 계획 (활동·유형·내용·대상·점진적 제거)',        minChars: 20, required: 'any' },
+    ],
+  },
+  'DI-1-1': {
+    code: 'DI-1-1', label: '자료 탐색·개발', stage: 'DI',
+    recommendedSections: [
+      { key: '개발 자료 목록', label: '개발 자료 목록 (유형·자료명·교과·구분·담당자·우선순위·마감일)', minChars: 20, required: 'any' },
+    ],
+  },
+  'DI-2-1': {
+    code: 'DI-2-1', label: '수업 기록', stage: 'DI',
+    recommendedSections: [
+      { key: '주요 상황 기록', label: '주요 상황 기록 (시점·상황·학생 반응·시사점)', minChars: 20, required: 'any' },
+      { key: '종합 시사점',    label: '종합 시사점 (성공·장애·예상외·포용)',          minChars: 20, required: 'any' },
+    ],
+  },
   'E-1-1':  {
     code: 'E-1-1', label: '수업 성찰·평가', stage: 'E',
     // P1-I: 사실/해석/수정안 중 최소 1개 섹션(각 20자 이상) 충족 시 완료 인정.
@@ -239,6 +347,49 @@ export interface Project {
   }
   // Phase 1-b: ACTION_CARD skip 로깅 (방장·팀원 모두 skip 가능, 분석용 누적)
   skippedActionCards?: SkippedActionCard[]
+  // 중요 노트 (포스트잇) — 팀이 채팅에서 "중요"로 저장한 메시지 모음.
+  // AI 프롬프트에 자동 주입되어 이전 활동 비공식 대화 맥락 보전.
+  keyNotes?: KeyNote[]
+  // 공개 배포 상태 — "공개 링크" 기능으로 보고서를 외부에 공유 중일 때 true.
+  // 실제 공개 데이터는 Firestore `public_reports/{projectId}`에 **스냅샷**으로 별도 저장.
+  // 원본 프로젝트를 직접 공개하지 않는 이유: 팀원 UID/메시지 등 민감 데이터 분리 보장.
+  publicStatus?: {
+    isPublic: boolean
+    lastPublishedAt?: number
+  }
+}
+
+// ─── 중요 노트 (포스트잇) ─────────────────────────────
+// 교사가 채팅에서 "이 내용 중요해" 라고 표시한 메시지 스냅샷.
+// 활동 경계를 넘어 프로젝트 전반에 유지되며, AI 프롬프트에 자동 주입.
+export interface KeyNote {
+  id: string                       // nanoid
+  content: string                  // 내용 (AI 신호·이모지 필터 후)
+  sourceActivityCode?: ActivityCode  // 저장된 활동
+  sourceRole?: 'user' | 'assistant'  // 원 메시지 발화자 종류
+  sourceDisplayName?: string       // 원 발화자 이름 (user only)
+  savedBy: string                  // uid of saver
+  savedByName?: string             // 저장자 이름
+  savedAt: number                  // ms epoch
+}
+
+// ─── 공개 배포 보고서 ─────────────────────────────────
+// Firestore 루트 컬렉션 `public_reports/{projectId}`에 저장되는 스냅샷.
+// 인증 없이 누구나 read 가능하도록 rule에서 허용.
+// 원본 프로젝트의 민감 필드(memberUids, memberInfo, messages, inviteCode, hostUid 등)는 절대 포함하지 않는다.
+export interface PublicReport {
+  projectId: string
+  projectTitle: string
+  publishedAt: number           // ms epoch
+  // 공개 시점에 존재했던 프로젝트 메타 (익명화)
+  schoolLevel: SchoolLevel
+  targetGradeGroup: GradeGroup
+  targetSubjects: string[]
+  cycleCount: number
+  memberCount: number           // 팀원 수만 익명 노출 (이름·UID 제외)
+  // 보고서 스냅샷
+  stageReports?: Partial<Record<StageCode, { content: string; savedAt: number }>>
+  cumulativeReport?: { content: string; savedAt: number }
 }
 
 // ─── ACTION_CARD 관련 타입 (Phase 1-b) ──────────────────

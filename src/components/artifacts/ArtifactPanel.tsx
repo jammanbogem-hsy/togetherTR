@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
@@ -9,17 +9,13 @@ import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
 import { setProjectArtifact, setActivityStatus } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import { cn } from '@/lib/utils'
-import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretUp, Circle as CircleIcon, Lightbulb, type Icon } from '@phosphor-icons/react'
+import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, type Icon } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
 import { CumulativeReportModal } from '@/components/modals/CumulativeReportModal'
-
-const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; pulse: string; corner: string }> = {
-  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', pulse: 'rgba(26,115,232,0.35)',  corner: 'rgba(26,115,232,0.11)'  },
-  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]', pulse: 'rgba(123,31,162,0.35)', corner: 'rgba(123,31,162,0.10)'  },
-  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', pulse: 'rgba(0,137,123,0.35)',  corner: 'rgba(0,137,123,0.10)'   },
-  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', pulse: 'rgba(230,81,0,0.35)',   corner: 'rgba(230,81,0,0.10)'    },
-  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', pulse: 'rgba(198,40,40,0.35)',  corner: 'rgba(198,40,40,0.10)'   },
-}
+// 스펙 §1-2 — 단계 컬러 단일 출처. 로컬 선언 제거하고 공통 모듈 참조.
+// 기존 corner 0.10 → 0.11 통일 (team-lead-2 결정, 시각 차이 미미).
+import { STAGE_COLOR } from '@/lib/ui/stageColors'
+import { isEffectivelyDone } from '@/lib/activity/completion'
 
 const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: Icon; className: string }> = {
   ai_draft:  { label: 'AI 초안', icon: Sparkle,      className: 'bg-[#E8F0FE] text-[#1A73E8]' },
@@ -39,25 +35,49 @@ function StatusBadge({ status }: { status: ArtifactStatus }) {
   )
 }
 
-function EmptyState({ activityLabel }: { activityLabel: string }) {
+function EmptyState({ activityLabel, sections, sectionVariant, stageLight, stageText }: {
+  activityLabel: string
+  sections?: RequiredSection[]
+  sectionVariant: 'required' | 'recommended'  // 헤더 문구만 분기 ('필수 섹션' vs '권장 섹션')
+  stageLight: string   // stageColor.light 클래스
+  stageText: string    // stageColor.text 클래스
+}) {
+  const sectionHeader = sectionVariant === 'required'
+    ? '이 활동에서 꼭 채워야 할 내용'
+    : '이 활동에서 채우면 좋은 내용'
   return (
-    <div className="flex flex-col items-center justify-center h-full text-[#9AA0A6] gap-5 px-6">
-      <div className="w-16 h-16 rounded-full bg-[#F1F3F4] flex items-center justify-center">
-        <FileText size={36} weight="regular" className="text-[#DADCE0]" />
+    <div className="flex flex-col items-center text-[#9AA0A6] gap-2.5 px-4 py-4">
+      <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', stageLight)}>
+        <FileText size={22} weight="duotone" className={stageText} />
       </div>
       <div className="text-center">
-        <p className="text-sm font-semibold text-[#5F6368]">아직 산출물이 없습니다</p>
-        <p className="text-xs text-[#9AA0A6] mt-1.5 leading-relaxed">
-          [{activityLabel}] 활동에서<br />
-          AI와 대화하면 초안이 자동으로 생성됩니다
+        <p className="text-[13px] font-semibold text-[#5F6368]">아직 산출물이 없습니다</p>
+        <p className="text-[10px] text-[#9AA0A6] mt-0.5 leading-snug">
+          [{activityLabel}] 활동에서 AI와 대화하면 초안이 자동 생성됩니다
         </p>
       </div>
-      <div className="flex items-center gap-2 text-[11px] text-[#9AA0A6] bg-[#F1F3F4] rounded-full px-4 py-2">
-        <Chat size={16} weight="regular" />
-        <span>채팅</span>
-        <span>→</span>
-        <span className="font-medium text-[#5F6368]">산출물</span>
-      </div>
+
+      {sections && sections.length > 0 && (
+        <div className="w-full rounded-xl border border-[#DADCE0] bg-white px-3 py-2">
+          <p className="text-[10px] font-bold text-[#5F6368] uppercase tracking-wider mb-1.5">
+            {sectionHeader}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {sections.map(sec => (
+              <span
+                key={sec.key}
+                className={cn(
+                  'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full',
+                  stageLight, stageText
+                )}
+              >
+                <CircleIcon size={6} weight="fill" />
+                {sec.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -75,6 +95,72 @@ function hasMarkdownTable(text: string): boolean {
   return /^\s*\|.+\|\s*$/m.test(text) && /^\s*\|(?:\s*:?-{2,}:?\s*\|)+\s*$/m.test(text)
 }
 
+// AI가 "| 방향 | 근거 | --- | --- | a | b | c | d |" 같은 단일 라인으로 표를 만들려 하나
+// 개행이 없어 ReactMarkdown이 표로 인식 못 함. 이걸 **실제 마크다운 테이블**로 재조립해
+// GFM 렌더러가 처리하도록 정규화. 구분자 행(`---`) 감지 시 그 앞 쌍을 헤더로, 뒤를 데이터 행으로.
+//
+// 관용 조건 (AI 출력 편차 수용):
+// - 선행 `|` 필수, 후행 `|` 선택
+// - 파이프 ≥ 4개
+// - 홀수 셀이면 마지막 셀 버리고 짝수 처리 (혹은 원문 유지)
+function normalizeInlinePipeList(text: string): string {
+  if (typeof text !== 'string') return text
+  if (text.includes('\n')) return text
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('|')) return text
+  const pipeCount = (trimmed.match(/\|/g) || []).length
+  if (pipeCount < 4) return text
+
+  // 선행 `|` 제거, 후행 `|` 있으면 제거 (없으면 그대로)
+  const withoutLead = trimmed.slice(1)
+  const core = withoutLead.endsWith('|') ? withoutLead.slice(0, -1) : withoutLead
+  const rawCells = core.split('|').map(s => s.trim()).filter(Boolean)
+  if (rawCells.length < 4) return text
+  // 홀수 셀이면 마지막 하나 버림 (AI 출력이 마지막 값 끊긴 경우 방어)
+  const evenCount = rawCells.length - (rawCells.length % 2)
+  const cells = rawCells.slice(0, evenCount)
+  if (cells.length < 4) return text
+
+  const pairs: [string, string][] = []
+  for (let i = 0; i < cells.length; i += 2) pairs.push([cells[i], cells[i + 1]])
+
+  const isSepCell = (s: string) => /^:?-{2,}:?$/.test(s)
+  const sepIdx = pairs.findIndex(p => isSepCell(p[0]) && isSepCell(p[1]))
+
+  if (sepIdx > 0 && sepIdx < pairs.length - 1) {
+    const header = pairs[sepIdx - 1]
+    const dataRows = pairs.slice(sepIdx + 1).filter(p => !(isSepCell(p[0]) && isSepCell(p[1])))
+    if (dataRows.length === 0) return text
+    return [
+      `| ${header[0]} | ${header[1]} |`,
+      `| --- | --- |`,
+      ...dataRows.map(p => `| ${p[0]} | ${p[1]} |`),
+    ].join('\n')
+  }
+
+  // 구분자 없이 key-value 쌍만 있는 경우: 자동 헤더 + 2열 테이블
+  return [
+    `| 항목 | 내용 |`,
+    `| --- | --- |`,
+    ...pairs.filter(p => !(isSepCell(p[0]) && isSepCell(p[1]))).map(p => `| ${p[0]} | ${p[1]} |`),
+  ].join('\n')
+}
+
+// 산출물 content를 복사용 plain text로 포맷. 섹션 키를 2차 헤딩, 값을 본문으로 하여 다른 곳에 붙여넣기 좋은 형식.
+function formatArtifactForCopy(title: string, content: Record<string, unknown>): string {
+  const DISPLAY_BLOCKED = new Set(['_schemaVersion', 'status', 'version'])
+  const lines: string[] = [`# ${title}`, '']
+  for (const [key, value] of Object.entries(content)) {
+    if (DISPLAY_BLOCKED.has(key)) continue
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+    if (!text || !text.trim()) continue
+    lines.push(`## ${key}`)
+    lines.push(text.trim())
+    lines.push('')
+  }
+  return lines.join('\n').trim()
+}
+
 function ArtifactPreviewModal({
   modal,
   onClose,
@@ -82,8 +168,23 @@ function ArtifactPreviewModal({
   modal: ArtifactPreviewModalState | null
   onClose: () => void
 }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 1800)
+    return () => clearTimeout(t)
+  }, [copied])
   if (!modal || typeof document === 'undefined') return null
-  const modalStageColor = STAGE_COLOR[modal.stageCode] ?? STAGE_COLOR.T
+  // modal.stageCode는 외부 호출자가 임의 문자열을 넘길 수 있어 StageCode로 단정하지 않고 fallback.
+  const modalStageColor = STAGE_COLOR[modal.stageCode as keyof typeof STAGE_COLOR] ?? STAGE_COLOR.T
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(formatArtifactForCopy(modal.title, modal.content))
+      setCopied(true)
+    } catch {
+      // Clipboard API 실패 시 조용히 무시 (사용자는 아무 피드백 없음) — 대부분 권한 문제
+    }
+  }
 
   return createPortal(
     <div
@@ -107,8 +208,22 @@ function ArtifactPreviewModal({
           </div>
           {modal.status && <StatusBadge status={modal.status} />}
           <button
+            onClick={handleCopy}
+            title={copied ? '복사됨' : '산출물 복사'}
+            aria-label={copied ? '산출물이 복사되었습니다' : '산출물 복사하기'}
+            className={cn(
+              'flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-semibold transition-colors flex-shrink-0',
+              copied
+                ? 'bg-[#E6F4EA] text-[#188038]'
+                : 'bg-white/80 text-[#5F6368] hover:bg-white hover:text-[#1A73E8] border border-[#DADCE0]'
+            )}
+          >
+            {copied ? <Check size={14} weight="bold" /> : <Copy size={14} weight="regular" />}
+            {copied ? '복사됨' : '복사'}
+          </button>
+          <button
             onClick={onClose}
-            className="ml-2 p-1.5 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] transition-colors flex-shrink-0"
+            className="ml-1 p-1.5 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] transition-colors flex-shrink-0"
           >
             <X size={18} weight="regular" />
           </button>
@@ -141,8 +256,11 @@ function RequiredSectionsChecklist({
   schemaVersion?: string
 }) {
   const [collapsed, setCollapsed] = useState(false)
+  const setChatInputRequest = useProjectStore(s => s.setChatInputRequest)
   const meta = ACTIVITY_META[activityCode]
-  const sections = meta.requiredSections
+  // required 우선, 없으면 recommended fallback (동시 존재 케이스 없음 — Task #9 설계 결정).
+  const sections = meta.requiredSections ?? meta.recommendedSections
+  const variant: 'required' | 'recommended' = meta.requiredSections ? 'required' : 'recommended'
   if (!sections || sections.length === 0) return null
 
   const allSections = sections.filter(s => s.required === 'all')
@@ -159,14 +277,21 @@ function RequiredSectionsChecklist({
   const anySatisfied = anySections.length === 0 || anySections.some(s => sectionInfo(s).satisfied)
   const overallSatisfied = allSatisfied && anySatisfied
 
-  // 헤더 라벨 생성 (required 규칙 조합에 따라 동적)
+  // 헤더 라벨 생성 (required 규칙 조합에 따라 동적).
+  // recommended variant는 "완료 인정" 표현이 오해 소지 → 가이드 톤으로 변경.
   let headerDesc = ''
-  if (allSections.length > 0 && anySections.length > 0) {
-    headerDesc = `필수 ${allSections.length}개 전부 + 선택 ${anySections.length}개 중 1개 이상 충족 시 완료 인정`
-  } else if (allSections.length > 0) {
-    headerDesc = `${allSections.length}개 섹션 모두 충족 시 완료 인정`
-  } else if (anySections.length > 0) {
-    headerDesc = `${anySections.length}개 중 최소 1개 충족 시 완료 인정`
+  if (variant === 'required') {
+    if (allSections.length > 0 && anySections.length > 0) {
+      headerDesc = `꼭 채울 ${allSections.length}개 + 그 외 ${anySections.length}개 중 1개 이상 채우면 마무리할 수 있어요`
+    } else if (allSections.length > 0) {
+      headerDesc = `${allSections.length}개 내용을 모두 채우면 마무리할 수 있어요`
+    } else if (anySections.length > 0) {
+      headerDesc = `${anySections.length}개 중 1개 이상 채우면 마무리할 수 있어요`
+    }
+  } else {
+    headerDesc = sections.length === 1
+      ? '채우면 좋은 내용 1개예요 — 안 채워도 활동 마무리에는 문제없어요'
+      : `채우면 좋은 내용 ${sections.length}개예요 — 전부 안 채워도 활동 마무리에는 문제없어요`
   }
 
   // 레거시(grandfather) 산출물은 섹션 검증 미적용 — 안내 문구로 알려줌
@@ -174,15 +299,22 @@ function RequiredSectionsChecklist({
 
   const sectionOrder: RequiredSection[] = [...allSections, ...anySections]
 
-  return (
-    <div
-      className={cn(
+  // recommended variant는 빨강/초록 대비 대신 무채색-파스텔로 톤 완화 (판정에 영향 없음을 시각으로도 전달).
+  const containerClass = variant === 'required'
+    ? cn(
         'rounded-2xl border-2 p-4 mb-4 transition-colors',
-        overallSatisfied
-          ? 'border-[#34A853] bg-[#E6F4EA]/30'
-          : 'border-[#C62828] bg-[#FFEBEE]/30'
-      )}
-    >
+        overallSatisfied ? 'border-[#34A853] bg-[#E6F4EA]/30' : 'border-[#C62828] bg-[#FFEBEE]/30'
+      )
+    : cn(
+        'rounded-2xl border p-4 mb-4 transition-colors border-[#DADCE0] bg-[#F8F9FA]'
+      )
+  const badgeBg = variant === 'required'
+    ? (overallSatisfied ? 'bg-[#34A853]' : 'bg-[#C62828]')
+    : 'bg-[#5F6368]'
+  const titleLabel = variant === 'required' ? `${meta.label} — 꼭 채워야 할 내용` : `${meta.label} — 채우면 좋은 내용`
+
+  return (
+    <div className={containerClass}>
       <button
         type="button"
         onClick={() => setCollapsed(v => !v)}
@@ -191,7 +323,7 @@ function RequiredSectionsChecklist({
         <div className="flex items-center gap-2 min-w-0">
           <div className={cn(
             'w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0',
-            overallSatisfied ? 'bg-[#34A853]' : 'bg-[#C62828]'
+            badgeBg
           )}>
             {overallSatisfied
               ? <CheckCircle size={14} weight="fill" className="text-white" />
@@ -199,7 +331,7 @@ function RequiredSectionsChecklist({
           </div>
           <div className="min-w-0">
             <p className="text-[13px] font-extrabold text-[#202124] leading-tight">
-              {meta.label} 필수 섹션
+              {titleLabel}
             </p>
             <p className="text-[11px] text-[#5F6368] mt-0.5 leading-snug">{headerDesc}</p>
           </div>
@@ -244,20 +376,28 @@ function RequiredSectionsChecklist({
             )
           })}
 
-          {/* 가이드 문구 */}
-          <div className="flex items-start gap-2 rounded-xl bg-white/70 border border-[#F1F3F4] px-3 py-2">
-            <Lightbulb size={15} weight="fill" className="text-[#F9AB00] flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-[#5F6368] leading-relaxed">
-              AI에게 <span className="font-semibold text-[#202124]">
-                &ldquo;{sections.map(s => s.label).join('·')} 순서로 정리해줘&rdquo;
-              </span>
-              라고 요청하면 자동으로 채워집니다.
-            </p>
-          </div>
+          {/* 가이드: AI 요청 문구를 채팅 입력창에 바로 주입 (기존 팁 텍스트 → 버튼) */}
+          <button
+            type="button"
+            onClick={() => {
+              const labels = sections.map(s => s.label).join(' · ')
+              const prompt = `"${labels}" 순서로 정리해줘`
+              setChatInputRequest(prompt)
+            }}
+            className="group w-full flex items-center gap-2 rounded-xl bg-white border border-[#DADCE0] hover:border-[#1A73E8] hover:bg-[#E8F0FE] px-3 py-2 transition-colors text-left"
+          >
+            <Lightbulb size={15} weight="fill" className="text-[#F9AB00] flex-shrink-0" />
+            <span className="text-[11px] text-[#5F6368] leading-snug flex-1 min-w-0">
+              AI에게 <span className="font-semibold text-[#202124]">이 섹션 순서대로 정리</span>을 요청합니다
+            </span>
+            <span className="text-[11px] font-bold text-[#1A73E8] whitespace-nowrap group-hover:underline">
+              채팅에 넣기 →
+            </span>
+          </button>
 
-          {isLegacy && (
+          {variant === 'required' && isLegacy && (
             <p className="text-[10px] text-[#9AA0A6] italic leading-snug px-1">
-              이 산출물은 구 스키마로 저장되어 섹션 검증이 적용되지 않습니다. 완료 판정은 기존 규칙을 따릅니다.
+              예전 방식으로 저장된 산출물이에요. 새 섹션 체크는 표시용으로만 보이고, 활동 마무리 조건은 이전과 동일합니다.
             </p>
           )}
         </div>
@@ -266,7 +406,7 @@ function RequiredSectionsChecklist({
   )
 }
 
-function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand }: {
+function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand, isRecentlyUpdated }: {
   sectionKey: string
   value: unknown
   onDelete?: () => void
@@ -276,12 +416,16 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
   stageCode?: string
   activityCode?: ActivityCode
   allowTableExpand?: boolean
+  isRecentlyUpdated?: boolean  // ARTIFACT_UPDATE로 방금 들어온 섹션이면 플래시
 }) {
   const canExpandTable = typeof value === 'string' && hasMarkdownTable(value)
   const isSupportToolEnvironmentCheck = sectionKey === 'AI 점검' && activityCode === 'Ds-2-1' && typeof value === 'string'
 
   return (
-    <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white md-shadow-1">
+    <div className={cn(
+      'rounded-2xl border border-[#DADCE0] overflow-hidden bg-white md-shadow-1 artifact-card-hover',
+      isRecentlyUpdated && 'artifact-section-flash'
+    )}>
       <div className="bg-[#F8F9FA] px-4 py-2.5 border-b border-[#DADCE0] flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider truncate">{sectionKey}</span>
@@ -394,22 +538,16 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
                     {children}
                   </th>
                 ),
-                td: ({ children }) => {
-                  const text = typeof children === 'string' ? children : String(children ?? '')
-                  const parts = text.split('\u2028')
-                  return (
-                    <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed">
-                      {parts.map((part, i) => (
-                        <span key={i}>{part}{i < parts.length - 1 && <br />}</span>
-                      ))}
-                    </td>
-                  )
-                },
+                td: ({ children }) => (
+                  <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed">
+                    {children}
+                  </td>
+                ),
               }}
             >
-              {/* **항목**: 패턴 앞에 빈 줄 삽입 → 각 항목이 별도 단락으로 분리 */}
-              {/* 표 셀 안의 <br/>은 \u2028으로, 표 밖의 <br/>은 제거 */}
-              {value
+              {/* 인라인 파이프 나열(잘못된 표 시도) → 불릿 리스트 정규화 먼저 적용 */}
+              {/* 그다음 **항목**: 패턴 앞에 빈 줄 삽입, 표 셀 안의 <br/>은 \u2028으로, 표 밖의 <br/>은 제거 */}
+              {normalizeInlinePipeList(value)
                 .replace(/([^.\n])\s+(\*\*[^*\n]+\*\*\s*:)/g, '$1\n\n$2')
                 .split('\n')
                 .map(line => line.startsWith('|')
@@ -448,7 +586,79 @@ const DISPLAY_BLOCKED_KEYS = [
   // '토의 결과' / '토론 결과', '보완할 점' → 표시 허용
 ]
 
-function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand }: {
+// 스펙 §7-3.8 — 이전 산출물 관계 타입 + 색상 토큰.
+// guardrail: A-2-3 → Ds·DI (가드레일 / 설계 제약)
+// basis:     T-1-1 비전 → 이후 전 활동 (가치 기반)
+// prev_step: 직전 활동 (직렬 흐름)
+// related:   같은 단계 내 타 활동 (병렬 참고)
+type ArtifactRelation = 'guardrail' | 'basis' | 'prev_step' | 'related'
+
+const RELATION_STYLE: Record<ArtifactRelation, { label: string; bg: string; text: string }> = {
+  guardrail: { label: '가드레일', bg: 'bg-[#F3E5F5]', text: 'text-[#7B1FA2]' },
+  basis:     { label: '가치 기반', bg: 'bg-[#E8F0FE]', text: 'text-[#1A73E8]' },
+  prev_step: { label: '직전 단계', bg: 'bg-[#F1F3F4]', text: 'text-[#5F6368]' },
+  related:   { label: '관련 활동', bg: 'bg-[#E0F2F1]', text: 'text-[#00897B]' },
+}
+
+// ui-designer 지침 (Task #4 v1.1): 자동 추론 대신 "임시 하드코딩" 힌트 맵.
+// Record<currentActivity, Record<prevActivity, relationType>>.
+// 매핑이 없으면 아래 fallback 규칙: guardrail(A-2-3→Ds/DI) → basis(T-1-1) → 동단계 인접(prev_step) → 그 외 동단계(related) → 타단계(prev_step).
+// 매핑 데이터화는 후속 §10 태스크(ACTIVITY_RELATION_MAP) 담당.
+const ARTIFACT_RELATION_HINT: Partial<Record<ActivityCode, Partial<Record<ActivityCode, ArtifactRelation>>>> = {
+  // Ds 단계: A-2-3은 가드레일, T-1-1은 가치 기반, 직전은 prev_step
+  'Ds-1-1': { 'A-2-3': 'guardrail', 'A-2-2': 'prev_step', 'T-1-1': 'basis' },
+  'Ds-1-2': { 'A-2-3': 'guardrail', 'Ds-1-1': 'prev_step', 'T-1-1': 'basis' },
+  'Ds-1-3': { 'A-2-3': 'guardrail', 'Ds-1-2': 'prev_step', 'T-1-1': 'basis' },
+  'Ds-2-1': { 'A-2-3': 'guardrail', 'Ds-1-3': 'prev_step', 'T-1-1': 'basis' },
+  'Ds-2-2': { 'A-2-3': 'guardrail', 'Ds-2-1': 'prev_step', 'T-1-1': 'basis' },
+  // DI 단계: A-2-3은 가드레일, Ds 산출물은 직전, T-1-1은 가치 기반
+  'DI-1-1': { 'A-2-3': 'guardrail', 'Ds-2-2': 'prev_step', 'T-1-1': 'basis' },
+  'DI-2-1': { 'DI-1-1': 'prev_step', 'T-1-1': 'basis' },
+  // E 단계: 직전 DI가 직전, T-1-1은 가치 기반
+  'E-1-1': { 'DI-2-1': 'prev_step', 'T-1-1': 'basis' },
+  'E-2-1': { 'E-1-1': 'prev_step', 'T-1-1': 'basis' },
+}
+
+// 이전 산출물(prev code) → 현재 활동(currentCode) 관계 판정.
+// 1) 힌트 맵 우선 → 2) fallback 규칙.
+function computeArtifactRelation(prevCode: ActivityCode, currentCode: ActivityCode, orderedActivities: ActivityCode[]): ArtifactRelation {
+  const hinted = ARTIFACT_RELATION_HINT[currentCode]?.[prevCode]
+  if (hinted) return hinted
+
+  const prevMeta = ACTIVITY_META[prevCode]
+  const currentMeta = ACTIVITY_META[currentCode]
+  // A-2-3은 Ds/DI 활동에 대해 가드레일 (힌트 누락 시 안전망)
+  if (prevMeta?.isGuardrailSource && (currentMeta?.stage === 'Ds' || currentMeta?.stage === 'DI')) {
+    return 'guardrail'
+  }
+  if (prevCode === 'T-1-1') return 'basis'
+  if (prevMeta?.stage === currentMeta?.stage) {
+    const prevIdx = orderedActivities.indexOf(prevCode)
+    const currIdx = orderedActivities.indexOf(currentCode)
+    if (currIdx - prevIdx === 1) return 'prev_step'
+    return 'related'
+  }
+  return 'prev_step'
+}
+
+// 접힘 상태 strip에서 쓸 공통 헬퍼.
+// page.tsx 접힘 버튼이 직접 project.artifacts를 읽어 섹션 개수/상태를 얻을 수 있도록 export.
+export function getVisibleArtifactSectionCount(content: Record<string, unknown> | undefined): number {
+  if (!content) return 0
+  return Object.keys(content).filter(
+    key => !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
+  ).length
+}
+
+// 상태 → 접힘 스트립의 점 컬러 매핑
+export const ARTIFACT_STATUS_DOT: Record<ArtifactStatus, string> = {
+  ai_draft:  '#1A73E8',  // 파랑 — AI가 막 초안 제시
+  in_review: '#F9AB00',  // 황 — 검토·수정 요청 중
+  confirmed: '#34A853',  // 녹색 — 팀 확정
+  rejected:  '#C62828',  // 빨강 — 반려
+}
+
+function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand, recentlyUpdatedKeys }: {
   content: Record<string, unknown>
   onDeleteSection?: (key: string) => void
   onOpenPreview?: (modal: ArtifactPreviewModalState) => void
@@ -457,6 +667,7 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
   stageCode?: string
   activityCode?: ActivityCode
   allowTableExpand?: boolean
+  recentlyUpdatedKeys?: Set<string>  // 방금 변경된 섹션 키 집합 (플래시 대상)
 }) {
   const filteredEntries = Object.entries(content).filter(
     ([key]) => !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
@@ -488,8 +699,78 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
           stageCode={stageCode}
           activityCode={activityCode}
           allowTableExpand={allowTableExpand}
+          isRecentlyUpdated={recentlyUpdatedKeys?.has(key)}
         />
       ))}
+    </div>
+  )
+}
+
+// 스펙 §7-3.9 — Ds 진입 시 상단 고정 A-2-3 가드레일 요약 카드.
+// 기본 펼침 + 토글. A-2-3 content 중 string 값만 4~6줄 요약. Shield 아이콘 + 부채 경고 문구.
+function DsGuardrailCard({ a23Artifact }: { a23Artifact: { content: Record<string, unknown> } }) {
+  const [expanded, setExpanded] = useState(false)
+  const entries = Object.entries(a23Artifact.content)
+    .filter(([key]) => !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k)))
+    .filter(([, v]) => typeof v === 'string' && (v as string).trim().length > 0)
+    .slice(0, 6) as [string, string][]
+
+  const stripMd = (v: string) => v
+    .replace(/\|[^\n]*\|/g, '').replace(/[-|]+[-|]+/g, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^#+\s*/gm, '').replace(/^>\s*/gm, '')
+    .replace(/\s+/g, ' ').trim()
+
+  return (
+    <div className="mb-4 rounded-2xl border border-[#CE93D8] bg-[#F3E5F5]/60 overflow-hidden">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[#F3E5F5] transition-colors"
+      >
+        <Shield size={18} weight="fill" className="text-[#7B1FA2] flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] font-bold text-[#7B1FA2]">A-2-3 가드레일 · 학습자·맥락 분석</p>
+          {!expanded && entries.length > 0 && (
+            <p className="text-[10px] text-[#7B1FA2]/60 mt-0.5 leading-snug truncate">
+              {entries.map(([k]) => k).join(' · ')}
+            </p>
+          )}
+        </div>
+        {expanded
+          ? <CaretUp size={14} weight="bold" className="text-[#7B1FA2] flex-shrink-0" />
+          : <CaretDown size={14} weight="bold" className="text-[#7B1FA2] flex-shrink-0" />
+        }
+      </button>
+      {expanded && entries.length > 0 && (
+        <div className="px-4 pb-4 pt-1 space-y-3">
+          {entries.map(([k, v]) => (
+            <div key={k}>
+              <p className="text-[11px] font-bold text-[#7B1FA2] mb-1">{k}</p>
+              <div className="text-[11px] text-[#5F2F6B] leading-relaxed artifact-md">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}
+                  components={{
+                    p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
+                    strong: ({ children }) => <strong className="font-semibold text-[#7B1FA2]">{children}</strong>,
+                    table: ({ children }) => <div className="overflow-x-auto my-1.5 rounded-lg border border-[#CE93D8]/40"><table className="min-w-full text-[11px] border-collapse">{children}</table></div>,
+                    thead: ({ children }) => <thead className="bg-[#F3E5F5]">{children}</thead>,
+                    th: ({ children }) => <th className="px-2 py-1.5 text-left text-[10px] font-bold text-[#7B1FA2] border-b border-[#CE93D8]/40">{children}</th>,
+                    td: ({ children }) => <td className="px-2 py-1.5 text-[11px] text-[#5F2F6B] border-b border-[#CE93D8]/20">{children}</td>,
+                    ul: ({ children }) => <ul className="space-y-0.5 ml-3 list-disc">{children}</ul>,
+                    li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                  }}
+                >{v}</ReactMarkdown>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!expanded && entries.length > 0 && (
+        <div className="px-4 pb-2.5 pt-0">
+          <p className="text-[10px] text-[#7B1FA2]/50 leading-snug line-clamp-1">
+            {stripMd(entries[0][1]).slice(0, 100)}…
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -502,7 +783,6 @@ export function ArtifactPanel() {
   const [isSaving, setIsSaving] = useState(false)
   const [showDirectInput, setShowDirectInput] = useState(false)
   const [directInputText, setDirectInputText] = useState('')
-  const [selectedReferenceActivity, setSelectedReferenceActivity] = useState('')
   const [previewModal, setPreviewModal] = useState<ArtifactPreviewModalState | null>(null)
   const [showCumulativeReport, setShowCumulativeReport] = useState(false)
 
@@ -577,18 +857,76 @@ export function ArtifactPanel() {
         version: artifact.version,
         label: ACTIVITY_META[code as ActivityCode]?.label ?? code,
         stageCode: ACTIVITY_META[code as ActivityCode]?.stage ?? 'T',
+        relation: computeArtifactRelation(code as ActivityCode, viewingActivity, orderedActivities),
       }))
   }, [orderedActivities, project?.artifacts, viewingActivity])
 
+  // ── ARTIFACT_UPDATE 변경 감지 ─────────────────────────
+  // firestoreArtifact.content가 바뀌면 (추가 or 값 변경) 해당 key를 recentlyUpdated Set에 추가.
+  // 1.8s 후 자동으로 제거되어 플래시 애니메이션만 일회성으로 동작.
+  // Firestore 구독 로직은 건드리지 않음 — 파생 ref만 유지.
+  const previousContentRef = useRef<Record<string, string>>({})
+  const previousActivityRef = useRef<ActivityCode>(viewingActivity)
+  const [recentlyUpdatedKeys, setRecentlyUpdatedKeys] = useState<Set<string>>(() => new Set())
+
   useEffect(() => {
-    if (previousArtifacts.length === 0) {
-      setSelectedReferenceActivity('')
+    // 활동 전환 시 비교 기준 리셋 (이전 활동의 content와 비교해 전체가 "새로 들어온 것"처럼 보이는 오탐 방지)
+    if (previousActivityRef.current !== viewingActivity) {
+      previousActivityRef.current = viewingActivity
+      const seed: Record<string, string> = {}
+      Object.entries(firestoreArtifact?.content ?? {}).forEach(([k, v]) => {
+        seed[k] = typeof v === 'string' ? v : JSON.stringify(v)
+      })
+      previousContentRef.current = seed
+      setRecentlyUpdatedKeys(new Set())
       return
     }
-    if (!previousArtifacts.some((artifact) => artifact.code === selectedReferenceActivity)) {
-      setSelectedReferenceActivity(previousArtifacts[0].code)
-    }
-  }, [previousArtifacts, selectedReferenceActivity])
+
+    const content = firestoreArtifact?.content ?? {}
+    const changed = new Set<string>()
+    const next: Record<string, string> = {}
+    Object.entries(content).forEach(([k, v]) => {
+      const serialized = typeof v === 'string' ? v : JSON.stringify(v)
+      next[k] = serialized
+      if (previousContentRef.current[k] !== serialized) changed.add(k)
+    })
+    previousContentRef.current = next
+
+    if (changed.size === 0) return
+    setRecentlyUpdatedKeys(prev => {
+      const merged = new Set(prev)
+      changed.forEach(k => merged.add(k))
+      return merged
+    })
+    // 플래시 시간(CSS 1.8s와 정렬)만큼 뒤에 키별 제거
+    const t = setTimeout(() => {
+      setRecentlyUpdatedKeys(prev => {
+        const rest = new Set(prev)
+        changed.forEach(k => rest.delete(k))
+        return rest
+      })
+    }, 1800)
+    return () => clearTimeout(t)
+  }, [firestoreArtifact?.content, viewingActivity])
+
+  // ── v1.1 §7-3.9/10/11/12 파생값 ─────────────────────
+  // viewing 활동의 단계(stage) 기준으로 Ds 전용 UI 분기. project.currentStage 대신 viewingActivity 단계를 쓰는 이유:
+  // 사용자가 과거 Ds 활동을 열어봐도 가드레일 맥락은 그대로 의미가 있음.
+  const viewingStage = ACTIVITY_META[viewingActivity]?.stage
+
+  // Ds 단계에서 A-2-3 가드레일 카드 상단 노출 여부
+  const showDsGuardrail = viewingStage === 'Ds' && !!project?.artifacts?.['A-2-3']?.content
+  const a23Artifact = project?.artifacts?.['A-2-3']
+
+  // A-2-3 미완 상태에서 Ds 진입 시 경고 배너
+  const a23Done = project
+    ? isEffectivelyDone('A-2-3', project.activityStatuses ?? {}, project.artifacts ?? {})
+    : false
+  const showA23IncompleteWarning = viewingStage === 'Ds' && !a23Done
+
+  // active_return 재검토 배너 (viewingActivity의 활동 상태 기준)
+  const viewingActivityStatus = project?.activityStatuses?.[viewingActivity]
+  const showActiveReturnBanner = viewingActivityStatus === 'active_return'
 
   async function handleConfirm() {
     if (!project) return
@@ -740,60 +1078,106 @@ export function ArtifactPanel() {
   return (
     <div className="flex flex-col h-full overflow-hidden corner-wrap-artifact"
       style={{ '--cc': stageColor.corner } as React.CSSProperties}>
-      {/* ─── 산출물 아이덴티티 헤더 ─────────────── */}
-      <div className={cn(stageColor.light, 'px-5 pt-4 pb-4 flex-shrink-0')}>
-        <div className="flex items-center gap-3 mb-3">
-          <div
-            className={cn('w-11 h-11 flex items-center justify-center flex-shrink-0', stageColor.bg)}
-            style={{
-              animation: 'morph-shape 9s ease-in-out infinite, stage-bounce 3.5s ease-in-out infinite',
-              boxShadow: `0 6px 16px ${stageColor.pulse}`,
-            }}
-          >
-            <FileText size={22} weight="fill" className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className={cn('text-[10px] font-bold uppercase tracking-widest mb-0.5', stageColor.text)}>산출물</p>
-            <p className="text-[13px] font-bold text-[#202124] leading-tight truncate">{activityMeta.label}</p>
-          </div>
-          {displayArtifact && <StatusBadge status={effectiveStatus} />}
-          {viewingActivity === 'DI-1-1' && (isHost ? (
-            <button
-              onClick={() => setShowCumulativeReport(true)}
-              title="현재까지 산출물 종합 보고서 제작"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E65100] hover:bg-[#BF360C] text-white text-[11px] font-bold transition-colors flex-shrink-0 shadow-sm"
-            >
-              <FileText size={14} weight="fill" />
-              보고서 제작하기
-            </button>
-          ) : project?.cumulativeReport && (
-            <button
-              onClick={() => setShowCumulativeReport(true)}
-              title="팀장이 공유한 종합 보고서 보기"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FBE9E7] hover:bg-[#FFCCBC] text-[#E65100] text-[11px] font-bold transition-colors flex-shrink-0"
-            >
-              <FileText size={14} weight="fill" />
-              보고서 보기
-            </button>
-          ))}
-          {hasContent && (
-            <button
-              onClick={openCurrentArtifactPreview}
-              title="전체 보기"
-              className="ml-1 p-1.5 rounded-full hover:bg-white/60 text-[#5F6368] hover:text-[#1A73E8] transition-colors flex-shrink-0"
-            >
-              <ArrowsOut size={16} weight="regular" />
-            </button>
+      {/* ─── 산출물 아이덴티티 헤더 (스펙 §7-3 Z 패턴) ────────────────
+          1행: full-width 상태 밴드 — StatusBadge가 최상위 우선순위
+          2행: 활동 라벨 + 단계 코드 + 액션들
+          3행: 제목 + 버전 + 잠금 안내 */}
+      <div className="flex-shrink-0">
+        {/* 1행 — 상태 밴드 (스펙: 상단 full-width 밴드, stage.light 배경) */}
+        <div className={cn(stageColor.light, 'px-5 py-2 flex items-center gap-2 border-b border-white/40')}>
+          {displayArtifact
+            ? <StatusBadge status={effectiveStatus} />
+            : (
+              <span className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full font-semibold bg-white/70 text-[#5F6368]">
+                <CircleIcon size={12} weight="bold" />
+                미작성
+              </span>
+            )
+          }
+          {/* 업데이트 있음 pulse — 변경된 섹션이 있으면 황색 점 */}
+          {recentlyUpdatedKeys.size > 0 && (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-[#B06000] bg-white/80 rounded-full px-2 py-0.5">
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-[#FBBC04] artifact-strip-pulse"
+                aria-hidden="true"
+              />
+              업데이트됨
+            </span>
+          )}
+          {firestoreArtifact && (
+            <span className="ml-auto text-[10px] font-semibold text-[#5F6368] tabular-nums">
+              v{firestoreArtifact.version}
+            </span>
           )}
         </div>
 
-        {/* 잠금 안내 (팀장 아닌 경우) */}
-        {!isHost && displayArtifact && (
-          <div className="flex items-center gap-1.5 bg-white/60 rounded-full px-3 py-1.5 w-fit">
-            <Lock size={16} weight="fill" className="text-[#5F6368]" />
-            <span className="text-[10px] text-[#5F6368] font-medium">팀장이 확정합니다</span>
+        {/* 2행 + 3행 — stage 배경 유지, 액션 동일선상 */}
+        <div className={cn(stageColor.light, 'px-5 pt-3 pb-4')}>
+          <div className="flex items-center gap-3 mb-2">
+            <div
+              className={cn('w-11 h-11 flex items-center justify-center flex-shrink-0', stageColor.bg)}
+              style={{
+                animation: 'morph-shape 9s ease-in-out infinite, stage-bounce 3.5s ease-in-out infinite',
+                boxShadow: `0 6px 16px ${stageColor.pulse}`,
+              }}
+              aria-hidden="true"
+            >
+              <FileText size={22} weight="fill" className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={cn('text-[10px] font-bold uppercase tracking-widest mb-0.5', stageColor.text)}>
+                산출물 · {viewingActivity}
+              </p>
+              <p className="text-[13px] font-extrabold text-[#202124] leading-tight truncate">
+                {activityMeta.label}
+              </p>
+            </div>
+            {viewingActivity === 'DI-1-1' && (isHost ? (
+              <button
+                onClick={() => setShowCumulativeReport(true)}
+                title="현재까지 산출물 종합 보고서 제작"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E65100] hover:bg-[#BF360C] text-white text-[11px] font-bold transition-colors flex-shrink-0 shadow-sm"
+              >
+                <FileText size={14} weight="fill" />
+                보고서 제작하기
+              </button>
+            ) : project?.cumulativeReport && (
+              <button
+                onClick={() => setShowCumulativeReport(true)}
+                title="팀장이 공유한 종합 보고서 보기"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FBE9E7] hover:bg-[#FFCCBC] text-[#E65100] text-[11px] font-bold transition-colors flex-shrink-0"
+              >
+                <FileText size={14} weight="fill" />
+                보고서 보기
+              </button>
+            ))}
+            {hasContent && (
+              <button
+                onClick={openCurrentArtifactPreview}
+                title="전체 보기"
+                aria-label="산출물 전체 보기"
+                className="ml-1 p-1.5 rounded-full hover:bg-white/60 text-[#5F6368] hover:text-[#1A73E8] transition-colors flex-shrink-0"
+              >
+                <ArrowsOut size={16} weight="regular" />
+              </button>
+            )}
           </div>
-        )}
+
+          {/* 제목 + 잠금 안내 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {displayArtifact && hasContent && (
+              <p className="text-[12px] font-semibold text-[#5F6368] truncate flex-1 min-w-0">
+                {displayArtifact.title}
+              </p>
+            )}
+            {!isHost && displayArtifact && (
+              <div className="flex items-center gap-1.5 bg-white/60 rounded-full px-3 py-1 flex-shrink-0">
+                <Lock size={14} weight="fill" className="text-[#5F6368]" />
+                <span className="text-[10px] text-[#5F6368] font-medium">팀장이 확정합니다</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 직접 입력 폼 (오버레이) */}
@@ -839,50 +1223,48 @@ export function ArtifactPanel() {
         </div>
       )}
 
-      {/* 내용 */}
+      {/* 내용 — 스펙 §7-3: 현재 활동 산출물이 먼저, 누적 산출물은 아래 */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
-        {previousArtifacts.length > 0 && (
-          <div className="mb-5 rounded-2xl border border-[#DADCE0] bg-[#F8F9FA] p-4">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div>
-                <p className="text-[12px] font-bold text-[#202124]">이전 산출물 참고</p>
-                <p className="text-[11px] text-[#5F6368] mt-1">
-                  이전 활동의 산출물을 열어보며 현재 설계를 이어갈 수 있습니다.
-                </p>
-              </div>
-              <span className="text-[10px] font-semibold text-[#1A73E8] bg-[#E8F0FE] px-2.5 py-1 rounded-full whitespace-nowrap">
-                {previousArtifacts.length}개 있음
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <select
-                  value={selectedReferenceActivity}
-                  onChange={e => setSelectedReferenceActivity(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-[#DADCE0] bg-white px-3 py-2.5 pr-9 text-sm text-[#202124] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]"
-                >
-                  {previousArtifacts.map((artifact) => (
-                    <option key={artifact.code} value={artifact.code}>
-                      [{artifact.code}] {artifact.label}
-                    </option>
-                  ))}
-                </select>
-                <CaretDown size={16} weight="bold" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#5F6368]" />
-              </div>
-              <button
-                onClick={() => openPreviousArtifactPreview(selectedReferenceActivity)}
-                disabled={!selectedReferenceActivity}
-                className="shrink-0 rounded-xl bg-[#E8F0FE] hover:bg-[#D2E3FC] disabled:opacity-50 px-4 py-2.5 text-sm font-semibold text-[#1A73E8] transition-colors"
-              >
-                내용 보기
-              </button>
+        {/* §7-3.12 — active_return 재검토 배너 (본문 상단) */}
+        {showActiveReturnBanner && (
+          <div className="mb-4 rounded-2xl border border-[#FFCC80] bg-[#FBE9E7] px-4 py-3 flex items-start gap-2.5">
+            <ArrowBendUpLeft size={18} weight="fill" className="text-[#E65100] flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-bold text-[#E65100]">이 활동을 재검토 중</p>
+              <p className="text-[11px] text-[#BF360C] mt-0.5 leading-relaxed">
+                기존 합의안을 먼저 확인하고, 수정하려는 근거를 기록한 뒤 반영하세요.
+              </p>
             </div>
           </div>
         )}
 
+        {/* §7-3.10 — A-2-3 미완 상태 Ds 진입 시 경고 */}
+        {showA23IncompleteWarning && (
+          <div className="mb-4 rounded-2xl border border-[#EF9A9A] bg-[#FFEBEE] px-4 py-3 flex items-start gap-2.5">
+            <Warning size={18} weight="fill" className="text-[#C62828] flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-bold text-[#C62828]">학습자·맥락 분석(A-2-3)이 완료되지 않았습니다</p>
+              <p className="text-[11px] text-[#C62828] mt-0.5 leading-relaxed opacity-90">
+                가드레일 없이 설계를 진행하면 학습자·맥락 조건이 누락된 채 설계 부채가 쌓입니다. 먼저 A-2-3부터 마무리하세요.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* §7-3.9 — Ds 진입 시 A-2-3 가드레일 요약 카드 상단 고정 (기본 펼침) */}
+        {showDsGuardrail && a23Artifact && (
+          <DsGuardrailCard a23Artifact={a23Artifact} />
+        )}
+
         {!displayArtifact || !hasContent ? (
           <>
-            <EmptyState activityLabel={activityMeta.label} />
+            <EmptyState
+              activityLabel={activityMeta.label}
+              sections={activityMeta.requiredSections ?? activityMeta.recommendedSections}
+              sectionVariant={activityMeta.requiredSections ? 'required' : 'recommended'}
+              stageLight={stageColor.light}
+              stageText={stageColor.text}
+            />
             {isHost && (
               <div className="px-2 pb-4 mt-4">
                 <button
@@ -898,11 +1280,15 @@ export function ArtifactPanel() {
           </>
         ) : (
           <div className="space-y-5">
-            <div className="pb-3 border-b border-[#F1F3F4]">
-              <h4 className="font-bold text-[#202124] text-[15px] leading-snug">{displayArtifact.title}</h4>
-              <p className="text-[11px] text-[#9AA0A6] mt-1">
+            {/* 현재 산출물 메타 (제목은 상단 밴드로 이동, 여기선 부메타만) */}
+            <div className="pb-3 border-b border-[#F1F3F4] flex items-center justify-between gap-2">
+              <p className="text-[11px] text-[#9AA0A6] tabular-nums">
                 버전 {displayArtifact.currentVersion} · {displayArtifact.artifactType}
               </p>
+              <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest', stageColor.text)}>
+                <Stack size={12} weight="fill" />
+                현재 활동
+              </span>
             </div>
 
             {effectiveStatus === 'in_review' && displayArtifact.aiDraft && (
@@ -917,7 +1303,8 @@ export function ArtifactPanel() {
                   </span>
                 </div>
                 <div className="border-l-4 border-[#1A73E8] pl-2">
-                  {ACTIVITY_META[viewingActivity].requiredSections && (
+                  {(ACTIVITY_META[viewingActivity].requiredSections
+                    || ACTIVITY_META[viewingActivity].recommendedSections) && (
                     <RequiredSectionsChecklist
                       activityCode={viewingActivity}
                       content={displayArtifact.aiDraft as Record<string, unknown>}
@@ -933,6 +1320,7 @@ export function ArtifactPanel() {
                     stageCode={activityMeta.stage}
                     activityCode={viewingActivity}
                     allowTableExpand
+                    recentlyUpdatedKeys={recentlyUpdatedKeys}
                   />
                 </div>
               </div>
@@ -940,7 +1328,8 @@ export function ArtifactPanel() {
 
             {effectiveStatus !== 'in_review' && (
               <>
-                {ACTIVITY_META[viewingActivity].requiredSections && (
+                {(ACTIVITY_META[viewingActivity].requiredSections
+                  || ACTIVITY_META[viewingActivity].recommendedSections) && (
                   <RequiredSectionsChecklist
                     activityCode={viewingActivity}
                     content={displayContent as Record<string, unknown>}
@@ -956,6 +1345,7 @@ export function ArtifactPanel() {
                   stageCode={activityMeta.stage}
                   activityCode={viewingActivity}
                   allowTableExpand
+                  recentlyUpdatedKeys={recentlyUpdatedKeys}
                 />
               </>
             )}
@@ -1005,6 +1395,51 @@ export function ArtifactPanel() {
                   ? new Date(displayArtifact.meta.updatedAt.toDate()).toLocaleString('ko-KR')
                   : '방금 전'}
               </span>
+            </div>
+          </div>
+        )}
+
+        {/* 누적 산출물 — 스펙 §7-3: 현재 산출물 이후 아래 섹션으로 분리
+            (빈 상태에서도 참고로 볼 수 있도록 항상 노출) */}
+        {previousArtifacts.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-[#DADCE0] bg-[#F8F9FA] p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Stack size={16} weight="fill" className="text-[#5F6368] flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[12px] font-bold text-[#202124]">누적 산출물</p>
+                  <p className="text-[11px] text-[#5F6368] mt-0.5 leading-snug">
+                    이전 활동의 산출물을 열어보며 현재 설계를 이어갈 수 있습니다.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold text-[#1A73E8] bg-[#E8F0FE] px-2.5 py-1 rounded-full whitespace-nowrap tabular-nums">
+                {previousArtifacts.length}개
+              </span>
+            </div>
+            {/* §7-3.8 — 각 이전 산출물에 관계 pill 부착 */}
+            <div className="space-y-1.5">
+              {previousArtifacts.map((artifact) => {
+                const relStyle = RELATION_STYLE[artifact.relation]
+                return (
+                  <button
+                    key={artifact.code}
+                    onClick={() => openPreviousArtifactPreview(artifact.code)}
+                    className="w-full flex items-center gap-2 rounded-xl border border-[#DADCE0] bg-white px-3 py-2 hover:border-[#1A73E8] hover:bg-[#F8FBFF] transition-colors text-left"
+                  >
+                    <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0', relStyle.bg, relStyle.text)}>
+                      {relStyle.label}
+                    </span>
+                    <span className="text-[11px] font-semibold text-[#5F6368] tabular-nums flex-shrink-0">
+                      {artifact.code}
+                    </span>
+                    <span className="text-[12px] text-[#202124] truncate flex-1 min-w-0">
+                      {artifact.label}
+                    </span>
+                    <CaretLeft size={12} weight="bold" className="rotate-180 text-[#9AA0A6] flex-shrink-0" />
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
@@ -1110,5 +1545,115 @@ export function ArtifactPanel() {
         <CumulativeReportModal onClose={() => setShowCumulativeReport(false)} />
       )}
     </div>
+  )
+}
+
+// ─── 접힘 상태 strip ────────────────────────────────
+// 스펙 §5-2: 접힘 상태에서도 "어떤 산출물인가"를 읽을 수 있어야 함.
+// - 섹션 개수 뱃지 (DISPLAY_BLOCKED_KEYS 제외 후 개수)
+// - 상태 점(ai_draft=파랑, in_review=황, confirmed=녹색, rejected=빨강)
+// - 업데이트 pulse — content 변경 감지 시 1.8초 pulse
+export function CollapsedArtifactStrip({ onExpand }: { onExpand: () => void }) {
+  const { project, viewingActivity, currentActivity } = useProjectStore()
+  const firestoreArtifact = project?.artifacts?.[viewingActivity]
+
+  const sectionCount = useMemo(
+    () => getVisibleArtifactSectionCount(firestoreArtifact?.content as Record<string, unknown> | undefined),
+    [firestoreArtifact?.content]
+  )
+
+  // 변경 감지 — 직전 content serialized와 비교해 달라지면 짧은 pulse
+  const previousSerializedRef = useRef<string>('')
+  const previousActivityRef = useRef<ActivityCode>(viewingActivity)
+  const [justUpdated, setJustUpdated] = useState(false)
+
+  useEffect(() => {
+    const serialized = JSON.stringify(firestoreArtifact?.content ?? {})
+    if (previousActivityRef.current !== viewingActivity) {
+      previousActivityRef.current = viewingActivity
+      previousSerializedRef.current = serialized
+      setJustUpdated(false)
+      return
+    }
+    if (previousSerializedRef.current === serialized) return
+    previousSerializedRef.current = serialized
+    setJustUpdated(true)
+    const t = setTimeout(() => setJustUpdated(false), 1800)
+    return () => clearTimeout(t)
+  }, [firestoreArtifact?.content, viewingActivity])
+
+  const statusDotColor = firestoreArtifact
+    ? ARTIFACT_STATUS_DOT[firestoreArtifact.status as ArtifactStatus]
+    : '#DADCE0'
+
+  const statusLabel = firestoreArtifact
+    ? STATUS_CONFIG[firestoreArtifact.status as ArtifactStatus].label
+    : '미작성'
+
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      aria-label={`산출물 패널 펼치기 — 현재 활동: ${viewingActivity}, 상태: ${statusLabel}${sectionCount > 0 ? `, 섹션 ${sectionCount}개` : ''}`}
+      title={`산출물 패널 펼치기 · ${statusLabel}${sectionCount > 0 ? ` · ${sectionCount}개 섹션` : ''}`}
+      className="flex-1 flex flex-col items-center justify-start gap-2 pt-3 pb-3 bg-white hover:bg-[#F8F9FA] transition-colors"
+    >
+      <span
+        className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
+        aria-hidden="true"
+      >
+        <CaretLeft size={14} weight="bold" />
+      </span>
+
+      {/* 파일 아이콘 + 상태 점.
+          v1.2 §11-2 ArtifactPanel 3분기 로직:
+          - justUpdated → 'artifact-strip-pulse' (이벤트성 알림, 우선)
+          - isLiveViewing && status !== 'confirmed' → 'live-dot-pulse' (상태 지속 신호)
+          - confirmed → 정지 (확정된 산출물은 안정 상태, 맥박 부재로 "팀 합의 완료" 의미 전달) */}
+      {(() => {
+        const isLiveViewing = viewingActivity === currentActivity
+        const isConfirmed = firestoreArtifact?.status === 'confirmed'
+        const pulseClass = justUpdated
+          ? 'artifact-strip-pulse'
+          : isLiveViewing && firestoreArtifact && !isConfirmed
+            ? 'live-dot-pulse'
+            : ''
+        return (
+          <span className="relative flex items-center justify-center">
+            <FileText size={18} weight="fill" className="text-[#5F6368]" />
+            <span
+              className={cn('absolute -right-1 -bottom-1 w-2.5 h-2.5 rounded-full border border-white', pulseClass)}
+              style={{
+                backgroundColor: statusDotColor,
+                // live-dot-pulse는 box-shadow에 currentColor를 쓰므로 dot 색을 currentColor로 위임
+                color: statusDotColor,
+              }}
+              aria-hidden="true"
+            />
+          </span>
+        )
+      })()}
+
+      {/* 섹션 개수 뱃지 */}
+      {sectionCount > 0 && (
+        <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 rounded-full bg-[#E8F0FE] text-[#1A73E8] text-[10px] font-bold tabular-nums">
+          {sectionCount}
+        </span>
+      )}
+
+      {/* 업데이트 인디케이터 — 최근 변경이 있으면 ⚡ 문구 */}
+      {justUpdated && (
+        <span className="text-[9px] font-bold text-[#B06000] leading-none tracking-widest uppercase">
+          NEW
+        </span>
+      )}
+
+      <span
+        className="text-[12px] font-extrabold text-[#5F6368] tracking-widest mt-1"
+        style={{ writingMode: 'vertical-rl' }}
+      >
+        산출물
+      </span>
+    </button>
   )
 }

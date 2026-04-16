@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useRouter } from 'next/navigation'
 import { useProjectStore } from '@/store/project'
 import {
@@ -12,19 +13,23 @@ import {
   type LobbyMessage
 } from '@/lib/firebase/projects'
 import type { Project } from '@/types'
-import { STAGES } from '@/types'
+import { STAGES, ACTIVITY_META } from '@/types'
 import type { UserProfile } from '@/lib/auth'
 import { StageBar } from '@/components/stage/StageBar'
 import { ActivitySidebar } from '@/components/activity/ActivitySidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
-import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
+import { ArtifactPanel, CollapsedArtifactStrip } from '@/components/artifacts/ArtifactPanel'
 import { StageMoveModal } from '@/components/modals/StageMoveModal'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
 import { StageReportsModal } from '@/components/modals/StageReportsModal'
+import { PublishModal } from '@/components/modals/PublishModal'
+import { ProjectOntologyModal } from '@/components/ontology/ProjectOntologyModal'
 import { ProjectMaterialsModal } from '@/components/materials/ProjectMaterialsModal'
 import { setAnalysisOpen } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
-import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight, FileText, Books, Sparkle, X as XIcon, ArrowRight, CaretRight, CaretLeft, CaretDown } from '@phosphor-icons/react'
+import { STAGE_COLOR, STAGE_LABELS } from '@/lib/ui/stageColors'
+import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
+import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight, FileText, Books, Sparkle, X as XIcon, ArrowRight, CaretRight, CaretDown, Globe, Graph as GraphIcon, House } from '@phosphor-icons/react'
 import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 
@@ -399,7 +404,7 @@ export default function ProjectPage() {
     currentActivity, setCurrentActivity,
     viewingActivity, setViewingActivity,
     setActivityStatus, resetProjectState,
-    discussionMode,
+    discussionMode, activityStatus,
   } = useProjectStore()
 
   const [claimingHost, setClaimingHost] = useState(false)
@@ -407,6 +412,16 @@ export default function ProjectPage() {
   const [showMembers, setShowMembers] = useState(false)
   const [showReports, setShowReports] = useState(false)
   const [showMaterials, setShowMaterials] = useState(false)
+  const [showPublish, setShowPublish] = useState(false)
+  const [showOntology, setShowOntology] = useState(false)
+  // 팀원 팝오버 위치 (portal에서 fixed 좌표로 렌더 — 좌측 사이드바의 overflow-hidden을 벗어나기 위함)
+  const membersBtnRef = useRef<HTMLButtonElement>(null)
+  const [membersPopoverPos, setMembersPopoverPos] = useState<{ top: number; left: number } | null>(null)
+  useEffect(() => {
+    if (!showMembers || !membersBtnRef.current) { setMembersPopoverPos(null); return }
+    const rect = membersBtnRef.current.getBoundingClientRect()
+    setMembersPopoverPos({ top: rect.bottom + 8, left: rect.left })
+  }, [showMembers])
   const [projectLoadError, setProjectLoadError] = useState<string | null>(null)
   // Task #34: 레이아웃 패널 접기/펼치기 (localStorage 영속). projectId별 독립.
   const layout = useLayoutToggle(projectId)
@@ -645,36 +660,54 @@ export default function ProjectPage() {
       >
         {layout.sidebar ? (
           <>
-            {/* 좌측 상단: 내비게이션 */}
-            <div className="flex items-center gap-2 px-3 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
+            {/* 좌측 상단: 내비게이션 — 컴팩트 홈 버튼 + 제목 + 방장 칩 + 팀원·패널토글 */}
+            <div className="flex items-center gap-1.5 px-2.5 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
               <button
                 onClick={() => router.push('/dashboard')}
-                className="flex items-center gap-1 text-[#5F6368] hover:text-[#202124] hover:bg-[#F1F3F4]
-                  rounded-full px-2.5 py-1.5 text-[13px] font-medium transition-all"
+                title="대시보드로"
+                aria-label="대시보드로 이동"
+                className="flex items-center gap-1 text-[#5F6368] hover:text-[#1A73E8] hover:bg-[#E8F0FE]
+                  rounded-full px-2 py-1.5 text-[12px] font-semibold transition-all"
               >
-                <ArrowLeft size={16} weight="regular" />
-                대시보드
+                <House size={15} weight="bold" />
+                홈
               </button>
-              <div className="h-4 w-px bg-[#DADCE0]" />
-              <h1 className="text-[13px] font-semibold text-[#202124] truncate max-w-[100px]">{project.title}</h1>
+              <h1 className="text-[13px] font-semibold text-[#202124] truncate max-w-[140px] flex-1 min-w-0">{project.title}</h1>
               {isHost ? (
-                <span className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
-                  px-2 py-1 rounded-full font-semibold flex-shrink-0">
-                  <Crown size={13} weight="fill" className="text-[#F9AB00]" />
-                  방장
+                <span
+                  title="방장"
+                  className="flex items-center justify-center w-7 h-7 rounded-full bg-[#FEF7E0] text-[#B06000] flex-shrink-0"
+                >
+                  <Crown size={14} weight="fill" className="text-[#F9AB00]" />
                 </span>
               ) : (
                 <button
                   onClick={handleClaimHost}
                   disabled={claimingHost}
-                  className="flex items-center gap-1 text-[11px] border border-[#FBBC04] text-[#B06000]
-                    px-2 py-1 rounded-full font-medium hover:bg-[#FEF7E0] transition-all disabled:opacity-50 flex-shrink-0"
+                  title={claimingHost ? '처리 중...' : '방장 되기'}
+                  aria-label="방장 되기"
+                  className="flex items-center justify-center w-7 h-7 rounded-full border border-[#FBBC04] text-[#B06000]
+                    hover:bg-[#FEF7E0] transition-all disabled:opacity-50 flex-shrink-0"
                 >
-                  <Crown size={13} weight="fill" className="text-[#F9AB00]" />
+                  <Crown size={14} weight="fill" className="text-[#F9AB00]" />
+                  <span className="sr-only">
                   {claimingHost ? '처리 중...' : '방장 되기'}
+                  </span>
                 </button>
               )}
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-1">
+                {/* 팀원 수·목록 — 버튼만 인라인, 팝오버는 createPortal로 body에 렌더(좌측 overflow-hidden 탈출) */}
+                <button
+                  ref={membersBtnRef}
+                  onClick={() => setShowMembers(v => !v)}
+                  title="팀원 목록"
+                  aria-label={`팀원 ${project.memberUids?.length ?? 1}명 보기`}
+                  className="flex items-center gap-1 text-[11px] bg-[#F1F3F4] text-[#5F6368]
+                    px-2 py-1.5 rounded-full font-semibold hover:bg-[#E8F0FE] hover:text-[#1A73E8] transition-colors flex-shrink-0"
+                >
+                  <Users size={13} weight="regular" />
+                  {project.memberUids?.length ?? 1}명
+                </button>
                 <PanelToggle direction="left" onClick={() => layout.toggle('sidebar')} label="활동 목록 접기" />
               </div>
             </div>
@@ -683,36 +716,85 @@ export default function ProjectPage() {
               <ActivitySidebar />
             </div>
           </>
-        ) : (
-          // Task #34: 접힌 상태 — 32px strip + 펼치기 버튼 + 현재 활동 코드 세로 표시
-          <button
-            type="button"
-            onClick={() => layout.toggle('sidebar')}
-            aria-label="활동 목록 펼치기"
-            title="활동 목록 펼치기"
-            className="flex-1 flex flex-col items-center justify-start gap-3 pt-3 bg-white hover:bg-[#F8F9FA] transition-colors"
-          >
-            <span
-              className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
-              aria-hidden="true"
+        ) : (() => {
+          // Task #34 접힌 상태: 현재 단계 컬러 stripe + 세로 활동코드 + 미니 진행률(세로 fill).
+          // 완료 판정은 ActivitySidebar와 동일한 헬퍼(`checkEffectivelyDone`) 재사용 — 판정 규약 통일.
+          const stageInfo = STAGES.find(s => s.code === currentStage)
+          const activities = stageInfo?.activities ?? []
+          const completedCount = activities.filter(a => checkEffectivelyDone(a, activityStatus, project?.artifacts)).length
+          const totalCount = activities.length
+          const pct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+          const stageColor = STAGE_COLOR[currentStage]
+          return (
+            <button
+              type="button"
+              onClick={() => layout.toggle('sidebar')}
+              aria-label={`활동 목록 펼치기 (${currentStage} 단계 진행 ${completedCount}/${totalCount})`}
+              title={`활동 목록 펼치기 — ${currentStage} ${completedCount}/${totalCount}`}
+              className="flex-1 flex flex-col items-center justify-start gap-3 pt-3 pb-3 bg-white hover:bg-[#F8F9FA] transition-colors"
             >
-              <CaretRight size={14} weight="bold" />
-            </span>
-            {currentActivity && (
               <span
-                className="text-[12px] font-extrabold text-[#5F6368] tracking-widest"
-                style={{ writingMode: 'vertical-rl' }}
+                className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
+                aria-hidden="true"
               >
-                {currentActivity}
+                <CaretRight size={14} weight="bold" />
               </span>
-            )}
-          </button>
-        )}
+
+              {/* 현재 단계 색 dot — 접힘 상태에서도 "어느 단계"를 한눈에. live-dot-pulse로 진행 중임을 표현. */}
+              <span
+                aria-hidden="true"
+                className={cn('w-2 h-2 rounded-full flex-shrink-0 live-dot-pulse', stageColor.bg)}
+                style={{ color: stageColor.hex }}
+              />
+
+              {currentActivity && (
+                <div className="flex flex-col items-center gap-1.5 min-h-0">
+                  <span
+                    className="text-[12px] font-extrabold text-[#5F6368] tracking-widest"
+                    style={{ writingMode: 'vertical-rl' }}
+                  >
+                    {currentActivity}
+                  </span>
+                  {ACTIVITY_META[currentActivity]?.label && (
+                    <span
+                      className="text-[11px] font-semibold text-[#9AA0A6] tracking-wider"
+                      style={{ writingMode: 'vertical-rl' }}
+                    >
+                      {ACTIVITY_META[currentActivity].label}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* 미니 진행률: 세로 fill 바 + x/n 카운터. 접힘 상태에서도 "단계 안에서 몇 개 완료" 읽기 가능 */}
+              {totalCount > 0 && (
+                <div className="flex flex-col items-center gap-1.5 mt-auto">
+                  <div
+                    className="relative w-1.5 h-16 bg-[#F1F3F4] rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={completedCount}
+                    aria-valuemin={0}
+                    aria-valuemax={totalCount}
+                    aria-label={`${currentStage} 단계 진행률 ${completedCount}/${totalCount}`}
+                  >
+                    <div
+                      className={cn('absolute bottom-0 left-0 right-0 rounded-full transition-all duration-500', stageColor.bg)}
+                      style={{ height: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold tabular-nums text-[#5F6368]">
+                    {completedCount}/{totalCount}
+                  </span>
+                </div>
+              )}
+            </button>
+          )
+        })()}
       </div>
 
       {/* ══ 중앙 컬럼: 단계 섹션 + ChatPanel ══ */}
       <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
-        {/* 중앙 상단: 단계 바 — 전용 공간 (Task #34: 토글 가능) */}
+        {/* 중앙 상단: 단계 바 — 5단계는 중앙정렬, 구조도 버튼은 우측 끝에 absolute로 floating */}
         <div
           className={cn('rounded-2xl bg-white flex-shrink-0 transition-all duration-300',
             layout.stage ? 'py-3' : 'py-0', panelBorder('stage'))}
@@ -722,31 +804,153 @@ export default function ProjectPage() {
           {layout.stage ? (
             <div className="relative">
               <StageBar />
-              <div className="absolute top-1 right-2">
+              {/* 구조도 — 단계 노드와 동일 레이아웃(flex-col + h-14 slot + 라벨), 무지개색. 평가 단계 우측에 배치. */}
+              <button
+                type="button"
+                onClick={() => setShowOntology(true)}
+                title="프로젝트 온톨로지 보기 — 전체 설계 구조를 한눈에"
+                aria-label="프로젝트 온톨로지 보기"
+                className="absolute top-12 right-[15%] flex flex-col items-center gap-1 select-none hover:scale-105 active:scale-95 transition-transform"
+              >
+                <div className="h-14 flex items-center justify-center relative">
+                  <div
+                    className="w-11 h-11 flex items-center justify-center relative overflow-hidden"
+                    style={{
+                      animation: 'morph-shape 9s ease-in-out infinite',
+                      background: 'linear-gradient(135deg, #EF4444 0%, #F97316 18%, #FACC15 34%, #22C55E 50%, #3B82F6 68%, #8B5CF6 84%, #EC4899 100%)',
+                      filter: 'drop-shadow(0 4px 12px rgba(139, 92, 246, 0.35))',
+                    }}
+                  >
+                    <GraphIcon size={22} weight="fill" className="text-white relative z-10" />
+                  </div>
+                </div>
+                <span
+                  className="text-[11px] font-extrabold leading-tight"
+                  style={{
+                    background: 'linear-gradient(90deg, #EF4444, #F97316, #EAB308, #22C55E, #3B82F6, #8B5CF6, #EC4899)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  구조도
+                </span>
+              </button>
+              {/* PanelToggle — 좌상단으로 이동 (구조도와 우측 겹침 회피) */}
+              <div className="absolute top-1 left-2">
                 <PanelToggle direction="up" onClick={() => layout.toggle('stage')} label="단계 바 접기" />
               </div>
             </div>
           ) : (
-            // Task #34: 접힌 상태 — h-10 strip + 현재 단계 코드/라벨 미니 표시
-            <button
-              type="button"
-              onClick={() => layout.toggle('stage')}
-              aria-label="단계 바 펼치기"
-              title="단계 바 펼치기"
-              className="w-full h-10 flex items-center justify-center gap-3 hover:bg-[#F8F9FA] transition-colors rounded-2xl"
-            >
-              <span className="text-[12px] font-extrabold text-[#202124]">
-                현재 단계: <span className="text-[#1A73E8]">{currentStage}</span>
-                {' · '}
-                <span className="text-[#5F6368]">{STAGES.find(s => s.code === currentStage)?.label}</span>
-              </span>
-              <span
-                className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
-                aria-hidden="true"
-              >
-                <CaretDown size={14} weight="bold" />
-              </span>
-            </button>
+            // Task #2 업그레이드: 접힘 상태에 정보 밀도 추가.
+            // 좌 → 우: 단계 브레드크럼(5 chip) · 현재 활동명+진행률 · 팀원 아바타 · 펼침 캐럿.
+            // 모든 요소가 "지금 어디서 뭘 하고 있나"를 한 줄로 읽히게 함 (스펙 7-1 반영).
+            (() => {
+              const stageInfo = STAGES.find(s => s.code === currentStage)
+              const stageActivities = stageInfo?.activities ?? []
+              const stageDoneCount = stageActivities.filter(a => {
+                return project.activityStatuses?.[a] === 'completed'
+              }).length
+              const stageTotal = stageActivities.length
+              const color = STAGE_COLOR[currentStage]
+              const collapsedMemberUids: string[] = project.memberUids ?? (project.createdBy ? [project.createdBy] : [])
+              const collapsedMemberInfo = project.memberInfo ?? {}
+              const displayMembers = collapsedMemberUids.slice(0, 4)
+              const extraMembers = Math.max(0, collapsedMemberUids.length - displayMembers.length)
+              return (
+                <button
+                  type="button"
+                  onClick={() => layout.toggle('stage')}
+                  aria-label="단계 바 펼치기"
+                  title="단계 바 펼치기"
+                  className="w-full h-10 flex items-center gap-3 px-3 hover:bg-[#F8F9FA] transition-colors rounded-2xl"
+                >
+                  {/* 브레드크럼 미니: 5단계 chip — 순서대로 위아래 까딱(bob)하면서 진행감 표현. 현재 단계는 크기 + 색으로 강조. */}
+                  <div className="flex items-end gap-0.5 flex-shrink-0 h-4" aria-hidden="true">
+                    {STAGES.map((s, i) => {
+                      const isCurrent = s.code === currentStage
+                      const c = STAGE_COLOR[s.code]
+                      return (
+                        <span key={s.code} className="flex items-end gap-0.5 h-full">
+                          <span
+                            className={cn('rounded-sm stage-wave-bob',
+                              isCurrent ? 'w-2.5 h-2.5' : 'w-1.5 h-1.5')}
+                            style={{
+                              backgroundColor: c.hex,
+                              color: c.hex,
+                              animationDelay: `${i * 0.22}s`,
+                            }}
+                          />
+                          {i < STAGES.length - 1 && (
+                            <span className="text-[9px] text-[#DADCE0] font-black leading-none pb-0.5">›</span>
+                          )}
+                        </span>
+                      )
+                    })}
+                  </div>
+                  <span className="h-4 w-px bg-[#DADCE0] flex-shrink-0" />
+                  {/* 현재 단계 + 활동명 + 진행률 */}
+                  <span className="flex items-center gap-1.5 flex-shrink-0">
+                    <span
+                      className="px-1.5 py-0.5 rounded-md text-[10px] font-black text-white tabular-nums"
+                      style={{ backgroundColor: color.hex }}
+                    >
+                      {currentStage}
+                    </span>
+                    <span className="text-[12px] font-extrabold text-[#202124]">
+                      {STAGE_LABELS[currentStage]}
+                    </span>
+                    <span className="text-[11px] font-semibold text-[#5F6368] tabular-nums">
+                      {stageDoneCount}/{stageTotal}
+                    </span>
+                  </span>
+                  {currentActivity && (
+                    <>
+                      <span className="text-[#DADCE0] text-[11px]" aria-hidden="true">·</span>
+                      <span className="text-[11px] font-semibold text-[#5F6368] truncate min-w-0">
+                        <span className="font-mono tabular-nums" style={{ color: color.hex }}>{currentActivity}</span>
+                      </span>
+                    </>
+                  )}
+                  {/* 중간 스페이서 */}
+                  <span className="flex-1" />
+                  {/* 팀원 아바타 스택 */}
+                  {displayMembers.length > 0 && (
+                    <div className="flex items-center -space-x-1.5 flex-shrink-0" aria-label={`팀원 ${collapsedMemberUids.length}명`}>
+                      {displayMembers.map(mUid => {
+                        const info = collapsedMemberInfo[mUid]
+                        const isThisHost = mUid === project.hostUid || mUid === project.createdBy
+                        const avatarBg = info?.color ?? '#9AA0A6'
+                        return (
+                          <span
+                            key={mUid}
+                            className="relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold text-white ring-2 ring-white select-none"
+                            style={{ backgroundColor: avatarBg }}
+                            title={info?.displayName ?? mUid.slice(0, 8)}
+                          >
+                            {(info?.displayName?.[0] ?? '?').toUpperCase()}
+                            {isThisHost && (
+                              <Crown size={8} weight="fill" className="absolute -top-1 -right-0.5 text-[#F9AB00] drop-shadow" />
+                            )}
+                          </span>
+                        )
+                      })}
+                      {extraMembers > 0 && (
+                        <span className="w-6 h-6 rounded-full bg-[#F1F3F4] text-[#5F6368] text-[10px] font-extrabold flex items-center justify-center ring-2 ring-white tabular-nums">
+                          +{extraMembers}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <span
+                    className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6] flex-shrink-0"
+                    aria-hidden="true"
+                  >
+                    <CaretDown size={14} weight="bold" />
+                  </span>
+                </button>
+              )
+            })()
           )}
         </div>
         {/* P1-I 3-B: T-1-1 진입 시 이전 주기 개선안 카드 */}
@@ -769,100 +973,54 @@ export default function ProjectPage() {
       {/* ══ 우측 컬럼: 정보 + ArtifactPanel (Task #34: 토글 가능) ══ */}
       <div
         className={cn('flex-shrink-0 flex flex-col rounded-2xl overflow-hidden transition-all duration-300',
-          layout.artifact ? 'w-[418px]' : 'w-10', panelBorder('right'))}
+          layout.artifact ? 'w-80' : 'w-10', panelBorder('right'))}
         onMouseEnter={() => setActivePanel('right')}
         onMouseLeave={() => setActivePanel(null)}
       >
         {layout.artifact ? (
         <>
-        {/* 우측 상단: 프로젝트 정보 */}
-        <div className="flex items-center justify-end gap-2 px-3 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
+        {/* 우측 상단: 프로젝트 정보 — 자료함은 일단 숨김. 보고서·초대코드는 텍스트 유지. */}
+        <div className="flex items-center justify-end gap-1.5 px-2 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
           <PanelToggle direction="right" onClick={() => layout.toggle('artifact')} label="산출물 패널 접기" className="mr-auto" />
-          <button
-            onClick={() => setShowMaterials(true)}
-            className="flex items-center gap-1.5 text-[12px] bg-[#E8F0FE] text-[#1A73E8]
-              px-3 py-1.5 rounded-full font-semibold hover:bg-[#D2E3FC] transition-colors"
-          >
-            <Books size={14} weight="fill" />
-            자료함
-          </button>
+          {/* 구조도 버튼은 중앙 단계 섹션으로 이동됨 */}
           {project.stageReports && Object.keys(project.stageReports).length > 0 && (
             <button
               onClick={() => setShowReports(true)}
-              className="flex items-center gap-1.5 text-[12px] bg-[#E0F2F1] text-[#00897B]
-                px-3 py-1.5 rounded-full font-semibold hover:bg-[#B2DFDB] transition-colors"
+              className="flex items-center gap-1 text-[11px] bg-[#E0F2F1] text-[#00897B]
+                px-2 py-1.5 rounded-full font-semibold hover:bg-[#B2DFDB] transition-colors flex-shrink-0 whitespace-nowrap"
             >
-              <FileText size={14} weight="fill" />
-              보고서 확인
+              <FileText size={13} weight="fill" />
+              보고서
+            </button>
+          )}
+          {isHost && (
+            <button
+              onClick={() => setShowPublish(true)}
+              title={project.publicStatus?.isPublic ? '공개 링크 관리' : '공개 링크로 배포'}
+              className={cn(
+                'flex items-center gap-1 text-[11px] px-2 py-1.5 rounded-full font-semibold transition-colors flex-shrink-0 whitespace-nowrap',
+                project.publicStatus?.isPublic
+                  ? 'bg-[#E6F4EA] text-[#188038] hover:bg-[#CEEAD6]'
+                  : 'bg-[#F1F3F4] text-[#5F6368] hover:bg-[#E8F0FE] hover:text-[#1A73E8]',
+              )}
+            >
+              <Globe size={13} weight={project.publicStatus?.isPublic ? 'fill' : 'regular'} />
+              {project.publicStatus?.isPublic ? '공개 중' : '공개'}
             </button>
           )}
           {project.inviteCode && (
-            <span className="flex items-center gap-1.5 text-[12px] bg-[#E8F0FE] text-[#1A73E8]
-              px-3 py-1.5 rounded-full font-semibold">
-              <Key size={14} weight="regular" />
-              {project.inviteCode}
-            </span>
-          )}
-          <div className="relative">
             <button
-              onClick={() => setShowMembers(v => !v)}
-              className="flex items-center gap-1 text-[12px] bg-[#F1F3F4] text-[#5F6368]
-                px-3 py-1.5 rounded-full font-medium hover:bg-[#E8F0FE] hover:text-[#1A73E8] transition-colors"
+              type="button"
+              onClick={() => { navigator.clipboard?.writeText(project.inviteCode!).catch(() => {}) }}
+              title="클릭해서 초대 코드 복사"
+              className="flex items-center gap-1 text-[11px] bg-[#E8F0FE] text-[#1A73E8]
+                px-2 py-1.5 rounded-full font-semibold hover:bg-[#D2E3FC] transition-colors flex-shrink-0 whitespace-nowrap"
             >
-              <Users size={14} weight="regular" />
-              {project.memberUids?.length ?? 1}명
+              <Key size={13} weight="regular" />
+              {project.inviteCode}
             </button>
-
-            {showMembers && (
-              <>
-                {/* 바깥 클릭 닫기 */}
-                <div className="fixed inset-0 z-40" onClick={() => setShowMembers(false)} />
-                {/* 팝오버 */}
-                <div className="absolute right-0 top-full mt-2 z-50 min-w-[200px]"
-                  style={{ filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.13))' }}>
-                  <div className="bg-white rounded-2xl overflow-hidden border border-[#E8EAED]">
-                    <div className="px-4 py-2.5 border-b border-[#F1F3F4]">
-                      <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">참여 중인 팀원</p>
-                    </div>
-                    <div className="py-1.5">
-                      {(project.memberUids ?? []).map((mUid: string) => {
-                        const info = project.memberInfo?.[mUid]
-                        const displayName = info?.displayName ?? mUid
-                        const color = info?.color ?? '#A0BCE8'
-                        const isCurrentUser = mUid === uid
-                        const isHostMember = mUid === (project.hostUid ?? project.createdBy)
-                        return (
-                          <div key={mUid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8F9FA]">
-                            <div
-                              className="w-8 h-8 flex items-center justify-center text-white text-[13px] font-black flex-shrink-0"
-                              style={{
-                                backgroundColor: color,
-                                animation: 'morph-shape 8s ease-in-out infinite',
-                                boxShadow: `0 3px 8px ${color}55`,
-                              }}
-                            >
-                              {displayName?.[0]?.toUpperCase() ?? '?'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[13px] font-semibold text-[#202124] truncate">
-                                {displayName}
-                                {isCurrentUser && <span className="text-[11px] text-[#9AA0A6] font-normal ml-1">(나)</span>}
-                              </p>
-                              {isHostMember && (
-                                <p className="text-[11px] text-[#F9AB00] font-bold flex items-center gap-0.5">
-                                  <Crown size={10} weight="fill" /> 방장
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          )}
+          {/* 팀원 목록 버튼은 좌측 사이드바 헤더로 이동됨 (우측 폭 확보) */}
         </div>
         {/* 우측 하단: 산출물 패널 */}
         <div className="flex-1 overflow-hidden">
@@ -870,28 +1028,8 @@ export default function ProjectPage() {
         </div>
         </>
         ) : (
-          // Task #34: 접힌 상태 — 32px strip + 펼치기 버튼 + 산출물 아이콘
-          <button
-            type="button"
-            onClick={() => layout.toggle('artifact')}
-            aria-label="산출물 패널 펼치기"
-            title="산출물 패널 펼치기"
-            className="flex-1 flex flex-col items-center justify-start gap-3 pt-3 bg-white hover:bg-[#F8F9FA] transition-colors"
-          >
-            <span
-              className="flex items-center justify-center w-6 h-6 rounded-md text-[#9AA0A6]"
-              aria-hidden="true"
-            >
-              <CaretLeft size={14} weight="bold" />
-            </span>
-            <FileText size={16} weight="fill" className="text-[#5F6368]" />
-            <span
-              className="text-[12px] font-extrabold text-[#5F6368] tracking-widest"
-              style={{ writingMode: 'vertical-rl' }}
-            >
-              산출물
-            </span>
-          </button>
+          // 접힌 상태 — CollapsedArtifactStrip: 섹션 개수 뱃지 + 상태 점 + 업데이트 pulse
+          <CollapsedArtifactStrip onExpand={() => layout.toggle('artifact')} />
         )}
       </div>
 
@@ -899,6 +1037,79 @@ export default function ProjectPage() {
 
       {showReports && (
         <StageReportsModal onClose={() => setShowReports(false)} />
+      )}
+
+      <PublishModal
+        open={showPublish}
+        onClose={() => setShowPublish(false)}
+        project={project}
+        projectId={projectId}
+        uid={uid}
+      />
+
+      <ProjectOntologyModal
+        open={showOntology}
+        onClose={() => setShowOntology(false)}
+        project={project}
+        onOpenActivity={(code) => {
+          setViewingActivity(code)
+        }}
+      />
+
+      {/* 팀원 팝오버 — createPortal로 body에 렌더해 좌측 사이드바 overflow-hidden 탈출 */}
+      {showMembers && membersPopoverPos && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="fixed inset-0 z-[200]" onClick={() => setShowMembers(false)} />
+          <div
+            className="fixed z-[210] min-w-[220px]"
+            style={{
+              top: membersPopoverPos.top,
+              left: membersPopoverPos.left,
+              filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.13))',
+            }}
+          >
+            <div className="bg-white rounded-2xl overflow-hidden border border-[#E8EAED]">
+              <div className="px-4 py-2.5 border-b border-[#F1F3F4]">
+                <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">참여 중인 팀원</p>
+              </div>
+              <div className="py-1.5">
+                {(project.memberUids ?? []).map((mUid: string) => {
+                  const info = project.memberInfo?.[mUid]
+                  const displayName = info?.displayName ?? mUid
+                  const color = info?.color ?? '#A0BCE8'
+                  const isCurrentUser = mUid === uid
+                  const isHostMember = mUid === (project.hostUid ?? project.createdBy)
+                  return (
+                    <div key={mUid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8F9FA]">
+                      <div
+                        className="w-8 h-8 flex items-center justify-center text-white text-[13px] font-black flex-shrink-0"
+                        style={{
+                          backgroundColor: color,
+                          animation: 'morph-shape 8s ease-in-out infinite',
+                          boxShadow: `0 3px 8px ${color}55`,
+                        }}
+                      >
+                        {displayName?.[0]?.toUpperCase() ?? '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-[#202124] truncate">
+                          {displayName}
+                          {isCurrentUser && <span className="text-[11px] text-[#9AA0A6] font-normal ml-1">(나)</span>}
+                        </p>
+                        {isHostMember && (
+                          <p className="text-[11px] text-[#F9AB00] font-bold flex items-center gap-0.5">
+                            <Crown size={10} weight="fill" /> 방장
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body,
       )}
 
       {showMaterials && (

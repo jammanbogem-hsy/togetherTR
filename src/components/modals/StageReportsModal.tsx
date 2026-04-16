@@ -255,18 +255,19 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
                 remarkPlugins={[remarkGfm]}
                 components={{
                   td: ({ children }) => {
+                    const baseStyle: React.CSSProperties = { padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6, wordBreak: 'keep-all', overflowWrap: 'anywhere' }
                     const text = typeof children === 'string' ? children : null
                     if (text && (text.includes('【') && text.includes(' / 【') || text.includes('\u2028'))) {
                       const parts = text.includes('\u2028') ? text.split('\u2028') : text.split(' / ')
                       return (
-                        <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem' }}>
+                        <td style={baseStyle}>
                           {parts.map((part, i) => (
                             <span key={i} style={{ display: 'block' }}>{part}</span>
                           ))}
                         </td>
                       )
                     }
-                    return <td style={{ padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', whiteSpace: 'nowrap' }}>{children}</td>
+                    return <td style={baseStyle}>{children}</td>
                   },
                   h1: ({ children }) => (
                     <h1 style={{ fontSize: '1.55rem', fontWeight: 900, color: '#202124', margin: '0 0 2rem', lineHeight: 1.2, letterSpacing: '-0.03em', paddingBottom: '0.9rem', borderBottom: '3px solid #1A73E8' }}>
@@ -318,15 +319,15 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
                     </li>
                   ),
                   table: ({ children }) => (
-                    <div style={{ margin: '1rem 0', borderRadius: '12px', overflowX: 'auto', border: '1.5px solid #DADCE0' }}>
-                      <table style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>{children}</table>
+                    <div style={{ margin: '1rem 0', borderRadius: '12px', border: '1.5px solid #DADCE0', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', tableLayout: 'auto' }}>{children}</table>
                     </div>
                   ),
                   thead: ({ children }) => (
                     <thead style={{ background: '#1A73E8', color: 'white' }}>{children}</thead>
                   ),
                   th: ({ children }) => (
-                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', whiteSpace: 'nowrap' }}>{children}</th>
+                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', wordBreak: 'keep-all', overflowWrap: 'anywhere', verticalAlign: 'top' }}>{children}</th>
                   ),
                   tr: ({ children }) => <tr>{children}</tr>,
                   hr: () => (

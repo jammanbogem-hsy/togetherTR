@@ -65,6 +65,7 @@ export interface GraphSelectedStandard {
 export interface GraphAgentNote {
   standardId: string
   explanation: string
+  ideas?: string[]
   teachingNote?: string
 }
 

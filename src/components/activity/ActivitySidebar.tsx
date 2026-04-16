@@ -6,6 +6,7 @@ import { STAGES, ACTIVITY_META, type ActivityCode, type StageStatus } from '@/ty
 import { setProjectActivity, setAnalysisOpen } from '@/lib/firebase/projects'
 import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
 import { cn } from '@/lib/utils'
+import { STAGE_COLOR } from '@/lib/ui/stageColors'
 import {
   UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy,
   CheckCircle, Warning, Clock, Shield, Star, CaretRight, ChartBar, Crown, ArrowBendUpLeft, type Icon,
@@ -20,25 +21,23 @@ const STAGE_ICON_MAP: Record<string, Icon> = {
   E:  Trophy,
 }
 
-const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; border: string; pulse: string; corner: string }> = {
-  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', border: 'border-[#AECBFA]', pulse: 'rgba(26,115,232,0.35)',  corner: 'rgba(26,115,232,0.13)'  },
-  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]', border: 'border-[#CE93D8]', pulse: 'rgba(123,31,162,0.35)', corner: 'rgba(123,31,162,0.11)'  },
-  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', border: 'border-[#80CBC4]', pulse: 'rgba(0,137,123,0.35)',  corner: 'rgba(0,137,123,0.11)'   },
-  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', border: 'border-[#FFAB91]', pulse: 'rgba(230,81,0,0.35)',   corner: 'rgba(230,81,0,0.11)'    },
-  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', border: 'border-[#EF9A9A]', pulse: 'rgba(198,40,40,0.35)',  corner: 'rgba(198,40,40,0.11)'   },
-}
-
-// 활동별 개념 안내 (선택된 활동에 맞는 안내 박스 표시)
-const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; example: string }>> = {
+// 활동별 개념 안내 (선택된 활동에 맞는 안내 박스 표시).
+// v1.1 §7-2 #9: whyNow (직전 산출물과의 연결), warningRecoveryHint (건너뜀 시 복귀 안내) 2필드 추가.
+// 스펙 §10-2에 ACTIVITY_META로 이관 후속 작업 기록 — 현재는 임시 하드코딩(컴포넌트 내부 상수).
+const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; example: string; whyNow?: string; warningRecoveryHint?: string }>> = {
   'T-1-1': {
     title: '💡 팀 비전이란?',
     body: '우리 팀이 이 수업을 통해 궁극적으로 실현하고자 하는 교육 목적입니다. 단순한 수업 목표가 아니라, 학생에게 어떤 변화·경험·역량을 만들어주고 싶은지를 담은 한 문장입니다.\n이 비전은 A~E 단계에서 의견이 엇갈릴 때마다 돌아오는 기준이 됩니다.',
     example: '예: "학생들이 협력하여 실생활 문제를 해결하는 경험을 만드는 교육"',
+    whyNow: '모든 설계의 첫 출발점 — 이후 단계에서 의견이 갈릴 때 "비전으로 돌아오기"의 기준이 됩니다.',
+    warningRecoveryHint: '비전 없이 설계를 진행하면 A~E 단계에서 기준 없이 표류합니다. 지금은 간단한 한 문장이라도 남겨두세요.',
   },
   'T-1-2': {
     title: '🧭 수업설계 방향이란?',
     body: '비전을 실현하기 위해 어떤 교수학습 전략과 방향을 지향할 것인지에 대한 합의입니다.\n교과 범위·성취기준·도구 선정은 이후 단계(A, Ds)에서 다룹니다.',
     example: '예: "학생 주도 프로젝트 기반 학습, 과정 중심 평가 중심"',
+    whyNow: 'T-1-1 비전을 교수학습 언어로 구체화할 차례입니다. 방향이 있어야 이후 주제 선정(A-1-2)이 자의적으로 흐르지 않습니다.',
+    warningRecoveryHint: '방향이 비어 있으면 A 단계에서 "왜 이 주제?"의 답을 잃습니다. 짧게라도 방향 문장을 남겨야 복귀가 쉽습니다.',
   },
   'T-2-1': {
     title: '👥 역할 분담이란?',
@@ -61,6 +60,8 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
     title: '🎯 주제 선정이란?',
     body: '융합 수업의 출발점이 되는 핵심 주제를 팀이 함께 결정하는 활동입니다.\n좋은 주제는 두 가지 조건을 갖춥니다: ① 학생의 실생활과 연결되고, ② 여러 교과가 자연스럽게 만나는 맥락이 있어야 합니다.\n이 주제는 이후 성취기준 분석·문제상황 개발의 방향을 결정합니다.',
     example: '예: "우리 동네 환경 문제", "디지털 리터러시와 미디어 비판"',
+    whyNow: 'T-1-2 설계 방향과 정렬된 주제를 고를 차례입니다. 주제가 이후 A-2-1 성취기준 분석의 탐색 범위를 결정합니다.',
+    warningRecoveryHint: '주제 없이 성취기준 분석(A-2-1)을 먼저 하면 범위가 난사됩니다. 돌아와 주제부터 합의하세요.',
   },
   'A-2-1': {
     title: '📐 핵심아이디어 및 성취기준 분석이란?',
@@ -76,6 +77,8 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
     title: '🔍 학습자·맥락 분석이란?',
     body: '우리 학생들의 사전 지식, 흥미, 생활 맥락을 팀이 함께 분석하는 활동입니다.\n이 정보는 이후 문제상황을 실감 나게 만들고 스캐폴딩을 맞춤 설계하는 데 직접 활용됩니다.\n분석 결과는 설계 단계 내내 "가드레일"로 참조합니다.',
     example: '예: "우리 반 학생들은 환경 뉴스에 관심은 높지만 데이터 읽기에 어려움을 느낌"',
+    whyNow: '이 산출물이 Ds 설계 단계 전반의 가드레일이 됩니다. A 단계를 벗어나기 전 반드시 마무리해야 설계 부채를 막습니다.',
+    warningRecoveryHint: 'A-2-3 없이 Ds에 진입하면 가드레일이 없는 상태입니다. 돌아와 학습자 프로필을 남기세요 — 이후 모든 설계의 근거입니다.',
   },
 
   // ── 설계(Ds) 단계 ─────────────────────────────────────
@@ -83,6 +86,8 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
     title: '📊 평가 계획 수립이란?',
     body: 'T-CID는 백워드 설계(Backward Design)를 따릅니다. 즉, 활동을 먼저 정하지 않고 "어떻게 학생의 성취를 확인할 것인가"를 먼저 설계합니다.\n수행과제·평가기준(루브릭)·피드백 방법을 이 단계에서 결정하면, 이후 활동 설계가 평가와 자연스럽게 정렬됩니다.',
     example: '예: "환경 문제 해결 보고서 + 4단계 루브릭 (자료 수집·분석·제안·표현)"',
+    whyNow: 'A-2-3 학습자 프로필을 평가 기준에 반영할 차례입니다. 평가를 먼저 확정해야 이후 Ds-1-2/1-3 활동이 평가와 정렬됩니다.',
+    warningRecoveryHint: 'Ds-1-1 없이 활동 설계로 건너뛰면 활동-평가 불일치가 생깁니다. 돌아와 평가 기준부터 확정하세요.',
   },
   'Ds-1-2': {
     title: '🌍 문제상황 개발이란?',
@@ -153,54 +158,129 @@ const STAGE_GUIDE: Record<string, { goal: string; teamTasks: string[] }> = {
   },
 }
 
-function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtifact, artifactConfirmed, index, onClick }: {
+// v1.1 §7-2 #8: viewing 활동 기준 "팀이 할 일" 동적 교체 매핑.
+// STAGE_GUIDE.teamTasks의 첫 1~2항목을 viewing 활동별 문구로 덮어씀 (merge).
+// 스펙 §10-2: ACTIVITY_META로 이관 예정 — 현재는 컴포넌트 내부 임시 하드코딩.
+const ACTIVITY_TASKS: Partial<Record<ActivityCode, string[]>> = {
+  'T-1-1': ['한 문장 비전에 합의해요', '학생에게 주고 싶은 변화를 말로 꺼내요'],
+  'T-1-2': ['비전을 수업 전략 언어로 번역해요'],
+  'T-2-1': ['각자 강점을 확인하고 역할을 나눠요'],
+  'T-2-2': ['갈등 상황 규칙을 미리 합의해요'],
+  'T-2-3': ['지킬 수 있는 일정을 함께 정해요'],
+  'A-1-2': ['실생활 맥락과 교과 접점을 가진 주제를 골라요'],
+  'A-2-1': ['교과별 성취기준 연결점을 찾아요'],
+  'A-2-2': ['통합 수업목표 한 문장을 함께 다듬어요'],
+  'A-2-3': ['학생 프로필을 팀이 함께 기록해요', '이 분석이 설계의 가드레일이 됩니다'],
+  'Ds-1-1': ['평가 기준을 먼저 확정해요', 'A-2-3 학습자 프로필을 루브릭에 반영해요'],
+  'Ds-1-2': ['학생이 몰입할 문제 시나리오를 만들어요'],
+  'Ds-1-3': ['평가 기준과 정렬된 활동 흐름을 짜요'],
+  'Ds-2-1': ['활동 단계별 도구를 최소 구성으로 고릅니다'],
+  'Ds-2-2': ['어려움 지점에 맞춘 지원 구조를 설계해요'],
+  'DI-1-1': ['우리 학생 맥락에 맞게 자료를 재구성해요'],
+  'DI-2-1': ['현장 관찰을 구체적 장면으로 기록해요'],
+  'E-1-1': ['수업 기록을 펼쳐 증거 기반으로 성찰해요'],
+  'E-2-1': ['팀 협력 과정의 강점·개선점을 공유해요'],
+}
+
+// v1.1 §7-2 #10: 활동 row 사이 미니 connector 라벨. key = `${from}→${to}` 활동 코드 쌍.
+// 산출물 흐름이 있을 때만 표시 (없으면 connector 생략).
+const CONNECTOR_MAP: Record<string, string> = {
+  'T-1-1→T-1-2': '비전 → 방향',
+  'T-1-2→T-2-1': '방향 → 역할 분담',
+  'T-2-1→T-2-2': '역할 → 규칙',
+  'T-2-2→T-2-3': '규칙 → 일정',
+  'A-1-2→A-2-1': '주제 → 성취기준',
+  'A-2-1→A-2-2': '성취기준 → 통합 목표',
+  'A-2-2→A-2-3': '목표 → 학습자 분석',
+  'Ds-1-1→Ds-1-2': '평가 → 문제상황',
+  'Ds-1-2→Ds-1-3': '문제상황 → 활동 흐름',
+  'Ds-1-3→Ds-2-1': '활동 → 지원 도구',
+  'Ds-2-1→Ds-2-2': '도구 → 스캐폴딩',
+  'DI-1-1→DI-2-1': '자료 개발 → 수업 기록',
+  'E-1-1→E-2-1': '수업 성찰 → 팀 성찰',
+}
+
+// v1.1 §7-2 #11: 단계 마지막 활동 완료 시 하단 "단계 전환 카드" 문구.
+// 스펙 §10-5: v2 agent-roles-spec §3 연결 멘트 테이블을 상수로 이관 예정 — 현재는 임시 하드코딩.
+const STAGE_TRANSITION_MSG: Record<string, { nextLabel: string; message: string }> = {
+  T:  { nextLabel: '다음: A 분석',      message: '다음 A 단계에서는 이 T의 비전·방향을 기준으로 주제와 성취기준을 분석합니다.' },
+  A:  { nextLabel: '다음: Ds 설계',     message: '다음 Ds 단계에서는 A-2-3 학습자 프로필을 가드레일로 평가와 활동을 설계합니다.' },
+  Ds: { nextLabel: '다음: DI 개발·실행', message: '다음 DI 단계에서는 평가 계획과 스캐폴딩을 실제 자료로 개발하고 수업을 실행합니다.' },
+  DI: { nextLabel: '다음: E 평가',      message: '다음 E 단계에서는 수업 기록을 근거로 성찰하고 다음 주기의 개선안을 남깁니다.' },
+  E:  { nextLabel: '새 주기: T 팀준비',  message: 'E-2-1 팀 성찰이 다음 T-1-1의 입력이 됩니다 — 새로운 주기를 시작할 준비가 됐어요.' },
+}
+
+// 상태별 뱃지 스펙(ui-spec 1-3): 3영역 공통 의미의 상태 컬러.
+// Sidebar에서는 완료/건너뜀/재검토 칩(배경+텍스트+라벨) 형태로 렌더.
+const STATUS_BADGE: Record<Exclude<StageStatus, 'not_started'>, { fg: string; bg: string; icon: Icon; label: string }> = {
+  in_progress:   { fg: '#1A73E8', bg: '#E8F0FE', icon: Clock,           label: '진행 중' },
+  completed:     { fg: '#34A853', bg: '#E6F4EA', icon: CheckCircle,     label: '완료' },
+  // v1.1 §7-2 #12: 교육적 해석 문구로 교체 (건너뜀 → 부채/복귀 필요, 재검토 → 개선 중).
+  warning:       { fg: '#F9AB00', bg: '#FEF7E0', icon: Warning,         label: '미완성 — 복귀 필요' },
+  active_return: { fg: '#E65100', bg: '#FBE9E7', icon: ArrowBendUpLeft, label: '품질 개선 중' },
+}
+
+function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtifact, artifactConfirmed, index, stageBg, onClick }: {
   code: ActivityCode; isViewing: boolean; isHostCurrent: boolean; isHost: boolean
-  status: StageStatus; hasArtifact: boolean; artifactConfirmed: boolean; index: number; onClick: () => void
+  status: StageStatus; hasArtifact: boolean; artifactConfirmed: boolean; index: number
+  stageBg: string // 단계색 bg 클래스 (viewing item 좌측 4px stripe 색 — "현재 단계 소속" 강조)
+  onClick: () => void
 }) {
   const meta = ACTIVITY_META[code]
 
   // 산출물 확정됐거나, 건너뜀(warning) + 산출물 있으면 완료로 간주
   const effectiveStatus: StageStatus = artifactConfirmed || (status === 'warning' && hasArtifact) ? 'completed' : status
 
-  let StatusIconComp: Icon | null = null
-  let statusColor = 'text-[#9AA0A6]'
-  if (effectiveStatus === 'completed') { StatusIconComp = CheckCircle; statusColor = 'text-[#34A853]' }
-  else if (effectiveStatus === 'warning') { StatusIconComp = Warning; statusColor = 'text-[#F9AB00]' }
-  else if (effectiveStatus === 'active_return') { StatusIconComp = ArrowBendUpLeft; statusColor = 'text-[#E65100]' }
-  else if (effectiveStatus === 'in_progress' || isViewing) { StatusIconComp = Clock; statusColor = 'text-[#1A73E8]' }
+  const badge = effectiveStatus !== 'not_started' ? STATUS_BADGE[effectiveStatus] : null
+  const showBadgeChip = !!badge && (effectiveStatus === 'completed' || effectiveStatus === 'warning' || effectiveStatus === 'active_return')
+
+  // aria용 상태 라벨 (섹션 6 접근성 — 아이콘만으로 의미 전달 금지)
+  const ariaState = effectiveStatus === 'completed' ? '완료됨'
+    : effectiveStatus === 'warning' ? '건너뜀'
+    : effectiveStatus === 'active_return' ? '재검토 중'
+    : effectiveStatus === 'in_progress' ? '진행 중'
+    : '시작 전'
 
   return (
     <button
       onClick={onClick}
+      aria-label={`${meta.label} — ${ariaState}${isViewing ? ' (선택됨)' : ''}`}
+      aria-current={isViewing ? 'true' : undefined}
       className={cn(
-        'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+        // 섹션 7-2 계층 개선: viewing item은 상하 여백 +0.5 (py-2.5 → py-3) & 좌측 stripe로 시각 중량 증가
+        'relative w-full flex items-center gap-3 pr-3 rounded-xl text-left transition-all duration-150',
+        'focus:outline-none focus-visible:[filter:drop-shadow(0_0_3px_rgba(26,115,232,0.9))]',
         isViewing
-          ? 'bg-[#E8F0FE] shadow-sm'
+          ? 'pl-4 py-3 bg-[#E8F0FE] shadow-sm'
           : isHostCurrent && !isHost
-            ? 'bg-[#FFF8E1] hover:bg-[#FFF3CD]'
-            : 'hover:bg-[#F1F3F4] text-[#5F6368]',
+            ? 'pl-3 py-2.5 bg-[#FFF8E1] hover:bg-[#FFF3CD]'
+            : 'pl-3 py-2.5 hover:bg-[#F1F3F4] text-[#5F6368]',
         isViewing && 'activity-glow'
       )}
     >
+      {/* viewing 전용 좌측 4px stage-color stripe */}
+      {isViewing && (
+        <span
+          aria-hidden="true"
+          className={cn('absolute left-0 top-1.5 bottom-1.5 w-1 rounded-full', stageBg)}
+        />
+      )}
+
       <div className={cn(
-        'w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0',
-        isViewing ? 'bg-[#1A73E8] text-white' : 'bg-[#F1F3F4] text-[#9AA0A6]'
+        'rounded-full flex items-center justify-center font-bold flex-shrink-0 transition-all',
+        isViewing
+          ? 'w-7 h-7 bg-[#1A73E8] text-white text-[12px]'
+          : 'w-6 h-6 bg-[#F1F3F4] text-[#9AA0A6] text-[11px]'
       )}>
         {index + 1}
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className={cn('text-[13px] leading-tight truncate',
-          isViewing ? 'font-bold text-[#1A73E8]' : 'font-medium text-[#3C4043]'
+        <p className={cn('leading-tight truncate',
+          isViewing ? 'text-[14px] font-bold text-[#1A73E8]' : 'text-[13px] font-medium text-[#3C4043]'
         )}>
           {meta.label}
         </p>
-        {!isViewing && effectiveStatus === 'warning' && (
-          <p className="text-[11px] text-[#F9AB00] mt-0.5">건너뜀</p>
-        )}
-        {effectiveStatus === 'active_return' && (
-          <p className="text-[11px] text-[#E65100] mt-0.5">재검토 중</p>
-        )}
         {isHostCurrent && !isHost && !isViewing && (
           <p className="text-[11px] text-[#E65100] mt-0.5 flex items-center gap-1">
             <Crown size={10} weight="fill" className="inline" />
@@ -209,26 +289,44 @@ function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtif
         )}
       </div>
 
-      <div className="flex items-center gap-0.5 flex-shrink-0">
+      <div className="flex items-center gap-1 flex-shrink-0">
         {meta.isGuardrailSource && (
-          <Shield size={16} weight="fill" className="text-[#7B1FA2]" />
+          <Shield size={16} weight="fill" className="text-[#7B1FA2]" aria-label="가드레일 출처" />
         )}
         {meta.isBackwardDesignFirst && (
-          <Star size={16} weight="fill" className="text-[#F9AB00]" />
+          <Star size={16} weight="fill" className="text-[#F9AB00]" aria-label="평가 먼저 설계" />
         )}
-        {/* 방장 현재 위치 표시 */}
         {isHostCurrent && !isHost && (
-          <Crown size={14} weight="fill" className="text-[#F9AB00]" />
+          <Crown size={14} weight="fill" className="text-[#F9AB00]" aria-label="방장 현재 위치" />
         )}
-        {StatusIconComp && (
-          <StatusIconComp size={16} weight="fill" className={statusColor} />
+
+        {/* 상태 뱃지: completed/warning/active_return은 라벨 칩, in_progress는 단일 아이콘 */}
+        {showBadgeChip && badge && (
+          <span
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+            style={{ color: badge.fg, backgroundColor: badge.bg }}
+          >
+            <badge.icon size={12} weight="fill" />
+            <span>{badge.label}</span>
+          </span>
         )}
+        {!showBadgeChip && effectiveStatus === 'in_progress' && !isViewing && (
+          <Clock size={16} weight="fill" className="text-[#1A73E8]" aria-label="진행 중" />
+        )}
+
         {isViewing && (
           <CaretRight size={16} weight="regular" className="text-[#1A73E8]" />
         )}
       </div>
     </button>
   )
+}
+
+// 활동 코드 → 서브그룹 번호 (예: 'T-1-2' → '1', 'Ds-2-1' → '2').
+// STAGES.activities가 flat 배열이라 단계 내부 서브그룹(T-1-x/T-2-x)은 여기서 파싱으로 얻음.
+function getActivityGroup(code: ActivityCode): string {
+  const parts = code.split('-')
+  return parts.length >= 3 ? parts[1] : '1'
 }
 
 function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
@@ -283,7 +381,7 @@ export function ActivitySidebar() {
   }
 
   return (
-    <div className="w-80 flex-shrink-0 flex flex-col overflow-hidden corner-wrap-sidebar"
+    <div className="w-80 h-full flex-shrink-0 flex flex-col overflow-hidden corner-wrap-sidebar"
       style={{ '--cc': color.corner } as React.CSSProperties}>
 
       {/* ─── 단계 아이덴티티 헤더 ────────────────── */}
@@ -322,16 +420,28 @@ export function ActivitySidebar() {
         </div>
       </div>
 
-      {/* 팀이 할 일 */}
-      <div className={cn('mx-3 mt-3 rounded-2xl border px-3.5 py-3', color.light, color.border)}>
-        <p className={cn('text-[11px] font-bold uppercase tracking-wider mb-2 opacity-60', color.text)}>팀이 할 일</p>
-        {guide.teamTasks.map((task, i) => (
-          <div key={i} className="flex items-start gap-2 mb-1.5 last:mb-0">
-            <span className={cn('text-[11px] font-bold mt-0.5 opacity-50 flex-shrink-0', color.text)}>{i + 1}.</span>
-            <p className={cn('text-[12px] leading-snug', color.text, 'opacity-85')}>{task}</p>
+      {/* 팀이 할 일 — v1.1 §7-2 #8: viewingActivity 기준 1~2문장 동적 교체 (단계 고정 → 활동별 힌트 프리픽스) */}
+      {(() => {
+        // 구현: viewing 활동 매핑이 있으면 상단에 prefix로 배치하고 단계 고정 문장에서 중복 제거.
+        // 표현("동적 교체")은 완전 덮어쓰기가 아닌 "활동별 힌트 선두 배치 + 단계 문장 보충"의 머지 방식.
+        const activityTasks = viewingActivity ? ACTIVITY_TASKS[viewingActivity] : undefined
+        const baseTasks = guide.teamTasks
+        const merged = activityTasks
+          ? [...activityTasks, ...baseTasks.filter(t => !activityTasks.includes(t))].slice(0, 3)
+          : baseTasks
+        const sectionLabel = activityTasks ? `${viewingActivity} 활동에서 할 일` : '팀이 할 일'
+        return (
+          <div className={cn('mx-3 mt-3 rounded-2xl border px-3.5 py-3', color.light, color.border)}>
+            <p className={cn('text-[11px] font-bold uppercase tracking-wider mb-2 opacity-60', color.text)}>{sectionLabel}</p>
+            {merged.map((task, i) => (
+              <div key={`${task}-${i}`} className="flex items-start gap-2 mb-1.5 last:mb-0">
+                <span className={cn('text-[11px] font-bold mt-0.5 opacity-50 flex-shrink-0', color.text)}>{i + 1}.</span>
+                <p className={cn('text-[12px] leading-snug', color.text, 'opacity-85')}>{task}</p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )
+      })()}
 
       {/* 팀원 탐색 모드 배너 */}
       {!isHost && viewingActivity !== currentActivity && (
@@ -349,32 +459,100 @@ export function ActivitySidebar() {
         </div>
       )}
 
-      {/* 활동 목록 */}
-      <div className="flex-1 overflow-y-auto px-2 py-3">
+      {/* 활동 목록 — 단계 내부 서브그룹(T-1-x / T-2-x)을 헤더로 구분해 시각 계층 강화 */}
+      <div className="flex-1 min-h-0 overflow-y-scroll panel-scroll px-2 py-3">
         <p className="text-[11px] font-semibold text-[#9AA0A6] uppercase tracking-widest px-2 mb-1.5">활동</p>
         <div className="space-y-0.5">
-          {currentStageInfo.activities.map((code, idx) => (
-            <ActivityItem
-              key={code}
-              code={code}
-              index={idx}
-              isViewing={code === viewingActivity}
-              isHostCurrent={code === currentActivity}
-              isHost={isHost}
-              status={activityStatus[code] ?? 'not_started'}
-              hasArtifact={!!project?.artifacts?.[code]}
-              artifactConfirmed={project?.artifacts?.[code]?.status === 'confirmed'}
-              onClick={() => handleActivityClick(code)}
-            />
-          ))}
+          {currentStageInfo.activities.map((code, idx) => {
+            const group = getActivityGroup(code)
+            const prevCode = idx > 0 ? currentStageInfo.activities[idx - 1] : null
+            const prevGroup = prevCode ? getActivityGroup(prevCode) : null
+            const showGroupHeader = group !== prevGroup && currentStageInfo.activities.some(c => getActivityGroup(c) !== group)
+            // v1.1 §7-2 #10: 직전 활동 → 현재 활동 관계 라벨 (같은 서브그룹 안일 때만 표시 — 그룹 경계에는 그룹 헤더가 대신함)
+            const connectorKey = prevCode ? `${prevCode}→${code}` : ''
+            const connectorLabel = !showGroupHeader && prevCode && CONNECTOR_MAP[connectorKey]
+            return (
+              <div key={code}>
+                {showGroupHeader && (
+                  <div className={cn('flex items-center gap-2 px-2 pt-2 pb-1', idx > 0 && 'mt-1')}>
+                    <span className={cn('text-[10px] font-bold tabular-nums opacity-60', color.text)}>
+                      {currentStage}-{group}
+                    </span>
+                    <span className="flex-1 h-px bg-[#F1F3F4]" aria-hidden="true" />
+                  </div>
+                )}
+                {connectorLabel && (
+                  // h-6 스트립 + 좌측 세로 단계색 라인 + 관계 라벨 (산출물 흐름 시각화)
+                  <div className="flex items-center gap-2 h-6 px-4" aria-hidden="true">
+                    <span className={cn('w-px h-full opacity-40', color.bg)} />
+                    <span className={cn('text-[10px] font-semibold opacity-60', color.text)}>{connectorLabel}</span>
+                  </div>
+                )}
+                <ActivityItem
+                  code={code}
+                  index={idx}
+                  isViewing={code === viewingActivity}
+                  isHostCurrent={code === currentActivity}
+                  isHost={isHost}
+                  status={activityStatus[code] ?? 'not_started'}
+                  hasArtifact={!!project?.artifacts?.[code]}
+                  artifactConfirmed={project?.artifacts?.[code]?.status === 'confirmed'}
+                  stageBg={color.bg}
+                  onClick={() => handleActivityClick(code)}
+                />
+              </div>
+            )
+          })}
         </div>
 
-        {/* 선택된 활동 개념 안내 박스 */}
-        {viewingActivity && ACTIVITY_INFO[viewingActivity] && (
-          <div className="mt-3 mx-1 rounded-2xl border border-[#AECBFA] bg-[#E8F0FE] px-3.5 py-3">
-            <p className="text-[12px] font-bold text-[#1A73E8] mb-1.5">{ACTIVITY_INFO[viewingActivity]!.title}</p>
-            <p className="text-[11px] text-[#3C4043] leading-snug whitespace-pre-line mb-2">{ACTIVITY_INFO[viewingActivity]!.body}</p>
-            <p className="text-[11px] text-[#5F6368] italic leading-snug">{ACTIVITY_INFO[viewingActivity]!.example}</p>
+        {/* 선택된 활동 개념 안내 박스 — v1.1 §7-2 #9: whyNow(왜 지금), warningRecoveryHint(건너뜀 복귀 안내) 추가 */}
+        {viewingActivity && ACTIVITY_INFO[viewingActivity] && (() => {
+          const info = ACTIVITY_INFO[viewingActivity]!
+          const viewingStatus = activityStatus[viewingActivity] ?? 'not_started'
+          const viewingArtifact = project?.artifacts?.[viewingActivity]
+          const viewingEffective: StageStatus = viewingArtifact?.status === 'confirmed'
+            || (viewingStatus === 'warning' && !!viewingArtifact)
+            ? 'completed'
+            : viewingStatus
+          const showWarningHint = viewingEffective === 'warning' && !!info.warningRecoveryHint
+          return (
+            <div className="mt-3 mx-1 rounded-2xl border border-[#AECBFA] bg-[#E8F0FE] px-3.5 py-3">
+              <p className="text-[12px] font-bold text-[#1A73E8] mb-1.5">{info.title}</p>
+              <p className="text-[11px] text-[#3C4043] leading-snug whitespace-pre-line mb-2">{info.body}</p>
+              <p className="text-[11px] text-[#5F6368] italic leading-snug mb-2">{info.example}</p>
+
+              {/* whyNow — 직전 산출물 연결 */}
+              {info.whyNow && (
+                <div className="mt-2 pt-2 border-t border-[#AECBFA]/60 flex items-start gap-1.5">
+                  <span className="text-[10px] font-bold text-[#1A73E8] mt-0.5 flex-shrink-0">왜 지금?</span>
+                  <p className="text-[11px] text-[#3C4043] leading-snug">{info.whyNow}</p>
+                </div>
+              )}
+
+              {/* warningRecoveryHint — 건너뜀 상태에서만 노출 */}
+              {showWarningHint && (
+                <div className="mt-2 rounded-xl bg-[#FEF7E0] border border-[#FADE9A] px-3 py-2 flex items-start gap-1.5">
+                  <Warning size={13} weight="fill" className="text-[#F9AB00] mt-0.5 flex-shrink-0" />
+                  <p className="text-[11px] text-[#8B6914] leading-snug">
+                    <span className="font-bold">복귀 안내:</span> {info.warningRecoveryHint}
+                  </p>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* v1.1 §7-2 #11: 단계 마지막 활동 완료 시 "단계 전환 카드" — 다음 단계 연결 멘트 */}
+        {completedCount === totalCount && totalCount > 0 && STAGE_TRANSITION_MSG[currentStage] && (
+          <div className={cn('mt-3 mx-1 rounded-2xl border-2 px-3.5 py-3', color.border, color.light)}>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className={cn('text-[10px] font-bold uppercase tracking-widest', color.text)}>
+                {STAGE_TRANSITION_MSG[currentStage].nextLabel}
+              </span>
+            </div>
+            <p className={cn('text-[11px] leading-snug', color.text, 'opacity-85')}>
+              {STAGE_TRANSITION_MSG[currentStage].message}
+            </p>
           </div>
         )}
 

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { GNode, GEdge, GraphRelationAnalysis, GraphPinnedStandard, GraphRelationFilter } from './types'
 import {
   RELATION_COLORS, subjectColor, subjectName, normCode, nodeRadius,
@@ -384,8 +385,7 @@ function AgentHintPanel({
       return { node, edge: e }
     })
     .filter(({ node }) => !!node)
-    .sort((a, b) => (b.node?.similarityScore ?? 0) - (a.node?.similarityScore ?? 0))
-    .slice(0, 4) as { node: GNode; edge: GEdge }[]
+    .sort((a, b) => (b.node?.similarityScore ?? 0) - (a.node?.similarityScore ?? 0)) as { node: GNode; edge: GEdge }[]
 
   const connectedSubjectNames = [...new Set(connectedStds.map(({ node }) => subjectName(node.subject_id)))]
   const analyzedConnectedCount = connectedStds.filter(({ node }) => {
@@ -416,33 +416,47 @@ function AgentHintPanel({
   }
   const hint = bestClaudeNote?.teachingNote ?? buildHint(topRelLabel)
 
-  return (
-    <div className="absolute top-3 right-3 z-10 max-w-[280px] pointer-events-none">
-      <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-[#CE93D8] px-3 py-2.5 space-y-2">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[9px] font-bold text-[#7B1FA2] bg-[#F3E5F5] px-1.5 py-0.5 rounded-full">
-            {analyzedConnectedCount > 0 ? 'Agent 추천' : '연결 제안'}
-          </span>
-          {topRelLabel && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: topRelColor }}>{topRelLabel}</span>}
-        </div>
+  const [showModal, setShowModal] = React.useState(false)
 
-        <div className="space-y-1">
-          <div className="flex items-center gap-1">
-            <span className="text-[8px] text-gray-400 shrink-0">중심</span>
-            <span className="font-mono font-bold text-[10px] leading-none" style={{ color: subjectColor(centerNode.subject_id) }}>{centerNode.label}</span>
-            <span className="text-[8px] text-gray-400">({subjectName(centerNode.subject_id)})</span>
+  // 각 연결 노드의 상세 정보를 재사용하기 위해 미리 계산
+  const stdDetails = connectedStds.map(({ node }) => {
+    const ck = [centerNodeId, node.id].sort().join('||')
+    const cr = claudeRelations.get(ck)
+    const crColor = cr ? RELATION_COLORS[cr.relationType] : topRelColor
+    const explanation = hasCompletedRelationAnalysis(cr)
+      ? (cr.explanation?.trim() || buildFallbackRelationExplanation(centerNode, node, cr.relationType))
+      : ''
+    const ideas = cr?.ideas && cr.ideas.length > 0 ? cr.ideas : undefined
+    const teachingNote = cr?.teachingNote
+    const relationStatus = getRelationStatusMeta(getRelationDisplayState(cr))
+    return { node, cr, crColor, explanation, ideas, teachingNote, relationStatus }
+  })
+
+  return (
+    <>
+      {/* 미니 카드 (클릭 시 모달 열기) */}
+      <div className="absolute top-3 right-3 z-10 max-w-[280px] pointer-events-auto">
+        <button
+          onClick={() => setShowModal(true)}
+          className="w-full text-left bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-[#CE93D8] px-3 py-2.5 space-y-2 hover:border-[#7B1FA2] hover:shadow-xl transition-all cursor-pointer group"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-bold text-[#7B1FA2] bg-[#F3E5F5] px-1.5 py-0.5 rounded-full">
+              {analyzedConnectedCount > 0 ? 'Agent 추천' : '연결 제안'}
+            </span>
+            {topRelLabel && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: topRelColor }}>{topRelLabel}</span>}
+            <span className="ml-auto text-[8px] text-gray-300 group-hover:text-[#7B1FA2] transition-colors">클릭하여 상세 보기 →</span>
           </div>
-          {connectedStds.length > 0 && (
-            <div className="pl-3 border-l-2 border-dashed space-y-1" style={{ borderColor: topRelColor }}>
-              {connectedStds.map(({ node }) => {
-                const ck = [centerNodeId, node.id].sort().join('||')
-                const cr = claudeRelations.get(ck)
-                const crColor = cr ? RELATION_COLORS[cr.relationType] : topRelColor
-                const explanation = hasCompletedRelationAnalysis(cr)
-                  ? (cr.explanation?.trim() || buildFallbackRelationExplanation(centerNode, node, cr.relationType))
-                  : ''
-                const relationStatus = getRelationStatusMeta(getRelationDisplayState(cr))
-                return (
+
+          <div className="space-y-1">
+            <div className="flex items-center gap-1">
+              <span className="text-[8px] text-gray-400 shrink-0">중심</span>
+              <span className="font-mono font-bold text-[10px] leading-none" style={{ color: subjectColor(centerNode.subject_id) }}>{centerNode.label}</span>
+              <span className="text-[8px] text-gray-400">({subjectName(centerNode.subject_id)})</span>
+            </div>
+            {stdDetails.length > 0 && (
+              <div className="pl-3 border-l-2 border-dashed space-y-1" style={{ borderColor: topRelColor }}>
+                {stdDetails.slice(0, 4).map(({ node, cr, crColor, explanation, relationStatus }) => (
                   <div key={node.id}>
                     <div className="flex items-center gap-1">
                       <span className="font-mono font-semibold text-[9px] leading-none" style={{ color: subjectColor(node.subject_id) }}>{node.label}</span>
@@ -453,18 +467,105 @@ function AgentHintPanel({
                     </div>
                     {explanation && <p className="text-[7px] text-gray-400 leading-snug mt-0.5 line-clamp-1">{explanation}</p>}
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-        <div className="border-t border-[#F3E5F5] pt-1.5">
-          {analyzedConnectedCount === 0 && <span className="text-[7px] text-gray-400 mb-0.5 block">교과 역할 기반 추정 관계입니다. AI 분석 후 구체화됩니다.</span>}
-          {bestClaudeNote?.source === 'claude' && <span className="text-[7px] font-bold text-[#7B1FA2] mb-0.5 block">Agent 수업 제안</span>}
-          <p className="text-[8px] text-gray-600 leading-[1.5]">{hint}</p>
-        </div>
+          <div className="border-t border-[#F3E5F5] pt-1.5">
+            {analyzedConnectedCount === 0 && <span className="text-[7px] text-gray-400 mb-0.5 block">교과 역할 기반 추정 관계입니다. AI 분석 후 구체화됩니다.</span>}
+            {bestClaudeNote?.source === 'claude' && <span className="text-[7px] font-bold text-[#7B1FA2] mb-0.5 block">Agent 수업 제안</span>}
+            <p className="text-[8px] text-gray-600 leading-[1.5] line-clamp-2">{hint}</p>
+          </div>
+        </button>
       </div>
-    </div>
+
+      {/* 전체 모달 */}
+      {showModal && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50"
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden"
+            style={{ maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="px-6 py-4 bg-gradient-to-r from-[#7B1FA2] to-[#9C27B0] flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-sm font-bold text-white">{analyzedConnectedCount > 0 ? 'Agent 추천 상세' : '연결 제안 상세'}</span>
+                  {topRelLabel && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">{topRelLabel}</span>}
+                </div>
+                <div className="flex items-center gap-1.5 text-white/70 text-xs">
+                  <span>중심:</span>
+                  <span className="font-mono font-bold text-white">{centerNode.label}</span>
+                  <span>({subjectName(centerNode.subject_id)})</span>
+                  <span>· 연결 {stdDetails.length}개</span>
+                </div>
+              </div>
+              <button className="text-white/60 hover:text-white text-2xl leading-none" onClick={() => setShowModal(false)}>×</button>
+            </div>
+
+            {/* 본문 스크롤 */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* 전체 수업 제안 */}
+              <div className="rounded-xl bg-[#F3E5F5]/60 border border-[#CE93D8]/50 px-4 py-3">
+                <p className="text-xs font-bold text-[#7B1FA2] mb-1.5">{bestClaudeNote?.source === 'claude' ? 'Agent 수업 제안' : '융합 수업 방향'}</p>
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{hint}</p>
+              </div>
+
+              {/* 개별 연결 카드 */}
+              {stdDetails.map(({ node, cr, crColor, explanation, ideas, teachingNote, relationStatus }) => (
+                <div key={node.id} className="rounded-xl border p-4" style={{ borderColor: subjectColor(node.subject_id) + '40', background: subjectColor(node.subject_id) + '06' }}>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="font-mono font-bold text-sm" style={{ color: subjectColor(node.subject_id) }}>{node.label}</span>
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: subjectColor(node.subject_id) + '20', color: subjectColor(node.subject_id) }}>{subjectName(node.subject_id)}</span>
+                    {cr && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ color: crColor, background: (crColor ?? '#999') + '18' }}>{cr.relationType}</span>}
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${relationStatus.className}`}>{relationStatus.label}</span>
+                    {node.similarityScore !== undefined && <span className="text-[10px] text-gray-400 ml-auto">{Math.round(node.similarityScore * 100)}%</span>}
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed mb-3">{node.text}</p>
+
+                  {/* 수업 아이디어 */}
+                  {ideas && ideas.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-[10px] font-semibold text-[#7B1FA2] mb-1.5 uppercase tracking-wide">수업 아이디어</p>
+                      <ul className="space-y-1.5 list-none">
+                        {ideas.map((idea, i) => (
+                          <li key={i} className="flex gap-2 text-sm">
+                            <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: i === 0 ? '#9E9E9E' : '#7B1FA2' }}>
+                              {i === 0 ? '보' : '창'}
+                            </span>
+                            <span className="flex-1 text-gray-700 leading-relaxed">{idea}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* 수업 제안 */}
+                  {teachingNote && (
+                    <div className="border-t pt-2" style={{ borderColor: subjectColor(node.subject_id) + '30' }}>
+                      <p className="text-[10px] font-semibold text-[#7B1FA2] mb-1 uppercase tracking-wide">수업 제안 · 융합 구조</p>
+                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{teachingNote}</p>
+                    </div>
+                  )}
+
+                  {/* 관계 근거 */}
+                  {explanation && (
+                    <div className="mt-2 pt-1.5 border-t border-gray-100">
+                      <p className="text-[9px] text-gray-400 leading-relaxed">{explanation}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   )
 }

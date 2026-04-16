@@ -48,7 +48,8 @@ export function StageMoveModal() {
   const [submitting, setSubmitting] = useState(false)
   const [showAnalysis, setShowAnalysis] = useState(false)
 
-  if (!project || !pendingStageMove) return null
+  const isHost = project?.hostUid === auth.currentUser?.uid
+  if (!project || !pendingStageMove || !isHost) return null
 
   const fromStage = project.currentStage
   const toStage = pendingStageMove

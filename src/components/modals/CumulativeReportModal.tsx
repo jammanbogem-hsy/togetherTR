@@ -313,10 +313,10 @@ export function CumulativeReportModal({ onClose }: Props) {
   ul li::before { content: "●"; position: absolute; left: 0; color: #E65100; font-size: 7pt; top: 4px; }
   li.checkbox { list-style: none; padding-left: 0; }
   li.checkbox::before { display: none; }
-  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9pt; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9pt; table-layout: auto; }
   thead { background: #E65100; color: white; }
-  th { padding: 7px 10px; text-align: left; font-weight: 700; white-space: nowrap; }
-  td { padding: 6px 10px; border-top: 1px solid #EEEEEE; vertical-align: top; }
+  th { padding: 7px 10px; text-align: left; font-weight: 700; word-break: keep-all; overflow-wrap: anywhere; vertical-align: top; }
+  td { padding: 6px 10px; border-top: 1px solid #EEEEEE; vertical-align: top; word-break: keep-all; overflow-wrap: anywhere; }
   tbody tr:nth-child(even) td { background: #FFF8F5; }
   hr { border: none; border-top: 1.5px solid #F1F3F4; margin: 18px 0; }
   strong { font-weight: 800; }
@@ -586,31 +586,32 @@ ${html}
                       </li>
                     ),
                     table: ({ children }) => (
-                      <div style={{ margin: '1.2rem 0', borderRadius: '12px', overflowX: 'auto', border: '1.5px solid #DADCE0', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                        <table style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>{children}</table>
+                      <div style={{ margin: '1.2rem 0', borderRadius: '12px', border: '1.5px solid #DADCE0', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', tableLayout: 'auto' }}>{children}</table>
                       </div>
                     ),
                     thead: ({ children }) => (
                       <thead style={{ background: 'linear-gradient(90deg, #E65100, #BF360C)', color: 'white' }}>{children}</thead>
                     ),
                     th: ({ children }) => (
-                      <th style={{ padding: '0.7rem 1.1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', whiteSpace: 'nowrap' }}>{children}</th>
+                      <th style={{ padding: '0.7rem 1.1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', wordBreak: 'keep-all', overflowWrap: 'anywhere', verticalAlign: 'top' }}>{children}</th>
                     ),
                     tr: ({ children, ...props }) => (
                       <tr style={(props as { style?: React.CSSProperties }).style}>{children}</tr>
                     ),
                     td: ({ children }) => {
+                      const baseStyle: React.CSSProperties = { padding: '0.65rem 1.1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6, wordBreak: 'keep-all', overflowWrap: 'anywhere' }
                       const text = typeof children === 'string' ? children : null
                       if (text && text.includes('\u2028')) {
                         return (
-                          <td style={{ padding: '0.65rem 1.1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6 }}>
+                          <td style={baseStyle}>
                             {text.split('\u2028').filter(Boolean).map((line, i) => (
                               <span key={i} style={{ display: 'block' }}>{line}</span>
                             ))}
                           </td>
                         )
                       }
-                      return <td style={{ padding: '0.65rem 1.1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6 }}>{children}</td>
+                      return <td style={baseStyle}>{children}</td>
                     },
                     hr: () => (
                       <hr style={{ border: 'none', borderTop: '1.5px solid #F1F3F4', margin: '2rem 0' }} />

@@ -208,13 +208,14 @@ export default function KnowledgeGraphViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerNodeId])
 
-  // ── 팝업 열릴 때 단건 분석 ──────────────────────────────────────────
+  // ── 팝업 열릴 때 단건 분석 (팀장만 — 팀원은 저장된 분석만 열람) ──────
   useEffect(() => {
+    if (!isLeader) return
     if (!popup || !centerNodeId) return
     if (popup.id === centerNodeId) return
     analyzePopupNode(popup.id, centerNodeId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [popup?.id, centerNodeId])
+  }, [popup?.id, centerNodeId, isLeader])
 
   // ── 저장 데이터 복원: 노드 로드 + 관계 복원 ──────────────────────────────
   // savedData가 있고 chatMentionedCodes가 비어있으면 (헤더 버튼으로 열었을 때) 저장된 노드를 로드
@@ -322,6 +323,7 @@ export default function KnowledgeGraphViewer({
           relationType: normalizeGraphRelationType(conn.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE,
           score: conn.relationScore ?? 0.5,
           explanation: conn.explanation ?? '',
+          ideas: conn.ideas,
           teachingNote: conn.teachingNote,
           source: 'claude',
         })
@@ -593,7 +595,8 @@ export default function KnowledgeGraphViewer({
       .map(([key, rel]) => {
         const [a, b] = key.split('||')
         const nodeId = a === centerNodeId ? b : a
-        const note: { standardId: string; explanation: string; teachingNote?: string } = { standardId: nodeId, explanation: rel.explanation }
+        const note: { standardId: string; explanation: string; ideas?: string[]; teachingNote?: string } = { standardId: nodeId, explanation: rel.explanation }
+        if (rel.ideas && rel.ideas.length > 0) note.ideas = rel.ideas
         if (rel.teachingNote) note.teachingNote = rel.teachingNote
         return note
       })
@@ -669,8 +672,8 @@ export default function KnowledgeGraphViewer({
           )}
         </div>
 
-        {/* 분석 확인 배너 */}
-        {showAnalysisBanner && centerNodeId && !claudeLoading && (
+        {/* 분석 확인 배너 — 팀장만 분석 가능 */}
+        {showAnalysisBanner && centerNodeId && !claudeLoading && isLeader && (
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
             <div className="flex items-center gap-2.5 bg-white border border-[#CE93D8] rounded-2xl shadow-xl px-4 py-2.5">
               <span className="text-[#7B1FA2] text-sm">✦</span>
@@ -681,8 +684,8 @@ export default function KnowledgeGraphViewer({
           </div>
         )}
 
-        {/* 재분석 버튼 (노드 추가/삭제 후) */}
-        {nodesChangedAfterAnalysis && centerNodeId && !claudeLoading && !showAnalysisBanner && (
+        {/* 재분석 버튼 (노드 추가/삭제 후) — 팀장만 */}
+        {nodesChangedAfterAnalysis && centerNodeId && !claudeLoading && !showAnalysisBanner && isLeader && (
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
             <button onClick={() => runAnalysis(centerNodeId)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#CE93D8] rounded-2xl shadow-lg text-[#7B1FA2] text-[11px] font-semibold hover:bg-[#F3E5F5] transition-colors whitespace-nowrap">
               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -800,6 +803,14 @@ export default function KnowledgeGraphViewer({
             claudeLoading={claudeLoading}
             popupAnalysisLoading={popupAnalysisLoading}
             onClose={() => setPopup(null)}
+            onReanalyze={isLeader ? (popupId, cId) => {
+              setClaudeRelations(prev => {
+                const next = new Map(prev)
+                next.delete([cId, popupId].sort().join('||'))
+                return next
+              })
+              analyzePopupNode(popupId, cId, true)
+            } : undefined}
           />
         )}
       </div>

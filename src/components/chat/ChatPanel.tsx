@@ -13,6 +13,11 @@ import { TeamDiscussionProposal } from './TeamDiscussionProposal'
 import { HelpCard } from './HelpCard'
 import { ArtifactSaveProposal } from './ArtifactSaveProposal'
 import { ActionCard as ActionCardComponent } from './ActionCard'
+import { ChatFontScaleControl, useChatFontScale } from '@/components/accessibility/FontScaleControl'
+import { StandardsFinderModal } from './StandardsFinderModal'
+import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
+import { addKeyNote } from '@/lib/firebase/projects'
+import type { KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -402,7 +407,9 @@ function childrenToText(children: React.ReactNode): string {
 function MarkdownContent({ text, dark = false, standardTextMap }: { text: string; dark?: boolean; standardTextMap?: Record<string, string> }) {
   // AI가 <br> 태그를 생성하는 경우 줄바꿈으로 치환
   // AI가 첫 줄에 [탐색] [팀+AI] 같은 활동유형/행위주체 태그를 출력하는 경우 제거
+  // 표 셀 안의 <br/>은 ', '로, 표 밖은 줄바꿈으로
   const sanitized = text
+    .replace(/(\|[^|\n]*)<br\s*\/?>/gi, '$1, ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/^(\s*\[[^\]\n]{1,20}\]\s*){1,4}\n/u, '')
     // CommonMark 한계: **'text'**한국어 패턴에서 ' 뒤 ** 가 닫힘 기호로 인식 안 됨
@@ -486,10 +493,10 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
             {children}
           </code>
         ),
-        // 테이블 렌더링
+        // 테이블 렌더링 — 내부 셀은 자연스럽게 wrap, 정말 넓을 때만 overflow-x 스크롤 (말풍선 밖으로 흐르지 않도록)
         table: ({ children }) => (
-          <div className="my-2 overflow-x-auto rounded-xl border border-[#DADCE0]">
-            <table className="min-w-max w-full text-sm border-collapse">{children}</table>
+          <div className="my-2 overflow-x-auto rounded-xl border border-[#DADCE0] max-w-full">
+            <table className="w-full text-sm border-collapse table-auto">{children}</table>
           </div>
         ),
         thead: ({ children }) => (
@@ -498,25 +505,33 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
         tbody: ({ children }) => <tbody className="divide-y divide-[#F1F3F4]">{children}</tbody>,
         tr: ({ children }) => <tr className="hover:bg-[#F8F9FA]/50 transition-colors">{children}</tr>,
         th: ({ children }) => (
-          <th className="px-3 py-2.5 text-left text-xs font-bold text-[#5F6368] uppercase tracking-wider whitespace-nowrap border-b border-[#DADCE0]">
+          <th className="px-3 py-2.5 text-left text-xs font-bold text-[#5F6368] uppercase tracking-wider border-b border-[#DADCE0] align-top">
             {children}
           </th>
         ),
         td: ({ children }) => {
+          // 셀은 기본적으로 wrap (break-words + word-break: keep-all로 한국어 자연 줄바꿈)
+          // [성취기준 코드]만 whitespace-nowrap — 코드는 중간에 끊기면 안 되므로 코드 감지 시에도 셀 자체는 wrap
           if (standardTextMap) {
             const cellText = childrenToText(children)
             const codeMatch = /\[(\d[가-힣]{1,4}\d{2}-\d{2})\]/.exec(cellText)
             const tooltipText = codeMatch ? standardTextMap[codeMatch[1]] : undefined
             if (tooltipText) {
               return (
-                <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed whitespace-nowrap cursor-help"
+                <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed break-words cursor-help align-top"
+                    style={{ wordBreak: 'keep-all', overflowWrap: 'anywhere' }}
                     title={tooltipText}>
                   {children}
                 </td>
               )
             }
           }
-          return <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed whitespace-nowrap">{children}</td>
+          return (
+            <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed break-words align-top"
+                style={{ wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
+              {children}
+            </td>
+          )
         },
       }}
     >
@@ -651,6 +666,73 @@ function extractA21TableForSave(text: string): { title: string; sections: Record
     title: '핵심아이디어 및 성취기준 분석표',
     sections: { '성취기준분석표': fullContent },
   }
+}
+
+// ─── ARTIFACT_UPDATE 값 보강 ─────────────────────────
+// AI가 [ARTIFACT_UPDATE: 섹션=모든 수정 및 보완된 내용 포함] 처럼 요약 플레이스홀더를 쓰는 경우,
+// 최근 assistant 메시지에서 실제 콘텐츠(표·리스트·프로필 등)를 추출하여 대체한다.
+function isPlaceholderValue(value: string, recentMessages: Array<{ role: string; content: string }>): boolean {
+  if (value.length > 200) return false
+  // 100자 이하이면서 최근 채팅에 더 풍부한 콘텐츠가 있으면 플레이스홀더로 간주
+  if (value.length <= 100) {
+    const hasRichChat = recentMessages
+      .filter(m => m.role === 'assistant')
+      .slice(-5)
+      .some(m => m.content.length > value.length * 3)
+    if (hasRichChat) return true
+  }
+  return false
+}
+
+function extractSubstantiveContent(recentMessages: Array<{ role: string; content: string }>): string | null {
+  // 최근 assistant 메시지에서 표·리스트가 있는 가장 긴 콘텐츠 블록을 찾는다
+  const assistantMsgs = recentMessages
+    .filter(m => m.role === 'assistant')
+    .slice(-5)
+    .reverse()
+
+  for (const msg of assistantMsgs) {
+    const content = msg.content
+      .replace(/\[ARTIFACT_UPDATE[^\]]*\]/g, '')
+      .replace(/\[ARTIFACT_CONFIRM[^\]]*\]/g, '')
+      .replace(/\[ACTION_CARD:[^\]]*\]/g, '')
+      .trim()
+    // 표가 있는 메시지 우선
+    if (content.includes('|') && content.split('\n').filter(l => l.trim().startsWith('|')).length >= 3) {
+      return content
+    }
+    // 마크다운 리스트가 풍부한 메시지
+    const listLines = content.split('\n').filter(l => /^\s*[-•*]\s/.test(l) || /^\s*\d+\.\s/.test(l))
+    if (listLines.length >= 3 && content.length >= 100) {
+      return content
+    }
+  }
+  // 가장 긴 assistant 메시지 (100자 이상)
+  const longest = assistantMsgs.sort((a, b) => b.content.length - a.content.length)[0]
+  if (longest && longest.content.length >= 100) {
+    return longest.content
+      .replace(/\[ARTIFACT_UPDATE[^\]]*\]/g, '')
+      .replace(/\[ARTIFACT_CONFIRM[^\]]*\]/g, '')
+      .replace(/\[ACTION_CARD:[^\]]*\]/g, '')
+      .trim()
+  }
+  return null
+}
+
+function enrichArtifactSections(
+  sections: Record<string, string>,
+  recentMessages: Array<{ role: string; content: string }>,
+): Record<string, string> {
+  const enriched = { ...sections }
+  for (const [key, value] of Object.entries(enriched)) {
+    if (isPlaceholderValue(value, recentMessages)) {
+      const realContent = extractSubstantiveContent(recentMessages)
+      if (realContent) {
+        enriched[key] = realContent
+      }
+    }
+  }
+  return enriched
 }
 
 // ─── ARTIFACT_CONFIRM 파싱 ───────────────────────────
@@ -792,70 +874,15 @@ function ActivityTag({ type }: { type: ActivityType }) {
   )
 }
 
-// ─── 공통 컨텍스트 메뉴 래퍼 ────────────────────────
-function ContextMenuWrapper({ children, onReply, className }: {
+// ─── 공통 컨텍스트 메뉴 래퍼 (passthrough — 실제 컨텍스트 메뉴는 상위 Level(3101)에서 통합 처리) ──
+// 과거에는 여기서 "답글만" 메뉴를 띄웠으나, 현재는 MessageBubble 바깥 래퍼가
+// 답장/중요저장/복사 통합 메뉴를 제공하므로 이중 메뉴 충돌을 막기 위해 passthrough로 유지.
+function ContextMenuWrapper({ children, className }: {
   children: React.ReactNode
-  onReply?: () => void
+  onReply?: () => void     // 시그니처 호환성만 유지 (미사용)
   className?: string
 }) {
-  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null)
-
-  function openMenu(clientX: number, clientY: number) {
-    const x = Math.min(clientX, window.innerWidth - 148)
-    const y = Math.min(clientY, window.innerHeight - 60)
-    setMenuPos({ x, y })
-  }
-  function handleContextMenu(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    openMenu(e.clientX, e.clientY)
-  }
-  function handleTouchStart(e: React.TouchEvent) {
-    const touch = e.touches[0]
-    longPressTimer.current = setTimeout(() => openMenu(touch.clientX, touch.clientY), 500)
-  }
-  function handleTouchEnd() {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
-  }
-
-  return (
-    <>
-      <div
-        className={className}
-        onContextMenu={handleContextMenu}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchMove={handleTouchEnd}
-      >
-        {children}
-      </div>
-      {menuPos && typeof document !== 'undefined' && createPortal(
-        <>
-          <div
-            className="fixed inset-0"
-            style={{ zIndex: 9998 }}
-            onClick={() => setMenuPos(null)}
-            onContextMenu={(e) => { e.preventDefault(); setMenuPos(null) }}
-          />
-          <div
-            className="fixed bg-white rounded-2xl shadow-lg border border-[#DADCE0] overflow-hidden"
-            style={{ left: menuPos.x, top: menuPos.y, zIndex: 9999, minWidth: 140 }}
-          >
-            <button
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-[#3C4043] hover:bg-[#F1F3F4] active:bg-[#E8EAED] transition-colors"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onReply?.(); setMenuPos(null) }}
-            >
-              <ArrowBendUpLeft size={16} weight="regular" className="text-[#5F6368]" />
-              <span>답글</span>
-            </button>
-          </div>
-        </>,
-        document.body
-      )}
-    </>
-  )
+  return <div className={className}>{children}</div>
 }
 
 // ─── 메시지 버블 ──────────────────────────────────────
@@ -894,7 +921,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
         {isUser ? (senderName?.slice(0, 1) ?? '?') : 'AI'}
       </div>
 
-      <div className={cn('max-w-[72%] space-y-0.5', alignRight ? 'items-end' : 'items-start', 'flex flex-col')}>
+      <div className={cn('max-w-[72%] min-w-0 space-y-0.5', alignRight ? 'items-end' : 'items-start', 'flex flex-col')}>
         {isUser && !isSelf && senderName && (
           <span className="text-xs font-bold px-1 text-gray-700">{senderName}</span>
         )}
@@ -1025,30 +1052,42 @@ function AIIdleBubble() {
 }
 
 // ─── 슬래시 커맨드 정의 ──────────────────────────────
+// hostOnly=true 인 항목은 호스트(방장)에게만 노출. 팀원은 /브리핑만 보게 됨.
 const SLASH_COMMANDS = [
   {
     id: 'team-chat',
     label: '팀 채팅',
     desc: 'AI 없이 팀원끼리 자유 토의 시작',
     keywords: ['팀채팅', '팀', 'team', 'chat', '토의', '토론'],
+    hostOnly: true,
   },
   {
     id: 'artifact',
     label: '산출물 저장',
     desc: '선택한 메시지 또는 현재 대화를 바로 산출물 저장 흐름으로 실행',
     keywords: ['산출물', '저장', 'artifact', 'save'],
+    hostOnly: true,
+  },
+  {
+    id: 'standards',
+    label: '성취기준 찾기',
+    desc: '교과·학년군으로 필터해 성취기준을 검색·선택 후 채팅에 인용',
+    keywords: ['성취기준', '성취', '기준', 'standards', '교과', '학년'],
+    hostOnly: false,   // 팀원도 참고용으로 조회·공유 가능
   },
   {
     id: 'briefing',
     label: '이전 단계 브리핑',
     desc: '지금까지 확정된 모든 활동 결과 요약을 즉시 요청',
     keywords: ['브리핑', '요약', 'briefing', '이전', '결과'],
+    hostOnly: false,
   },
   {
     id: 'next',
     label: '다음 단계로',
     desc: '저장·확정 후 이동할지 확인 창을 바로 띄움',
     keywords: ['다음', '전진', 'next', '이동', '진행'],
+    hostOnly: true,
   },
 ] as const
 
@@ -1056,9 +1095,10 @@ type SlashCommandId = typeof SLASH_COMMANDS[number]['id']
 
 // ─── 메인 ChatPanel ───────────────────────────────────
 export function ChatPanel() {
+  const chatFontScale = useChatFontScale()
   const {
     project, messages, streamingText, messagesLoaded,
-    currentActivity, setCurrentActivity, appendStreamingText, clearStreamingText, addMessage,
+    currentActivity, setCurrentActivity, appendStreamingText, clearStreamingText, addMessage, replaceMessage,
     discussionMode, setDiscussionMode,
     pendingTeamDiscussion, setPendingTeamDiscussion,
     teamDiscussionStartIdx, setTeamDiscussionStartIdx,
@@ -1067,14 +1107,36 @@ export function ChatPanel() {
     setViewingActivity,
     userProfile,
     setPendingStageMove,
+    chatInputRequest, setChatInputRequest,
   } = useProjectStore()
 
   const [input, setInput] = useState('')
+
+  // 외부(ArtifactPanel 등)에서 "이 문구 채팅에 채워 주세요" 요청하면 수신·소비
+  useEffect(() => {
+    if (chatInputRequest) {
+      setInput(chatInputRequest)
+      setChatInputRequest(null)
+      // 입력창에 포커스
+      setTimeout(() => {
+        const el = document.querySelector('textarea[data-chat-input]') as HTMLTextAreaElement | null
+        el?.focus()
+        if (el) { el.selectionStart = el.value.length; el.selectionEnd = el.value.length }
+      }, 30)
+    }
+  }, [chatInputRequest, setChatInputRequest])
   const [isLoading, setIsLoading] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isIdle, setIsIdle] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
   const [showDiscussionConfirm, setShowDiscussionConfirm] = useState(false)
+  const [showStandardsBrowser, setShowStandardsBrowser] = useState(false)
+  const [showKeyNotes, setShowKeyNotes] = useState(false)
+  // 우클릭 컨텍스트 메뉴 상태
+  const [ctxMenu, setCtxMenu] = useState<null | {
+    x: number; y: number
+    message: { id: string; content: string; role: 'user' | 'assistant'; senderName?: string; activityCode?: string }
+  }>(null)
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null)
   const [replyTo, setReplyTo] = useState<{ id: string; content: string; senderName?: string } | null>(null)
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
@@ -1200,7 +1262,13 @@ export function ChatPanel() {
   }, [currentActivity])
 
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
-  function applyArtifactUpdates(sections: Record<string, string>, actCode?: ActivityCode) {
+  // latestText: 현재 턴의 assistant 응답 원문 (Zustand에 아직 반영 안 됐을 수 있어 직접 전달)
+  function applyArtifactUpdates(rawSections: Record<string, string>, actCode?: ActivityCode, latestText?: string) {
+    // AI가 요약 플레이스홀더를 넣은 경우 최근 채팅에서 실제 콘텐츠를 추출
+    const contextMsgs = latestText
+      ? [...messages, { role: 'assistant' as const, content: latestText }]
+      : messages
+    const sections = enrichArtifactSections(rawSections, contextMsgs)
     if (Object.keys(sections).length === 0) return
 
     // 협업 모드에서 팀원 → 방장에게 저장 제안으로 전달 (직접 저장 금지)
@@ -1345,7 +1413,24 @@ export function ChatPanel() {
     onChunk: (text: string) => void,
     onDone: (fullText: string) => void,
   ) {
-    const response = await fetch('/api/chat/stream', {
+    // 스마트 "청크 간 공백" 타임아웃 — 60초 동안 새 청크가 오지 않으면 abort.
+    // 정상적으로 길게 생성되는 응답(여러 분)은 청크 도착마다 타이머 리셋 → 끊기지 않음.
+    const INACTIVITY_MS = 60_000
+    const controller = new AbortController()
+    let inactivityTimer: ReturnType<typeof setTimeout> | null = null
+    const armTimer = () => {
+      if (inactivityTimer) clearTimeout(inactivityTimer)
+      inactivityTimer = setTimeout(() => { controller.abort() }, INACTIVITY_MS)
+    }
+    const disarmTimer = () => {
+      if (inactivityTimer) { clearTimeout(inactivityTimer); inactivityTimer = null }
+    }
+
+    armTimer()
+    let response: Response
+    try {
+      response = await fetch('/api/chat/stream', {
+        signal: controller.signal,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1398,11 +1483,23 @@ export function ChatPanel() {
         teamMembers: teamMembersList,
         // 현재 활동 상태 (active_return이면 AI가 확정 산출물도 수정 가능)
         activityStatus: proj.activityStatuses?.[currentActivity] ?? undefined,
+        // 중요 노트 — 팀이 채팅에서 저장한 활동 경계 초월 맥락.
+        // 이전 활동 비공식 대화의 핵심 발언이 여기 담김 (확정 산출물과 별도).
+        keyNotes: proj.keyNotes ?? undefined,
         // A-2-1 및 Ds 단계: 지식 그래프 저장 데이터 전달 (설계 단계에서도 성취기준 구조 참조)
         graphSavedData: (currentActivity === 'A-2-1' || activityMeta.stage === 'Ds') ? (proj.graphSavedData ?? null) : undefined,
       }),
     })
+    } catch (err) {
+      disarmTimer()
+      if (controller.signal.aborted) {
+        throw new Error('AI 응답이 시작되지 않아 연결을 종료했습니다. 재시도 버튼을 눌러주세요.')
+      }
+      throw err
+    }
+
     if (!response.ok) {
+      disarmTimer()
       const errBody = await response.json().catch(() => ({ error: 'unknown' }))
       throw new Error(`Stream request failed: ${errBody?.error ?? response.status}`)
     }
@@ -1414,30 +1511,48 @@ export function ChatPanel() {
     // SSE 'error' 신호 도달 시 부분 누적 폐기 + 호출자 catch로 throw
     let serverError: string | null = null
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      const lines = buf.split('\n')
-      buf = lines.pop() ?? ''
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        let data: { type?: string; text?: string; message?: string }
-        try {
-          data = JSON.parse(line.slice(6))
-        } catch {
-          continue  // 잘못된 SSE 라인 무시
+    try {
+      while (true) {
+        armTimer() // 매 read()마다 타이머 리셋 — 청크 1개만 와도 타임아웃 갱신
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          let data: { type?: string; text?: string; message?: string }
+          try {
+            data = JSON.parse(line.slice(6))
+          } catch {
+            continue  // 잘못된 SSE 라인 무시
+          }
+          if (data.type === 'text') { fullText += data.text ?? ''; onChunk(data.text ?? '') }
+          else if (data.type === 'done') { disarmTimer(); onDone(fullText); return }
+          else if (data.type === 'error') {
+            // 서버 측 OpenAI 호출 실패 등 — 부분 누적은 폐기하고 호출자에게 위임
+            serverError = data.message ?? 'AI 응답 중 오류가 발생했습니다.'
+            break
+          }
         }
-        if (data.type === 'text') { fullText += data.text ?? ''; onChunk(data.text ?? '') }
-        else if (data.type === 'done') { onDone(fullText); return }
-        else if (data.type === 'error') {
-          // 서버 측 OpenAI 호출 실패 등 — 부분 누적은 폐기하고 호출자에게 위임
-          serverError = data.message ?? 'AI 응답 중 오류가 발생했습니다.'
-          break
-        }
+        if (serverError) break
       }
-      if (serverError) break
+    } catch (err) {
+      disarmTimer()
+      // 청크 간 공백 타임아웃에 의한 abort
+      if (controller.signal.aborted) {
+        if (fullText.trim().length > 0) {
+          // 부분 응답이 있으면 보존 — assistant 메시지로 커밋 + 꼬리표
+          onDone(fullText + '\n\n_[응답이 중간에 끊겼습니다 — 재시도 버튼으로 이어서 받아주세요]_')
+          return
+        }
+        throw new Error('AI 응답이 60초 이상 멈춰 연결을 종료했습니다. 재시도 버튼을 눌러주세요.')
+      }
+      throw err
+    } finally {
+      disarmTimer()
     }
+
     if (serverError) {
       // 빈 메시지가 Firestore에 저장되지 않도록 onDone 호출하지 않음
       throw new Error(serverError)
@@ -1447,6 +1562,7 @@ export function ChatPanel() {
 
   // ─── 활동 전진 처리 (Firestore 동기화 포함, 크로스 스테이지 지원) ──
   async function handleActivityAdvance(nextCode: string) {
+    if (!isHost) return
     const nextActivity = nextCode as ActivityCode
     const nextMeta = ACTIVITY_META[nextActivity]
     if (!nextMeta) return
@@ -1642,7 +1758,9 @@ export function ChatPanel() {
     const existing = currentArtifact?.activityCode === targetActivity ? currentArtifact : null
     const firestoreContent = (project?.artifacts?.[targetActivity]?.content ?? {}) as Record<string, unknown>
     const baseContent = existing?.aiDraft ?? firestoreContent
-    const merged = { ...baseContent, ...pendingArtifactSave.sections }
+    // 플레이스홀더 보강
+    const enrichedSections = enrichArtifactSections(pendingArtifactSave.sections, messages)
+    const merged = { ...baseContent, ...enrichedSections }
     const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[targetActivity]?.version ?? 0)) + 1
 
     // 우측 패널을 대상 활동으로 먼저 전환
@@ -1974,7 +2092,7 @@ ${discussionSummary}
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
-          upd.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
+          upd.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, finalText))
           if (cCodes.length > 0) applyArtifactConfirm(cCodes)
           // P0-phil2 (Task #30): parseSaveIntent fallback 제거.
           // A안/B안 OptionsMessage가 이미 저장 결정을 묻는 중에 텍스트 패턴 매칭으로
@@ -2144,7 +2262,7 @@ ${discussionSummary}
             .catch((err) => { console.error(err); setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.') })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           const hasSavedInResponse = updates.some(u => Object.keys(u.sections).length > 0)
-          updates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
+          updates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, displayText))
           if (confirmCodes2.length > 0) applyArtifactConfirm(confirmCodes2)
 
           // [ARTIFACT_UPDATE] 없이 저장 처리
@@ -2180,18 +2298,20 @@ ${discussionSummary}
   }
 
   // ─── 슬래시 커맨드 필터링 ──────────────────────────
+  // 팀원(!isHost)은 hostOnly=false 인 커맨드만 사용 가능. 현재는 /브리핑 단 하나.
   const filteredSlashCmds = slashQuery !== null
-    ? SLASH_COMMANDS.filter(cmd =>
-        slashQuery === '' ||
-        cmd.label.includes(slashQuery) ||
-        cmd.keywords.some(k => k.includes(slashQuery))
-      )
+    ? SLASH_COMMANDS.filter(cmd => {
+        if (cmd.hostOnly && !isHost) return false
+        return slashQuery === '' ||
+          cmd.label.includes(slashQuery) ||
+          cmd.keywords.some(k => k.includes(slashQuery))
+      })
     : []
 
   // ─── 슬래시 커맨드 실행 ─────────────────────────────
   async function executeSlashCommand(cmdId: SlashCommandId) {
-    // /command 텍스트 제거
-    const cleanInput = input.replace(/(?:^|\n)\/([\w가-힣]*)$/, '').trim()
+    // 끝에 붙은 `/커맨드` 구문 제거. 앞부분 텍스트·공백은 보존 → 같은 메시지에서 추가 / 입력 가능.
+    const cleanInput = input.replace(/(?:^|\s)\/([\w가-힣]*)$/, '').trimEnd()
     setInput(cleanInput)
     setSlashQuery(null)
 
@@ -2216,6 +2336,8 @@ ${discussionSummary}
       await sendMessageDirectly('지금까지 완료된 모든 활동의 확정 산출물을 브리핑해주세요')
     } else if (cmdId === 'next') {
       handlePromptNextCommand()
+    } else if (cmdId === 'standards') {
+      setShowStandardsBrowser(true)
     }
   }
 
@@ -2299,6 +2421,19 @@ ${discussionSummary}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <ChatFontScaleControl />
+          {/* 중요 노트 버튼 — 저장된 노트 카운트 표시, 클릭 시 모달 */}
+          <button
+            type="button"
+            onClick={() => setShowKeyNotes(true)}
+            title="저장된 중요 노트 보기"
+            aria-label="중요 노트 보기"
+            className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
+              px-2 py-1.5 rounded-full font-semibold hover:bg-[#FDECC4] transition-colors flex-shrink-0 whitespace-nowrap"
+          >
+            <span aria-hidden>📌</span>
+            <span className="tabular-nums">{proj.keyNotes?.length ?? 0}</span>
+          </button>
           {/* 끊긴 대화 재시도 버튼: 마지막 메시지가 user이고 로딩 중이 아닐 때 */}
           {(() => {
             const lastMsg = messages[messages.length - 1]
@@ -2724,71 +2859,79 @@ ${discussionSummary}
                       })
                     }
 
-                    // A-2-1: 표를 로컬에서 직접 생성 → AI 메시지로 직접 주입
-                    try {
-                      const a21Res = await fetch('/api/analyze/a21', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          centerNode: data.centerNode,
-                          selectedStandards: data.selectedStandards,
-                        }),
-                      })
-                      type A21Result = {
-                        coreIdeas?: Array<{ subjectId: string; subjectName: string; selectedIdea: string; justification: string }>
-                        standardAnalyses?: Array<{ standardId: string; standardLabel: string; subjectName: string; isCenterStandard: boolean; coreIdea: string; knowledgeUnderstanding: string[]; processFunction: string[]; valueAttitude: string[]; relationType?: string }>
-                      }
-                      const a21: A21Result = a21Res.ok ? await a21Res.json() : {}
+                    // 즉시 사용자 메시지 + "분석 중…" 로딩 메시지를 먼저 표시
+                    const userTriggerContent = lines.join('\n')
+                    const userTriggerMsgId = generateMessageId(proj.id, currentActivity)
+                    addMessage({ id: userTriggerMsgId, role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName, createdAt: Timestamp.now() })
+                    saveMessage(proj.id, currentActivity, { role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName }, userTriggerMsgId).catch(console.error)
 
-                      if (a21.standardAnalyses && a21.standardAnalyses.length > 0) {
-                        const tableLines: string[] = []
-                        if (a21.coreIdeas && a21.coreIdeas.length > 0) {
-                          tableLines.push('## 성취기준 분석\n')
-                          a21.coreIdeas.forEach(ci => {
-                            const isCenterSubj = ci.subjectId === data.centerNode?.subjectId
-                            tableLines.push(`> ${isCenterSubj ? '★ ' : ''}**[${ci.subjectName}] 핵심아이디어**: ${ci.selectedIdea}`)
+                    const loadingMsgId = generateMessageId(proj.id, currentActivity)
+                    addMessage({ id: loadingMsgId, role: 'assistant', content: '성취기준 분석표를 생성하고 있습니다…', activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now() })
+
+                    // A-2-1: 표를 로컬에서 직접 생성 → AI 메시지로 직접 주입 (비동기)
+                    ;(async () => {
+                      try {
+                        const a21Res = await fetch('/api/analyze/a21', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            centerNode: data.centerNode,
+                            selectedStandards: data.selectedStandards,
+                          }),
+                        })
+                        type A21Result = {
+                          coreIdeas?: Array<{ subjectId: string; subjectName: string; selectedIdea: string; justification: string }>
+                          standardAnalyses?: Array<{ standardId: string; standardLabel: string; subjectName: string; isCenterStandard: boolean; coreIdea: string; knowledgeUnderstanding: string[]; processFunction: string[]; valueAttitude: string[]; relationType?: string }>
+                        }
+                        const a21: A21Result = a21Res.ok ? await a21Res.json() : {}
+
+                        if (a21.standardAnalyses && a21.standardAnalyses.length > 0) {
+                          const tableLines: string[] = []
+                          if (a21.coreIdeas && a21.coreIdeas.length > 0) {
+                            tableLines.push('## 성취기준 분석\n')
+                            a21.coreIdeas.forEach(ci => {
+                              const isCenterSubj = ci.subjectId === data.centerNode?.subjectId
+                              tableLines.push(`> ${isCenterSubj ? '★ ' : ''}**[${ci.subjectName}] 핵심아이디어**: ${ci.selectedIdea}`)
+                            })
+                            tableLines.push('')
+                          }
+                          tableLines.push('| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |')
+                          tableLines.push('|------|:----------:|-----------|---------|---------|---------|:----:|')
+                          a21.standardAnalyses.forEach(sa => {
+                            const centerMark = sa.isCenterStandard ? '★ ' : ''
+                            const bigo = sa.isCenterStandard ? '중심' : (sa.relationType ?? '연계')
+                            tableLines.push(`| ${sa.subjectName} | ${centerMark}[${sa.standardLabel}] | ${sa.coreIdea} | ${sa.knowledgeUnderstanding.join(', ')} | ${sa.processFunction.join(', ')} | ${sa.valueAttitude.join(', ')} | ${bigo} |`)
                           })
                           tableLines.push('')
-                        }
-                        tableLines.push('| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |')
-                        tableLines.push('|------|:----------:|-----------|---------|---------|---------|:----:|')
-                        a21.standardAnalyses.forEach(sa => {
-                          const centerMark = sa.isCenterStandard ? '★ ' : ''
-                          const bigo = sa.isCenterStandard ? '중심' : (sa.relationType ?? '연계')
-                          tableLines.push(`| ${sa.subjectName} | ${centerMark}[${sa.standardLabel}] | ${sa.coreIdea} | ${sa.knowledgeUnderstanding.join('<br/>')} | ${sa.processFunction.join('<br/>')} | ${sa.valueAttitude.join('<br/>')} | ${bigo} |`)
-                        })
-                        tableLines.push('')
-                        tableLines.push('**교과 간 융합 분석**\n')
-                        const centerIdea = a21.coreIdeas?.find(ci => ci.subjectId === data.centerNode?.subjectId)
-                        if (centerIdea) tableLines.push(`- **공통 핵심 개념**: ${centerIdea.selectedIdea}`)
-                        const allPF = a21.standardAnalyses.flatMap(sa => sa.processFunction)
-                        const pfFreq = new Map<string, number>()
-                        allPF.forEach(p => pfFreq.set(p, (pfFreq.get(p) ?? 0) + 1))
-                        const commonPF = [...pfFreq.entries()].filter(([, n]) => n > 1).map(([v]) => v).slice(0, 3)
-                        if (commonPF.length > 0) tableLines.push(`- **공통 수행 기능**: ${commonPF.join(', ')}`)
-                        const allKU = a21.standardAnalyses.flatMap(sa => sa.knowledgeUnderstanding)
-                        const centerSa = a21.standardAnalyses.find(sa => sa.isCenterStandard)
-                        tableLines.push(`- **루브릭 연계 핵심 지표**: ① ${allKU[0] ?? ''} ② ${centerSa?.processFunction[0] ?? ''} ③ ${centerSa?.valueAttitude[0] ?? ''}`)
-                        tableLines.push('\n분석표를 확인하신 후, 우측에 나타나는 저장 버튼으로 산출물에 저장하실 수 있습니다. 수정이 필요하시면 말씀해 주세요.')
+                          tableLines.push('**교과 간 융합 분석**\n')
+                          const centerIdea = a21.coreIdeas?.find(ci => ci.subjectId === data.centerNode?.subjectId)
+                          if (centerIdea) tableLines.push(`- **공통 핵심 개념**: ${centerIdea.selectedIdea}`)
+                          const allPF = a21.standardAnalyses.flatMap(sa => sa.processFunction)
+                          const pfFreq = new Map<string, number>()
+                          allPF.forEach(p => pfFreq.set(p, (pfFreq.get(p) ?? 0) + 1))
+                          const commonPF = [...pfFreq.entries()].filter(([, n]) => n > 1).map(([v]) => v).slice(0, 3)
+                          if (commonPF.length > 0) tableLines.push(`- **공통 수행 기능**: ${commonPF.join(', ')}`)
+                          const allKU = a21.standardAnalyses.flatMap(sa => sa.knowledgeUnderstanding)
+                          const centerSa = a21.standardAnalyses.find(sa => sa.isCenterStandard)
+                          tableLines.push(`- **루브릭 연계 핵심 지표**: ① ${allKU[0] ?? ''} ② ${centerSa?.processFunction[0] ?? ''} ③ ${centerSa?.valueAttitude[0] ?? ''}`)
+                          tableLines.push('\n분석표를 확인하신 후, 우측에 나타나는 저장 버튼으로 산출물에 저장하실 수 있습니다. 수정이 필요하시면 말씀해 주세요.')
 
-                        const localMsgId = generateMessageId(proj.id, currentActivity)
-                        const localContent = tableLines.join('\n')
-                        addMessage({ id: localMsgId, role: 'assistant', content: localContent, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now() })
-                        saveMessage(proj.id, currentActivity, { role: 'assistant', content: localContent, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator' }, localMsgId).catch(console.error)
-                        const tableProposal = extractA21TableForSave(localContent)
-                        if (tableProposal) setPendingArtifactSave({ ...tableProposal, activityCode: 'A-2-1' })
-                        const userTriggerContent = lines.join('\n')
-                        const userTriggerMsgId = generateMessageId(proj.id, currentActivity)
-                        addMessage({ id: userTriggerMsgId, role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName, createdAt: Timestamp.now() })
-                        saveMessage(proj.id, currentActivity, { role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName }, userTriggerMsgId).catch(console.error)
-                        return
+                          const localContent = tableLines.join('\n')
+                          // 로딩 메시지를 실제 분석 결과로 교체
+                          replaceMessage(loadingMsgId, localContent)
+                          saveMessage(proj.id, currentActivity, { role: 'assistant', content: localContent, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator' }, loadingMsgId).catch(console.error)
+                          const tableProposal = extractA21TableForSave(localContent)
+                          if (tableProposal) setPendingArtifactSave({ ...tableProposal, activityCode: 'A-2-1' })
+                          return
+                        }
+                      } catch (e) {
+                        console.error('[a21 API]', e)
                       }
-                    } catch (e) {
-                      console.error('[a21 API]', e)
-                    }
-                    // API 실패 폴백
-                    lines.push('\n위 성취기준을 바탕으로 아래 형식으로 분석표를 즉시 작성해 주세요:\n\n① 각 교과 핵심아이디어를 blockquote(>) 형식으로 먼저 제시 (중심 성취기준 교과에 ★)\n\n② 아래 7열 표 (성취기준 내용 열 없음, 반드시 이 열 구조 유지):\n| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |\n|------|:----------:|-----------|---------|---------|---------|:----:|\n\n③ 교과 간 융합 분석 (공통 개념 / 공통 기능 / 루브릭 연계 지표)')
-                    sendMessageDirectly(lines.join('\n'))
+                      // API 실패 폴백 — 로딩 메시지를 AI 요청으로 교체
+                      const fallbackContent = lines.join('\n') + '\n위 성취기준을 바탕으로 아래 형식으로 분석표를 즉시 작성해 주세요:\n\n① 각 교과 핵심아이디어를 blockquote(>) 형식으로 먼저 제시 (중심 성취기준 교과에 ★)\n\n② 아래 7열 표 (성취기준 내용 열 없음, 반드시 이 열 구조 유지):\n| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |\n|------|:----------:|-----------|---------|---------|---------|:----:|\n\n③ 교과 간 융합 분석 (공통 개념 / 공통 기능 / 루브릭 연계 지표)'
+                      replaceMessage(loadingMsgId, fallbackContent)
+                      sendMessageDirectly(fallbackContent)
+                    })()
                   } : undefined}
                 />
               </div>
@@ -2798,8 +2941,8 @@ ${discussionSummary}
         )
       })()}
 
-      {/* 메시지 목록 */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative">
+      {/* 메시지 목록 — chatFontScale로 메시지 영역만 독립 zoom */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative" style={{ zoom: chatFontScale }}>
         {visibleMessages.length === 0 && !streamingText && !isLoading && !messagesLoaded && (
           <div className="flex items-center justify-center h-full text-[#DADCE0]">
             <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={28} /></span>
@@ -2919,7 +3062,7 @@ ${discussionSummary}
                         }).catch(console.error)
                         if (sig) setPendingTeamDiscussion({ topic: sig.topic })
                         const hasArtifactSave = selUpdates.some(u => Object.keys(u.sections).length > 0)
-                        selUpdates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined))
+                        selUpdates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, cleanText))
                         // [ARTIFACT_UPDATE]가 있는 응답에서는 [ARTIFACT_CONFIRM]과 [ACTIVITY_ADVANCE]를 무시
                         // → 팀장이 우측 패널에서 직접 확정해야 하고, 전진도 별도 메시지로만 가능
                         if (!hasArtifactSave) {
@@ -2984,7 +3127,22 @@ ${discussionSummary}
               : undefined
 
           return (
-            <div key={msg.id}>
+            <div
+              key={msg.id}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setCtxMenu({
+                  x: e.clientX, y: e.clientY,
+                  message: {
+                    id: msg.id,
+                    content: msg.content,
+                    role: msg.role as 'user' | 'assistant',
+                    senderName: msg.role === 'user' ? senderName : undefined,
+                    activityCode: msg.activityCode,
+                  },
+                })
+              }}
+            >
               <MessageBubble
                 role={msg.role as 'user' | 'assistant'}
                 content={msg.content}
@@ -3096,6 +3254,73 @@ ${discussionSummary}
           )
         })}
 
+        {/* 성취기준 찾기 모달 — 선택한 성취기준을 채팅 입력창에 삽입 */}
+        <StandardsFinderModal
+          open={showStandardsBrowser}
+          onClose={() => setShowStandardsBrowser(false)}
+          onInsert={(md) => setInput(prev => (prev ? prev + '\n\n' : '') + md)}
+        />
+
+        {/* 중요 노트 모달 — 불러오기 버튼은 `@노트#N` 짧은 토큰만 삽입.
+            실제 노트 내용은 서버에서 시스템 프롬프트의 "팀 중요 노트" 블록으로 AI에 전달되므로
+            AI가 `@노트#N` 참조를 보고 올바른 내용을 연결. */}
+        <KeyNotesModal
+          open={showKeyNotes}
+          onClose={() => setShowKeyNotes(false)}
+          projectId={proj.id}
+          notes={proj.keyNotes ?? []}
+          currentUid={userProfile?.uid ?? ''}
+          onInsertReference={(_note, number) => {
+            const token = `@노트#${number} `
+            setInput(prev => (prev ? prev + (prev.endsWith(' ') ? '' : ' ') : '') + token)
+            setTimeout(() => {
+              const el = document.querySelector('textarea[data-chat-input]') as HTMLTextAreaElement | null
+              el?.focus()
+              if (el) { el.selectionStart = el.value.length; el.selectionEnd = el.value.length }
+            }, 30)
+          }}
+        />
+
+        {/* 채팅 메시지 우클릭 메뉴 */}
+        <MessageContextMenu
+          open={ctxMenu !== null}
+          x={ctxMenu?.x ?? 0}
+          y={ctxMenu?.y ?? 0}
+          onClose={() => setCtxMenu(null)}
+          onReply={ctxMenu ? () => setReplyTo({
+            id: ctxMenu.message.id,
+            content: ctxMenu.message.content,
+            senderName: ctxMenu.message.role === 'user' ? ctxMenu.message.senderName : 'AI',
+          }) : undefined}
+          onSaveKeyNote={() => {
+            if (!ctxMenu || !userProfile) return
+            // AI 신호(대괄호 블록 등) 제거 후 저장
+            const cleaned = ctxMenu.message.content
+              .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|STANDARD_SEARCH)[\s\S]*?\]/g, '')
+              .trim()
+            if (!cleaned) return
+            const note: KeyNote = {
+              id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              // 충분한 길이 허용 — 표·다단 구조를 온전히 보존. Firestore 문서 1MB 한도에 여유.
+              content: cleaned.slice(0, 6000),
+              sourceActivityCode: (ctxMenu.message.activityCode as KeyNote['sourceActivityCode']) || undefined,
+              sourceRole: ctxMenu.message.role,
+              sourceDisplayName: ctxMenu.message.senderName,
+              savedBy: userProfile.uid,
+              savedByName: userProfile.displayName,
+              savedAt: Date.now(),
+            }
+            addKeyNote(proj.id, note).catch(err => {
+              console.error('[keyNotes] save failed', err)
+              setChatError('중요 노트 저장에 실패했습니다. 다시 시도해주세요.')
+            })
+          }}
+          onCopy={() => {
+            if (!ctxMenu) return
+            navigator.clipboard.writeText(ctxMenu.message.content).catch(() => {})
+          }}
+        />
+
         {/* 팀 채팅 시작 확인 카드 */}
         {isHost && showDiscussionConfirm && !isTeamMode && (
           <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
@@ -3191,8 +3416,8 @@ ${discussionSummary}
           />
         )}
 
-        {/* 다음 단계 이동 확인 배너 */}
-        {pendingAdvance && (() => {
+        {/* 다음 단계 이동 확인 배너 — 팀장만 */}
+        {pendingAdvance && isHost && (() => {
           const isSaved = !!(project?.artifacts?.[currentActivity])
           return isSaved ? (
             // 산출물 저장된 경우 → 초록 배너 (검토 후 이동 유도)
@@ -3474,12 +3699,14 @@ ${discussionSummary}
           <div className={cn('chat-input-wrap flex-1', isTeamMode && 'chat-input-wrap-team')}>
             <div className={cn('chat-input-inner', isTeamMode ? 'bg-[#E0F2F1]' : 'bg-white')}>
               <textarea
+                data-chat-input=""
                 value={input}
                 onChange={(e) => {
                   const val = e.target.value
                   setInput(val)
-                  // 슬래시 커맨드 감지: 줄 끝이 /로 시작하는 단어
-                  const match = val.match(/(?:^|\n)\/([\w가-힣]*)$/)
+                  // 슬래시 커맨드 감지: `/` 가 입력 시작·공백·줄바꿈 뒤에 위치하고 끝에 있으면 팔레트 열림.
+                  // 한 메시지 안에서 여러 번 사용 가능 (성취기준 2개 연속 삽입 등).
+                  const match = val.match(/(?:^|\s)\/([\w가-힣]*)$/)
                   if (match) {
                     setSlashQuery(match[1])
                     setSlashCmdIdx(0)

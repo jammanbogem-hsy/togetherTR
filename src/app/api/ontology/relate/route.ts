@@ -51,9 +51,10 @@ export async function POST(req: NextRequest) {
       centerId: string
       candidateIds: string[]
       artifactContext?: string
+      force?: boolean
     }
 
-    const { theme, centerId, candidateIds, artifactContext } = body
+    const { theme, centerId, candidateIds, artifactContext, force } = body
     if (!theme || !centerId || !candidateIds?.length) {
       return NextResponse.json({ error: '필수 파라미터 누락' }, { status: 400 })
     }
@@ -93,9 +94,16 @@ export async function POST(req: NextRequest) {
       .map(toMeta)
       .filter((m): m is StandardMeta => m !== null)
 
-    const relations = await classifyRelations(theme, center, candidates, artifactContext)
+    const relations = await classifyRelations(theme, center, candidates, artifactContext, { force })
 
-    return NextResponse.json({ relations })
+    // 클라이언트는 rel.standardId (= 상대 성취기준 id) 를 기대한다.
+    // center 기준으로 반대편 id를 standardId로 노출한다.
+    const shaped = relations.map(r => ({
+      ...r,
+      standardId: r.sourceId === center.id ? r.targetId : r.sourceId,
+    }))
+
+    return NextResponse.json({ relations: shaped })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: message }, { status: 500 })
