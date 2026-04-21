@@ -162,10 +162,36 @@ function isStageBoundaryHeading(level: 1|2|3|4, text: string): boolean {
   return /(팀준비|분석|설계|개발.?실행|평가).+단계/.test(text.replace(/\s+/g, ''))
 }
 
+/**
+ * H2/H3/H4를 1x1 표 박스로 감싸서 좌측 바 / 배경색 효과를 구현.
+ * 화면 보고서의 badge(H2) / left-bar(H3/H4) 스타일을 재현.
+ */
+function makeHeadingBox(text: string, charPrId: number, borderFillId: number, boxId: number, pageBreak = false): string {
+  const w = TOTAL_TABLE_WIDTH
+  const lineCount = Math.max(1, Math.ceil(getTextDisplayUnits(text) / 40))
+  const h = Math.max(1600, 1200 + lineCount * 800)
+  const para = makeSingleParagraph([{ text }], charPrId, ParShape.BODY, StyleId.NORMAL)
+    .replace('<hp:p id="0"', '<hp:p id="2147483648"')
+  return `<hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="${pageBreak ? 1 : 0}" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:tbl id="${300000 + boxId}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="NONE" repeatHeader="0" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="${borderFillId}" noAdjust="0"><hp:sz width="${w}" widthRelTo="ABSOLUTE" height="${h}" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="80" bottom="80"/><hp:inMargin left="0" right="0" top="0" bottom="0"/><hp:tr><hp:tc name="" header="0" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="${borderFillId}"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${para}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${w}" height="${h}"/><hp:cellMargin left="280" right="200" top="160" bottom="160"/></hp:tc></hp:tr></hp:tbl><hp:t/></hp:run></hp:p>`
+}
+
+let _headingBoxCounter = 0
+
 function makeHeading(level: 1|2|3|4, text: string): string {
-  const charPrId = level === 1 ? CharPr.H1 : level === 2 ? CharPr.H2 : level === 3 ? CharPr.H3 : CharPr.H4
-  const paraPrId = level === 1 ? ParShape.H1 : level === 2 ? ParShape.H2 : level === 3 ? ParShape.H3 : ParShape.H4
-  return makeParagraph([{ text }], { charPrId, paraPrId, pageBreak: isStageBoundaryHeading(level, text) })
+  const pageBreak = isStageBoundaryHeading(level, text)
+  switch (level) {
+    case 1:
+      return makeParagraph([{ text }], { charPrId: CharPr.H1, paraPrId: ParShape.H1, pageBreak })
+    case 2:
+      // H2 → 배지 박스 (연블루 배경 + 좌측 파란 바 + 하단 파란선)
+      return makeHeadingBox(text, CharPr.H2_BADGE, BorderFill.H2_BADGE, _headingBoxCounter++, pageBreak)
+    case 3:
+      // H3 → 좌측 파란 바
+      return makeHeadingBox(text, CharPr.H3_BAR, BorderFill.H3_BAR, _headingBoxCounter++)
+    case 4:
+      // H4 → 좌측 회색 바
+      return makeHeadingBox(text, CharPr.H4, BorderFill.H4_BAR, _headingBoxCounter++)
+  }
 }
 
 function makeRule(): string {
@@ -383,6 +409,7 @@ async function validateZipStructure(blob: Blob) {
 // ─── Public API (시그니처 불변) ──────────────────────────────────────────
 
 export async function generateHwpx(markdown: string, title: string): Promise<Blob> {
+  _headingBoxCounter = 0
   const blocks = parseMarkdown(markdown)
   const bodyXml = blocksToXml(blocks)
   const headerXml = createHeaderXml()

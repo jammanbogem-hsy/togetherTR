@@ -20,6 +20,8 @@ export const CharPr = {
   BOLD:         14,   // 볼드 (10pt, 브랜드 블루)
   TH_WHITE:     15,   // 표 헤더 흰색 (10pt, 흰색, 볼드)
   TH_WHITE_SM:  16,   // 표 헤더 흰색 소형 (9pt, 흰색, 볼드)
+  H2_BADGE:     17,   // H2 배지 박스 내부 (12pt, 브랜드블루, 볼드)
+  H3_BAR:       18,   // H3 좌측바 박스 내부 (13pt, 딥블루, 볼드)
 } as const
 
 /** BorderFill ID — 테두리/배경 */
@@ -28,7 +30,10 @@ export const BorderFill = {
   BASIC:        2,   // 기본 실선
   TABLE:        3,   // 표 본문 셀 (연한 회색)
   TABLE_HEADER: 4,   // 표 헤더 셀 (블루 배경)
-  BLOCKQUOTE:   5,   // 블록쿼트 (좌측 파란 바 + 연블루 배경)
+  BLOCKQUOTE:   5,   // 블록쿼트 (좌측 파란 바 + 라벤더 배경)
+  H2_BADGE:     6,   // H2 배지 (연블루 배경 + 좌측 블루 바)
+  H3_BAR:       7,   // H3 좌측 파란 바 (배경 없음)
+  H4_BAR:       8,   // H4 좌측 회색 바 (배경 없음)
 } as const
 
 /** ParShape ID — 문단 속성 */

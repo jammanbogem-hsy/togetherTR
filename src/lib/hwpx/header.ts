@@ -46,7 +46,32 @@ const BORDER_FILLS = [
     right: { type: 'SOLID', width: '0.15 mm', color: '#DADCE0' },
     top: { type: 'SOLID', width: '0.15 mm', color: '#DADCE0' },
     bottom: { type: 'SOLID', width: '0.15 mm', color: '#DADCE0' },
-    fill: { faceColor: '#F1F8FF', hatchColor: '#F1F8FF' },
+    fill: { faceColor: '#EDE8F5', hatchColor: '#EDE8F5' },  // 화면의 gradient(#EAF2FF→#F3E5F5) 중간색
+  }),
+  // H2 배지 박스: 연블루 배경 + 좌측 두꺼운 파란 바 (화면의 #E8F0FE badge 재현)
+  buildBorderFill({
+    id: 6,
+    left: { type: 'SOLID', width: '1.2 mm', color: '#1A73E8' },
+    right: { type: 'NONE', width: '0.1 mm', color: '#000000' },
+    top: { type: 'NONE', width: '0.1 mm', color: '#000000' },
+    bottom: { type: 'SOLID', width: '0.3 mm', color: '#1A73E8' },
+    fill: { faceColor: '#E8F0FE', hatchColor: '#E8F0FE' },
+  }),
+  // H3 좌측 파란 바 (화면의 borderLeft: 3px solid #1A73E8)
+  buildBorderFill({
+    id: 7,
+    left: { type: 'SOLID', width: '0.7 mm', color: '#1A73E8' },
+    right: { type: 'NONE', width: '0.1 mm', color: '#000000' },
+    top: { type: 'NONE', width: '0.1 mm', color: '#000000' },
+    bottom: { type: 'NONE', width: '0.1 mm', color: '#000000' },
+  }),
+  // H4 좌측 회색 바 (화면의 borderLeft: 2px solid #DADCE0)
+  buildBorderFill({
+    id: 8,
+    left: { type: 'SOLID', width: '0.5 mm', color: '#DADCE0' },
+    right: { type: 'NONE', width: '0.1 mm', color: '#000000' },
+    top: { type: 'NONE', width: '0.1 mm', color: '#000000' },
+    bottom: { type: 'NONE', width: '0.1 mm', color: '#000000' },
   }),
 ]
 
@@ -72,6 +97,8 @@ const CHAR_PROPERTIES = [
   buildCharPr({ id: 14, height: 1000, textColor: '#0B57D0', bold: true }),                               // BOLD
   buildCharPr({ id: 15, height: 1000, textColor: '#FFFFFF', bold: true }),                               // TH_WHITE
   buildCharPr({ id: 16, height: 900,  textColor: '#FFFFFF', bold: true }),                               // TH_WHITE_SM
+  buildCharPr({ id: 17, height: 1200, textColor: '#1A73E8', bold: true }),                               // H2_BADGE (배지 내부)
+  buildCharPr({ id: 18, height: 1300, textColor: '#1557B0', bold: true }),                               // H3_BAR (좌측바 내부)
 ]
 
 // ─── ParShape 정의 ───────────────────────────────────────────────────────
