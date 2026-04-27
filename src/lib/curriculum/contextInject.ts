@@ -155,9 +155,10 @@ function formatStandards(
 
     for (const std of stds) {
       const kws = (std.keywords  ?? []).length > 0 ? ` (키워드: ${std.keywords.join(', ')})` : ''
-      const fn  = (std.functions ?? []).length > 0 ? ` | 기능: ${std.functions.join(', ')}` : ''
-      const con = (std.concepts  ?? []).length > 0 ? ` | 개념: ${std.concepts.join(', ')}` : ''
-      lines.push(`  ${std.code} [${std.grade_band}학년군] ${std.text}${kws}${fn}${con}`)
+      const kn  = (std.knowledge ?? []).length > 0 ? `\n    → 지식·이해: ${std.knowledge.join(', ')}` : ''
+      const fn  = (std.functions ?? []).length > 0 ? `\n    → 과정·기능: ${std.functions.join(', ')}` : ''
+      const cp  = (std.competencies ?? []).length > 0 ? `\n    → 가치·태도: ${std.competencies.join(', ')}` : ''
+      lines.push(`  ${std.code} [${std.grade_band}학년군] ${std.text}${kws}${kn}${fn}${cp}`)
     }
   }
 
@@ -333,7 +334,7 @@ function buildGraphBasedA21Context(graphData: GraphSavedData): string {
   }
 
   const coreIdeasSection = subjectCoreIdeasText.length > 0
-    ? `\n## 교과별 핵심아이디어 후보 (이 중에서 연관 성취기준과 가장 밀접한 것을 선정하여 분석표에 반영하세요)\n${subjectCoreIdeasText.join('\n\n')}`
+    ? `\n## 교과별 핵심아이디어 후보 ⚠️ 반드시 아래 목록에서 원문 그대로 선택할 것 (AI가 자체 생성·요약·수정 절대 금지)\n${subjectCoreIdeasText.join('\n\n')}`
     : ''
 
   const centerSection = centerNode
@@ -366,9 +367,10 @@ ${coreIdeasSection}
 1. 성취기준 분석표: 7열 — 성취기준 내용(원문) 열 없음 (교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고)
    - 핵심아이디어 열: 해당 교과의 선정된 핵심아이디어 원문 기입 (같은 교과의 여러 성취기준 행은 동일한 핵심아이디어 반복)
    - 중심 성취기준 행: 코드 앞에 ★ 표시, 비고란에 "중심" 기입
-   - 지식·이해: 학생이 알아야 할 핵심 개념·원리, 명사구로 2-3항목 (지필 평가 기준 수준)
-   - 과정·기능: "~하기" 형식 수행 동사 2-3개 (수행평가 행동 지표 수준)
-   - 가치·태도: 형성 기대 정의적 요소 1-2항목 (루브릭 태도 기준 수준)
+   - 지식·이해: 위 성취기준별 "→ 지식·이해" 데이터에서 **원문 그대로** 인용. 없으면 성취기준 원문에서 핵심 개념·원리 명사구 추출.
+   - 과정·기능: 위 성취기준별 "→ 과정·기능" 데이터에서 **원문 그대로** 인용. "~하기" 형식 수행 동사.
+   - 가치·태도: 위 성취기준별 "→ 가치·태도" 데이터에서 **원문 그대로** 인용. 없으면 성취기준 원문에서 정의적 요소 추출.
+   ⚠️ AI가 자체적으로 지식·이해/과정·기능/가치·태도를 만들어내는 것 금지. 반드시 위 데이터 인용.
 2. 교과 간 융합 분석: 공통 핵심 개념 / 공통 수행 기능 / 루브릭 연계 핵심 지표 2~3개
 ▶ 중심 성취기준 [${centerNode?.label ?? '미설정'}]이 이 통합 수업의 핵심축입니다. 이 성취기준의 요소를 가장 풍부하게 작성하세요.`
 }

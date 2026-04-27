@@ -107,9 +107,9 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     // "가중치" 표현은 AI가 자의적 숫자를 박아 교사 판단을 구속하는 부작용이 있어 라벨에서 제거 (우선순위 표현 자율).
     recommendedSections: [
       { key: '주제 선정 기준', label: '주제 선정 기준 (기준·설명·우선순위)', minChars: 10, required: 'any' },
-      { key: '주제 후보',      label: '주제 후보 (비교표)',                   minChars: 10, required: 'any' },
-      { key: '최종 선정 주제', label: '최종 선정 주제',                       minChars: 3,  required: 'any' },
-      { key: '선정 근거',      label: '선정 근거 (비전·교과·학생 맥락)',      minChars: 15, required: 'any' },
+      { key: '최종 선정 주제', label: '선정 주제',                          minChars: 3,  required: 'any' },
+      { key: '주제 유형',      label: '주제 유형 (내용/기능/혼합)',          minChars: 3,  required: 'any' },
+      { key: '선정 근거',      label: '선정 근거 (비전·교과·학생 맥락)',     minChars: 15, required: 'any' },
     ],
   },
   'A-2-1': {

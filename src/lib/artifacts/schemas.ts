@@ -465,6 +465,178 @@ export function buildT23Structured(
   return result
 }
 
+// ─── A-1-2 주제 선정 ─────────────────────────────────────────────────────
+
+export interface A12Criterion { criterion: string; description: string; priority: string }
+
+export interface A12Structured {
+  _schema: 'A-1-2'
+  criteria: A12Criterion[]
+  selectedTopic: string
+  topicType: string        // 내용요소형 / 기능요소형 / 혼합형
+  rationale: string
+}
+
+export function buildA12Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A12Structured {
+  const r: A12Structured = { _schema: 'A-1-2', criteria: [], selectedTopic: '', topicType: '', rationale: '' }
+  // 기준
+  const critRaw = (sections['주제 선정 기준'] ?? '').trim()
+  if (critRaw) r.criteria = parseTableRows(critRaw, 2).map(c => ({ criterion: c[0], description: c[1] || '', priority: c[2] || '' }))
+  // 최종 주제 — 80자 이하만 유효 (긴 텍스트는 AI가 전체 응답을 넣은 것)
+  const rawTopic = (sections['최종 선정 주제'] ?? sections['선정 주제'] ?? '').trim()
+  r.selectedTopic = rawTopic.length <= 80 ? rawTopic.replace(/\*\*/g, '').replace(/^#+\s*/, '') : ''
+  // 주제 유형
+  const rawType = (sections['주제 유형'] ?? '').trim()
+  r.topicType = rawType.length <= 40 ? rawType.replace(/\*\*/g, '') : ''
+  // 선정 근거
+  const rawRationale = (sections['선정 근거'] ?? '').trim()
+  r.rationale = rawRationale.length <= 300 ? rawRationale.replace(/\*\*/g, '').replace(/^#+\s*/, '') : ''
+  // fallback — 채팅에서 추출 (마크다운 strip 후 정밀 패턴)
+  if (r.criteria.length === 0 || !r.selectedTopic) {
+    const stripMd = (s: string) => s.replace(/\*\*/g, '').replace(/__/g, '').replace(/[*_~`]/g, '').trim()
+    for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
+      const rawLines = msg.content.split('\n')
+      const lines = rawLines.map(stripMd)
+      if (r.criteria.length === 0) { const rows = parseTableRows(msg.content, 2); if (rows.length >= 2) r.criteria = rows.map(c => ({ criterion: stripMd(c[0]), description: stripMd(c[1] || ''), priority: stripMd(c[2] || '') })) }
+      if (!r.selectedTopic) {
+        for (const line of lines) {
+          const m = line.match(/(?:[-•]\s*)?(?:최종\s*선정\s*주제|선정\s*주제)\s*[:：]\s*(.+)$/)
+          if (m && m[1].length < 80 && m[1].length > 2) { r.selectedTopic = m[1].trim(); break }
+        }
+      }
+      if (!r.topicType) {
+        for (const line of lines) {
+          const m = line.match(/(?:[-•]\s*)?주제\s*유형\s*[:：]\s*(.+?)(?:\s*[-–]|$)/)
+          if (m && m[1].length < 40) { r.topicType = m[1].trim(); break }
+        }
+      }
+      if (!r.rationale) {
+        for (let li = 0; li < lines.length; li++) {
+          const m = lines[li].match(/(?:[-•]\s*)?선정\s*근거\s*[:：]\s*(.*)/)
+          if (m) {
+            if (m[1].trim().length > 10) {
+              r.rationale = m[1].trim()
+            } else {
+              const parts: string[] = []
+              for (let j = li + 1; j < lines.length && j < li + 8; j++) {
+                const bl = lines[j].match(/^\s*[-•]\s*(.+)/)
+                if (bl) parts.push(bl[1].trim())
+                else if (lines[j].trim() && !lines[j].match(/^\s*[-•]/)) break
+              }
+              if (parts.length > 0) r.rationale = parts.join('. ')
+            }
+            break
+          }
+        }
+      }
+      if (r.selectedTopic) break
+    }
+  }
+  // 주제 유형 자동 추론
+  if (!r.topicType && r.selectedTopic) {
+    const t = r.selectedTopic + ' ' + r.rationale
+    if (/해결|제작|표현|탐구|설계/.test(t) && /환경|사회|역사|과학|문화/.test(t)) r.topicType = '혼합형(내용 + 기능)'
+    else if (/해결|제작|표현|탐구|설계/.test(t)) r.topicType = '기능요소형'
+    else r.topicType = '내용요소형'
+  }
+  return r
+}
+
+// ─── A-2-1 성취기준 분석 (기존 extractA21TableForSave 유지, 구조화는 단순 래핑) ──
+
+export interface A21Structured {
+  _schema: 'A-2-1'
+  analysisTable: string  // 마크다운 표 원문 유지 (A-2-1은 복잡한 7열 표라 파싱보다 원문 보존이 안전)
+}
+
+export function buildA21Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A21Structured {
+  let table = (sections['성취기준분석표'] ?? '').trim()
+  if (!table) {
+    for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
+      const lines = msg.content.split('\n').filter(l => l.trim().startsWith('|'))
+      if (lines.length >= 3) { table = lines.join('\n'); break }
+    }
+  }
+  return { _schema: 'A-2-1', analysisTable: table }
+}
+
+// ─── A-2-2 통합 수업목표 진술 ────────────────────────────────────────────
+
+export interface A22SubjectGoal { subject: string; goal: string }
+
+export interface A22Structured {
+  _schema: 'A-2-2'
+  subjectGoals: A22SubjectGoal[]
+  integratedGoals: string[]
+}
+
+export function buildA22Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A22Structured {
+  const r: A22Structured = { _schema: 'A-2-2', subjectGoals: [], integratedGoals: [] }
+  const sgRaw = (sections['교과별 세부 목표'] ?? '').trim()
+  if (sgRaw) r.subjectGoals = parseTableRows(sgRaw, 2).map(c => ({ subject: c[0], goal: c[1] || '' }))
+  const igRaw = (sections['통합 학습목표'] ?? '').trim()
+  if (igRaw) r.integratedGoals = igRaw.split('\n').map(l => l.replace(/^[-•\d.]\s*/, '').trim()).filter(Boolean)
+  // fallback
+  if (r.subjectGoals.length === 0 || r.integratedGoals.length === 0) {
+    for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
+      if (r.subjectGoals.length === 0) { const rows = parseTableRows(msg.content, 2); if (rows.length >= 2) r.subjectGoals = rows.map(c => ({ subject: c[0], goal: c[1] || '' })) }
+      if (r.integratedGoals.length === 0) {
+        const goals = msg.content.split('\n').filter(l => /^\s*[-•\d.]\s*.{10,}/.test(l) && /학생|학습|역량|목표/.test(l)).map(l => l.replace(/^[-•\d.]\s*/, '').trim())
+        if (goals.length >= 2) r.integratedGoals = goals
+      }
+      if (r.subjectGoals.length > 0 && r.integratedGoals.length > 0) break
+    }
+  }
+  return r
+}
+
+// ─── A-2-3 학습자·맥락 분석 ──────────────────────────────────────────────
+
+export interface A23ProfileItem { item: string; content: string }
+export interface A23TeacherNote { teacherName: string; note: string }
+
+export interface A23Structured {
+  _schema: 'A-2-3'
+  commonProfile: A23ProfileItem[]  // 선수지식, 오개념·혼동, 환경 제약, 예상 난관
+  teacherNotes: A23TeacherNote[]   // 교사별 맞춤 고려 포인트
+}
+
+export function buildA23Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A23Structured {
+  const r: A23Structured = { _schema: 'A-2-3', commonProfile: [], teacherNotes: [] }
+  const raw = (sections['학습자 프로필'] ?? '').trim()
+  if (raw) {
+    // 표 형식: | 항목 | 내용 |
+    const rows = parseTableRows(raw, 2)
+    if (rows.length > 0) r.commonProfile = rows.map(c => ({ item: c[0], content: c[1] || '' }))
+    // 교사별 맞춤 (불릿: • 교사명 : 내용)
+    const teacherLines = raw.split('\n').filter(l => /[-•]\s*.+선생님\s*[:：]/.test(l))
+    r.teacherNotes = teacherLines.map(l => {
+      const m = l.match(/[-•]\s*(.+?선생님)\s*[:：]\s*(.+)/)
+      return m ? { teacherName: m[1].trim(), note: m[2].trim() } : null
+    }).filter((n): n is A23TeacherNote => n !== null)
+  }
+  // fallback
+  if (r.commonProfile.length === 0) {
+    for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
+      const rows = parseTableRows(msg.content, 2)
+      if (rows.length >= 2 && /선수|오개념|환경|난관/.test(msg.content)) {
+        r.commonProfile = rows.map(c => ({ item: c[0], content: c[1] || '' }))
+        break
+      }
+    }
+  }
+  if (r.teacherNotes.length === 0) {
+    for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
+      const tLines = msg.content.split('\n').filter(l => /[-•]\s*.+선생님\s*[:：]/.test(l))
+      if (tLines.length >= 1) {
+        r.teacherNotes = tLines.map(l => { const m = l.match(/[-•]\s*(.+?선생님)\s*[:：]\s*(.+)/); return m ? { teacherName: m[1].trim(), note: m[2].trim() } : null }).filter((n): n is A23TeacherNote => n !== null)
+        break
+      }
+    }
+  }
+  return r
+}
+
 // ─── 공통 유틸 ───────────────────────────────────────────────────────────
 
 /** 마크다운 표에서 데이터 행을 추출 (헤더/구분자 제외) */
@@ -508,6 +680,22 @@ export function detectMissingFields(data: Record<string, unknown>): MissingField
   } else if (schema === 'T-2-3') {
     const d = data as unknown as T23Structured
     if (!d.schedule?.length) missing.push({ label: '팀 일정', hint: '단계별 일정과 마감을 정해주세요' })
+  } else if (schema === 'A-1-2') {
+    const d = data as unknown as A12Structured
+    if (!d.criteria?.length) missing.push({ label: '주제 선정 기준', hint: '주제를 고르는 기준 3가지를 정해주세요' })
+    if (!d.selectedTopic) missing.push({ label: '선정 주제', hint: '팀이 합의한 주제를 확정해주세요' })
+    if (!d.topicType) missing.push({ label: '주제 유형', hint: '내용요소형/기능요소형/혼합형 중 선택해주세요' })
+    if (!d.rationale) missing.push({ label: '선정 근거', hint: '왜 이 주제를 선택했는지 근거를 적어주세요' })
+  } else if (schema === 'A-2-1') {
+    const d = data as unknown as A21Structured
+    if (!d.analysisTable) missing.push({ label: '성취기준 분석표', hint: '교과별 성취기준 분석표를 완성해주세요' })
+  } else if (schema === 'A-2-2') {
+    const d = data as unknown as A22Structured
+    if (!d.subjectGoals?.length) missing.push({ label: '교과별 세부 목표', hint: '각 교과의 학습 목표를 정해주세요' })
+    if (!d.integratedGoals?.length) missing.push({ label: '통합 학습목표', hint: '교과를 아우르는 통합 목표 3~5개를 진술해주세요' })
+  } else if (schema === 'A-2-3') {
+    const d = data as unknown as A23Structured
+    if (!d.commonProfile?.length) missing.push({ label: '학습자 프로필', hint: '선수지식, 오개념, 환경 제약 등을 정리해주세요' })
   }
 
   return missing

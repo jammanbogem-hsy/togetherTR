@@ -1269,6 +1269,27 @@ export function ChatPanel() {
     setReplyTo(null)
   }, [currentActivity])
 
+  // 구조화 산출물 fallback 자동 저장 — ARTIFACT_UPDATE 실패 시 채팅에서 직접 추출
+  function tryStructuredFallbackSave(responseText: string, activity: ActivityCode) {
+    if (!/저장/.test(responseText)) return
+    const ctx = [...messages, { role: 'assistant' as const, content: responseText }]
+    const schemas = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let structured: any = null
+
+    if (activity === 'T-1-1' && responseText.includes('|')) { const s = schemas.buildT11Structured({}, ctx); if (s.teamVision || s.personalVisions.length > 0) structured = s }
+    else if (activity === 'T-1-2' && (responseText.includes('|') || /원칙|방향/.test(responseText))) { const s = schemas.buildT12Structured({}, ctx); if (s.designPrinciples.length > 0) structured = s }
+    else if (activity === 'T-2-1' && responseText.includes('|')) { const s = schemas.buildT21Structured({}, ctx); if (s.roles.length > 0) structured = s }
+    else if (activity === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(responseText)) { const s = schemas.buildT22Structured({}, ctx); if (s.rules.length > 0) structured = s }
+    else if (activity === 'T-2-3' && responseText.includes('|')) { const s = schemas.buildT23Structured({}, ctx); if (s.schedule.length > 0) structured = s }
+    else if (activity === 'A-1-2' && /주제|선정/.test(responseText)) { const s = schemas.buildA12Structured({}, ctx); if (s.selectedTopic || s.criteria.length > 0) structured = s }
+    else if (activity === 'A-2-1' && responseText.includes('|')) { const s = schemas.buildA21Structured({}, ctx); if (s.analysisTable) structured = s }
+    else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = schemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoals.length > 0) structured = s }
+    else if (activity === 'A-2-3' && /학습자|프로필|선수/.test(responseText)) { const s = schemas.buildA23Structured({}, ctx); if (s.commonProfile.length > 0) structured = s }
+
+    if (structured) applyArtifactUpdates(structured as Record<string, string>, activity)
+  }
+
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
   // latestText: 현재 턴의 assistant 응답 원문 (Zustand에 아직 반영 안 됐을 수 있어 직접 전달)
   function applyArtifactUpdates(rawSections: Record<string, string>, actCode?: ActivityCode, latestText?: string) {
@@ -1297,6 +1318,18 @@ export function ChatPanel() {
     } else if (targetAct === 'T-2-3') {
       const { buildT23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildT23Structured(sections, contextMsgs) as unknown as Record<string, string>
+    } else if (targetAct === 'A-1-2') {
+      const { buildA12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      sections = buildA12Structured(sections, contextMsgs) as unknown as Record<string, string>
+    } else if (targetAct === 'A-2-1') {
+      const { buildA21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      sections = buildA21Structured(sections, contextMsgs) as unknown as Record<string, string>
+    } else if (targetAct === 'A-2-2') {
+      const { buildA22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      sections = buildA22Structured(sections, contextMsgs) as unknown as Record<string, string>
+    } else if (targetAct === 'A-2-3') {
+      const { buildA23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      sections = buildA23Structured(sections, contextMsgs) as unknown as Record<string, string>
     }
 
     // 협업 모드에서 팀원 → 방장에게 저장 제안으로 전달 (직접 저장 금지)
@@ -1324,7 +1357,23 @@ export function ChatPanel() {
     // 저장 시 status를 in_review로 리셋하므로 팀이 다시 확정해야 함
 
     const baseContent = existing?.aiDraft ?? firestoreContent
-    const merged = { ...baseContent, ...sections }
+    // 구조화 산출물: 새 데이터의 빈 필드는 기존 값 유지, 채워진 필드만 업데이트
+    let merged: Record<string, unknown>
+    if ((sections as Record<string, unknown>)._schema && (baseContent as Record<string, unknown>)._schema === (sections as Record<string, unknown>)._schema) {
+      // 같은 스키마끼리 → 빈 필드는 기존 유지
+      merged = { ...baseContent }
+      for (const [k, v] of Object.entries(sections)) {
+        if (k === '_schema') { merged[k] = v; continue }
+        // 새 값이 비어있으면(빈 배열, 빈 문자열) 기존 값 유지
+        const isEmpty = v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0)
+        if (!isEmpty) merged[k] = v
+      }
+    } else if ((sections as Record<string, unknown>)._schema) {
+      // 새로운 스키마 → 완전 교체
+      merged = { ...sections }
+    } else {
+      merged = { ...baseContent, ...sections }
+    }
     const newVersion = (existing?.currentVersion ?? (firestoreArtifact?.version ?? 0)) + 1
     const newArtifact = {
       id: existing?.id ?? Date.now().toString(),
@@ -1829,6 +1878,18 @@ export function ChatPanel() {
     } else if (targetActivity === 'T-2-3') {
       const { buildT23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildT23Structured(enrichedSections, messages) as unknown as Record<string, string>
+    } else if (targetActivity === 'A-1-2') {
+      const { buildA12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      enrichedSections = buildA12Structured(enrichedSections, messages) as unknown as Record<string, string>
+    } else if (targetActivity === 'A-2-1') {
+      const { buildA21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      enrichedSections = buildA21Structured(enrichedSections, messages) as unknown as Record<string, string>
+    } else if (targetActivity === 'A-2-2') {
+      const { buildA22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      enrichedSections = buildA22Structured(enrichedSections, messages) as unknown as Record<string, string>
+    } else if (targetActivity === 'A-2-3') {
+      const { buildA23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+      enrichedSections = buildA23Structured(enrichedSections, messages) as unknown as Record<string, string>
     }
     const merged = { ...baseContent, ...enrichedSections }
     const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[targetActivity]?.version ?? 0)) + 1
@@ -2164,35 +2225,8 @@ ${discussionSummary}
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           upd.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, finalText))
 
-          // 구조화 산출물 자동 저장 fallback: ARTIFACT_UPDATE 파싱 실패해도 채팅에 저장 콘텐츠가 있으면 구조화 저장
-          if (upd.length === 0 && /저장/.test(finalText)) {
-            const allCtx = [...messages, { role: 'assistant' as const, content: finalText }]
-            if (currentActivity === 'T-1-1' && finalText.includes('|')) {
-              const { buildT11Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const structured = buildT11Structured({}, allCtx)
-              if (structured.teamVision || structured.personalVisions.length > 0) {
-                applyArtifactUpdates(structured as unknown as Record<string, string>, 'T-1-1' as ActivityCode)
-              }
-            } else if (currentActivity === 'T-1-2' && (finalText.includes('|') || /원칙|방향/.test(finalText))) {
-              const { buildT12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const structured = buildT12Structured({}, allCtx)
-              if (structured.designPrinciples.length > 0) {
-                applyArtifactUpdates(structured as unknown as Record<string, string>, 'T-1-2' as ActivityCode)
-              }
-            } else if (currentActivity === 'T-2-1' && finalText.includes('|')) {
-              const { buildT21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const structured = buildT21Structured({}, allCtx)
-              if (structured.roles.length > 0) applyArtifactUpdates(structured as unknown as Record<string, string>, 'T-2-1' as ActivityCode)
-            } else if (currentActivity === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(finalText)) {
-              const { buildT22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const structured = buildT22Structured({}, allCtx)
-              if (structured.rules.length > 0) applyArtifactUpdates(structured as unknown as Record<string, string>, 'T-2-2' as ActivityCode)
-            } else if (currentActivity === 'T-2-3' && finalText.includes('|')) {
-              const { buildT23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const structured = buildT23Structured({}, allCtx)
-              if (structured.schedule.length > 0) applyArtifactUpdates(structured as unknown as Record<string, string>, 'T-2-3' as ActivityCode)
-            }
-          }
+          // 구조화 산출물 자동 저장 fallback
+          if (upd.length === 0) tryStructuredFallbackSave(finalText, currentActivity)
 
           if (cCodes.length > 0) applyArtifactConfirm(cCodes)
           // P0-phil2 (Task #30): parseSaveIntent fallback 제거.
@@ -2246,9 +2280,13 @@ ${discussionSummary}
   async function handleSend() {
     if (!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice) || !project) return
 
-    // 답장 시: 인용 대상 내용을 메시지 앞에 삽입하여 AI가 맥락을 파악하도록
+    // 답장 시: 인용 대상의 첫 문장만 간결하게 삽입
     const replyPrefix = replyTo
-      ? `[다음 내용에 대한 답장입니다]\n> ${replyTo.content.replace(/\[.*?\]/g, '').trim().slice(0, 200)}\n\n`
+      ? (() => {
+          const clean = replyTo.content.replace(/\[.*?\]/g, '').replace(/[#*_~`>]/g, '').trim()
+          const firstSentence = clean.split(/[.!?\n]/)[0]?.trim() || clean.slice(0, 60)
+          return `[답장: "${firstSentence.slice(0, 80)}"]\n`
+        })()
       : ''
     const userMessage = replyPrefix + input.trim()
     setInput('')
@@ -2369,27 +2407,8 @@ ${discussionSummary}
           const hasSavedInResponse = updates.some(u => Object.keys(u.sections).length > 0)
           updates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, displayText))
 
-          // T단계 구조화 산출물 자동 저장 fallback (이 경로는 A안/B안 선택 후 AI 응답)
-          if (updates.length === 0 && /저장/.test(displayText)) {
-            const allCtx2 = [...messages, { role: 'assistant' as const, content: displayText }]
-            const act = currentActivity
-            if (act === 'T-1-1' && displayText.includes('|')) {
-              const { buildT11Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const s = buildT11Structured({}, allCtx2); if (s.teamVision || s.personalVisions.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act)
-            } else if (act === 'T-1-2' && (displayText.includes('|') || /원칙|방향/.test(displayText))) {
-              const { buildT12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const s = buildT12Structured({}, allCtx2); if (s.designPrinciples.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act)
-            } else if (act === 'T-2-1' && displayText.includes('|')) {
-              const { buildT21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const s = buildT21Structured({}, allCtx2); if (s.roles.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act)
-            } else if (act === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(displayText)) {
-              const { buildT22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const s = buildT22Structured({}, allCtx2); if (s.rules.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act)
-            } else if (act === 'T-2-3' && displayText.includes('|')) {
-              const { buildT23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-              const s = buildT23Structured({}, allCtx2); if (s.schedule.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act)
-            }
-          }
+          // 구조화 산출물 자동 저장 fallback (A안/B안 선택 후 AI 응답)
+          if (updates.length === 0) tryStructuredFallbackSave(displayText, currentActivity)
 
           if (confirmCodes2.length > 0) applyArtifactConfirm(confirmCodes2)
 
@@ -2556,11 +2575,10 @@ ${discussionSummary}
             onClick={() => setShowKeyNotes(true)}
             title="저장된 중요 노트 보기"
             aria-label="중요 노트 보기"
-            className="flex items-center gap-1 text-[11px] bg-[#FEF7E0] text-[#B06000]
-              px-2 py-1.5 rounded-full font-semibold hover:bg-[#FDECC4] transition-colors flex-shrink-0 whitespace-nowrap"
+            className="flex items-center gap-1.5 text-[12px] bg-[#FEF7E0] text-[#B06000]
+              px-3 py-1.5 rounded-xl border border-[#F9AB00] font-semibold hover:bg-[#FDECC4] transition-colors flex-shrink-0 whitespace-nowrap"
           >
-            <span className="font-bold">중요노트</span>
-            <span className="tabular-nums">{proj.keyNotes?.length ?? 0}</span>
+            <span className="font-bold">중요노트 {proj.keyNotes?.length ?? 0}</span>
           </button>
           {/* 끊긴 대화 재시도 버튼: 마지막 메시지가 user이고 로딩 중이 아닐 때 */}
           {(() => {
@@ -3191,21 +3209,8 @@ ${discussionSummary}
                         if (sig) setPendingTeamDiscussion({ topic: sig.topic })
                         const hasArtifactSave = selUpdates.some(u => Object.keys(u.sections).length > 0)
                         selUpdates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, cleanText))
-                        // T단계 구조화 fallback (선택지 응답 경로)
-                        if (selUpdates.length === 0 && /저장/.test(cleanText)) {
-                          const allCtx3 = [...messages, { role: 'assistant' as const, content: cleanText }]
-                          const act = currentActivity
-                          if (act === 'T-2-2' && /규칙|소통|시간/.test(cleanText)) {
-                            const { buildT22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-                            const s = buildT22Structured({}, allCtx3); if (s.rules.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act)
-                          } else if (['T-1-1','T-1-2','T-2-1','T-2-3'].includes(act)) {
-                            const schemas = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-                            if (act === 'T-1-1') { const s = schemas.buildT11Structured({}, allCtx3); if (s.teamVision || s.personalVisions.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act) }
-                            else if (act === 'T-1-2') { const s = schemas.buildT12Structured({}, allCtx3); if (s.designPrinciples.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act) }
-                            else if (act === 'T-2-1') { const s = schemas.buildT21Structured({}, allCtx3); if (s.roles.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act) }
-                            else if (act === 'T-2-3') { const s = schemas.buildT23Structured({}, allCtx3); if (s.schedule.length > 0) applyArtifactUpdates(s as unknown as Record<string, string>, act) }
-                          }
-                        }
+                        // 구조화 산출물 자동 저장 fallback (선택지 응답 경로)
+                        if (selUpdates.length === 0) tryStructuredFallbackSave(cleanText, currentActivity)
                         // [ARTIFACT_UPDATE]가 있는 응답에서는 [ARTIFACT_CONFIRM]과 [ACTIVITY_ADVANCE]를 무시
                         // → 팀장이 우측 패널에서 직접 확정해야 하고, 전진도 별도 메시지로만 가능
                         if (!hasArtifactSave) {

@@ -281,6 +281,24 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
   } else if (c._schema === 'T-2-3') {
     const sched = c.schedule as Array<{ period: string; activity: string; deliverable: string; assignee: string }> | undefined
     if (sched?.length) sections.push({ key: '팀 일정', value: '| 기간 | 활동 내용 | 마감·산출물 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n') })
+  } else if (c._schema === 'A-1-2') {
+    const crit = c.criteria as Array<{ criterion: string; description: string; priority: string }> | undefined
+    if (crit?.length) sections.push({ key: '주제 선정 기준', value: '| 기준 | 설명 | 우선순위 |\n| --- | --- | --- |\n' + crit.map(cr => `| ${cr.criterion} | ${cr.description || '-'} | ${cr.priority || '-'} |`).join('\n') })
+    if (typeof c.selectedTopic === 'string' && c.selectedTopic) sections.push({ key: '선정 주제', value: c.selectedTopic })
+    if (typeof c.topicType === 'string' && c.topicType) sections.push({ key: '주제 유형', value: c.topicType })
+    if (typeof c.rationale === 'string' && c.rationale) sections.push({ key: '선정 근거', value: c.rationale })
+  } else if (c._schema === 'A-2-1') {
+    if (typeof c.analysisTable === 'string' && c.analysisTable) sections.push({ key: '성취기준 분석표', value: c.analysisTable })
+  } else if (c._schema === 'A-2-2') {
+    const sg = c.subjectGoals as Array<{ subject: string; goal: string }> | undefined
+    if (sg?.length) sections.push({ key: '교과별 세부 목표', value: '| 교과 | 학습 목표 |\n| --- | --- |\n' + sg.map(g => `| ${g.subject} | ${g.goal} |`).join('\n') })
+    const ig = c.integratedGoals as string[] | undefined
+    if (ig?.length) sections.push({ key: '통합 학습목표', value: ig.map((g, i) => `${i + 1}. ${g}`).join('\n') })
+  } else if (c._schema === 'A-2-3') {
+    const cp = c.commonProfile as Array<{ item: string; content: string }> | undefined
+    if (cp?.length) sections.push({ key: '학습자 프로필', value: '| 항목 | 내용 |\n| --- | --- |\n' + cp.map(p => `| ${p.item} | ${p.content} |`).join('\n') })
+    const tn = c.teacherNotes as Array<{ teacherName: string; note: string }> | undefined
+    if (tn?.length) sections.push({ key: '교사별 맞춤', value: tn.map(t => `- **${t.teacherName}**: ${t.note}`).join('\n') })
   }
 
   // 비구조화(레거시) 산출물

@@ -99,6 +99,35 @@ function renderArtifactContent(content: Record<string, unknown>): string {
     return ''
   }
 
+  if (content._schema === 'A-1-2') {
+    const parts: string[] = []
+    const crit = content.criteria as Array<{ criterion: string; description: string; priority: string }> | undefined
+    if (crit?.length) parts.push('**주제 선정 기준**\n\n| 기준 | 설명 | 우선순위 |\n| --- | --- | --- |\n' + crit.map(c => `| ${c.criterion} | ${c.description || '-'} | ${c.priority || '-'} |`).join('\n'))
+    if (content.selectedTopic) parts.push(`**선정 주제**: ${content.selectedTopic}`)
+    if (content.topicType) parts.push(`**주제 유형**: ${content.topicType}`)
+    if (content.rationale) parts.push(`**선정 근거**: ${content.rationale}`)
+    return parts.join('\n\n')
+  }
+  if (content._schema === 'A-2-1') {
+    return content.analysisTable ? `**성취기준 분석표**\n\n${content.analysisTable}` : ''
+  }
+  if (content._schema === 'A-2-2') {
+    const parts: string[] = []
+    const sg = content.subjectGoals as Array<{ subject: string; goal: string }> | undefined
+    if (sg?.length) parts.push('**교과별 세부 목표**\n\n| 교과 | 학습 목표 |\n| --- | --- |\n' + sg.map(g => `| ${g.subject} | ${g.goal} |`).join('\n'))
+    const ig = content.integratedGoals as string[] | undefined
+    if (ig?.length) parts.push('**통합 학습목표**\n\n' + ig.map((g, i) => `${i + 1}. ${g}`).join('\n'))
+    return parts.join('\n\n')
+  }
+  if (content._schema === 'A-2-3') {
+    const parts: string[] = []
+    const cp = content.commonProfile as Array<{ item: string; content: string }> | undefined
+    if (cp?.length) parts.push('**학습자 프로필**\n\n| 항목 | 내용 |\n| --- | --- |\n' + cp.map(p => `| ${p.item} | ${p.content} |`).join('\n'))
+    const tn = content.teacherNotes as Array<{ teacherName: string; note: string }> | undefined
+    if (tn?.length) parts.push('**교사별 맞춤 포인트**\n\n' + tn.map(t => `- **${t.teacherName}**: ${t.note}`).join('\n'))
+    return parts.join('\n\n')
+  }
+
   // 비구조화(레거시) 산출물
   return Object.entries(content)
     .filter(([k, v]) => v !== null && v !== undefined && v !== '' && k !== '_schema' && k !== '_schemaVersion')

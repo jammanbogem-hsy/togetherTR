@@ -316,6 +316,26 @@ function RequiredSectionsChecklist({
         filled = s.schedule.reduce((sum, i) => sum + (i.period?.length ?? 0) + (i.activity?.length ?? 0), 0)
       }
     }
+    if (filled === 0 && content._schema === 'A-1-2') {
+      const s = content as unknown as { criteria?: unknown[]; selectedTopic?: string; topicType?: string; rationale?: string }
+      if (sec.key === '주제 선정 기준' && s.criteria?.length) filled = 20
+      else if (sec.key === '최종 선정 주제' && s.selectedTopic) filled = s.selectedTopic.length
+      else if (sec.key === '주제 유형' && s.topicType) filled = s.topicType.length
+      else if (sec.key === '선정 근거' && s.rationale) filled = s.rationale.length
+    }
+    if (filled === 0 && content._schema === 'A-2-1') {
+      const s = content as unknown as { analysisTable?: string }
+      if (sec.key === '성취기준분석표' && s.analysisTable) filled = s.analysisTable.length
+    }
+    if (filled === 0 && content._schema === 'A-2-2') {
+      const s = content as unknown as { subjectGoals?: unknown[]; integratedGoals?: string[] }
+      if (sec.key === '교과별 세부 목표' && s.subjectGoals?.length) filled = 20
+      else if (sec.key === '통합 학습목표' && s.integratedGoals?.length) filled = s.integratedGoals.join('').length
+    }
+    if (filled === 0 && content._schema === 'A-2-3') {
+      const s = content as unknown as { commonProfile?: unknown[] }
+      if (sec.key === '학습자 프로필' && s.commonProfile?.length) filled = 20
+    }
     const satisfied = filled >= sec.minChars
     const pct = Math.min(100, Math.round((filled / sec.minChars) * 100))
     return { filled, satisfied, pct }
@@ -612,7 +632,11 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
             {value.map((item, i) => (
               <li key={i} className="flex gap-2.5 text-sm text-[#202124]">
                 <span className="mt-2 w-1.5 h-1.5 rounded-full bg-[#1A73E8] flex-shrink-0" />
-                <span className="leading-relaxed">{String(item)}</span>
+                <span className="leading-relaxed">
+                  {typeof item === 'object' && item !== null
+                    ? Object.values(item as Record<string, unknown>).filter(v => typeof v === 'string' && v.trim()).join(' · ')
+                    : String(item)}
+                </span>
               </li>
             ))}
           </ul>
@@ -626,6 +650,7 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
 
 // 산출물에 표시하면 안 되는 AI 진행 안내 섹션
 const DISPLAY_BLOCKED_KEYS = [
+  '_schema', '_schemaversion',
   '다음 행동', '다음 단계', 'next step',
   '미결 사항', '미결', '보류 사항',
   'ai 제안', '추천 사항', '참고 사항',
@@ -718,29 +743,28 @@ function StructuredArtifactRenderer({ content, onDelete }: { content: Record<str
     'T-2-1': { mod: './structured/T21Renderer', label: '역할 배분' },
     'T-2-2': { mod: './structured/T22Renderer', label: '팀 규칙 수립' },
     'T-2-3': { mod: './structured/T23Renderer', label: '팀 일정 협의' },
+    'A-1-2': { mod: './structured/A12Renderer', label: '주제 선정' },
+    'A-2-1': { mod: './structured/A21Renderer', label: '핵심아이디어 및 성취기준 분석' },
+    'A-2-2': { mod: './structured/A22Renderer', label: '통합 수업목표 진술' },
+    'A-2-3': { mod: './structured/A23Renderer', label: '학습자·맥락 분석' },
   }
 
   if (!schema || !SCHEMA_MAP[schema]) return null
 
   const { label } = SCHEMA_MAP[schema]
   let inner: React.ReactNode = null
-
-  if (schema === 'T-1-1') {
-    const { T11Renderer } = require('./structured/T11Renderer') as { T11Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T11Structured }> }
-    inner = <T11Renderer data={content as unknown as import('@/lib/artifacts/schemas').T11Structured} />
-  } else if (schema === 'T-1-2') {
-    const { T12Renderer } = require('./structured/T12Renderer') as { T12Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T12Structured }> }
-    inner = <T12Renderer data={content as unknown as import('@/lib/artifacts/schemas').T12Structured} />
-  } else if (schema === 'T-2-1') {
-    const { T21Renderer } = require('./structured/T21Renderer') as { T21Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T21Structured }> }
-    inner = <T21Renderer data={content as unknown as import('@/lib/artifacts/schemas').T21Structured} />
-  } else if (schema === 'T-2-2') {
-    const { T22Renderer } = require('./structured/T22Renderer') as { T22Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T22Structured }> }
-    inner = <T22Renderer data={content as unknown as import('@/lib/artifacts/schemas').T22Structured} />
-  } else if (schema === 'T-2-3') {
-    const { T23Renderer } = require('./structured/T23Renderer') as { T23Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T23Structured }> }
-    inner = <T23Renderer data={content as unknown as import('@/lib/artifacts/schemas').T23Structured} />
+  const renderers: Record<string, () => React.ReactNode> = {
+    'T-1-1': () => { const { T11Renderer } = require('./structured/T11Renderer'); return <T11Renderer data={content} /> },
+    'T-1-2': () => { const { T12Renderer } = require('./structured/T12Renderer'); return <T12Renderer data={content} /> },
+    'T-2-1': () => { const { T21Renderer } = require('./structured/T21Renderer'); return <T21Renderer data={content} /> },
+    'T-2-2': () => { const { T22Renderer } = require('./structured/T22Renderer'); return <T22Renderer data={content} /> },
+    'T-2-3': () => { const { T23Renderer } = require('./structured/T23Renderer'); return <T23Renderer data={content} /> },
+    'A-1-2': () => { const { A12Renderer } = require('./structured/A12Renderer'); return <A12Renderer data={content} /> },
+    'A-2-1': () => { const { A21Renderer } = require('./structured/A21Renderer'); return <A21Renderer data={content} /> },
+    'A-2-2': () => { const { A22Renderer } = require('./structured/A22Renderer'); return <A22Renderer data={content} /> },
+    'A-2-3': () => { const { A23Renderer } = require('./structured/A23Renderer'); return <A23Renderer data={content} /> },
   }
+  if (schema && renderers[schema]) inner = renderers[schema]()
 
   return <ExpandableWrapper title={label} onDelete={onDelete}>{inner}</ExpandableWrapper>
 }
@@ -759,8 +783,8 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
   // 구조화된 산출물이면 고정 렌더러 사용 (AI 자유 형식 대신)
   if (content._schema) {
     return <StructuredArtifactRenderer content={content} onDelete={onDeleteSection ? () => {
-      // 구조화 산출물 전체 삭제: 모든 키 제거
-      for (const key of Object.keys(content)) onDeleteSection(key)
+      // 구조화 산출물 전체를 빈 객체로 교체 (한 번에 삭제)
+      onDeleteSection('__clear_all__')
     } : undefined} />
   }
 
@@ -1088,8 +1112,14 @@ export function ArtifactPanel() {
 
   async function handleDeleteSection(key: string) {
     if (!project || !firestoreArtifact) return
-    const newContent = { ...(firestoreArtifact.content as Record<string, unknown>) }
-    delete newContent[key]
+    let newContent: Record<string, unknown>
+    if (key === '__clear_all__') {
+      // 구조화 산출물 전체 삭제
+      newContent = {}
+    } else {
+      newContent = { ...(firestoreArtifact.content as Record<string, unknown>) }
+      delete newContent[key]
+    }
     // 내용이 비었거나 confirmed 상태에서 수정하면 in_review로 되돌림
     const isEmpty = Object.keys(newContent).length === 0
     const nextStatus: 'ai_draft' | 'in_review' | 'confirmed' =
