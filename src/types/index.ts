@@ -73,6 +73,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     recommendedSections: [
       { key: '개인 비전',    label: '개인 비전 키워드·정교화 문장', minChars: 20, required: 'any' },
       { key: '팀 공통 비전', label: '팀 공통 비전 문장',          minChars: 10, required: 'any' },
+      { key: '핵심 키워드',  label: '비전 핵심 키워드 (3~5개)',    minChars: 5,  required: 'any' },
     ],
   },
   'T-1-2': {
