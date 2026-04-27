@@ -49,4 +49,6 @@ next-env.d.ts
 .moai/
 
 # local data caches (knowledge graph, embeddings)
-/data/
+/data/*
+!/data/curriculum-content-systems/
+!/data/curriculum-content-systems/**

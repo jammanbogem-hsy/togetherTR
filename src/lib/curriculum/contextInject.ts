@@ -23,6 +23,10 @@ import {
   CurriculumStandard,
 } from './graphReader'
 import { searchJsonStandards } from './curriculumJsonReader'
+import {
+  buildContentSystemContext,
+  isContentSystemContextEnabled,
+} from './contentSystemReader'
 
 // 활동 코드 → 온톨로지 주입 활성화 여부
 const ONTOLOGY_ENABLED_ACTIVITIES: ActivityCode[] = [
@@ -381,6 +385,7 @@ export function buildCurriculumContext(
   gradeGroup: string,
   confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>,
   graphSavedData?: GraphSavedData | null,
+  targetSubjects: string[] = [],
 ): string {
   // 활성화된 활동인지 확인
   if (!ONTOLOGY_ENABLED_ACTIVITIES.includes(activityCode)) return ''
@@ -388,7 +393,17 @@ export function buildCurriculumContext(
   // A-2-1: 지식 그래프 저장 데이터 우선 사용
   if (activityCode === 'A-2-1' && graphSavedData) {
     const ctx = buildGraphBasedA21Context(graphSavedData)
-    if (ctx) return '\n\n---\n' + ctx
+    if (ctx) {
+      const contentSystemContext = isContentSystemContextEnabled()
+        ? buildContentSystemContext(
+            activityCode,
+            extractKeywords(messages, confirmedArtifacts),
+            gradeGroup,
+            targetSubjects,
+          )
+        : ''
+      return '\n\n---\n' + ctx + contentSystemContext
+    }
   }
 
   // 키워드 추출
@@ -413,5 +428,7 @@ export function buildCurriculumContext(
   if (standards.length === 0) return ''
 
   // 활동별 컨텍스트 블록 생성
-  return '\n\n---\n' + buildActivityContext(activityCode, standards, keywords)
+  return '\n\n---\n'
+    + buildActivityContext(activityCode, standards, keywords)
+    + buildContentSystemContext(activityCode, keywords, gradeGroup, targetSubjects)
 }

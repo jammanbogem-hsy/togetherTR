@@ -68,11 +68,42 @@ const STAGE_DEEP_ANALYSIS: Record<StageCode, string> = {
 
 // 산출물 content를 사람이 읽기 좋은 마크다운으로 변환
 function renderArtifactContent(content: Record<string, unknown>): string {
+  // 구조화 스키마 → 읽기 좋은 마크다운 변환
+  if (content._schema === 'T-1-1') {
+    const parts: string[] = []
+    const pv = content.personalVisions as Array<{ teacherName: string; keywords: string[]; refinedVision: string }> | undefined
+    if (pv?.length) parts.push('**개인 비전**\n\n| 교사명 | 키워드 | AI 정교화 비전 |\n| --- | --- | --- |\n' + pv.map(p => `| ${p.teacherName} 선생님 | ${p.keywords?.join(', ') || '-'} | ${p.refinedVision} |`).join('\n'))
+    if (content.teamVision) parts.push(`**팀 공통 비전**\n\n${content.teamVision}`)
+    const kw = content.coreKeywords as string[] | undefined
+    if (kw?.length) parts.push(`**핵심 키워드**\n\n${kw.join(', ')}`)
+    return parts.join('\n\n')
+  }
+  if (content._schema === 'T-1-2') {
+    const dp = content.designPrinciples as Array<{ principle: string; rationale: string }> | undefined
+    if (dp?.length) return '**설계 원칙**\n\n| 설계 원칙 | 근거 |\n| --- | --- |\n' + dp.map(d => `| ${d.principle} | ${d.rationale} |`).join('\n')
+    return ''
+  }
+  if (content._schema === 'T-2-1') {
+    const roles = content.roles as Array<{ teacherName: string; subject: string; strengths: string; role: string; responsibilities: string }> | undefined
+    if (roles?.length) return '**역할 배분**\n\n| 교사명 | 담당 교과 | 강점·전문성 | 팀 내 역할 | 담당 업무 |\n| --- | --- | --- | --- | --- |\n' + roles.map(r => `| ${r.teacherName} | ${r.subject || '-'} | ${r.strengths || '-'} | ${r.role} | ${r.responsibilities} |`).join('\n')
+    return ''
+  }
+  if (content._schema === 'T-2-2') {
+    const rules = content.rules as Array<{ category: string; name: string; description: string; violation: string }> | undefined
+    if (rules?.length) return '**팀 규칙**\n\n| 범주 | 규칙명 | 설명 | 위반 시 |\n| --- | --- | --- | --- |\n' + rules.map(r => `| ${r.category || '-'} | ${r.name} | ${r.description} | ${r.violation || '-'} |`).join('\n')
+    return ''
+  }
+  if (content._schema === 'T-2-3') {
+    const sched = content.schedule as Array<{ period: string; activity: string; deliverable: string; assignee: string }> | undefined
+    if (sched?.length) return '**팀 일정**\n\n| 기간 | 활동 내용 | 마감·산출물 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n')
+    return ''
+  }
+
+  // 비구조화(레거시) 산출물
   return Object.entries(content)
-    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .filter(([k, v]) => v !== null && v !== undefined && v !== '' && k !== '_schema' && k !== '_schemaVersion')
     .map(([k, v]) => {
       if (typeof v === 'string') {
-        // 마크다운 표 or 여러 줄 텍스트는 코드블록 없이 그대로
         return `**${k}**\n\n${v.trim()}`
       }
       if (Array.isArray(v)) {

@@ -105,7 +105,20 @@ function hasMarkdownTable(text: string): boolean {
 // - 홀수 셀이면 마지막 셀 버리고 짝수 처리 (혹은 원문 유지)
 function normalizeInlinePipeList(text: string): string {
   if (typeof text !== 'string') return text
-  if (text.includes('\n')) return text
+  // 이미 줄바꿈이 있는 표는 정상 → 추가 처리 불필요 (단, 한 줄에 || 패턴이면 행 분리)
+  if (text.includes('\n')) {
+    // 한 줄 안에 여러 행이 || 로 붙어있는 경우 분리 (AI가 줄바꿈 없이 붙여 출력하는 케이스)
+    if (/\|\s*\|/.test(text) && text.split('\n').some(l => (l.match(/\|/g) || []).length > 8)) {
+      return text.split('\n').map(line => {
+        if ((line.match(/\|/g) || []).length > 8 && line.trim().startsWith('|')) {
+          // | A | B || C | D | → | A | B |\n| C | D |
+          return line.replace(/\|\s*\|/g, '|\n|')
+        }
+        return line
+      }).join('\n')
+    }
+    return text
+  }
   const trimmed = text.trim()
   if (!trimmed.startsWith('|')) return text
   const pipeCount = (trimmed.match(/\|/g) || []).length
@@ -267,7 +280,42 @@ function RequiredSectionsChecklist({
   const anySections = sections.filter(s => s.required === 'any')
 
   function sectionInfo(sec: RequiredSection) {
-    const filled = countKoreanChars(content[sec.key])
+    let filled = countKoreanChars(content[sec.key])
+    // 구조화 스키마 대응: 기존 키 → 스키마 필드 매핑
+    if (filled === 0 && content._schema === 'T-1-1') {
+      const s = content as unknown as { personalVisions?: Array<{ refinedVision: string }>; teamVision?: string; coreKeywords?: string[] }
+      if (sec.key === '개인 비전' && s.personalVisions?.length) {
+        filled = s.personalVisions.reduce((sum, pv) => sum + (pv.refinedVision?.length ?? 0), 0)
+      } else if (sec.key === '팀 공통 비전' && s.teamVision) {
+        filled = s.teamVision.length
+      } else if (sec.key === '핵심 키워드' && s.coreKeywords?.length) {
+        filled = s.coreKeywords.join(', ').length
+      }
+    }
+    if (filled === 0 && content._schema === 'T-1-2') {
+      const s = content as unknown as { designPrinciples?: Array<{ principle: string; rationale: string }> }
+      if (sec.key === '설계 방향' && s.designPrinciples?.length) {
+        filled = s.designPrinciples.reduce((sum, dp) => sum + (dp.principle?.length ?? 0) + (dp.rationale?.length ?? 0), 0)
+      }
+    }
+    if (filled === 0 && content._schema === 'T-2-1') {
+      const s = content as unknown as { roles?: Array<{ role: string; responsibilities: string }> }
+      if (sec.key === '역할 배분' && s.roles?.length) {
+        filled = s.roles.reduce((sum, r) => sum + (r.role?.length ?? 0) + (r.responsibilities?.length ?? 0), 0)
+      }
+    }
+    if (filled === 0 && content._schema === 'T-2-2') {
+      const s = content as unknown as { rules?: Array<{ name: string; description: string }> }
+      if (sec.key === '팀 규칙' && s.rules?.length) {
+        filled = s.rules.reduce((sum, r) => sum + (r.name?.length ?? 0) + (r.description?.length ?? 0), 0)
+      }
+    }
+    if (filled === 0 && content._schema === 'T-2-3') {
+      const s = content as unknown as { schedule?: Array<{ period: string; activity: string }> }
+      if (sec.key === '팀 일정' && s.schedule?.length) {
+        filled = s.schedule.reduce((sum, i) => sum + (i.period?.length ?? 0) + (i.activity?.length ?? 0), 0)
+      }
+    }
     const satisfied = filled >= sec.minChars
     const pct = Math.min(100, Math.round((filled / sec.minChars) * 100))
     return { filled, satisfied, pct }
@@ -483,7 +531,7 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
             <ReactMarkdown remarkPlugins={[remarkGfm]}
               components={{
                 strong: ({ children }) => (
-                  <span className="inline-block px-1.5 py-0.5 rounded-md text-[13px] font-semibold bg-[#E8F0FE] text-[#1A73E8] leading-snug mx-0.5">
+                  <span className="inline px-1 py-0.5 rounded text-[13px] font-semibold bg-[#E8F0FE] text-[#1A73E8] leading-snug box-decoration-clone">
                     {children}
                   </span>
                 ),
@@ -548,6 +596,7 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
               {/* 인라인 파이프 나열(잘못된 표 시도) → 불릿 리스트 정규화 먼저 적용 */}
               {/* 그다음 **항목**: 패턴 앞에 빈 줄 삽입, 표 셀 안의 <br/>은 \u2028으로, 표 밖의 <br/>은 제거 */}
               {normalizeInlinePipeList(value)
+                .replace(/\\[nN]/g, '\n')
                 .replace(/([^.\n])\s+(\*\*[^*\n]+\*\*\s*:)/g, '$1\n\n$2')
                 .split('\n')
                 .map(line => line.startsWith('|')
@@ -658,6 +707,44 @@ export const ARTIFACT_STATUS_DOT: Record<ArtifactStatus, string> = {
   rejected:  '#C62828',  // 빨강 — 반려
 }
 
+// ─── 구조화된 산출물 렌더러 분기 ──────────────────────────────────────────
+function StructuredArtifactRenderer({ content, onDelete }: { content: Record<string, unknown>; onDelete?: () => void }) {
+  const schema = content._schema as string | undefined
+  const { ExpandableWrapper } = require('./structured/ExpandableWrapper') as { ExpandableWrapper: React.ComponentType<{ title: string; children: React.ReactNode; onDelete?: () => void }> }
+
+  const SCHEMA_MAP: Record<string, { mod: string; label: string }> = {
+    'T-1-1': { mod: './structured/T11Renderer', label: '팀 공통 비전 설정' },
+    'T-1-2': { mod: './structured/T12Renderer', label: '수업설계 방향 설정' },
+    'T-2-1': { mod: './structured/T21Renderer', label: '역할 배분' },
+    'T-2-2': { mod: './structured/T22Renderer', label: '팀 규칙 수립' },
+    'T-2-3': { mod: './structured/T23Renderer', label: '팀 일정 협의' },
+  }
+
+  if (!schema || !SCHEMA_MAP[schema]) return null
+
+  const { label } = SCHEMA_MAP[schema]
+  let inner: React.ReactNode = null
+
+  if (schema === 'T-1-1') {
+    const { T11Renderer } = require('./structured/T11Renderer') as { T11Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T11Structured }> }
+    inner = <T11Renderer data={content as unknown as import('@/lib/artifacts/schemas').T11Structured} />
+  } else if (schema === 'T-1-2') {
+    const { T12Renderer } = require('./structured/T12Renderer') as { T12Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T12Structured }> }
+    inner = <T12Renderer data={content as unknown as import('@/lib/artifacts/schemas').T12Structured} />
+  } else if (schema === 'T-2-1') {
+    const { T21Renderer } = require('./structured/T21Renderer') as { T21Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T21Structured }> }
+    inner = <T21Renderer data={content as unknown as import('@/lib/artifacts/schemas').T21Structured} />
+  } else if (schema === 'T-2-2') {
+    const { T22Renderer } = require('./structured/T22Renderer') as { T22Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T22Structured }> }
+    inner = <T22Renderer data={content as unknown as import('@/lib/artifacts/schemas').T22Structured} />
+  } else if (schema === 'T-2-3') {
+    const { T23Renderer } = require('./structured/T23Renderer') as { T23Renderer: React.ComponentType<{ data: import('@/lib/artifacts/schemas').T23Structured }> }
+    inner = <T23Renderer data={content as unknown as import('@/lib/artifacts/schemas').T23Structured} />
+  }
+
+  return <ExpandableWrapper title={label} onDelete={onDelete}>{inner}</ExpandableWrapper>
+}
+
 function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand, recentlyUpdatedKeys }: {
   content: Record<string, unknown>
   onDeleteSection?: (key: string) => void
@@ -669,6 +756,14 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
   allowTableExpand?: boolean
   recentlyUpdatedKeys?: Set<string>  // 방금 변경된 섹션 키 집합 (플래시 대상)
 }) {
+  // 구조화된 산출물이면 고정 렌더러 사용 (AI 자유 형식 대신)
+  if (content._schema) {
+    return <StructuredArtifactRenderer content={content} onDelete={onDeleteSection ? () => {
+      // 구조화 산출물 전체 삭제: 모든 키 제거
+      for (const key of Object.keys(content)) onDeleteSection(key)
+    } : undefined} />
+  }
+
   const filteredEntries = Object.entries(content).filter(
     ([key]) => !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
   )

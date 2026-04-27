@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       project.targetGradeGroup,
       confirmedArtifacts,
       graphSavedData,
+      project.targetSubjects,
     )
     let materialContext = ''
     if (projectId) {

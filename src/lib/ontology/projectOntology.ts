@@ -258,13 +258,39 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
   structured?: StructuredInfo
 } {
   if (!artifact?.content) return {}
-  const DISPLAY_BLOCKED = new Set(['_schemaVersion', 'status', 'version', 'title'])
+  const DISPLAY_BLOCKED = new Set(['_schemaVersion', '_schema', 'status', 'version', 'title'])
   const sections: ArtifactSectionSnapshot[] = []
-  for (const [key, value] of Object.entries(artifact.content)) {
-    if (DISPLAY_BLOCKED.has(key)) continue
-    const v = typeof value === 'string' ? value : ''
-    if (!v.trim()) continue
-    sections.push({ key, value: v.trim() })
+
+  // 구조화 스키마 → 읽기 좋은 섹션으로 변환
+  const c = artifact.content as Record<string, unknown>
+  if (c._schema === 'T-1-1') {
+    const pv = c.personalVisions as Array<{ teacherName: string; keywords: string[]; refinedVision: string }> | undefined
+    if (pv?.length) sections.push({ key: '개인 비전', value: '| 교사명 | 키워드 | AI 정교화 비전 |\n| --- | --- | --- |\n' + pv.map(p => `| ${p.teacherName} 선생님 | ${p.keywords?.join(', ') || '-'} | ${p.refinedVision} |`).join('\n') })
+    if (typeof c.teamVision === 'string' && c.teamVision) sections.push({ key: '팀 공통 비전', value: c.teamVision })
+    const kw = c.coreKeywords as string[] | undefined
+    if (kw?.length) sections.push({ key: '핵심 키워드', value: kw.join(', ') })
+  } else if (c._schema === 'T-1-2') {
+    const dp = c.designPrinciples as Array<{ principle: string; rationale: string }> | undefined
+    if (dp?.length) sections.push({ key: '설계 원칙', value: '| 설계 원칙 | 근거 |\n| --- | --- |\n' + dp.map(d => `| ${d.principle} | ${d.rationale} |`).join('\n') })
+  } else if (c._schema === 'T-2-1') {
+    const roles = c.roles as Array<{ teacherName: string; subject: string; strengths: string; role: string; responsibilities: string }> | undefined
+    if (roles?.length) sections.push({ key: '역할 배분', value: '| 교사명 | 담당 교과 | 강점·전문성 | 팀 내 역할 | 담당 업무 |\n| --- | --- | --- | --- | --- |\n' + roles.map(r => `| ${r.teacherName} | ${r.subject || '-'} | ${r.strengths || '-'} | ${r.role} | ${r.responsibilities} |`).join('\n') })
+  } else if (c._schema === 'T-2-2') {
+    const rules = c.rules as Array<{ category: string; name: string; description: string; violation: string }> | undefined
+    if (rules?.length) sections.push({ key: '팀 규칙', value: '| 범주 | 규칙명 | 설명 | 위반 시 |\n| --- | --- | --- | --- |\n' + rules.map(r => `| ${r.category || '-'} | ${r.name} | ${r.description} | ${r.violation || '-'} |`).join('\n') })
+  } else if (c._schema === 'T-2-3') {
+    const sched = c.schedule as Array<{ period: string; activity: string; deliverable: string; assignee: string }> | undefined
+    if (sched?.length) sections.push({ key: '팀 일정', value: '| 기간 | 활동 내용 | 마감·산출물 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n') })
+  }
+
+  // 비구조화(레거시) 산출물
+  if (sections.length === 0) {
+    for (const [key, value] of Object.entries(artifact.content)) {
+      if (DISPLAY_BLOCKED.has(key)) continue
+      const v = typeof value === 'string' ? value : ''
+      if (!v.trim()) continue
+      sections.push({ key, value: v.trim() })
+    }
   }
   if (sections.length === 0) return {}
   // 상위 N개 개념만 보존 — 해시태그 식으로 표시될 것

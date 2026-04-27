@@ -257,7 +257,7 @@ export function KeyNotesModal({
  */
 export function MessageContextMenu({
   open, x, y, onClose,
-  onReply, onSaveKeyNote, onCopy,
+  onReply, onSaveKeyNote, onCopy, onSendToArtifact,
 }: {
   open: boolean
   x: number
@@ -266,6 +266,7 @@ export function MessageContextMenu({
   onReply?: () => void
   onSaveKeyNote: () => void
   onCopy: () => void
+  onSendToArtifact?: () => void
 }) {
   if (!open || typeof document === 'undefined') return null
   // 우측 가장자리·하단 초과 방지를 위한 위치 클램프
@@ -300,6 +301,18 @@ export function MessageContextMenu({
           <PushPinSimple size={15} weight="fill" className="text-[#F9AB00]" />
           중요 내용 저장
         </button>
+        {onSendToArtifact && (
+          <button
+            type="button"
+            onClick={() => { onSendToArtifact(); onClose() }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#1A73E8] hover:bg-[#E8F0FE] text-left transition-colors font-semibold"
+          >
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#1A73E8]">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6M9 15l3 3 3-3"/>
+            </svg>
+            산출물로 보내기
+          </button>
+        )}
         <button
           type="button"
           onClick={() => { onCopy(); onClose() }}
