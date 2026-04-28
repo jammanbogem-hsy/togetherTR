@@ -52,17 +52,7 @@ function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
 
   return (
     <div
-      className="project-card w-full text-left rounded-2xl hover:scale-[1.02] transition-transform duration-200 group relative flex flex-col cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-[#1A73E8]/25"
-      role="button"
-      tabIndex={0}
-      aria-label={`${project.title} 프로젝트 열기`}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onClick()
-        }
-      }}
+      className="project-card w-full text-left rounded-2xl hover:scale-[1.02] transition-transform duration-200 group relative flex flex-col cursor-pointer"
       style={{
         '--cc': s.cc,
         '--cx1': s.cx1, '--cy1': s.cy1,
@@ -73,11 +63,18 @@ function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
         aspectRatio: '1 / 1',
       } as React.CSSProperties}
     >
+      <button
+        type="button"
+        onClick={onClick}
+        className="absolute inset-0 z-[2] rounded-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-[#1A73E8]/25"
+        aria-label={`${project.title} 프로젝트 열기`}
+      />
+
       {/* 호스트: 삭제 / 팀원: 대시보드에서 숨김 (호버 시 노출) */}
       {isHost && onDelete && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-red-50 border border-gray-200 hover:border-red-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-gray-400 hover:text-red-500"
+          className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-red-50 border border-gray-200 hover:border-red-300 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-red-500"
           title="프로젝트 삭제"
         >
           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
@@ -86,14 +83,14 @@ function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
       {!isHost && onHide && (
         <button
           onClick={(e) => { e.stopPropagation(); onHide() }}
-          className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-gray-100 border border-gray-200 hover:border-gray-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-gray-400 hover:text-gray-600"
+          className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-gray-100 border border-gray-200 hover:border-gray-400 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-gray-600"
           title="대시보드에서 숨기기"
         >
           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       )}
 
-      <div className="flex flex-col flex-1 p-5 text-left">
+      <div className="relative z-[1] flex flex-col flex-1 p-5 text-left">
         {/* 상단: 제목 + 단계 */}
         <div className="flex items-start gap-3 mb-3 pr-8">
           <div className="flex items-center gap-2 min-w-0">

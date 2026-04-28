@@ -15,6 +15,7 @@ import { ArtifactSaveProposal } from './ArtifactSaveProposal'
 import { ActionCard as ActionCardComponent } from './ActionCard'
 import { ChatFontScaleControl, useChatFontScale } from '@/components/accessibility/FontScaleControl'
 import { StandardsFinderModal } from './StandardsFinderModal'
+import { CoreIdeaFinderModal } from './CoreIdeaFinderModal'
 import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
 import { addKeyNote } from '@/lib/firebase/projects'
 import type { KeyNote } from '@/types'
@@ -1081,7 +1082,14 @@ const SLASH_COMMANDS = [
     label: '성취기준 찾기',
     desc: '교과·학년군으로 필터해 성취기준을 검색·선택 후 채팅에 인용',
     keywords: ['성취기준', '성취', '기준', 'standards', '교과', '학년'],
-    hostOnly: false,   // 팀원도 참고용으로 조회·공유 가능
+    hostOnly: false,
+  },
+  {
+    id: 'coreidea',
+    label: '핵심아이디어 찾기',
+    desc: '교과·영역별 핵심아이디어 + 지식·이해·과정·기능을 검색·선택',
+    keywords: ['핵심아이디어', '핵심', '아이디어', '내용체계', 'coreidea', '지식', '과정'],
+    hostOnly: false,
   },
   {
     id: 'briefing',
@@ -1139,6 +1147,7 @@ export function ChatPanel() {
   const [chatError, setChatError] = useState<string | null>(null)
   const [showDiscussionConfirm, setShowDiscussionConfirm] = useState(false)
   const [showStandardsBrowser, setShowStandardsBrowser] = useState(false)
+  const [showCoreIdeaBrowser, setShowCoreIdeaBrowser] = useState(false)
   const [showKeyNotes, setShowKeyNotes] = useState(false)
   // 우클릭 컨텍스트 메뉴 상태
   const [ctxMenu, setCtxMenu] = useState<null | {
@@ -2480,6 +2489,8 @@ ${discussionSummary}
       handlePromptNextCommand()
     } else if (cmdId === 'standards') {
       setShowStandardsBrowser(true)
+    } else if (cmdId === 'coreidea') {
+      setShowCoreIdeaBrowser(true)
     }
   }
 
@@ -3397,10 +3408,17 @@ ${discussionSummary}
           )
         })}
 
-        {/* 성취기준 찾기 모달 — 선택한 성취기준을 채팅 입력창에 삽입 */}
+        {/* 성취기준 찾기 모달 */}
         <StandardsFinderModal
           open={showStandardsBrowser}
           onClose={() => setShowStandardsBrowser(false)}
+          onInsert={(md) => setInput(prev => (prev ? prev + '\n\n' : '') + md)}
+        />
+
+        {/* 핵심아이디어 찾기 모달 */}
+        <CoreIdeaFinderModal
+          open={showCoreIdeaBrowser}
+          onClose={() => setShowCoreIdeaBrowser(false)}
           onInsert={(md) => setInput(prev => (prev ? prev + '\n\n' : '') + md)}
         />
 
