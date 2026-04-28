@@ -544,20 +544,96 @@ export function buildA12Structured(sections: Record<string, string>, chat: Array
 
 // ─── A-2-1 성취기준 분석 (기존 extractA21TableForSave 유지, 구조화는 단순 래핑) ──
 
+export interface A21Row {
+  subject: string           // 교과명
+  coreIdea: string          // 핵심 아이디어
+  knowledgeUnderstanding: string  // 지식·이해
+  processFunction: string   // 과정·기능
+  isCommon?: boolean        // 공통(팀 조정) 행 여부
+}
+
 export interface A21Structured {
   _schema: 'A-2-1'
-  analysisTable: string  // 마크다운 표 원문 유지 (A-2-1은 복잡한 7열 표라 파싱보다 원문 보존이 안전)
+  rows: A21Row[]
 }
 
 export function buildA21Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A21Structured {
-  let table = (sections['성취기준분석표'] ?? '').trim()
-  if (!table) {
+  const r: A21Structured = { _schema: 'A-2-1', rows: [] }
+
+  // 기존 "성취기준분석표" 키에서 4열 표 파싱 시도
+  const raw = (sections['성취기준분석표'] ?? sections['핵심아이디어분석'] ?? '').trim()
+  if (raw) r.rows = parseA21Table(raw)
+
+  // fallback: 채팅에서 4열 또는 7열 표 추출
+  if (r.rows.length === 0) {
     for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
-      const lines = msg.content.split('\n').filter(l => l.trim().startsWith('|'))
-      if (lines.length >= 3) { table = lines.join('\n'); break }
+      const rows = parseA21Table(msg.content)
+      if (rows.length >= 2) { r.rows = rows; break }
     }
   }
-  return { _schema: 'A-2-1', analysisTable: table }
+
+  return r
+}
+
+function parseA21Table(raw: string): A21Row[] {
+  const rows: A21Row[] = []
+  const tableLines = raw.split('\n').filter(l => l.trim().startsWith('|'))
+  if (tableLines.length < 3) return rows
+
+  // 헤더에서 열 인덱스 파악
+  const headerCells = tableLines[0].replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim().replace(/\*\*/g, ''))
+  const findCol = (keywords: string[]) => headerCells.findIndex(h => keywords.some(k => h.includes(k)))
+
+  const subjectIdx = findCol(['교과'])
+  const coreIdeaIdx = findCol(['핵심아이디어', '핵심 아이디어'])
+  const knowledgeIdx = findCol(['지식', '이해'])
+  const functionIdx = findCol(['과정', '기능'])
+
+  // 데이터 행 (헤더 + 구분자 제외)
+  const dataLines = tableLines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1)
+  for (const line of dataLines) {
+    const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.replace(/\*\*/g, '').trim())
+    const subject = cells[subjectIdx >= 0 ? subjectIdx : 0] || ''
+    const coreIdea = cells[coreIdeaIdx >= 0 ? coreIdeaIdx : 1] || ''
+    const knowledge = cells[knowledgeIdx >= 0 ? knowledgeIdx : 2] || ''
+    const fn = cells[functionIdx >= 0 ? functionIdx : 3] || ''
+
+    if (subject || coreIdea) {
+      rows.push({
+        subject,
+        coreIdea,
+        knowledgeUnderstanding: knowledge,
+        processFunction: fn,
+        isCommon: /공통|팀\s*조정|통합/.test(subject),
+      })
+    }
+  }
+
+  // 불릿 리스트 형식 fallback: "1. 과학\n• 핵심아이디어: ...\n• 지식·이해: ..."
+  if (rows.length === 0) {
+    const stripMd = (s: string) => s.replace(/\*\*/g, '').replace(/[*_~`]/g, '').trim()
+    const blocks = raw.split(/(?=\d+\.\s*[가-힣])/).filter(b => b.trim())
+    for (const block of blocks) {
+      const lines = block.split('\n').map(stripMd)
+      const subjectMatch = lines[0]?.match(/^\d+\.\s*(.+?)(?:\s*$|\s*[:：])/)
+      if (!subjectMatch) continue
+      const subject = subjectMatch[1].trim()
+      let coreIdea = '', knowledge = '', fn = ''
+      for (const line of lines) {
+        const ci = line.match(/핵심\s*아이디어\s*[:：]\s*(.+)/)
+        if (ci) coreIdea = ci[1].trim()
+        const kn = line.match(/지식[·⋅\s]*이해\s*[:：]\s*(.+)/)
+        if (kn) knowledge = kn[1].trim()
+        const pf = line.match(/과정[·⋅\s]*기능\s*[:：]\s*(.+)/)
+        if (pf) fn = pf[1].trim()
+      }
+      if (subject && (coreIdea || knowledge)) {
+        rows.push({ subject, coreIdea, knowledgeUnderstanding: knowledge, processFunction: fn, isCommon: /공통|팀/.test(subject) })
+      }
+    }
+  }
+
+  return rows
 }
 
 // ─── A-2-2 통합 수업목표 진술 ────────────────────────────────────────────
@@ -688,7 +764,8 @@ export function detectMissingFields(data: Record<string, unknown>): MissingField
     if (!d.rationale) missing.push({ label: '선정 근거', hint: '왜 이 주제를 선택했는지 근거를 적어주세요' })
   } else if (schema === 'A-2-1') {
     const d = data as unknown as A21Structured
-    if (!d.analysisTable) missing.push({ label: '성취기준 분석표', hint: '교과별 성취기준 분석표를 완성해주세요' })
+    if (!d.rows?.length) missing.push({ label: '핵심아이디어 분석표', hint: '교과별 핵심아이디어·지식이해·과정기능 표를 완성해주세요' })
+    else if (!d.rows.some(r => r.isCommon)) missing.push({ label: '공통(팀 조정) 행', hint: '교과 간 공통 요소를 정리한 통합 행을 추가해주세요' })
   } else if (schema === 'A-2-2') {
     const d = data as unknown as A22Structured
     if (!d.subjectGoals?.length) missing.push({ label: '교과별 세부 목표', hint: '각 교과의 학습 목표를 정해주세요' })

@@ -324,8 +324,8 @@ function RequiredSectionsChecklist({
       else if (sec.key === '선정 근거' && s.rationale) filled = s.rationale.length
     }
     if (filled === 0 && content._schema === 'A-2-1') {
-      const s = content as unknown as { analysisTable?: string }
-      if (sec.key === '성취기준분석표' && s.analysisTable) filled = s.analysisTable.length
+      const s = content as unknown as { rows?: Array<{ subject: string }> }
+      if (sec.key === '성취기준분석표' && s.rows?.length) filled = s.rows.length * 20
     }
     if (filled === 0 && content._schema === 'A-2-2') {
       const s = content as unknown as { subjectGoals?: unknown[]; integratedGoals?: string[] }

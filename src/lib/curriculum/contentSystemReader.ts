@@ -47,8 +47,10 @@ type RawObject = Record<string, unknown>
 let contentSystemCache: ContentSystemRecord[] | null = null
 
 export function isContentSystemContextEnabled(): boolean {
+  // 기본 활성화 — 내용체계 데이터가 있으면 자동으로 AI 컨텍스트에 주입
   const value = process.env.CURRICULUM_CONTENT_SYSTEM_CONTEXT?.trim().toLowerCase()
-  return value === '1' || value === 'true' || value === 'enabled' || value === 'on'
+  if (value === '0' || value === 'false' || value === 'off') return false
+  return true
 }
 
 function findContentSystemDir(): string | null {
@@ -164,7 +166,7 @@ function getActivityGuidance(activityCode: ActivityCode): string {
     case 'A-1-2':
       return '주제 후보를 비교할 때 핵심아이디어의 공통 문제의식과 과목별 기여 가능성을 근거로만 활용하세요.'
     case 'A-2-1':
-      return '성취기준 분석표의 핵심아이디어, 지식⋅이해, 과정⋅기능, 가치⋅태도 칸을 채울 때만 참고하고 표의 열 구조는 바꾸지 마세요.'
+      return '⚠️ 성취기준 분석표의 핵심아이디어, 지식⋅이해, 과정⋅기능, 가치⋅태도 칸은 반드시 아래 내용체계 원문에서 선택하여 인용하세요. AI가 자체적으로 만들어내지 마세요. 표의 열 구조는 바꾸지 마세요.'
     case 'A-2-2':
       return '통합 수업목표가 지식, 수행, 태도 차원을 모두 포함하는지 점검하는 근거로 활용하세요.'
     case 'Ds-1-1':

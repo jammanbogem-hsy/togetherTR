@@ -288,7 +288,8 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
     if (typeof c.topicType === 'string' && c.topicType) sections.push({ key: '주제 유형', value: c.topicType })
     if (typeof c.rationale === 'string' && c.rationale) sections.push({ key: '선정 근거', value: c.rationale })
   } else if (c._schema === 'A-2-1') {
-    if (typeof c.analysisTable === 'string' && c.analysisTable) sections.push({ key: '성취기준 분석표', value: c.analysisTable })
+    const rows = c.rows as Array<{ subject: string; coreIdea: string; knowledgeUnderstanding: string; processFunction: string; isCommon?: boolean }> | undefined
+    if (rows?.length) sections.push({ key: '핵심아이디어 분석', value: '| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |\n| --- | --- | --- | --- |\n' + rows.map(r => `| ${r.isCommon ? '**' + (r.subject || '공통') + '**' : r.subject} | ${r.coreIdea} | ${r.knowledgeUnderstanding || '-'} | ${r.processFunction || '-'} |`).join('\n') })
   } else if (c._schema === 'A-2-2') {
     const sg = c.subjectGoals as Array<{ subject: string; goal: string }> | undefined
     if (sg?.length) sections.push({ key: '교과별 세부 목표', value: '| 교과 | 학습 목표 |\n| --- | --- |\n' + sg.map(g => `| ${g.subject} | ${g.goal} |`).join('\n') })

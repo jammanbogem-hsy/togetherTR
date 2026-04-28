@@ -109,7 +109,9 @@ function renderArtifactContent(content: Record<string, unknown>): string {
     return parts.join('\n\n')
   }
   if (content._schema === 'A-2-1') {
-    return content.analysisTable ? `**성취기준 분석표**\n\n${content.analysisTable}` : ''
+    const rows = content.rows as Array<{ subject: string; coreIdea: string; knowledgeUnderstanding: string; processFunction: string; isCommon?: boolean }> | undefined
+    if (rows?.length) return '**핵심아이디어 분석표**\n\n| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |\n| --- | --- | --- | --- |\n' + rows.map(r => `| ${r.isCommon ? '**' + (r.subject || '공통') + '**' : r.subject} | ${r.coreIdea} | ${r.knowledgeUnderstanding || '-'} | ${r.processFunction || '-'} |`).join('\n')
+    return ''
   }
   if (content._schema === 'A-2-2') {
     const parts: string[] = []

@@ -1283,7 +1283,7 @@ export function ChatPanel() {
     else if (activity === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(responseText)) { const s = schemas.buildT22Structured({}, ctx); if (s.rules.length > 0) structured = s }
     else if (activity === 'T-2-3' && responseText.includes('|')) { const s = schemas.buildT23Structured({}, ctx); if (s.schedule.length > 0) structured = s }
     else if (activity === 'A-1-2' && /주제|선정/.test(responseText)) { const s = schemas.buildA12Structured({}, ctx); if (s.selectedTopic || s.criteria.length > 0) structured = s }
-    else if (activity === 'A-2-1' && responseText.includes('|')) { const s = schemas.buildA21Structured({}, ctx); if (s.analysisTable) structured = s }
+    else if (activity === 'A-2-1' && (responseText.includes('|') || /핵심.*아이디어|지식.*이해/.test(responseText))) { const s = schemas.buildA21Structured({}, ctx); if (s.rows.length > 0) structured = s }
     else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = schemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoals.length > 0) structured = s }
     else if (activity === 'A-2-3' && /학습자|프로필|선수/.test(responseText)) { const s = schemas.buildA23Structured({}, ctx); if (s.commonProfile.length > 0) structured = s }
 
