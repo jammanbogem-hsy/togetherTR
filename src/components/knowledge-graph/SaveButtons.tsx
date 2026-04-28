@@ -27,7 +27,7 @@ export default function SaveButtons({ onSaveGraph, onSendToChat, buildData }: Sa
 
   const saveLabel = saveState === 'saving' ? '저장 중…'
     : saveState === 'success' ? '✓ 저장 완료'
-    : saveState === 'error' ? '✗ ��장 실패'
+    : saveState === 'error' ? '✗ 저장 실패'
     : '지식 그래프 저장'
 
   const saveClass = saveState === 'success'

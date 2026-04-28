@@ -720,6 +720,17 @@ export function watchArtifact(
 
 // ─── 대화 메시지 ─────────────────────────────────────
 
+/** 현재 활동의 모든 메시지 삭제 (데모/디버그용) */
+export async function deleteActivityMessages(projectId: string, activityCode: ActivityCode): Promise<void> {
+  const colRef = collection(db, `projects/${projectId}/conversations/${activityCode}/messages`)
+  const snap = await getDocs(query(colRef, limit(50)))
+  const batch = await import('firebase/firestore').then(m => m.writeBatch(db))
+  snap.docs.forEach(d => batch.delete(d.ref))
+  await batch.commit()
+  // 50개 초과 시 재귀
+  if (snap.size >= 50) await deleteActivityMessages(projectId, activityCode)
+}
+
 // P3: 메시지 저장 전 Firestore ID 미리 생성 → 로컬 임시 메시지와 동일한 ID 사용
 export function generateMessageId(projectId: string, activityCode: ActivityCode): string {
   return doc(collection(db, `projects/${projectId}/conversations/${activityCode}/messages`)).id

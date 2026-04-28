@@ -1099,6 +1099,13 @@ const SLASH_COMMANDS = [
     hostOnly: false,
   },
   {
+    id: 'reset-chat',
+    label: '현재 단계 초기화',
+    desc: '현재 활동의 채팅을 모두 삭제하고 처음부터 다시 시작',
+    keywords: ['초기화', '리셋', 'reset', '삭제', '다시'],
+    hostOnly: true,
+  },
+  {
     id: 'next',
     label: '다음 단계로',
     desc: '저장·확정 후 이동할지 확인 창을 바로 띄움',
@@ -2491,6 +2498,17 @@ ${discussionSummary}
       setShowStandardsBrowser(true)
     } else if (cmdId === 'coreidea') {
       setShowCoreIdeaBrowser(true)
+    } else if (cmdId === 'reset-chat') {
+      if (!confirm(`현재 활동(${currentActivity})의 채팅을 모두 삭제하고 다시 시작하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`)) return
+      // 현재 활동 메시지 Firestore에서 삭제
+      if (project?.id) {
+        import('@/lib/firebase/projects').then(async ({ deleteActivityMessages }) => {
+          await deleteActivityMessages(project.id, currentActivity)
+          // 로컬 메시지도 제거
+          const { setMessages } = useProjectStore.getState()
+          setMessages(messages.filter(m => m.activityCode !== currentActivity))
+        }).catch(console.error)
+      }
     }
   }
 
@@ -3047,12 +3065,10 @@ ${discussionSummary}
                             })
                             tableLines.push('')
                           }
-                          tableLines.push('| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |')
-                          tableLines.push('|------|:----------:|-----------|---------|---------|---------|:----:|')
+                          tableLines.push('| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |')
+                          tableLines.push('|------|-----------|---------|---------|')
                           a21.standardAnalyses.forEach(sa => {
-                            const centerMark = sa.isCenterStandard ? '★ ' : ''
-                            const bigo = sa.isCenterStandard ? '중심' : (sa.relationType ?? '연계')
-                            tableLines.push(`| ${sa.subjectName} | ${centerMark}[${sa.standardLabel}] | ${sa.coreIdea} | ${sa.knowledgeUnderstanding.join(', ')} | ${sa.processFunction.join(', ')} | ${sa.valueAttitude.join(', ')} | ${bigo} |`)
+                            tableLines.push(`| ${sa.subjectName} | ${sa.coreIdea} | ${sa.knowledgeUnderstanding.join(', ')} | ${sa.processFunction.join(', ')} |`)
                           })
                           tableLines.push('')
                           tableLines.push('**교과 간 융합 분석**\n')
@@ -3080,7 +3096,7 @@ ${discussionSummary}
                         console.error('[a21 API]', e)
                       }
                       // API 실패 폴백 — 로딩 메시지를 AI 요청으로 교체
-                      const fallbackContent = lines.join('\n') + '\n위 성취기준을 바탕으로 아래 형식으로 분석표를 즉시 작성해 주세요:\n\n① 각 교과 핵심아이디어를 blockquote(>) 형식으로 먼저 제시 (중심 성취기준 교과에 ★)\n\n② 아래 7열 표 (성취기준 내용 열 없음, 반드시 이 열 구조 유지):\n| 교과 | 성취기준 코드 | 핵심아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 비고 |\n|------|:----------:|-----------|---------|---------|---------|:----:|\n\n③ 교과 간 융합 분석 (공통 개념 / 공통 기능 / 루브릭 연계 지표)'
+                      const fallbackContent = lines.join('\n') + '\n위 성취기준을 바탕으로 아래 형식으로 분석표를 작성해 주세요:\n\n4열 표 (교과 | 핵심 아이디어 | 지식·이해 | 과정·기능) + 공통(팀 조정) 행\n⚠️ 핵심아이디어와 내용체계는 교육과정 DB 원문 그대로 인용할 것.'
                       replaceMessage(loadingMsgId, fallbackContent)
                       sendMessageDirectly(fallbackContent)
                     })()
