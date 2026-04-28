@@ -9,7 +9,7 @@ import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
 import { cn } from '@/lib/utils'
 import { createDemoProject, type DemoProgress } from '@/lib/demo/createDemoProject'
-import { Plus, BookOpen, Users, User, ChevronRight, Loader2, LogOut, UserPlus, Crown, Play, Sparkles, FolderPlus, Folder, ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { Plus, BookOpen, User, Loader2, LogOut, UserPlus, Crown, Play, Sparkles, FolderPlus, Folder, ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 
 const STAGE_LABELS = { T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가' }
@@ -52,7 +52,17 @@ function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
 
   return (
     <div
-      className="project-card w-full text-left rounded-2xl hover:scale-[1.02] transition-transform duration-200 group relative flex flex-col"
+      className="project-card w-full text-left rounded-2xl hover:scale-[1.02] transition-transform duration-200 group relative flex flex-col cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-[#1A73E8]/25"
+      role="button"
+      tabIndex={0}
+      aria-label={`${project.title} 프로젝트 열기`}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       style={{
         '--cc': s.cc,
         '--cx1': s.cx1, '--cy1': s.cy1,
@@ -83,16 +93,15 @@ function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
         </button>
       )}
 
-      <button onClick={onClick} className="flex flex-col flex-1 p-5 text-left">
+      <div className="flex flex-col flex-1 p-5 text-left">
         {/* 상단: 제목 + 단계 */}
-        <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-3 mb-3 pr-8">
           <div className="flex items-center gap-2 min-w-0">
             {isHost && <Crown className="w-4 h-4 text-amber-500 flex-shrink-0" />}
             <h3 className="font-extrabold text-base leading-snug truncate text-[#202124]">
               {project.title}
             </h3>
           </div>
-          <ChevronRight className="w-5 h-5 flex-shrink-0 mt-0.5 text-[#9AA0A6]" style={{ color: s.accent }} />
         </div>
 
         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -154,7 +163,7 @@ function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
             </span>
           )}
         </div>
-      </button>
+      </div>
     </div>
   )
 }

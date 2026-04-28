@@ -2416,13 +2416,8 @@ ${discussionSummary}
           // P0-phil2 (Task #30): A-2-1 외 활동의 parseSaveIntent fallback 제거.
           // 일반 활동의 저장 경로는 (a) A안/B안 명시 선택 → ARTIFACT_UPDATE,
           // (b) ACTION_CARD primary 클릭 → 다음 턴 ARTIFACT_UPDATE 둘만 허용.
-          // A-2-1은 마크다운 표 패턴 매칭으로 자동 산출물 추출하는 특수 경로 — 유지.
-          if (!hasSavedInResponse && currentActivity === 'A-2-1') {
-            const tableProposal = extractA21TableForSave(displayText)
-            if (tableProposal) {
-              setPendingArtifactSave({ ...tableProposal, activityCode: 'A-2-1' })
-            }
-          }
+          // A-2-1: 구조화 스키마 전환 이후 extractA21TableForSave 특수 경로 비활성화.
+          // 저장은 tryStructuredFallbackSave 또는 ARTIFACT_UPDATE 경로로 처리.
 
           if (advance) {
             // 저장 여부와 무관하게 항상 pendingAdvance 배너로 막음
