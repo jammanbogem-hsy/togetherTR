@@ -306,35 +306,85 @@ function buildGraphBasedA21Context(graphData: GraphSavedData): string {
       .map(s => [s.id, s.core_idea_id!])
   )
 
-  // 교과별 핵심아이디어 후보 수집
+  // ─── 성취기준 → 핵심아이디어 → 내용체계(지식이해/과정기능) 확정 매핑 ───
+  // AI가 선택하는 것이 아니라 코드에서 미리 매핑한 확정 데이터를 전달.
   const allStdIds = [centerNode?.id, ...selectedStandards.map(s => s.id)].filter(Boolean) as string[]
   const subjectIdSet = new Set([centerNode?.subjectId, ...selectedStandards.map(s => s.subjectId)].filter(Boolean) as string[])
-  const subjectCoreIdeasText: string[] = []
 
-  for (const subjectId of subjectIdSet) {
-    if (!graph) break
-    const stdId = allStdIds.find(id => {
-      const std = graph.achievementStandards.find(s => s.id === id)
-      return std?.subject_id === subjectId
-    })
-    const coreIdeaId = stdId ? stdCoreIdeaIdMap.get(stdId) : undefined
-    const subjectIdeas = graph.coreIdeas.filter(ci => ci.subject_id === subjectId)
-    const relevantIdeas = coreIdeaId
-      ? subjectIdeas.filter(ci => ci.id === coreIdeaId)
-      : subjectIdeas.slice(0, 2) // 최대 2개 영역만
+  // 내용체계 리더 (지식이해/과정기능/가치태도 원문 조회용)
+  let csRecords: Array<{ subject: string; area: string; knowledge: string[]; functions: string[]; attitudes: string[] }> = []
+  try {
+    const csReader = require('./contentSystemReader') as typeof import('./contentSystemReader')
+    csRecords = csReader.loadContentSystems()
+  } catch { /* 없으면 무시 */ }
 
-    const ideas = relevantIdeas.flatMap(ci => ci.ideas)
-    if (ideas.length > 0) {
-      const subjName = subjectNameMap.get(subjectId) ?? subjectId
-      const isCenterSubj = subjectId === centerNode?.subjectId
-      subjectCoreIdeasText.push(
-        `${isCenterSubj ? '★ ' : ''}[${subjName} 핵심아이디어 후보]\n${ideas.map((idea, i) => `  ${i + 1}. ${idea}`).join('\n')}`
-      )
+  function getContentSystemForArea(subjectId: string, area: string) {
+    const subjName = subjectNameMap.get(subjectId) ?? ''
+    // 퍼지 매칭: 교과명 + 영역명
+    const match = csRecords.find(r =>
+      (r.subject.includes(subjName) || subjName.includes(r.subject)) &&
+      (r.area === area || r.area.includes(area) || area.includes(r.area))
+    )
+    if (match) return { knowledgeUnderstanding: match.knowledge, processFunction: match.functions, valueAttitude: match.attitudes }
+    // 특수 매핑
+    const specialMap: Record<string, string> = { '역사 일반': '역사', '사회·문화': '사회와 문화', '법': '법과 사회', '한국사': '한국사1' }
+    const mappedArea = specialMap[area]
+    if (mappedArea) {
+      const m2 = csRecords.find(r => (r.subject.includes(subjName) || subjName.includes(r.subject)) && r.area === mappedArea)
+      if (m2) return { knowledgeUnderstanding: m2.knowledge, processFunction: m2.functions, valueAttitude: m2.attitudes }
     }
+    return { knowledgeUnderstanding: [] as string[], processFunction: [] as string[], valueAttitude: [] as string[] }
   }
 
-  const coreIdeasSection = subjectCoreIdeasText.length > 0
-    ? `\n## 교과별 핵심아이디어 후보 ⚠️ 반드시 아래 목록에서 원문 그대로 선택할 것 (AI가 자체 생성·요약·수정 절대 금지)\n${subjectCoreIdeasText.join('\n\n')}`
+  // 교과별 확정 매핑 표 생성
+  const confirmedMappings: string[] = []
+  for (const subjectId of subjectIdSet) {
+    if (!graph) break
+    const subjName = subjectNameMap.get(subjectId) ?? subjectId
+    const isCenterSubj = subjectId === centerNode?.subjectId
+
+    // 이 교과의 성취기준들
+    const subjectStds = allStdIds
+      .map(id => graph.achievementStandards.find(s => s.id === id))
+      .filter(s => s && s.subject_id === subjectId) as Array<{ id: string; code: string; text: string; core_idea_id?: string; area: string; knowledge?: string[]; functions?: string[]; competencies?: string[] }>
+
+    if (subjectStds.length === 0) continue
+
+    // 핵심아이디어: core_idea_id로 그래프에서 조회
+    const coreIdeaId = subjectStds[0].core_idea_id
+    const coreIdeaObj = coreIdeaId ? graph.coreIdeas.find(ci => ci.id === coreIdeaId) : null
+    const coreIdeaTexts = coreIdeaObj?.ideas ?? []
+    const coreIdeaText = coreIdeaTexts[0] || '(핵심아이디어 미매핑 — 교사가 직접 선택 필요)'
+
+    // 내용체계에서 지식이해/과정기능 원문 조회
+    const area = subjectStds[0].area
+    const cs = getContentSystemForArea(subjectId, area)
+
+    // 그래프 데이터의 knowledge/functions/competencies (내용체계 없을 때 fallback)
+    const graphKnowledge = subjectStds.flatMap(s => s.knowledge ?? []).slice(0, 6)
+    const graphFunctions = subjectStds.flatMap(s => s.functions ?? []).slice(0, 5)
+    const graphCompetencies = subjectStds.flatMap(s => s.competencies ?? []).slice(0, 4)
+
+    const knowledgeItems = cs.knowledgeUnderstanding.length > 0 ? cs.knowledgeUnderstanding.slice(0, 8) : graphKnowledge
+    const functionItems = cs.processFunction.length > 0 ? cs.processFunction.slice(0, 6) : graphFunctions
+    const attitudeItems = cs.valueAttitude.length > 0 ? cs.valueAttitude.slice(0, 5) : graphCompetencies
+
+    confirmedMappings.push(
+      `${isCenterSubj ? '★ ' : ''}[${subjName} · ${area}] 성취기준: ${subjectStds.map(s => s.code).join(', ')}
+  ✅ 핵심 아이디어: ${coreIdeaText}${coreIdeaTexts.length > 1 ? `\n     (대안: ${coreIdeaTexts.slice(1, 3).join(' / ')})` : ''}
+  ✅ 지식·이해: ${knowledgeItems.join(', ') || '(데이터 없음)'}
+  ✅ 과정·기능: ${functionItems.join(', ') || '(데이터 없음)'}
+  ✅ 가치·태도: ${attitudeItems.join(', ') || '(데이터 없음)'}`
+    )
+  }
+
+  const coreIdeasSection = confirmedMappings.length > 0
+    ? `\n## 📌 교과별 핵심아이디어 확정 매핑 (코드가 교육과정 DB에서 자동 연결한 결과)
+⚠️⚠️ 아래는 AI가 생성한 것이 아니라 **교육과정 JSON 데이터베이스에서 성취기준 코드로 직접 조회**한 확정 결과입니다.
+AI는 이 데이터를 **수정·요약·재생성하지 않고 그대로 사용**해야 합니다.
+교사가 변경을 요청할 때만 다른 항목으로 교체 가능합니다.
+
+${confirmedMappings.join('\n\n')}`
     : ''
 
   const centerSection = centerNode

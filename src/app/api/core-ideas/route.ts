@@ -5,8 +5,15 @@ export const runtime = 'nodejs'
 
 export async function GET() {
   const records = loadContentSystems()
-  // 클라이언트에 필요한 필드만 전달
-  const items = records.map(r => ({
+  // 초등학교 항목만 필터 (공통 교육과정 중 초등 학년군)
+  const elementary = records.filter(r =>
+    r.curriculum === '공통 교육과정' ||
+    r.gradeBands.some(gb => /초|1-2|3-4|5-6/.test(gb)) ||
+    r.gradeBands.length === 0 // 학년군 미지정은 포함
+  ).filter(r =>
+    !r.gradeBands.some(gb => /중|고|7-9|10/.test(gb))
+  )
+  const items = elementary.map(r => ({
     id: r.id,
     subject: r.subject,
     course: r.course,
