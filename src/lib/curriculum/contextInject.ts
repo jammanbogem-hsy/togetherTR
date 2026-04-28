@@ -378,13 +378,33 @@ function buildGraphBasedA21Context(graphData: GraphSavedData): string {
     )
   }
 
-  const coreIdeasSection = confirmedMappings.length > 0
-    ? `\n## 📌 교과별 핵심아이디어 확정 매핑 (코드가 교육과정 DB에서 자동 연결한 결과)
-⚠️⚠️ 아래는 AI가 생성한 것이 아니라 **교육과정 JSON 데이터베이스에서 성취기준 코드로 직접 조회**한 확정 결과입니다.
-AI는 이 데이터를 **수정·요약·재생성하지 않고 그대로 사용**해야 합니다.
-교사가 변경을 요청할 때만 다른 항목으로 교체 가능합니다.
+  // 4열 확정 분석표를 미리 완성 (AI가 만드는 것이 아님)
+  const prebuiltTableRows: string[] = []
+  for (const mapping of confirmedMappings) {
+    // 매핑 텍스트에서 교과명, 핵심아이디어, 지식이해, 과정기능 추출
+    const subjMatch = mapping.match(/\[(.+?)\s*·/)
+    const coreMatch = mapping.match(/✅ 핵심 아이디어: (.+?)(?:\n|$)/)
+    const knMatch = mapping.match(/✅ 지식·이해: (.+?)(?:\n|$)/)
+    const fnMatch = mapping.match(/✅ 과정·기능: (.+?)(?:\n|$)/)
+    if (subjMatch && coreMatch) {
+      prebuiltTableRows.push(`| ${subjMatch[1].replace('★ ', '')} | ${coreMatch[1].trim()} | ${knMatch?.[1]?.trim() || '-'} | ${fnMatch?.[1]?.trim() || '-'} |`)
+    }
+  }
+  const prebuiltTable = prebuiltTableRows.length > 0
+    ? `| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |\n| --- | --- | --- | --- |\n${prebuiltTableRows.join('\n')}`
+    : ''
 
-${confirmedMappings.join('\n\n')}`
+  const coreIdeasSection = confirmedMappings.length > 0
+    ? `\n## 📌 교과별 핵심아이디어 확정 매핑 (교육과정 JSON DB에서 성취기준 코드로 직접 조회한 결과)
+
+⚠️⚠️ **아래 데이터는 AI가 생성한 것이 아닙니다. 교육과정 DB에서 자동 추출한 확정 결과입니다.**
+AI는 핵심아이디어·지식이해·과정기능을 **절대 자체 생성하지 마세요**. 아래 원문을 **그대로 사용**하세요.
+
+${confirmedMappings.join('\n\n')}
+
+### 📋 사전 구축된 분석표 (AI는 이 표를 첫 응답에서 교사에게 그대로 보여주세요)
+${prebuiltTable}
+| **공통 (팀 조정)** | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) |`
     : ''
 
   const centerSection = centerNode
