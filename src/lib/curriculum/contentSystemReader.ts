@@ -149,34 +149,66 @@ function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = 
     standardsByCoreIdea.set(standard.core_idea_id, current)
   }
 
-  return (graph.coreIdeas ?? [])
-    .map((coreIdea, index): ContentSystemRecord | null => {
-      const subject = GRAPH_SUBJECT_NAME[coreIdea.subject_id] ?? graph.subjects.find(item => item.id === coreIdea.subject_id)?.name_ko ?? coreIdea.subject_id
-      if (subject === '창의적 체험활동') return null
+  // 같은 (subject, area)에 학년군별로 쪼개진 coreIdea들을 단일 record로 병합.
+  // 그렇지 않으면 lookup에서 첫 매칭(예: 3-4 학년군 record)을 잡고 filterByGrade('초5-6')하면
+  // 빈 결과가 되어 5-6학년 사용자가 빈 셀을 보거나 검증 오류를 만남.
+  type Group = {
+    subject: string
+    area: string
+    coreIdeaIds: string[]
+    ideas: string[]
+    standards: typeof graph.achievementStandards
+  }
+  const groups = new Map<string, Group>()
+  for (const coreIdea of graph.coreIdeas ?? []) {
+    const subject = GRAPH_SUBJECT_NAME[coreIdea.subject_id] ?? graph.subjects.find(item => item.id === coreIdea.subject_id)?.name_ko ?? coreIdea.subject_id
+    if (subject === '창의적 체험활동') continue
+    const area = normalizeAreaLabel(coreIdea.area)
+    const key = `${subject}::${area}`
+    const standards = standardsByCoreIdea.get(coreIdea.id) ?? []
+    const existing = groups.get(key)
+    if (existing) {
+      existing.coreIdeaIds.push(coreIdea.id)
+      existing.ideas.push(...(coreIdea.ideas ?? []))
+      existing.standards.push(...standards)
+    } else {
+      groups.set(key, {
+        subject,
+        area,
+        coreIdeaIds: [coreIdea.id],
+        ideas: [...(coreIdea.ideas ?? [])],
+        standards: [...standards],
+      })
+    }
+  }
 
-      const standards = standardsByCoreIdea.get(coreIdea.id) ?? []
-      const gradeBands = unique(standards.map(standard => formatGradeBand(standard.grade_band)).filter(Boolean))
-      const coreIdeas = normalizeCoreIdeas(coreIdea.ideas ?? [])
+  return [...groups.values()]
+    .map((group): ContentSystemRecord | null => {
+      const coreIdeas = unique(normalizeCoreIdeas(group.ideas))
       if (coreIdeas.length === 0) return null
-
-      const rawRecord = findRawContentSystemRecord(rawRecords, subject, coreIdea.area)
-      const graphKnowledge = prefixedContentByGrade(standards, 'knowledge', coreIdea.knowledge ?? [])
-      const graphFunctions = prefixedContentByGrade(standards, 'functions', coreIdea.functions ?? [])
+      const gradeBands = unique(group.standards.map(s => formatGradeBand(s.grade_band)).filter(Boolean))
+      const rawRecord = findRawContentSystemRecord(rawRecords, group.subject, group.area)
+      // 큐레이션된 PDF 데이터(rawRecord)를 우선. graph의 standard-레벨 knowledge/functions는
+      // 학년군 매핑이 부정확해 초등 표준에 중학교 내용이 섞여 들어가는 케이스가 있음.
+      const rawKnowledge = cleanContentItems(rawRecord?.knowledge ?? [])
+      const rawFunctions = cleanContentItems(rawRecord?.functions ?? [])
       const rawAttitudes = cleanContentItems(rawRecord?.attitudes ?? [])
+      const graphKnowledge = prefixedContentByGrade(group.standards, 'knowledge', [])
+      const graphFunctions = prefixedContentByGrade(group.standards, 'functions', [])
 
       return {
-        id: `elementary_knowledge_graph.json#${coreIdea.id || index}`,
+        id: `elementary_knowledge_graph.json#${group.coreIdeaIds.join('+')}`,
         sourceFile: 'elementary_knowledge_graph.json',
         sourcePages: [],
         curriculum: '공통 교육과정',
-        subject,
-        course: subject,
-        area: normalizeAreaLabel(coreIdea.area),
+        subject: group.subject,
+        course: group.subject,
+        area: group.area,
         gradeBands,
         coreIdeas,
-        knowledge: graphKnowledge.length > 0 ? graphKnowledge : cleanContentItems(rawRecord?.knowledge ?? []),
-        functions: graphFunctions.length > 0 ? graphFunctions : cleanContentItems(rawRecord?.functions ?? []),
-        attitudes: rawAttitudes.length > 0 ? rawAttitudes : prefixedContentByGrade(standards, 'competencies', []),
+        knowledge: rawKnowledge.length > 0 ? rawKnowledge : graphKnowledge,
+        functions: rawFunctions.length > 0 ? rawFunctions : graphFunctions,
+        attitudes: rawAttitudes.length > 0 ? rawAttitudes : prefixedContentByGrade(group.standards, 'competencies', []),
       }
     })
     .filter((record): record is ContentSystemRecord => Boolean(record))

@@ -81,7 +81,9 @@ async function validateFile(file) {
           errors.push(`${label}.학년군별.${gradeBand}: category object is required`);
           continue;
         }
-        validateCategoryObject(errors, categories, `${label}.학년군별.${gradeBand}`);
+        validateCategoryObject(errors, categories, `${label}.학년군별.${gradeBand}`, {
+          allowEmpty: true,
+        });
       }
     }
 
@@ -94,9 +96,14 @@ async function validateFile(file) {
   return errors;
 }
 
-function validateCategoryObject(errors, categories, label) {
+function validateCategoryObject(errors, categories, label, options = {}) {
   for (const category of requiredCategories) {
-    if (!Array.isArray(categories[category]) || categories[category].length === 0) {
+    if (!Array.isArray(categories[category])) {
+      errors.push(`${label}.${category}: array is required`);
+      continue;
+    }
+
+    if (!options.allowEmpty && categories[category].length === 0) {
       errors.push(`${label}.${category}: non-empty array is required`);
     }
   }
