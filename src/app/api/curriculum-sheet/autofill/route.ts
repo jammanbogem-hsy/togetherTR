@@ -87,6 +87,7 @@ interface BuiltRow {
   subject: string
   isCenter: boolean
   coreIdea: string
+  area: string
   standard: string
   knowledge: string
   processFunction: string
@@ -586,21 +587,22 @@ function validateMappedRowsFromDb(params: {
       errors.push(`${row.subject}: 핵심아이디어가 교육과정 DB 후보에 없습니다.`)
     }
 
-    const contentRecord = findOfficialContentRecord(contentSystems, row.subject, selectedStandard.area, row.coreIdea)
+    const lookupArea = row.area || selectedStandard.area
+    const contentRecord =
+      findOfficialContentRecord(contentSystems, row.subject, lookupArea, row.coreIdea) ??
+      findOfficialContentRecord(contentSystems, row.subject, selectedStandard.area, row.coreIdea)
     const mapping = contentRecord
       ? undefined
-      : findOfficialAreaMapping(areaMappings, row.subject, selectedStandard.area, row.coreIdea)
+      : findOfficialAreaMapping(areaMappings, row.subject, lookupArea, row.coreIdea) ??
+        findOfficialAreaMapping(areaMappings, row.subject, selectedStandard.area, row.coreIdea)
     const allowedKnowledge = filterByGrade(contentRecord?.knowledge ?? mapping?.knowledge ?? [], gradeGroup)
     const allowedFunctions = filterByGrade(contentRecord?.functions ?? mapping?.functions ?? [], gradeGroup)
 
     const checkValues = (label: string, value: string, allowed: string[]) => {
       const values = splitMappedValues(value)
+      if (values.length === 0) return
       if (allowed.length === 0) {
-        if (values.length > 0) errors.push(`${row.subject}: ${label}에 DB 원문 후보가 아닌 값이 포함되었습니다.`)
-        return
-      }
-      if (values.length === 0) {
-        errors.push(`${row.subject}: ${label}은 DB 원문 후보에서 최소 1개 이상 선택되어야 합니다.`)
+        errors.push(`${row.subject}: ${label}에 대한 DB 원문 후보를 찾지 못했습니다. (영역=${lookupArea})`)
         return
       }
       const allowedSet = normalizedSet(allowed)
@@ -685,6 +687,7 @@ async function buildRowsFromSelections(params: {
       subject,
       isCenter: proposal.isCenter,
       coreIdea: option.idea,
+      area: option.area,
       standard: selectedStandard ? formatStandard(selectedStandard) : '',
       knowledge: elements.knowledge.join(SEP),
       processFunction: elements.functions.join(SEP),
