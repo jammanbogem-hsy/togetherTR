@@ -87,9 +87,22 @@ export function StageMoveModal() {
     }
 
     setSubmitting(true)
+
+    // 안전망: Firestore 호출이 무기한 hang 되면(HMR 중 click 등) 12초 후 자동 reset.
+    // Promise.race로 timeout과 경쟁시켜 사용자가 "저장 중..."에 영원히 묶이지 않도록 함.
+    const withTimeout = <T,>(promise: Promise<T>, label: string, ms = 12000): Promise<T> => {
+      return new Promise<T>((resolve, reject) => {
+        const t = setTimeout(() => {
+          reject(new Error(`[stage-move:${label}] timeout after ${ms}ms — Firestore 호출이 응답하지 않습니다.`))
+        }, ms)
+        promise.then(v => { clearTimeout(t); resolve(v) }).catch(e => { clearTimeout(t); reject(e) })
+      })
+    }
+
     try {
+      console.time('[StageMoveModal] logStageTransition')
       // 이력을 먼저 기록 (실패 시 이동 중단 — 감사 추적이 spec 명시 사항이므로 데이터 정합성 우선)
-      await logStageTransition(project.id, {
+      await withTimeout(logStageTransition(project.id, {
         fromStage,
         toStage,
         direction,
@@ -99,12 +112,16 @@ export function StageMoveModal() {
           ? { missingItemsIgnored: incompleteActivities }
           : {}),
         initiatedBy,
-      })
+      }), 'logStageTransition')
+      console.timeEnd('[StageMoveModal] logStageTransition')
 
       if (isBackward || isCycle) {
+        console.time('[StageMoveModal] returnToActivity')
         // 이전 단계로 이동: returnToActivity + currentStage 업데이트
-        await returnToActivity(project.id, firstActivity, toStage)
+        await withTimeout(returnToActivity(project.id, firstActivity, toStage), 'returnToActivity')
+        console.timeEnd('[StageMoveModal] returnToActivity')
       } else {
+        console.time('[StageMoveModal] advanceActivity')
         // 다음 단계로 이동: 현재 스테이지 activities + 다음 스테이지 activities 합쳐서 advance
         const currentStageInfo = STAGES.find(s => s.code === fromStage)!
         const combinedActivities = [
@@ -112,17 +129,23 @@ export function StageMoveModal() {
           ...targetStage.activities,
         ] as import('@/types').ActivityCode[]
         const currentActivityCode = project.currentActivity ?? currentStageInfo.activities[0]
-        await advanceActivity(
+        await withTimeout(advanceActivity(
           project.id,
           combinedActivities,
           currentActivityCode as import('@/types').ActivityCode,
           firstActivity,
           toStage
-        )
+        ), 'advanceActivity')
+        console.timeEnd('[StageMoveModal] advanceActivity')
       }
     } catch (err) {
       console.error('[StageMoveModal] handleConfirm failed:', err)
-      setSubmitError('이동 이력 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      const msg = err instanceof Error ? err.message : String(err)
+      setSubmitError(
+        msg.includes('timeout')
+          ? '저장 응답이 지연됩니다. 네트워크 연결을 확인하거나 새로고침 후 다시 시도해 주세요.'
+          : '이동 이력 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+      )
       setSubmitting(false)
       return
     }
