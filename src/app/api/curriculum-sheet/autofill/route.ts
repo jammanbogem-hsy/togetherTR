@@ -762,7 +762,10 @@ export async function POST(request: NextRequest) {
     if (!graph) return NextResponse.json({ error: '교육과정 지식 그래프를 불러오지 못했습니다.' }, { status: 500 })
 
     const gradeGroup = targetGradeGroup ?? ''
-    const contentSystems = isElementaryGradeGroup(gradeGroup)
+    // gradeGroup이 비어 있거나 초등 학년군이면 elementary synthetic 레코드 우선 사용
+    // (raw 사회내용체계.json 등은 공통 교육과정 데이터가 일부 영역만 채워져 있어
+    //  경제·정치·법 등 graph로 합성되는 영역을 찾지 못함)
+    const contentSystems = !gradeGroup || isElementaryGradeGroup(gradeGroup)
       ? loadElementaryContentSystems()
       : loadContentSystems()
     const areaMappings = loadAreaMappings()
