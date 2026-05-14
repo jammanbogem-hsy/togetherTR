@@ -88,9 +88,10 @@ export function StageMoveModal() {
 
     setSubmitting(true)
 
-    // 안전망: Firestore 호출이 무기한 hang 되면(HMR 중 click 등) 12초 후 자동 reset.
-    // Promise.race로 timeout과 경쟁시켜 사용자가 "저장 중..."에 영원히 묶이지 않도록 함.
-    const withTimeout = <T,>(promise: Promise<T>, label: string, ms = 12000): Promise<T> => {
+    // 안전망: Firestore 호출이 무기한 hang 되면(HMR 중 click 등) 자동 reset.
+    // 개발 환경 HMR 재컴파일이 길어질 때(>10s)는 보호 timeout이 너무 일찍 발동하지 않도록
+    // 30초로 충분히 늘려둠. 진짜 네트워크 장애도 30초 안에 SDK가 자체 reject한다.
+    const withTimeout = <T,>(promise: Promise<T>, label: string, ms = 30000): Promise<T> => {
       return new Promise<T>((resolve, reject) => {
         const t = setTimeout(() => {
           reject(new Error(`[stage-move:${label}] timeout after ${ms}ms — Firestore 호출이 응답하지 않습니다.`))
@@ -143,8 +144,8 @@ export function StageMoveModal() {
       const msg = err instanceof Error ? err.message : String(err)
       setSubmitError(
         msg.includes('timeout')
-          ? '저장 응답이 지연됩니다. 네트워크 연결을 확인하거나 새로고침 후 다시 시도해 주세요.'
-          : '이동 이력 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+          ? '저장 응답이 30초 이상 지연됩니다. 개발 서버 HMR 재컴파일이 길어진 경우가 많습니다 — 브라우저를 하드 새로고침(⌘+Shift+R)한 뒤 다시 시도해 주세요.'
+          : `이동 이력 저장에 실패했습니다 (${msg.slice(0, 80)}). 잠시 후 다시 시도해 주세요.`
       )
       setSubmitting(false)
       return
