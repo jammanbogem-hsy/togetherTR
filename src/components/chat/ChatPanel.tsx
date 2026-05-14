@@ -2192,6 +2192,10 @@ ${discussionSummary}
   function isA21SheetArtifactRequest(text: string): boolean {
     if (currentActivity !== 'A-2-1') return false
     const compact = text.replace(/\s+/g, '')
+    // 브리핑·요약·조회 의도는 정보 요청이지 산출물 작성 요청이 아님
+    // (예: /이전 단계 브리핑 → "지금까지 완료된 모든 활동의 확정 산출물을 브리핑해주세요")
+    const isBriefingIntent = /(브리핑|요약|조회|보여|알려|확인|되돌아|돌아보)/.test(compact)
+    if (isBriefingIntent) return false
     const mentionsArtifact = /(산출물|분석표|보고서|저장|작성|제작|정리)/.test(compact)
     const asksToCreate = /(제작|작성|만들|생성|정리|저장|해줘|해주세요|부탁|완성)/.test(compact)
     return mentionsArtifact && asksToCreate
