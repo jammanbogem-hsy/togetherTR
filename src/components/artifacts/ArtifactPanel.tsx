@@ -328,8 +328,21 @@ function RequiredSectionsChecklist({
       if (sec.key === '성취기준분석표' && s.rows?.length) filled = s.rows.length * 20
     }
     if (filled === 0 && content._schema === 'A-2-2') {
-      const s = content as unknown as { subjectGoals?: unknown[]; integratedGoals?: string[] }
-      if (sec.key === '교과별 세부 목표' && s.subjectGoals?.length) filled = 20
+      const s = content as unknown as {
+        commonCoreIdea?: string
+        integratedGoal?: string
+        integratedGoals?: string[]
+        subjectGoals?: unknown[]
+        convergentKeywords?: string[]
+        method?: string
+      }
+      if (sec.key === '공통 핵심 아이디어' && s.commonCoreIdea) filled = s.commonCoreIdea.length
+      else if (sec.key === '통합 수업목표' && (s.integratedGoal || s.integratedGoals?.length)) filled = (s.integratedGoal || s.integratedGoals?.join(' ') || '').length
+      else if (sec.key === '교과별 수업목표' && s.subjectGoals?.length) filled = 20
+      else if (sec.key === '핵심 키워드' && s.convergentKeywords?.length) filled = s.convergentKeywords.join(' ').length
+      else if (sec.key === '진술 방식' && s.method) filled = 5
+      // 레거시 키 호환
+      else if (sec.key === '교과별 세부 목표' && s.subjectGoals?.length) filled = 20
       else if (sec.key === '통합 학습목표' && s.integratedGoals?.length) filled = s.integratedGoals.join('').length
     }
     if (filled === 0 && content._schema === 'A-2-3') {

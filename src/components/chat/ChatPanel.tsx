@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence } from '@/lib/firebase/projects'
+import type { TeamVisionWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import type { GraphPinnedStandard, GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { TeamDiscussionBanner } from './TeamDiscussionBanner'
@@ -18,6 +19,8 @@ import { StandardsFinderModal } from './StandardsFinderModal'
 import { CoreIdeaFinderModal } from './CoreIdeaFinderModal'
 import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
 import { CurriculumWorkspaceModal } from './CurriculumWorkspaceModal'
+import { TeamVisionWorkspaceModal } from '@/components/artifacts/TeamVisionWorkspaceModal'
+import type { T11Structured } from '@/lib/artifacts/schemas'
 import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -26,7 +29,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, Chat,
-  Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler,
+  Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler, PencilSimple,
 } from '@phosphor-icons/react'
 import dynamic from 'next/dynamic'
 
@@ -1159,6 +1162,7 @@ export function ChatPanel() {
   const [showCoreIdeaBrowser, setShowCoreIdeaBrowser] = useState(false)
   const [showKeyNotes, setShowKeyNotes] = useState(false)
   const [showWorkspace, setShowWorkspace] = useState(false)
+  const [showTeamVisionWorkspace, setShowTeamVisionWorkspace] = useState(false)
   const [workspaceInitialView, setWorkspaceInitialView] = useState<'sheet' | 'graph'>('sheet')
   const [noteTooltip, setNoteTooltip] = useState<{ num: number; preview: string; x: number; y: number } | null>(null)
   // 우클릭 컨텍스트 메뉴 상태
@@ -1320,7 +1324,7 @@ export function ChatPanel() {
     else if (activity === 'T-2-3' && responseText.includes('|')) { const s = schemas.buildT23Structured({}, ctx); if (s.schedule.length > 0) structured = s }
     else if (activity === 'A-1-2' && /주제|선정/.test(responseText)) { const s = schemas.buildA12Structured({}, ctx); if (s.selectedTopic || s.criteria.length > 0) structured = s }
     else if (activity === 'A-2-1' && (responseText.includes('|') || /핵심.*아이디어|지식.*이해/.test(responseText))) { const s = schemas.buildA21Structured({}, ctx); if (s.rows.length > 0) structured = s }
-    else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = schemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoals.length > 0) structured = s }
+    else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = schemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoal) structured = s }
     else if (activity === 'A-2-3' && /학습자|프로필|선수/.test(responseText)) { const s = schemas.buildA23Structured({}, ctx); if (s.commonProfile.length > 0) structured = s }
 
     if (structured) applyArtifactUpdates(structured as Record<string, string>, activity)
@@ -2127,6 +2131,52 @@ ${discussionSummary}
   const isTeamMode = discussionMode === 'team_discussion'
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
 
+  async function handleTeamVisionWorkspacePatch(patch: TeamVisionWorkspacePatch) {
+    if (!project?.id) return undefined
+    return patchTeamVisionWorkspace(project.id, patch)
+  }
+
+  async function handleTeamVisionPresence(entry: { uid: string; displayName: string; color: string; cellKey: string; updatedAt: number } | null) {
+    if (!project?.id || !userProfile?.uid) return
+    const color = project.memberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setTeamVisionWorkspacePresence(
+      project.id,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }
+
+  async function handleTeamVisionSendArtifact(content: T11Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['T-1-1']
+    const existing = currentArtifact?.activityCode === 'T-1-1' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'T-1-1', {
+      status: 'in_review',
+      title: '팀 공통 비전 설정 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('T-1-1')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'T-1-1',
+      artifactType: '팀 공통 비전 설정',
+      title: '팀 공통 비전 설정 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '팀 공통 비전 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
   function pushGraphSelectionState(nextPinnedStandards: GraphPinnedStandard[], nextCheckedStandardIds: string[]) {
     if (!project?.id || !isHost) return
     lastGraphSelectionMutationAtRef.current = Date.now()
@@ -2770,6 +2820,16 @@ ${discussionSummary}
               </button>
             )
           })()}
+          {currentActivity === 'T-1-1' && (
+            <button
+              onClick={() => setShowTeamVisionWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="팀 공통 비전 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              비전 공동 편집
+            </button>
+          )}
           {/* 교육과정 분석 워크스페이스 버튼 (A단계 활동에서만 표시) */}
           {GRAPH_ACTIVITIES.includes(currentActivity) && (
             <div className="relative flex items-center">
@@ -3358,6 +3418,21 @@ ${discussionSummary}
               if (el) { el.selectionStart = el.value.length; el.selectionEnd = el.value.length }
             }, 30)
           }}
+        />
+
+        <TeamVisionWorkspaceModal
+          open={showTeamVisionWorkspace}
+          onClose={() => setShowTeamVisionWorkspace(false)}
+          workspace={proj.teamVisionWorkspace}
+          artifactContent={proj.artifacts?.['T-1-1']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={proj.teamVisionWorkspacePresence}
+          isHost={isHost}
+          onPatchSave={handleTeamVisionWorkspacePatch}
+          onPresenceUpdate={handleTeamVisionPresence}
+          onSendArtifact={handleTeamVisionSendArtifact}
         />
 
         {/* 교육과정 분석 워크스페이스 — 분석시트 ↔ 지식그래프 통합 모달 */}

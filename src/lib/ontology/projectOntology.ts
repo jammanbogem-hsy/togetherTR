@@ -291,10 +291,21 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
     const rows = c.rows as Array<{ subject: string; coreIdea: string; knowledgeUnderstanding: string; processFunction: string; isCommon?: boolean }> | undefined
     if (rows?.length) sections.push({ key: '핵심아이디어 분석', value: '| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |\n| --- | --- | --- | --- |\n' + rows.map(r => `| ${r.isCommon ? '**' + (r.subject || '공통') + '**' : r.subject} | ${r.coreIdea} | ${r.knowledgeUnderstanding || '-'} | ${r.processFunction || '-'} |`).join('\n') })
   } else if (c._schema === 'A-2-2') {
+    const cci = (c.commonCoreIdea as string | undefined)?.trim()
+    if (cci) sections.push({ key: '공통 핵심 아이디어', value: cci })
+    const integratedSingle = (c.integratedGoal as string | undefined)?.trim()
+    const integratedLegacy = c.integratedGoals as string[] | undefined
+    if (integratedSingle) {
+      sections.push({ key: '통합 수업목표', value: integratedSingle })
+    } else if (integratedLegacy?.length) {
+      sections.push({ key: '통합 학습목표', value: integratedLegacy.map((g, i) => `${i + 1}. ${g}`).join('\n') })
+    }
+    const kws = c.convergentKeywords as string[] | undefined
+    if (kws?.length) sections.push({ key: '핵심 키워드', value: kws.join(', ') })
     const sg = c.subjectGoals as Array<{ subject: string; goal: string }> | undefined
-    if (sg?.length) sections.push({ key: '교과별 세부 목표', value: '| 교과 | 학습 목표 |\n| --- | --- |\n' + sg.map(g => `| ${g.subject} | ${g.goal} |`).join('\n') })
-    const ig = c.integratedGoals as string[] | undefined
-    if (ig?.length) sections.push({ key: '통합 학습목표', value: ig.map((g, i) => `${i + 1}. ${g}`).join('\n') })
+    if (sg?.length) sections.push({ key: '교과별 수업목표', value: '| 교과 | 수업목표 |\n| --- | --- |\n' + sg.map(g => `| ${g.subject} | ${g.goal} |`).join('\n') })
+    const method = (c.method as string | undefined)
+    if (method) sections.push({ key: '진술 방식', value: method === 'deductive' ? '연역적' : '귀납적' })
   } else if (c._schema === 'A-2-3') {
     const cp = c.commonProfile as Array<{ item: string; content: string }> | undefined
     if (cp?.length) sections.push({ key: '학습자 프로필', value: '| 항목 | 내용 |\n| --- | --- |\n' + cp.map(p => `| ${p.item} | ${p.content} |`).join('\n') })

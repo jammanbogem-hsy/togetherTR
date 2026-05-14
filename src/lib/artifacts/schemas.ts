@@ -2,6 +2,8 @@
 // AI 자유 형식 마크다운 대신 **코드가 구조를 강제**하는 방식.
 // AI가 뭘 빠뜨리든, 형식이 이상하든 스키마가 보장한다.
 
+import type { TeamVisionWorkspace } from '@/types'
+
 // ─── T-1-1 팀 공통 비전 설정 ─────────────────────────────────────────────
 
 export interface T11PersonalVision {
@@ -16,6 +18,7 @@ export interface T11Structured {
   personalVisions: T11PersonalVision[]
   teamVision: string       // 팀 공통 비전 문장
   coreKeywords: string[]   // 핵심 키워드 3~5개
+  manualWorkspace?: TeamVisionWorkspace
 }
 
 /**
@@ -703,31 +706,131 @@ function parseA21Table(raw: string): A21Row[] {
 
 // ─── A-2-2 통합 수업목표 진술 ────────────────────────────────────────────
 
-export interface A22SubjectGoal { subject: string; goal: string }
+/**
+ * 교과별 수업목표 한 행.
+ *  - goal: 본문 그대로 (지식·이해/과정·기능/가치·태도 태그 마커를 인라인으로 포함 가능)
+ *  - knowledge/process/attitude: 가능하면 태그 부분만 분리 추출 (없으면 빈 문자열)
+ */
+export interface A22SubjectGoal {
+  subject: string
+  goal: string
+  knowledge?: string
+  process?: string
+  attitude?: string
+}
+
+/**
+ * 진술 방식
+ *  - inductive: 귀납적 (개별 교과 목표 → 통합 목표)
+ *  - deductive: 연역적 (통합 목표 → 개별 교과 목표)
+ */
+export type A22Method = 'inductive' | 'deductive'
 
 export interface A22Structured {
   _schema: 'A-2-2'
+  /** 공통 핵심 아이디어 (A-2-1에서 합의된 단일 문장. 산출물 상단에 노출) */
+  commonCoreIdea: string
+  /** 통합 수업목표: 1개의 상위 문장. (레퍼런스 예: "학생은 ~ 할 수 있다") */
+  integratedGoal: string
+  /** 교과별 수업목표 표 */
   subjectGoals: A22SubjectGoal[]
-  integratedGoals: string[]
+  /** 공통 핵심 아이디어로 수렴되는 핵심 키워드 (협의 단계 추출 결과) */
+  convergentKeywords: string[]
+  /** 진술 방식 (선택) */
+  method?: A22Method
+}
+
+const A22_TAG_KNOWLEDGE = /\(\s*지식[·⋅]\s*이해(?:\s*[:：]\s*([^)]*))?\)/
+const A22_TAG_PROCESS = /\(\s*과정[·⋅]\s*기능(?:\s*[:：]\s*([^)]*))?\)/
+const A22_TAG_ATTITUDE = /\(\s*가치[·⋅]\s*태도(?:\s*[:：]\s*([^)]*))?\)/
+
+function extractA22Tag(goal: string, re: RegExp): string {
+  const m = goal.match(re)
+  if (!m) return ''
+  return (m[1] ?? '').trim()
 }
 
 export function buildA22Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A22Structured {
-  const r: A22Structured = { _schema: 'A-2-2', subjectGoals: [], integratedGoals: [] }
-  const sgRaw = (sections['교과별 세부 목표'] ?? '').trim()
-  if (sgRaw) r.subjectGoals = parseTableRows(sgRaw, 2).map(c => ({ subject: c[0], goal: c[1] || '' }))
-  const igRaw = (sections['통합 학습목표'] ?? '').trim()
-  if (igRaw) r.integratedGoals = igRaw.split('\n').map(l => l.replace(/^[-•\d.]\s*/, '').trim()).filter(Boolean)
-  // fallback
-  if (r.subjectGoals.length === 0 || r.integratedGoals.length === 0) {
-    for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
-      if (r.subjectGoals.length === 0) { const rows = parseTableRows(msg.content, 2); if (rows.length >= 2) r.subjectGoals = rows.map(c => ({ subject: c[0], goal: c[1] || '' })) }
-      if (r.integratedGoals.length === 0) {
-        const goals = msg.content.split('\n').filter(l => /^\s*[-•\d.]\s*.{10,}/.test(l) && /학생|학습|역량|목표/.test(l)).map(l => l.replace(/^[-•\d.]\s*/, '').trim())
-        if (goals.length >= 2) r.integratedGoals = goals
+  const r: A22Structured = {
+    _schema: 'A-2-2',
+    commonCoreIdea: '',
+    integratedGoal: '',
+    subjectGoals: [],
+    convergentKeywords: [],
+  }
+
+  // 1. 공통 핵심 아이디어 — A-2-2 산출물 본문 또는 A-2-1 산출물에서 가져옴
+  r.commonCoreIdea = (sections['공통 핵심 아이디어'] ?? sections['핵심 아이디어'] ?? '').trim()
+
+  // 2. 통합 수업목표 (단일 문장)
+  const integratedRaw = (sections['통합 수업목표'] ?? sections['통합 학습목표'] ?? '').trim()
+  if (integratedRaw) {
+    // 다중 라인이면 첫 의미 있는 라인을 단일 문장으로 채택
+    const firstLine = integratedRaw
+      .split('\n')
+      .map(l => l.replace(/^[-•\d.]\s*/, '').trim())
+      .find(l => l.length > 0)
+    r.integratedGoal = firstLine ?? integratedRaw
+  }
+
+  // 3. 교과별 수업목표 표 (교과 | 목표)
+  const sgRaw = (sections['교과별 수업목표'] ?? sections['교과별 세부 목표'] ?? '').trim()
+  if (sgRaw) {
+    r.subjectGoals = parseTableRows(sgRaw, 2).map(c => {
+      const goal = (c[1] || '').trim()
+      return {
+        subject: (c[0] || '').trim(),
+        goal,
+        knowledge: extractA22Tag(goal, A22_TAG_KNOWLEDGE),
+        process: extractA22Tag(goal, A22_TAG_PROCESS),
+        attitude: extractA22Tag(goal, A22_TAG_ATTITUDE),
       }
-      if (r.subjectGoals.length > 0 && r.integratedGoals.length > 0) break
+    })
+  }
+
+  // 4. 핵심 키워드 (협의 단계 추출 결과)
+  const kwRaw = (sections['핵심 키워드'] ?? sections['수렴 키워드'] ?? '').trim()
+  if (kwRaw) {
+    r.convergentKeywords = kwRaw
+      .split(/[,\n·•]/)
+      .map(s => s.replace(/^[-\d.]\s*/, '').trim())
+      .filter(Boolean)
+  }
+
+  // 5. 진술 방식
+  const methodRaw = (sections['진술 방식'] ?? '').trim()
+  if (/연역/.test(methodRaw)) r.method = 'deductive'
+  else if (/귀납/.test(methodRaw)) r.method = 'inductive'
+
+  // 6. Fallback: 최근 AI 메시지에서 표/단일 통합 목표를 추출
+  if (r.subjectGoals.length === 0 || !r.integratedGoal) {
+    for (const msg of [...chat.filter(m => m.role === 'assistant')].reverse()) {
+      if (r.subjectGoals.length === 0) {
+        const rows = parseTableRows(msg.content, 2)
+        if (rows.length >= 2) {
+          r.subjectGoals = rows.map(c => {
+            const goal = (c[1] || '').trim()
+            return {
+              subject: (c[0] || '').trim(),
+              goal,
+              knowledge: extractA22Tag(goal, A22_TAG_KNOWLEDGE),
+              process: extractA22Tag(goal, A22_TAG_PROCESS),
+              attitude: extractA22Tag(goal, A22_TAG_ATTITUDE),
+            }
+          })
+        }
+      }
+      if (!r.integratedGoal) {
+        const sentence = msg.content
+          .split('\n')
+          .map(l => l.replace(/^[-•\d.]\s*/, '').trim())
+          .find(l => /^학생은?\s.{10,}.*(?:할 수 있다|있다)\.?$/.test(l))
+        if (sentence) r.integratedGoal = sentence
+      }
+      if (r.subjectGoals.length > 0 && r.integratedGoal) break
     }
   }
+
   return r
 }
 
@@ -833,8 +936,9 @@ export function detectMissingFields(data: Record<string, unknown>): MissingField
     else if (!d.rows.some(r => r.isCommon)) missing.push({ label: '공통(팀 조정) 행', hint: '교과 간 공통 요소를 정리한 통합 행을 추가해주세요' })
   } else if (schema === 'A-2-2') {
     const d = data as unknown as A22Structured
-    if (!d.subjectGoals?.length) missing.push({ label: '교과별 세부 목표', hint: '각 교과의 학습 목표를 정해주세요' })
-    if (!d.integratedGoals?.length) missing.push({ label: '통합 학습목표', hint: '교과를 아우르는 통합 목표 3~5개를 진술해주세요' })
+    if (!d.commonCoreIdea) missing.push({ label: '공통 핵심 아이디어', hint: 'A-2-1에서 합의된 공통 핵심 아이디어를 1문장으로 옮겨주세요' })
+    if (!d.integratedGoal) missing.push({ label: '통합 수업목표', hint: '"학생은 ~ 할 수 있다" 형식의 단일 통합 목표 1문장을 작성해주세요' })
+    if (!d.subjectGoals?.length) missing.push({ label: '교과별 수업목표', hint: '각 교과별 수업목표를 (지식·이해)·(과정·기능)·(가치·태도) 태그와 함께 작성해주세요' })
   } else if (schema === 'A-2-3') {
     const d = data as unknown as A23Structured
     if (!d.commonProfile?.length) missing.push({ label: '학습자 프로필', hint: '선수지식, 오개념, 환경 제약 등을 정리해주세요' })

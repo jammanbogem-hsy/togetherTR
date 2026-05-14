@@ -123,8 +123,11 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'A-2-2': {
     code: 'A-2-2', label: '통합 수업목표 진술', stage: 'A',
     recommendedSections: [
-      { key: '교과별 세부 목표', label: '교과별 세부 목표 (교과·학습목표)', minChars: 20, required: 'any' },
-      { key: '통합 학습목표',    label: '통합 학습목표 (3~5개)',           minChars: 20, required: 'any' },
+      { key: '공통 핵심 아이디어', label: '공통 핵심 아이디어 (1문장)',      minChars: 10, required: 'any' },
+      { key: '통합 수업목표',     label: '통합 수업목표 (단일 문장)',       minChars: 15, required: 'any' },
+      { key: '교과별 수업목표',   label: '교과별 수업목표 (태그 포함 표)', minChars: 20, required: 'any' },
+      { key: '핵심 키워드',       label: '수렴 핵심 키워드',                 minChars: 2,  required: 'any' },
+      { key: '진술 방식',         label: '진술 방식 (귀납/연역)',            minChars: 2,  required: 'any' },
     ],
   },
   'A-2-3': {
@@ -362,6 +365,15 @@ export interface Project {
     cellKey: string
     updatedAt: number
   }>
+  // 팀 공통 비전 워크스페이스 — T-1-1 수동 공동 편집 초안
+  teamVisionWorkspace?: TeamVisionWorkspace
+  teamVisionWorkspacePresence?: Record<string, {
+    uid: string
+    displayName: string
+    color: string
+    cellKey: string
+    updatedAt: number
+  }>
   // 공개 배포 상태 — "공개 링크" 기능으로 보고서를 외부에 공유 중일 때 true.
   // 실제 공개 데이터는 Firestore `public_reports/{projectId}`에 **스냅샷**으로 별도 저장.
   // 원본 프로젝트를 직접 공개하지 않는 이유: 팀원 UID/메시지 등 민감 데이터 분리 보장.
@@ -401,6 +413,52 @@ export interface CurriculumSheetRow {
   description: string           // 수업내용 설명 (자유 입력)
   updatedBy?: string            // 마지막 수정자 이름
   updatedAt?: number            // 마지막 수정 시각 (ms)
+}
+
+// ─── 팀 공통 비전 워크스페이스 (공동 편집) ─────────────────
+// T-1-1에서 템플릿 표와 자유 블록을 함께 다루는 수동 편집 상태.
+// 최종 저장 시 T-1-1 구조화 산출물의 manualWorkspace로 보존된다.
+export interface TeamVisionWorkspaceColumn {
+  id: string
+  label: string
+  color?: string
+}
+
+export interface TeamVisionWorkspaceRow {
+  id: string
+  cells: Record<string, string>
+  color?: string
+  updatedBy?: string
+  updatedAt?: number
+}
+
+export type TeamVisionWorkspaceBlockType = 'heading' | 'paragraph' | 'checklist' | 'quote' | 'table'
+
+export interface TeamVisionWorkspaceTableData {
+  columns: TeamVisionWorkspaceColumn[]
+  rows: TeamVisionWorkspaceRow[]
+}
+
+export interface TeamVisionWorkspaceBlock {
+  id: string
+  type: TeamVisionWorkspaceBlockType
+  content: string
+  table?: TeamVisionWorkspaceTableData
+  color?: string
+  checked?: boolean
+  includeInArtifact?: boolean
+  updatedBy?: string
+  updatedAt?: number
+}
+
+export interface TeamVisionWorkspace {
+  columns: TeamVisionWorkspaceColumn[]
+  rows: TeamVisionWorkspaceRow[]
+  teamVision: string
+  coreKeywords: string[]
+  blocks: TeamVisionWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
 }
 
 // ─── 공개 배포 보고서 ─────────────────────────────────

@@ -115,10 +115,20 @@ function renderArtifactContent(content: Record<string, unknown>): string {
   }
   if (content._schema === 'A-2-2') {
     const parts: string[] = []
+    const cci = (content.commonCoreIdea as string | undefined)?.trim()
+    if (cci) parts.push(`**공통 핵심 아이디어**\n\n${cci}`)
+    // 신규 single-string 형식과 레거시 array 형식 모두 수용
+    const integratedSingle = (content.integratedGoal as string | undefined)?.trim()
+    const integratedLegacy = content.integratedGoals as string[] | undefined
+    if (integratedSingle) {
+      parts.push(`**통합 수업목표**\n\n${integratedSingle}`)
+    } else if (integratedLegacy?.length) {
+      parts.push('**통합 학습목표**\n\n' + integratedLegacy.map((g, i) => `${i + 1}. ${g}`).join('\n'))
+    }
+    const kws = content.convergentKeywords as string[] | undefined
+    if (kws?.length) parts.push(`**핵심 키워드**\n\n${kws.join(', ')}`)
     const sg = content.subjectGoals as Array<{ subject: string; goal: string }> | undefined
-    if (sg?.length) parts.push('**교과별 세부 목표**\n\n| 교과 | 학습 목표 |\n| --- | --- |\n' + sg.map(g => `| ${g.subject} | ${g.goal} |`).join('\n'))
-    const ig = content.integratedGoals as string[] | undefined
-    if (ig?.length) parts.push('**통합 학습목표**\n\n' + ig.map((g, i) => `${i + 1}. ${g}`).join('\n'))
+    if (sg?.length) parts.push('**교과별 수업목표**\n\n| 교과 | 수업목표 |\n| --- | --- |\n' + sg.map(g => `| ${g.subject} | ${g.goal} |`).join('\n'))
     return parts.join('\n\n')
   }
   if (content._schema === 'A-2-3') {
