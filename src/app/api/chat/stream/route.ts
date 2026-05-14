@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { buildSystemPrompt } from '@/lib/prompts/system'
 import { buildCurriculumContext } from '@/lib/curriculum/contextInject'
+import { buildA21DirectAnswer } from '@/lib/curriculum/a21DirectAnswer'
 import { buildProjectMaterialContext, searchProjectMaterials } from '@/lib/rag/search'
 import type { StageCode, ActivityCode, ActorType, Project } from '@/types'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
@@ -42,6 +43,18 @@ export async function POST(request: Request) {
       graphSavedData?: GraphSavedData | null
       keyNotes?: Array<{ content: string; sourceActivityCode?: string; sourceRole?: string; sourceDisplayName?: string; savedAt: number }>
     } = body
+
+    const directA21Answer = buildA21DirectAnswer({
+      activityCode,
+      messages,
+      gradeGroup: project.targetGradeGroup,
+      targetSubjects: project.targetSubjects,
+      confirmedArtifacts,
+      graphSavedData,
+    })
+    if (directA21Answer) {
+      return streamPlainText(directA21Answer)
+    }
 
     const baseSystemPrompt = buildSystemPrompt(
       stage,
@@ -183,4 +196,23 @@ ${sections.join('\n\n')}
     console.error('[stream] route error:', err)
     return Response.json({ error: msg }, { status: 500 })
   }
+}
+
+function streamPlainText(text: string): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text })}\n\n`))
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+      controller.close()
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  })
 }

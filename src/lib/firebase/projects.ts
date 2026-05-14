@@ -1,10 +1,10 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query,
   where, orderBy, limit, serverTimestamp, onSnapshot, Unsubscribe, arrayUnion, deleteField,
-  type QueryDocumentSnapshot, type DocumentData, Timestamp
+  runTransaction, type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { db } from './config'
-import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote } from '@/types'
+import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
@@ -290,9 +290,15 @@ export async function updateMessageActionCardState(
 
 // ─── 지식 그래프 공유 (방장 → 팀원) ─────────────────────────────────────────
 
-export async function setGraphOpen(projectId: string, open: boolean, keyword?: string): Promise<void> {
+export async function setGraphOpen(
+  projectId: string,
+  open: boolean,
+  keyword?: string,
+  view: 'sheet' | 'graph' = 'graph',
+): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
     graphOpen: open,
+    graphView: open ? view : 'sheet',
     ...(keyword !== undefined ? { graphKeyword: keyword } : {}),
     updatedAt: serverTimestamp(),
   })
@@ -588,6 +594,133 @@ export async function saveGraphData(
     ...(normalized.centerNode ? { graphCenterNodeId: normalized.centerNode.id } : {}),
     updatedAt: serverTimestamp(),
   })
+}
+
+// ─── 교육과정 분석 시트 공동 편집 ──────────────────────────────
+
+export type CurriculumSheetEditableField =
+  | 'session'
+  | 'subject'
+  | 'isCenter'
+  | 'coreIdea'
+  | 'standard'
+  | 'knowledge'
+  | 'processFunction'
+  | 'agentLessonExample'
+  | 'description'
+
+export type CurriculumSheetPatch =
+  | {
+      type: 'update-cell'
+      rowId: string
+      field: CurriculumSheetEditableField
+      value: CurriculumSheetRow[CurriculumSheetEditableField]
+      updatedBy?: string
+    }
+  | {
+      type: 'update-cells'
+      updates: Array<{
+        rowId: string
+        field: CurriculumSheetEditableField
+        value: CurriculumSheetRow[CurriculumSheetEditableField]
+      }>
+      updatedBy?: string
+    }
+  | { type: 'upsert-row'; row: CurriculumSheetRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'reorder'; rowIds: string[] }
+  | { type: 'set-center'; rowId: string | null; updatedBy?: string }
+  | { type: 'replace-all'; rows: CurriculumSheetRow[]; updatedBy?: string }
+
+function cleanCurriculumSheetRow(row: CurriculumSheetRow): CurriculumSheetRow {
+  return Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined),
+  ) as CurriculumSheetRow
+}
+
+function applyCurriculumSheetPatch(
+  currentRows: CurriculumSheetRow[],
+  patch: CurriculumSheetPatch,
+): CurriculumSheetRow[] {
+  const now = Date.now()
+  const stampRow = (row: CurriculumSheetRow, updatedBy?: string): CurriculumSheetRow => cleanCurriculumSheetRow({
+    ...row,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+
+  if (patch.type === 'replace-all') {
+    return patch.rows.map(row => stampRow(row, patch.updatedBy))
+  }
+
+  if (patch.type === 'upsert-row') {
+    const next = [...currentRows]
+    const index = next.findIndex(row => row.id === patch.row.id)
+    const nextRow = stampRow(patch.row, patch.updatedBy)
+    if (index >= 0) next[index] = { ...next[index], ...nextRow }
+    else next.push(nextRow)
+    return next.map(cleanCurriculumSheetRow)
+  }
+
+  if (patch.type === 'delete-row') {
+    return currentRows.filter(row => row.id !== patch.rowId).map(cleanCurriculumSheetRow)
+  }
+
+  if (patch.type === 'reorder') {
+    const byId = new Map(currentRows.map(row => [row.id, row]))
+    const ordered = patch.rowIds.map(id => byId.get(id)).filter(Boolean) as CurriculumSheetRow[]
+    const orderedIds = new Set(ordered.map(row => row.id))
+    const missing = currentRows.filter(row => !orderedIds.has(row.id))
+    return [...ordered, ...missing].map(cleanCurriculumSheetRow)
+  }
+
+  if (patch.type === 'set-center') {
+    return currentRows.map(row => stampRow({
+      ...row,
+      isCenter: patch.rowId ? row.id === patch.rowId : false,
+    }, patch.updatedBy))
+  }
+
+  const updates = patch.type === 'update-cell'
+    ? [{ rowId: patch.rowId, field: patch.field, value: patch.value }]
+    : patch.updates
+  const updatedBy = patch.updatedBy
+  const updateMap = new Map<string, Partial<CurriculumSheetRow>>()
+  for (const update of updates) {
+    const key = update.rowId
+    updateMap.set(key, {
+      ...(updateMap.get(key) ?? {}),
+      [update.field]: update.value,
+    })
+  }
+
+  return currentRows.map(row => {
+    const update = updateMap.get(row.id)
+    if (!update) return cleanCurriculumSheetRow(row)
+    return stampRow({ ...row, ...update }, updatedBy)
+  })
+}
+
+export async function patchCurriculumSheet(
+  projectId: string,
+  patch: CurriculumSheetPatch,
+): Promise<CurriculumSheetRow[]> {
+  const ref = doc(db, 'projects', projectId)
+  let nextRows: CurriculumSheetRow[] = []
+
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const currentRows = (data.curriculumSheet ?? []) as CurriculumSheetRow[]
+    nextRows = applyCurriculumSheetPatch(currentRows, patch)
+    transaction.update(ref, {
+      curriculumSheet: nextRows,
+      updatedAt: serverTimestamp(),
+    })
+  })
+
+  return nextRows
 }
 
 // 문제상황 디자이너 오픈 상태 설정 (팀원 자동 오픈)

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import type { GraphPinnedStandard, GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { TeamDiscussionBanner } from './TeamDiscussionBanner'
@@ -17,8 +17,10 @@ import { ChatFontScaleControl, useChatFontScale } from '@/components/accessibili
 import { StandardsFinderModal } from './StandardsFinderModal'
 import { CoreIdeaFinderModal } from './CoreIdeaFinderModal'
 import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
+import { CurriculumWorkspaceModal } from './CurriculumWorkspaceModal'
 import { addKeyNote } from '@/lib/firebase/projects'
-import type { KeyNote } from '@/types'
+import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
+import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -1156,6 +1158,9 @@ export function ChatPanel() {
   const [showStandardsBrowser, setShowStandardsBrowser] = useState(false)
   const [showCoreIdeaBrowser, setShowCoreIdeaBrowser] = useState(false)
   const [showKeyNotes, setShowKeyNotes] = useState(false)
+  const [showWorkspace, setShowWorkspace] = useState(false)
+  const [workspaceInitialView, setWorkspaceInitialView] = useState<'sheet' | 'graph'>('sheet')
+  const [noteTooltip, setNoteTooltip] = useState<{ num: number; preview: string; x: number; y: number } | null>(null)
   // 우클릭 컨텍스트 메뉴 상태
   const [ctxMenu, setCtxMenu] = useState<null | {
     x: number; y: number
@@ -1177,6 +1182,7 @@ export function ChatPanel() {
   const lastGraphSelectionMutationAtRef = useRef(0)
   const pinnedStandardsRef = useRef<GraphPinnedStandard[]>([])
   const checkedGraphStandardIdsRef = useRef<string[]>([])
+  const latestSheetRowsRef = useRef<CurriculumSheetRow[]>([])
 
   // ── 공유 그래프 키워드 (버튼 핸들러에서 사용) ─────────────────────────────
   const graphKeywordForShare = useMemo(() => {
@@ -1223,7 +1229,16 @@ export function ChatPanel() {
     if (!project || !userProfile) return
     const amHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
     if (amHost) return  // 방장은 직접 제어
-    if (project.graphOpen && GRAPH_ACTIVITIES.includes(currentActivity)) {
+    if (!project.graphOpen) {
+      setShowWorkspace(false)
+      setShowGraphPanel(false)
+      setWorkspaceInitialView('sheet')
+      return
+    }
+    if (GRAPH_ACTIVITIES.includes(currentActivity)) {
+      const sharedView = project.graphView ?? 'graph'
+      setWorkspaceInitialView(sharedView)
+      setShowWorkspace(true)
       setShowGraphPanel(true)
       if (!stableGraphKeywordRef.current) {
         const kw = project.graphKeyword || graphKeywordForShare
@@ -1240,7 +1255,7 @@ export function ChatPanel() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.graphOpen])
+  }, [project?.graphOpen, project?.graphView, project?.graphKeyword])
 
   useEffect(() => {
     if (!project?.graphSelectionState) return
@@ -1260,11 +1275,16 @@ export function ChatPanel() {
     checkedGraphStandardIdsRef.current = checkedGraphStandardIds
   }, [checkedGraphStandardIds])
 
+  useEffect(() => {
+    latestSheetRowsRef.current = project?.curriculumSheet ?? []
+  }, [project?.curriculumSheet])
+
   // 채팅 메시지에서 성취기준 코드 파싱
   const STD_CODE_RE = /\[(\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2})\]/g
 
   // "반영하기" 버튼 클릭 시 해당 메시지의 코드만 저장
   const [activeGraphCodes, setActiveGraphCodes] = useState<Array<{code: string; addedBy: string}>>([])
+  const [sheetPreferredCenterCode, setSheetPreferredCenterCode] = useState('')
 
   // 그래프에 전달할 코드: 버튼 클릭으로 지정된 코드 우선, 없으면 빈 배열
   const chatMentionedStds = useMemo(() => {
@@ -2128,6 +2148,118 @@ ${discussionSummary}
     return restored
   }
 
+  async function saveGraphDataAndSyncSheet(data: Omit<GraphSavedData, 'savedAt'>) {
+    if (!project?.id) return
+    await saveGraphData(project.id, data)
+
+    const currentRows = latestSheetRowsRef.current.length > 0
+      ? latestSheetRowsRef.current
+      : (project.curriculumSheet ?? [])
+    const { rows: nextRows, changed } = mergeGraphAgentExamplesIntoRows(currentRows, data)
+    let rowsForProposal = nextRows
+    if (changed) {
+      const currentById = new Map(currentRows.map(row => [row.id, row]))
+      const updates = nextRows
+        .filter(row => (currentById.get(row.id)?.agentLessonExample ?? '') !== (row.agentLessonExample ?? ''))
+        .map(row => ({
+          rowId: row.id,
+          field: 'agentLessonExample' as const,
+          value: row.agentLessonExample ?? '',
+        }))
+      if (updates.length > 0) {
+        rowsForProposal = await patchCurriculumSheet(project.id, {
+          type: 'update-cells',
+          updates,
+          updatedBy: userProfile?.displayName ?? undefined,
+        })
+        latestSheetRowsRef.current = rowsForProposal
+      }
+    }
+    proposeCurriculumSheetArtifactSave(rowsForProposal, '지식 그래프 저장 결과')
+  }
+
+  function proposeCurriculumSheetArtifactSave(rows: CurriculumSheetRow[], source: string) {
+    if (!isHost) return
+    const proposal = buildCurriculumSheetArtifactProposal(rows)
+    if (!proposal) return
+    setPendingArtifactSave({
+      ...proposal,
+      title: `${proposal.title} (${source})`,
+      activityCode: 'A-2-1',
+    })
+  }
+
+  function isA21SheetArtifactRequest(text: string): boolean {
+    if (currentActivity !== 'A-2-1') return false
+    const compact = text.replace(/\s+/g, '')
+    const mentionsArtifact = /(산출물|분석표|보고서|저장|작성|제작|정리)/.test(compact)
+    const asksToCreate = /(제작|작성|만들|생성|정리|저장|해줘|해주세요|부탁|완성)/.test(compact)
+    return mentionsArtifact && asksToCreate
+  }
+
+  function addAssistantNotice(content: string) {
+    const msgId = generateMessageId(proj.id, currentActivity)
+    addMessage({
+      id: msgId,
+      role: 'assistant',
+      content,
+      activityCode: currentActivity,
+      activityType: '생성',
+      agentType: 'orchestrator',
+      createdAt: Timestamp.now(),
+    })
+    saveMessage(proj.id, currentActivity, {
+      role: 'assistant',
+      content,
+      activityCode: currentActivity,
+      activityType: '생성',
+      agentType: 'orchestrator',
+    }, msgId).catch(console.error)
+  }
+
+  function handleA21SheetArtifactRequest(text: string): boolean {
+    if (!isA21SheetArtifactRequest(text)) return false
+
+    const rows = latestSheetRowsRef.current.length > 0
+      ? latestSheetRowsRef.current
+      : (project?.curriculumSheet ?? [])
+    const proposal = buildCurriculumSheetArtifactProposal(rows)
+
+    if (!proposal) {
+      setWorkspaceInitialView('sheet')
+      setShowWorkspace(true)
+      setShowGraphPanel(true)
+      if (isHost) setGraphOpen(proj.id, true, undefined, 'sheet').catch(console.error)
+      addAssistantNotice('분석시트에 저장된 행이 아직 없습니다. 교육과정 분석에서 분석시트를 먼저 작성하면 그 표 형식 그대로 산출물로 만들 수 있습니다.')
+      return true
+    }
+
+    const sheetProposal = {
+      ...proposal,
+      title: `${proposal.title} (분석시트 기반)`,
+      activityCode: 'A-2-1',
+    }
+
+    if (isHost) {
+      setPendingArtifactSave(sheetProposal)
+      addAssistantNotice('분석시트에 저장된 표를 기준으로 산출물 초안을 만들었습니다. 저장 카드에서 검토한 뒤 산출물에 저장하세요.')
+    } else if (project?.mode === 'collaborative') {
+      proposeArtifactToHost(
+        proj.id,
+        'A-2-1',
+        proposal.sections,
+        userProfile?.uid ?? '',
+        userProfile?.displayName ?? '팀원',
+      ).catch(console.error)
+      addAssistantNotice('분석시트에 저장된 표를 기준으로 방장에게 산출물 저장 제안을 보냈습니다.')
+    } else {
+      setChatError('산출물 저장은 방장만 실행할 수 있습니다.')
+      addAssistantNotice('분석시트 표 형식 산출물은 방장이 저장할 수 있습니다. 방장에게 교육과정 분석 버튼에서 산출물 저장을 요청해주세요.')
+    }
+
+    return true
+  }
+
   // ─── Firestore 팀원 산출물 제안 → 방장 확인 카드 ────
   const lastProposalAtRef = useRef<number | null>(null)
   useEffect(() => {
@@ -2184,6 +2316,9 @@ ${discussionSummary}
       userId: userProfile?.uid,
       displayName: senderDisplayName,
     }).catch(console.error)
+
+    if (handleA21SheetArtifactRequest(text)) return
+
     setIsLoading(true)
     clearStreamingText()
     streamingAccumRef.current = ''
@@ -2335,6 +2470,8 @@ ${discussionSummary}
       replyTo: replyTo ?? undefined,
     }, userMsgId).catch(console.error)
     setReplyTo(null)
+
+    if (handleA21SheetArtifactRequest(userMessage)) return
 
     // 팀 토의 모드 또는 선택 대기 중: AI 호출 없이 메시지만 저장
     if (isTeamMode || isWaitingForChoice) return
@@ -2578,7 +2715,11 @@ ${discussionSummary}
       )}
 
       {/* 헤더 */}
-      <div className={cn('px-4 py-3 border-b flex items-center gap-2 flex-shrink-0', isTeamMode ? 'bg-[#E0F2F1] border-[#80CBC4]' : 'bg-white border-[#DADCE0]')}>
+      <div className={cn(
+        'px-4 border-b flex items-center gap-2 flex-shrink-0',
+        GRAPH_ACTIVITIES.includes(currentActivity) && !showWorkspace ? 'pt-12 pb-3' : 'py-3',
+        isTeamMode ? 'bg-[#E0F2F1] border-[#80CBC4]' : 'bg-white border-[#DADCE0]',
+      )}>
         <div className={cn('w-2 h-2 rounded-full animate-pulse', isTeamMode ? 'bg-[#00897B]' : 'bg-[#34A853]')} />
         <span className="text-sm font-semibold text-[#202124]">{activityMeta.label}</span>
         {activityMeta.isGuardrailSource && (
@@ -2591,18 +2732,20 @@ ${discussionSummary}
             <Star size={11} weight="fill" /> 평가 먼저
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
           <ChatFontScaleControl />
-          {/* 중요 노트 버튼 — 저장된 노트 카운트 표시, 클릭 시 모달 */}
+          {/* 중요 노트 버튼 */}
           <button
             type="button"
             onClick={() => setShowKeyNotes(true)}
             title="저장된 중요 노트 보기"
             aria-label="중요 노트 보기"
-            className="flex items-center gap-1.5 text-[12px] bg-[#FEF7E0] text-[#B06000]
-              px-3 py-1.5 rounded-xl border border-[#F9AB00] font-semibold hover:bg-[#FDECC4] transition-colors flex-shrink-0 whitespace-nowrap"
+            className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full
+              bg-white text-[#E65100] border-2 border-[#FFB74D] hover:bg-[#FFF3E0] shadow-sm
+              transition-colors whitespace-nowrap"
           >
-            <span className="font-bold">중요노트 {proj.keyNotes?.length ?? 0}</span>
+            <Star size={13} weight="fill" />
+            노트{proj.keyNotes?.length ? <span className="px-1 rounded-full bg-[#E65100] text-white text-[9px] leading-tight">{proj.keyNotes.length}</span> : ''}
           </button>
           {/* 끊긴 대화 재시도 버튼: 마지막 메시지가 user이고 로딩 중이 아닐 때 */}
           {(() => {
@@ -2623,50 +2766,37 @@ ${discussionSummary}
               </button>
             )
           })()}
-          {/* 지식 그래프 토글 버튼 (A단계 활동에서만 표시) */}
+          {/* 교육과정 분석 워크스페이스 버튼 (A단계 활동에서만 표시) */}
           {GRAPH_ACTIVITIES.includes(currentActivity) && (
-            <button
-              onClick={() => {
-                const next = !showGraphPanel
-                setShowGraphPanel(next)
-                if (next) {
-                  // 헤더 버튼: 저장된 그래프가 있으면 복원, 없으면 빈 상태
-                  // 키워드 검색 안 함 (사용자가 검색바에서 직접 입력)
-                  setActiveGraphCodes([])  // 반영하기 코드 초기화
+            <div className="relative flex items-center">
+              {currentActivity === 'A-2-1' && !showWorkspace && (
+                <div className="pointer-events-none absolute -top-12 right-0 z-20 min-w-[260px] rounded-2xl border border-white/80 bg-[#7B1FA2] px-3 py-2 text-center text-[12px] font-bold leading-snug text-white shadow-[0_8px_24px_rgba(123,31,162,0.35)]">
+                  산출물 제작을 팀원과 이곳에서 함께해주세요.
+                  <span className="absolute -bottom-1.5 right-8 h-3 w-3 rotate-45 border-b border-r border-white/80 bg-[#7B1FA2]" />
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  setShowWorkspace(true)
+                  setWorkspaceInitialView('sheet')
+                  setShowGraphPanel(true)
+                  setSheetPreferredCenterCode('')
                   stableGraphKeywordRef.current = ' '
                   setStableGraphKeyword(' ')
-                } else {
-                  stableGraphKeywordRef.current = ''
-                  setStableGraphKeyword('')
-                }
-                let selectionToShare = {
-                  pinnedStandards,
-                  checkedStandardIds: checkedGraphStandardIds,
-                }
-
-                if (next && !proj.graphSelectionState && proj.graphSavedData && pinnedStandards.length === 0 && checkedGraphStandardIds.length === 0) {
-                  selectionToShare = restoreGraphSelection(proj.graphSavedData)
-                }
-
-                if (isHost) {
-                  setGraphOpen(proj.id, next, next ? ' ' : undefined).catch(console.error)
-                  if (next) {
-                    pushGraphSelectionState(selectionToShare.pinnedStandards, selectionToShare.checkedStandardIds)
-                  }
-                }
-              }}
-              className={cn(
-                'flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-full transition-colors',
-                showGraphPanel
-                  ? 'bg-[#7B1FA2] text-white border-2 border-[#7B1FA2] shadow-md'
-                  : 'bg-white text-[#7B1FA2] border-2 border-[#CE93D8] hover:bg-[#F3E5F5] shadow-sm kg-graph-btn-rainbow',
-              )}
-              title="교육과정 지식 그래프"
-            >
-              <TreeStructure size={15} weight={showGraphPanel ? 'fill' : 'bold'} />
-              지식 그래프 확인
-              {isHost && <span className="text-[8px] opacity-70 ml-0.5">{showGraphPanel ? '공유중' : ''}</span>}
-            </button>
+                  if (isHost) setGraphOpen(proj.id, true, undefined, 'sheet').catch(console.error)
+                }}
+                className={cn(
+                  'flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full transition-colors whitespace-nowrap',
+                  showWorkspace
+                    ? 'bg-[#7B1FA2] text-white border-2 border-[#7B1FA2] shadow-md'
+                    : 'bg-white text-[#7B1FA2] border-2 border-[#CE93D8] hover:bg-[#F3E5F5] shadow-sm kg-graph-btn-rainbow',
+                )}
+                title="교육과정 분석 시트 + 지식 그래프"
+              >
+                <TreeStructure size={13} weight={showWorkspace ? 'fill' : 'bold'} />
+                교육과정 분석
+              </button>
+            </div>
           )}
           {/* 문제상황 개발 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
           {currentActivity === 'Ds-1-2' && (
@@ -2871,241 +3001,6 @@ ${discussionSummary}
             }}
           />,
           document.body,
-        )
-      })()}
-
-      {/* 지식 그래프 모달 — Portal로 document.body에 렌더링 */}
-      {showGraphPanel && GRAPH_ACTIVITIES.includes(currentActivity) && typeof document !== 'undefined' && (() => {
-        // 그래프가 열린 시점의 keyword 사용 (채팅/산출물 업데이트로 인한 재fetch 방지)
-        const graphKeyword = stableGraphKeyword || graphKeywordForShare
-
-        return createPortal(
-          <div
-            className="fixed inset-0 z-[9000] flex items-center justify-center"
-            style={{ background: 'rgba(0,0,0,0.55)' }}
-            onClick={() => {
-              setShowGraphPanel(false)
-              stableGraphKeywordRef.current = ''
-              setStableGraphKeyword('')
-              if (isHost) setGraphOpen(proj.id, false).catch(console.error)
-            }}
-          >
-            <div
-              className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-              style={{ width: '94vw', maxWidth: 1400, height: '88vh' }}
-              onClick={e => e.stopPropagation()}
-            >
-              {/* 모달 헤더 */}
-              <div className="flex items-center justify-between px-5 py-3 bg-[#F3E5F5] border-b border-[#CE93D8] shrink-0">
-                <span className="text-sm font-semibold text-[#7B1FA2] flex items-center gap-2 flex-1 min-w-0">
-                  <TreeStructure size={16} weight="fill" className="shrink-0" />
-                  <span className="shrink-0">교육과정 융합 지식 그래프</span>
-                  {isHost && <span className="text-[9px] text-[#9C27B0] bg-white/70 px-1.5 py-0.5 rounded-full shrink-0">팀 공유 중</span>}
-                  <div className="flex-1 min-w-0 flex items-center gap-1">
-                    <input
-                      id="graph-topic-input"
-                      type="text"
-                      defaultValue={graphKeyword.trim() || ''}
-                      placeholder="수업 주제를 입력하고 검색을 누르면 관련 성취기준을 찾습니다"
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          const val = (e.target as HTMLInputElement).value.trim()
-                          if (val && val !== stableGraphKeywordRef.current) {
-                            stableGraphKeywordRef.current = val
-                            setStableGraphKeyword(val)
-                            if (isHost) setGraphOpen(proj.id, true, val).catch(console.error)
-                          }
-                        }
-                      }}
-                      className="flex-1 min-w-0 text-[12px] font-normal text-[#3D1C72] bg-white/80 border border-[#CE93D8] rounded-lg px-2.5 py-1 outline-none focus:border-[#7B1FA2] focus:ring-1 focus:ring-[#7B1FA2]/30 placeholder:text-[#CE93D8]/60"
-                    />
-                    <button
-                      onClick={() => {
-                        const input = document.getElementById('graph-topic-input') as HTMLInputElement | null
-                        const val = input?.value.trim()
-                        if (val && val !== stableGraphKeywordRef.current) {
-                          stableGraphKeywordRef.current = val
-                          setStableGraphKeyword(val)
-                          if (isHost) setGraphOpen(proj.id, true, val).catch(console.error)
-                        }
-                      }}
-                      className="shrink-0 px-2.5 py-1 bg-[#7B1FA2] hover:bg-[#6A1B9A] text-white text-[11px] font-bold rounded-lg transition-colors"
-                    >
-                      검색
-                    </button>
-                  </div>
-                </span>
-                <button
-                  onClick={() => {
-                    setShowGraphPanel(false)
-                    stableGraphKeywordRef.current = ''
-                    setStableGraphKeyword('')
-                    if (isHost) setGraphOpen(proj.id, false).catch(console.error)
-                  }}
-                  className="text-[#9E9E9E] hover:text-[#7B1FA2] transition-colors"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              {/* 그래프 본문 */}
-              <div className="flex-1 min-h-0">
-                <KnowledgeGraphViewer
-                  keyword={graphKeyword}
-                  gradeGroup={proj.targetGradeGroup}
-                  height={undefined}
-                  currentUserName={userProfile?.displayName ?? '나'}
-                  currentUserUid={userProfile?.uid}
-                  isLeader={isHost}
-                  chatMentionedCodes={chatMentionedStds}
-                  pinnedStandards={pinnedStandards}
-                  onPinChange={(nextPins) => {
-                    pinnedStandardsRef.current = nextPins
-                    setPinnedStandards(nextPins)
-                    if (isHost) pushGraphSelectionState(nextPins, checkedGraphStandardIdsRef.current)
-                  }}
-                  externalCheckedStandardIds={checkedGraphStandardIds}
-                  onCheckedStandardsChange={(ids) => {
-                    checkedGraphStandardIdsRef.current = ids
-                    setCheckedGraphStandardIds(ids)
-                    if (isHost) pushGraphSelectionState(pinnedStandardsRef.current, ids)
-                  }}
-                  onClose={() => { setShowGraphPanel(false); stableGraphKeywordRef.current = ''; setStableGraphKeyword('') }}
-                  externalRecommendations={Object.values(proj.graphCenterRecommendations ?? {}).map(r => ({
-                    nodeId: r.nodeId,
-                    recommenderName: r.recommenderName,
-                    recommenderUid: r.recommenderUid ?? undefined,
-                  }))}
-                  externalCenterNodeId={proj.graphCenterNodeId}
-                  savedData={proj.graphSavedData ?? null}
-                  artifactContext={(() => {
-                    const parts: string[] = []
-                    if (proj.targetGradeGroup) parts.push(`학년군: ${proj.targetGradeGroup}`)
-                    if (proj.title) parts.push(`프로젝트: ${proj.title}`)
-                    const arts = proj.artifacts ?? {}
-                    for (const [code, art] of Object.entries(arts)) {
-                      const c = art.content as Record<string, unknown>
-                      const topic = (c['선택 주제'] || c['주제'] || c['수업 목표']) as string | undefined
-                      if (topic) parts.push(`${code} 산출물 — ${topic}`)
-                    }
-                    return parts.join('\n') || undefined
-                  })()}
-                  onSetCenter={(nodeId) => {
-                    setGraphCenter(proj.id, nodeId)
-                  }}
-                  onRecommendCenter={(nodeId) => {
-                    recommendGraphCenter(proj.id, nodeId, userProfile?.displayName ?? '팀원', userProfile?.uid)
-                  }}
-                  onSaveGraph={isHost ? async (data) => {
-                    // 방장만 저장 가능 — 상태/내용 저장만 (채팅 전송 없음)
-                    try {
-                      await saveGraphData(proj.id, data)
-                      setShowGraphPanel(false)
-                    } catch (e) {
-                      console.error('[saveGraphData] 저장 실패:', e)
-                    }
-                  } : undefined}
-                  onSendToChat={isHost ? async (data) => {
-                    // 저장 + 채팅으로 분석 전송
-                    saveGraphData(proj.id, data).catch(e => console.error('[saveGraphData] 저장 실패:', e))
-                    setShowGraphPanel(false)
-
-                    // 기본 정보 라인 구성
-                    const lines: string[] = ['[지식 그래프 저장]']
-                    if (data.centerNode) {
-                      lines.push(`중심 성취기준: ${data.centerNode.label} — ${data.centerNode.text}`)
-                    }
-                    if (data.selectedStandards.length > 0) {
-                      lines.push(`\n선택된 성취기준 (${data.selectedStandards.length}개):`)
-                      data.selectedStandards.forEach(s => {
-                        const rel = s.relationType ? ` | ${s.relationType}` : ''
-                        const pct = s.score ? ` (${Math.round(s.score)}%)` : ''
-                        lines.push(`• ${s.label} ${s.text}${rel}${pct}`)
-                      })
-                    }
-                    if (data.agentNotes.length > 0) {
-                      lines.push(`\nAgent 분석:`)
-                      data.agentNotes.forEach(n => {
-                        lines.push(`• ${n.explanation}${n.teachingNote ? ' → ' + n.teachingNote : ''}`)
-                      })
-                    }
-
-                    // 즉시 사용자 메시지 + "분석 중…" 로딩 메시지를 먼저 표시
-                    const userTriggerContent = lines.join('\n')
-                    const userTriggerMsgId = generateMessageId(proj.id, currentActivity)
-                    addMessage({ id: userTriggerMsgId, role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName, createdAt: Timestamp.now() })
-                    saveMessage(proj.id, currentActivity, { role: 'user', content: userTriggerContent, activityCode: currentActivity, userId: userProfile?.uid, displayName: userProfile?.displayName }, userTriggerMsgId).catch(console.error)
-
-                    const loadingMsgId = generateMessageId(proj.id, currentActivity)
-                    addMessage({ id: loadingMsgId, role: 'assistant', content: '성취기준 분석표를 생성하고 있습니다…', activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now() })
-
-                    // A-2-1: 표를 로컬에서 직접 생성 → AI 메시지로 직접 주입 (비동기)
-                    ;(async () => {
-                      try {
-                        const a21Res = await fetch('/api/analyze/a21', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            centerNode: data.centerNode,
-                            selectedStandards: data.selectedStandards,
-                          }),
-                        })
-                        type A21Result = {
-                          coreIdeas?: Array<{ subjectId: string; subjectName: string; selectedIdea: string; justification: string }>
-                          standardAnalyses?: Array<{ standardId: string; standardLabel: string; subjectName: string; isCenterStandard: boolean; coreIdea: string; knowledgeUnderstanding: string[]; processFunction: string[]; valueAttitude: string[]; relationType?: string }>
-                        }
-                        const a21: A21Result = a21Res.ok ? await a21Res.json() : {}
-
-                        if (a21.standardAnalyses && a21.standardAnalyses.length > 0) {
-                          const tableLines: string[] = []
-                          if (a21.coreIdeas && a21.coreIdeas.length > 0) {
-                            tableLines.push('## 성취기준 분석\n')
-                            a21.coreIdeas.forEach(ci => {
-                              const isCenterSubj = ci.subjectId === data.centerNode?.subjectId
-                              tableLines.push(`> ${isCenterSubj ? '★ ' : ''}**[${ci.subjectName}] 핵심아이디어**: ${ci.selectedIdea}`)
-                            })
-                            tableLines.push('')
-                          }
-                          tableLines.push('| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |')
-                          tableLines.push('|------|-----------|---------|---------|')
-                          a21.standardAnalyses.forEach(sa => {
-                            tableLines.push(`| ${sa.subjectName} | ${sa.coreIdea} | ${sa.knowledgeUnderstanding.join(', ')} | ${sa.processFunction.join(', ')} |`)
-                          })
-                          tableLines.push('')
-                          tableLines.push('**교과 간 융합 분석**\n')
-                          const centerIdea = a21.coreIdeas?.find(ci => ci.subjectId === data.centerNode?.subjectId)
-                          if (centerIdea) tableLines.push(`- **공통 핵심 개념**: ${centerIdea.selectedIdea}`)
-                          const allPF = a21.standardAnalyses.flatMap(sa => sa.processFunction)
-                          const pfFreq = new Map<string, number>()
-                          allPF.forEach(p => pfFreq.set(p, (pfFreq.get(p) ?? 0) + 1))
-                          const commonPF = [...pfFreq.entries()].filter(([, n]) => n > 1).map(([v]) => v).slice(0, 3)
-                          if (commonPF.length > 0) tableLines.push(`- **공통 수행 기능**: ${commonPF.join(', ')}`)
-                          const allKU = a21.standardAnalyses.flatMap(sa => sa.knowledgeUnderstanding)
-                          const centerSa = a21.standardAnalyses.find(sa => sa.isCenterStandard)
-                          tableLines.push(`- **루브릭 연계 핵심 지표**: ① ${allKU[0] ?? ''} ② ${centerSa?.processFunction[0] ?? ''} ③ ${centerSa?.valueAttitude[0] ?? ''}`)
-                          tableLines.push('\n분석표를 확인하신 후, 우측에 나타나는 저장 버튼으로 산출물에 저장하실 수 있습니다. 수정이 필요하시면 말씀해 주세요.')
-
-                          const localContent = tableLines.join('\n')
-                          // 로딩 메시지를 실제 분석 결과로 교체
-                          replaceMessage(loadingMsgId, localContent)
-                          saveMessage(proj.id, currentActivity, { role: 'assistant', content: localContent, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator' }, loadingMsgId).catch(console.error)
-                          const tableProposal = extractA21TableForSave(localContent)
-                          if (tableProposal) setPendingArtifactSave({ ...tableProposal, activityCode: 'A-2-1' })
-                          return
-                        }
-                      } catch (e) {
-                        console.error('[a21 API]', e)
-                      }
-                      // API 실패 폴백 — 로딩 메시지를 AI 요청으로 교체
-                      const fallbackContent = lines.join('\n') + '\n위 성취기준을 바탕으로 아래 형식으로 분석표를 작성해 주세요:\n\n4열 표 (교과 | 핵심 아이디어 | 지식·이해 | 과정·기능) + 공통(팀 조정) 행\n⚠️ 핵심아이디어와 내용체계는 교육과정 DB 원문 그대로 인용할 것.'
-                      replaceMessage(loadingMsgId, fallbackContent)
-                      sendMessageDirectly(fallbackContent)
-                    })()
-                  } : undefined}
-                />
-              </div>
-            </div>
-          </div>,
-          document.body
         )
       })()}
 
@@ -3338,15 +3233,18 @@ ${discussionSummary}
                       onClick={() => {
                         // 이 메시지의 성취기준 코드만 그래프에 전달 — 완전 초기화
                         setActiveGraphCodes(msgStdCodes.map(code => ({ code, addedBy: 'AI 추천' })))
+                        setSheetPreferredCenterCode('')
                         setPinnedStandards([])  // 이전 수동 추가 초기화
                         pinnedStandardsRef.current = []
                         setCheckedGraphStandardIds([])  // 이전 토글 초기화
                         checkedGraphStandardIdsRef.current = []
+                        setWorkspaceInitialView('graph')
+                        setShowWorkspace(true)
                         setShowGraphPanel(true)
                         stableGraphKeywordRef.current = ' '
                         setStableGraphKeyword(' ')
                         if (isHost) {
-                          setGraphOpen(proj.id, true, ' ').catch(console.error)
+                          setGraphOpen(proj.id, true, ' ', 'graph').catch(console.error)
                           pushGraphSelectionState([], [])
                         }
                       }}
@@ -3457,6 +3355,180 @@ ${discussionSummary}
             }, 30)
           }}
         />
+
+        {/* 교육과정 분석 워크스페이스 — 분석시트 ↔ 지식그래프 통합 모달 */}
+        <CurriculumWorkspaceModal
+          key={`curriculum-workspace-${workspaceInitialView}`}
+          open={showWorkspace}
+          initialView={workspaceInitialView}
+          onClose={() => {
+            setShowWorkspace(false)
+            setShowGraphPanel(false)
+            setWorkspaceInitialView('sheet')
+            setSheetPreferredCenterCode('')
+            stableGraphKeywordRef.current = ''
+            setStableGraphKeyword('')
+            if (isHost) setGraphOpen(proj.id, false).catch(console.error)
+          }}
+          sheetRows={proj.curriculumSheet ?? []}
+          onSheetSave={async (newRows) => {
+            try {
+              const savedRows = await patchCurriculumSheet(proj.id, { type: 'replace-all', rows: newRows, updatedBy: userProfile?.displayName ?? undefined })
+              latestSheetRowsRef.current = savedRows
+            } catch (e) { console.error('[curriculumSheet save]', e) }
+          }}
+          onSheetPatch={async (patch) => {
+            try {
+              const savedRows = await patchCurriculumSheet(proj.id, patch)
+              latestSheetRowsRef.current = savedRows
+              return savedRows
+            } catch (e) {
+              console.error('[curriculumSheet patch]', e)
+              return undefined
+            }
+          }}
+          onRequestArtifactSave={(rows) => proposeCurriculumSheetArtifactSave(rows, '분석시트 저장')}
+          onPresenceUpdate={async (entry) => {
+            try {
+              const { updateDoc, doc, deleteField } = await import('firebase/firestore')
+              const { db } = await import('@/lib/firebase/config')
+              const uid = userProfile?.uid
+              if (!uid) return
+              const assignedColor = proj.memberInfo?.[uid]?.color ?? userProfile?.color ?? entry?.color ?? '#9AA0A6'
+              if (entry) {
+                await updateDoc(doc(db, 'projects', proj.id), { [`curriculumSheetPresence.${uid}`]: { ...entry, color: assignedColor } })
+              } else {
+                await updateDoc(doc(db, 'projects', proj.id), { [`curriculumSheetPresence.${uid}`]: deleteField() })
+              }
+            } catch { /* ignore */ }
+          }}
+          onGraphCodesFromSheet={(codes, options) => {
+            setActiveGraphCodes(codes)
+            setSheetPreferredCenterCode(options?.centerCode ?? '')
+            stableGraphKeywordRef.current = ' '
+            setStableGraphKeyword(' ')
+          }}
+          onViewChange={(view) => {
+            setWorkspaceInitialView(view)
+            if (isHost) {
+              const keyword = view === 'graph'
+                ? (stableGraphKeywordRef.current || ' ')
+                : undefined
+              setGraphOpen(proj.id, true, keyword, view).catch(console.error)
+            }
+          }}
+          presence={Object.fromEntries(
+            Object.entries(proj.curriculumSheetPresence ?? {}).map(([uid, entry]) => [
+              uid,
+              { ...entry, color: proj.memberInfo?.[uid]?.color ?? entry.color },
+            ]),
+          )}
+          currentUserName={userProfile?.displayName ?? ''}
+          currentUid={userProfile?.uid ?? ''}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          projectId={proj.id}
+          a12Artifact={(() => {
+            const a12 = proj.artifacts?.['A-1-2']?.content as Record<string, unknown> | undefined
+            if (!a12) return undefined
+            // 다양한 필드명 대응 + raw content 전체 전달
+            return {
+              ...a12,
+              selectedTopic: (a12['selectedTopic'] || a12['선택 주제'] || a12['주제']) as string | undefined,
+              linkedSubjects: (a12['linkedSubjects'] || a12['교과 연계']) as Array<{ subject: string; focus: string }> | undefined,
+              targetSubjects: (a12['targetSubjects'] || a12['대상 교과'] || proj.targetSubjects) as string[] | undefined,
+              topicType: (a12['topicType'] || a12['주제 유형']) as string | undefined,
+            }
+          })()}
+          graphSavedData={proj.graphSavedData ?? null}
+          targetGradeGroup={proj.targetGradeGroup}
+          chatContext={(() => {
+            // 최근 대화 + 이전 산출물 요약을 chatContext로 전달
+            const parts: string[] = []
+            // 이전 활동 산출물 내용
+            const arts = proj.artifacts ?? {}
+            for (const [code, art] of Object.entries(arts)) {
+              const c = art.content as Record<string, unknown>
+              const topic = (c['선택 주제'] || c['주제'] || c['selectedTopic']) as string | undefined
+              const linked = c['linkedSubjects'] as Array<{ subject: string; focus: string }> | undefined
+              if (topic) parts.push(`[${code} 산출물] 주제: ${topic}`)
+              if (linked?.length) parts.push(`[${code}] 연계 교과: ${linked.map(l => `${l.subject}(${l.focus})`).join(', ')}`)
+            }
+            // 최근 AI 메시지에서 주제/교과 관련 내용 추출
+            const recentMsgs = messages.filter(m => m.activityCode === 'A-1-2' || m.activityCode === 'A-2-1').slice(-10)
+            for (const msg of recentMsgs) {
+              if (msg.content.length > 20 && msg.content.length < 1000) {
+                parts.push(`[${msg.role}/${msg.activityCode}] ${msg.content.substring(0, 300)}`)
+              }
+            }
+            return parts.length > 0 ? parts.join('\n') : undefined
+          })()}
+          renderGraphView={(onBackToSheet) => {
+            const graphKeyword = stableGraphKeyword || graphKeywordForShare
+            return (
+              <>
+                {/* 그래프 헤더 */}
+                <div className="flex items-center justify-between px-5 py-3 bg-[#F3E5F5] border-b border-[#CE93D8] shrink-0">
+                  <span className="text-sm font-semibold text-[#7B1FA2] flex items-center gap-2 flex-1 min-w-0">
+                    <button onClick={onBackToSheet} className="shrink-0 px-2 py-1 text-xs font-bold text-[#7B1FA2] bg-white border border-[#CE93D8] rounded-lg hover:bg-[#F3E5F5] transition">
+                      ← 분석시트
+                    </button>
+                    <span className="shrink-0">교육과정 융합 지식 그래프</span>
+                    {isHost && <span className="text-[9px] text-[#9C27B0] bg-white/70 px-1.5 py-0.5 rounded-full shrink-0">팀 공유 중</span>}
+                    <div className="flex-1 min-w-0 flex items-center gap-1">
+                      <input id="graph-topic-input" type="text" defaultValue={graphKeyword.trim() || ''}
+                        placeholder="수업 주제를 입력하고 검색을 누르면 관련 성취기준을 찾습니다"
+                        onKeyDown={e => { if (e.key === 'Enter') { const val = (e.target as HTMLInputElement).value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } } }}
+                        className="flex-1 min-w-0 text-[12px] font-normal text-[#3D1C72] bg-white/80 border border-[#CE93D8] rounded-lg px-2.5 py-1 outline-none focus:border-[#7B1FA2] focus:ring-1 focus:ring-[#7B1FA2]/30 placeholder:text-[#CE93D8]/60"
+                      />
+                      <button onClick={() => { const input = document.getElementById('graph-topic-input') as HTMLInputElement | null; const val = input?.value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } }}
+                        className="shrink-0 px-2.5 py-1 bg-[#7B1FA2] hover:bg-[#6A1B9A] text-white text-[11px] font-bold rounded-lg transition-colors">검색</button>
+                    </div>
+                  </span>
+                </div>
+                {/* 그래프 본문 */}
+                <div className="flex-1 min-h-0">
+                  <KnowledgeGraphViewer
+                    keyword={graphKeyword}
+                    gradeGroup={proj.targetGradeGroup}
+                    height={undefined}
+                    currentUserName={userProfile?.displayName ?? '나'}
+                    currentUserUid={userProfile?.uid}
+                    isLeader={isHost}
+                    chatMentionedCodes={chatMentionedStds}
+                    pinnedStandards={pinnedStandards}
+                    onPinChange={(nextPins) => { pinnedStandardsRef.current = nextPins; setPinnedStandards(nextPins); if (isHost) pushGraphSelectionState(nextPins, checkedGraphStandardIdsRef.current) }}
+                    externalCheckedStandardIds={checkedGraphStandardIds}
+                    onCheckedStandardsChange={(ids) => { checkedGraphStandardIdsRef.current = ids; setCheckedGraphStandardIds(ids); if (isHost) pushGraphSelectionState(pinnedStandardsRef.current, ids) }}
+                    onClose={onBackToSheet}
+                    externalRecommendations={Object.values(proj.graphCenterRecommendations ?? {}).map(r => ({ nodeId: r.nodeId, recommenderName: r.recommenderName, recommenderUid: r.recommenderUid ?? undefined }))}
+                    externalCenterNodeId={proj.graphCenterNodeId}
+                    preferredCenterCode={sheetPreferredCenterCode}
+                    savedData={proj.graphSavedData ?? null}
+                    curriculumSheet={proj.curriculumSheet}
+                    artifactContext={(() => { const parts: string[] = []; if (proj.targetGradeGroup) parts.push(`학년군: ${proj.targetGradeGroup}`); if (proj.title) parts.push(`프로젝트: ${proj.title}`); const arts = proj.artifacts ?? {}; for (const [code, art] of Object.entries(arts)) { const c = art.content as Record<string, unknown>; const topic = (c['선택 주제'] || c['주제'] || c['수업 목표']) as string | undefined; if (topic) parts.push(`${code} 산출물 — ${topic}`) }; return parts.join('\n') || undefined })()}
+                    onSetCenter={(nodeId) => setGraphCenter(proj.id, nodeId)}
+                    onRecommendCenter={(nodeId) => recommendGraphCenter(proj.id, nodeId, userProfile?.displayName ?? '팀원', userProfile?.uid)}
+                    onSaveGraph={isHost ? async (data) => { try { await saveGraphDataAndSyncSheet(data) } catch (e) { console.error('[saveGraphData]', e) } } : undefined}
+                  />
+                </div>
+              </>
+            )
+          }}
+        />
+
+        {/* @노트 툴팁 — createPortal로 body에 렌더링 (overflow 부모 회피) */}
+        {noteTooltip && typeof document !== 'undefined' && createPortal(
+          <div
+            className="fixed pointer-events-none"
+            style={{ left: noteTooltip.x, top: noteTooltip.y, transform: 'translateY(-100%)', zIndex: 999999 }}
+          >
+            <div className="w-[280px] p-3 rounded-xl bg-[#202124] text-white text-xs font-normal leading-relaxed shadow-2xl">
+              <span className="block font-bold text-[#FFB74D] mb-1">노트 #{noteTooltip.num}</span>
+              {noteTooltip.preview}
+            </div>
+          </div>,
+          document.body,
+        )}
 
         {/* 채팅 메시지 우클릭 메뉴 */}
         <MessageContextMenu
@@ -3592,7 +3664,7 @@ ${discussionSummary}
         )}
 
         {/* 산출물 저장 제안 카드 (방장에게만 표시) */}
-        {pendingArtifactSave && isHost && (
+        {pendingArtifactSave && isHost && !showWorkspace && (
           <ArtifactSaveProposal
             title={pendingArtifactSave.title}
             sections={pendingArtifactSave.sections}
@@ -3604,6 +3676,21 @@ ${discussionSummary}
               }
             }}
           />
+        )}
+        {pendingArtifactSave && isHost && showWorkspace && (
+          <div className="fixed right-8 bottom-8 z-[10050] w-[460px] max-w-[calc(100vw-2rem)]">
+            <ArtifactSaveProposal
+              title={pendingArtifactSave.title}
+              sections={pendingArtifactSave.sections}
+              onAccept={handleAcceptArtifactSave}
+              onDecline={() => {
+                setPendingArtifactSave(null)
+                if (project?.id && project.artifactProposal) {
+                  clearArtifactProposal(project.id).catch(console.error)
+                }
+              }}
+            />
+          </div>
         )}
 
         {/* 다음 단계 이동 확인 배너 — 팀장만 */}
@@ -3859,10 +3946,13 @@ ${discussionSummary}
           <button
             onClick={() => {
               setActiveGraphCodes([])
+              setSheetPreferredCenterCode('')
               stableGraphKeywordRef.current = ' '
               setStableGraphKeyword(' ')
+              setWorkspaceInitialView('graph')
+              setShowWorkspace(true)
               setShowGraphPanel(true)
-              if (isHost) setGraphOpen(proj.id, true, ' ').catch(console.error)
+              if (isHost) setGraphOpen(proj.id, true, ' ', 'graph').catch(console.error)
               // 저장된 선택 상태 복원 (호스트 포함)
               if (proj.graphSelectionState) {
                 setPinnedStandards(proj.graphSelectionState.pinnedStandards ?? [])
@@ -3887,15 +3977,15 @@ ${discussionSummary}
 
         <div className="flex gap-2 items-end">
           <div className={cn('chat-input-wrap flex-1', isTeamMode && 'chat-input-wrap-team')}>
-            <div className={cn('chat-input-inner', isTeamMode ? 'bg-[#E0F2F1]' : 'bg-white')}>
+            <div className={cn('chat-input-inner relative', isTeamMode ? 'bg-[#E0F2F1]' : 'bg-white')}>
               <textarea
                 data-chat-input=""
                 value={input}
                 onChange={(e) => {
                   const val = e.target.value
                   setInput(val)
-                  // 슬래시 커맨드 감지: `/` 가 입력 시작·공백·줄바꿈 뒤에 위치하고 끝에 있으면 팔레트 열림.
-                  // 한 메시지 안에서 여러 번 사용 가능 (성취기준 2개 연속 삽입 등).
+                  // @노트 토큰이 없어지면 툴팁 닫기
+                  if (noteTooltip && !val.includes('@노트#')) setNoteTooltip(null)
                   const match = val.match(/(?:^|\s)\/([\w가-힣]*)$/)
                   if (match) {
                     setSlashQuery(match[1])
@@ -3910,10 +4000,39 @@ ${discussionSummary}
                 disabled={isLoading && !isTeamMode && !isWaitingForChoice}
                 className={cn(
                   'w-full resize-none border-0 rounded-[18px] px-3 py-2 text-sm',
-                  'focus:outline-none disabled:opacity-50 text-[#202124]',
-                  isTeamMode ? 'bg-[#E0F2F1]' : 'bg-white'
+                  'focus:outline-none disabled:opacity-50',
+                  input.includes('@노트#') ? 'text-transparent caret-[#202124]' : 'text-[#202124]',
                 )}
+                style={{ background: 'transparent' }}
               />
+              {/* 하이라이트 오버레이 — textarea 위, 노트 토큰만 pointer-events 활성 */}
+              {input.includes('@노트#') && (
+                <div
+                  className="absolute inset-0 rounded-[18px] px-3 py-2 text-sm whitespace-pre-wrap break-words pointer-events-none overflow-visible z-[2]"
+                  style={{ color: 'transparent', lineHeight: '1.5' }}
+                >
+                  {input.split(/(@노트#\d+)/).map((part, i) => {
+                    const noteMatch = part.match(/^@노트#(\d+)$/)
+                    if (!noteMatch) return <span key={i}>{part}</span>
+                    const num = parseInt(noteMatch[1])
+                    const note = (proj.keyNotes ?? [])[num - 1]
+                    const preview = note ? (note.content.length > 80 ? note.content.slice(0, 80) + '…' : note.content) : '(노트 없음)'
+                    return (
+                      <span
+                        key={i}
+                        className="pointer-events-auto cursor-default relative inline-block"
+                        onMouseEnter={e => {
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                          setNoteTooltip({ num, preview, x: rect.left, y: rect.top - 8 })
+                        }}
+                        onMouseLeave={() => setNoteTooltip(null)}
+                      >
+                        <span className="px-1 py-0.5 rounded bg-[#E65100] text-white font-bold text-xs">{part}</span>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
           {/* 전송 버튼 — morph-shape 일렁임 */}

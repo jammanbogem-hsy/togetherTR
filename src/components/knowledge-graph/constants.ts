@@ -86,17 +86,6 @@ export const RELATION_COLORS: Record<string, string> = {
   '원인-결과': '#F59E0B',
 }
 
-export const RELATION_EMOJIS: Record<string, string> = {
-  '의미연결':  '🔗',
-  '도구-활용': '🛠',
-  '현상-가치': '⚖️',
-  '내용-표현': '🎨',
-  '개념-적용': '💡',
-  '문제-해결': '🧩',
-  '탐구-실천': '🌱',
-  '원인-결과': '➡️',
-}
-
 // ─── 교과 간 관계 분류 휴리스틱 ───────────────────────────────────────────
 
 const TOOL_SUBS  = new Set(['sub_math', 'sub_sci', 'sub_pe', 'sub_eng'])
@@ -203,9 +192,9 @@ export function normCode(label: string): string {
 export function nodeRadius(type: GNode['type'], score?: number, isCenter?: boolean): number {
   if (type === 'subject')   return 14
   if (type === 'core_idea') return 10
-  if (isCenter) return 52
-  if (score !== undefined) return Math.round(32 + score * 18)
-  return 40
+  if (isCenter) return 46
+  if (score !== undefined) return Math.round(28 + score * 12)
+  return 34
 }
 
 export function normalizedEdgeWeight(weight?: number): number {
@@ -252,10 +241,9 @@ export function edgeRelationLabel(edge: GEdge): string {
     else if (edge.method === 'manual') rel = normalizeGraphRelationType(edge.relation) ?? DEFAULT_GRAPH_RELATION_TYPE
     else return ''
   }
-  const emoji = RELATION_EMOJIS[rel] ?? ''
   if (edge.method !== 'manual' && edge.weight > 0 && edge.weight <= 1) {
     const pct = Math.round(edge.weight * 100)
-    return `${emoji}${rel} ${pct}%`
+    return `${rel} ${pct}%`
   }
-  return `${emoji}${rel}`
+  return rel
 }

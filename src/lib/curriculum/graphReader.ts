@@ -52,7 +52,7 @@ export interface CrossSubjectLink {
 export interface KnowledgeGraph {
   metadata: Record<string, unknown>
   subjects: Array<{ id: string; name_ko: string }>
-  coreIdeas: Array<{ id: string; subject_id: string; area: string; ideas: string[] }>
+  coreIdeas: Array<{ id: string; subject_id: string; area: string; ideas: string[]; knowledge?: string[]; functions?: string[] }>
   achievementStandards: CurriculumStandard[]
   links_cross_subject: CrossSubjectLink[]
   search_index: Array<{ id: string; top_similar: Array<{ id: string; score: number }> }>

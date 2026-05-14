@@ -9,6 +9,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ActivityCode } from '@/types'
+import { loadGraph } from './graphReader'
 
 type CategoryKey = '지식⋅이해' | '과정⋅기능' | '가치⋅태도'
 
@@ -45,6 +46,21 @@ interface SearchContentSystemsOptions {
 type RawObject = Record<string, unknown>
 
 let contentSystemCache: ContentSystemRecord[] | null = null
+let elementaryContentSystemCache: ContentSystemRecord[] | null = null
+
+const GRAPH_SUBJECT_NAME: Record<string, string> = {
+  sub_kor: '국어',
+  sub_math: '수학',
+  sub_sci: '과학',
+  sub_soc: '사회',
+  sub_mor: '도덕',
+  sub_art: '미술',
+  sub_mus: '음악',
+  sub_pe: '체육',
+  sub_eng: '영어',
+  sub_prac: '실과',
+  sub_int: '통합교과',
+}
 
 export function isContentSystemContextEnabled(): boolean {
   // 기본 활성화 — 내용체계 데이터가 있으면 자동으로 AI 컨텍스트에 주입
@@ -91,7 +107,7 @@ export function loadContentSystems(): ContentSystemRecord[] {
           course: asString(entry['과목']),
           area: asString(entry['영역']),
           gradeBands: extractGradeBands(entry),
-          coreIdeas: asStringArray(entry['핵심아이디어']),
+          coreIdeas: normalizeCoreIdeas(asStringArray(entry['핵심아이디어'])),
           knowledge: categories['지식⋅이해'],
           functions: categories['과정⋅기능'],
           attitudes: categories['가치⋅태도'],
@@ -107,6 +123,211 @@ export function loadContentSystems(): ContentSystemRecord[] {
   return contentSystemCache
 }
 
+export function loadElementaryContentSystems(): ContentSystemRecord[] {
+  if (elementaryContentSystemCache) return elementaryContentSystemCache
+
+  const rawRecords = loadContentSystems()
+  const graphRecords = buildElementaryGraphContentSystems(rawRecords)
+  const graphSubjects = new Set(graphRecords.map(record => normalizeSubject(record.subject)))
+  const supplementalRecords = rawRecords
+    .filter(record => !record.curriculum.trim().startsWith('선택 중심 교육과정'))
+    .filter(record => !graphSubjects.has(normalizeSubject(record.subject)))
+
+  elementaryContentSystemCache = [...graphRecords, ...supplementalRecords]
+  return elementaryContentSystemCache
+}
+
+function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = []): ContentSystemRecord[] {
+  const graph = loadGraph()
+  if (!graph) return []
+
+  const standardsByCoreIdea = new Map<string, typeof graph.achievementStandards>()
+  for (const standard of graph.achievementStandards ?? []) {
+    if (!standard.core_idea_id) continue
+    const current = standardsByCoreIdea.get(standard.core_idea_id) ?? []
+    current.push(standard)
+    standardsByCoreIdea.set(standard.core_idea_id, current)
+  }
+
+  return (graph.coreIdeas ?? [])
+    .map((coreIdea, index): ContentSystemRecord | null => {
+      const subject = GRAPH_SUBJECT_NAME[coreIdea.subject_id] ?? graph.subjects.find(item => item.id === coreIdea.subject_id)?.name_ko ?? coreIdea.subject_id
+      if (subject === '창의적 체험활동') return null
+
+      const standards = standardsByCoreIdea.get(coreIdea.id) ?? []
+      const gradeBands = unique(standards.map(standard => formatGradeBand(standard.grade_band)).filter(Boolean))
+      const coreIdeas = normalizeCoreIdeas(coreIdea.ideas ?? [])
+      if (coreIdeas.length === 0) return null
+
+      const rawRecord = findRawContentSystemRecord(rawRecords, subject, coreIdea.area)
+      const graphKnowledge = prefixedContentByGrade(standards, 'knowledge', coreIdea.knowledge ?? [])
+      const graphFunctions = prefixedContentByGrade(standards, 'functions', coreIdea.functions ?? [])
+      const rawAttitudes = cleanContentItems(rawRecord?.attitudes ?? [])
+
+      return {
+        id: `elementary_knowledge_graph.json#${coreIdea.id || index}`,
+        sourceFile: 'elementary_knowledge_graph.json',
+        sourcePages: [],
+        curriculum: '공통 교육과정',
+        subject,
+        course: subject,
+        area: normalizeAreaLabel(coreIdea.area),
+        gradeBands,
+        coreIdeas,
+        knowledge: graphKnowledge.length > 0 ? graphKnowledge : cleanContentItems(rawRecord?.knowledge ?? []),
+        functions: graphFunctions.length > 0 ? graphFunctions : cleanContentItems(rawRecord?.functions ?? []),
+        attitudes: rawAttitudes.length > 0 ? rawAttitudes : prefixedContentByGrade(standards, 'competencies', []),
+      }
+    })
+    .filter((record): record is ContentSystemRecord => Boolean(record))
+}
+
+function findRawContentSystemRecord(
+  records: ContentSystemRecord[],
+  subject: string,
+  area: string,
+): ContentSystemRecord | undefined {
+  return records.find(record =>
+    !record.curriculum.trim().startsWith('선택 중심 교육과정') &&
+    sameSubject(record.subject || record.course, subject) &&
+    sameArea(record.area, area)
+  )
+}
+
+function sameSubject(a: string, b: string): boolean {
+  const na = normalizeSubject(a)
+  const nb = normalizeSubject(b)
+  return !!na && !!nb && (na === nb || na.includes(nb) || nb.includes(na))
+}
+
+function sameArea(a: string, b: string): boolean {
+  const na = normalizeAreaForMatch(a)
+  const nb = normalizeAreaForMatch(b)
+  return !!na && !!nb && (na === nb || na.includes(nb) || nb.includes(na))
+}
+
+function normalizeAreaForMatch(value: string): string {
+  return normalizeKeyword(value.replace(/\([^)]*\)/g, ''))
+}
+
+function cleanContentItems(items: string[]): string[] {
+  return unique(items.map(cleanContentText).filter(Boolean))
+}
+
+function prefixedContentByGrade(
+  standards: Array<{ grade_band?: string; knowledge?: string[]; functions?: string[]; competencies?: string[] }>,
+  field: 'knowledge' | 'functions' | 'competencies',
+  fallback: string[],
+): string[] {
+  const byGrade = new Map<string, string[]>()
+  for (const standard of standards) {
+    const gradeBand = formatGradeBand(standard.grade_band)
+    if (!gradeBand) continue
+    const current = byGrade.get(gradeBand) ?? []
+    current.push(...((standard[field] ?? []) as string[]))
+    byGrade.set(gradeBand, unique(current.map(cleanContentText).filter(Boolean)))
+  }
+
+  const prefixed = [...byGrade.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+    .flatMap(([gradeBand, items]) => items.map(item => `${gradeBand}: ${item}`))
+
+  if (prefixed.length > 0) return prefixed
+  return unique(fallback.map(cleanContentText).filter(Boolean))
+}
+
+function formatGradeBand(value?: string): string {
+  const normalized = (value ?? '').replace(/^초/, '').replace(/~/g, '-').trim()
+  if (!normalized) return ''
+  if (/^\d-\d$/.test(normalized)) return `${normalized}학년군`
+  if (/^\d-\d학년군$/.test(normalized)) return normalized
+  return normalized
+}
+
+function normalizeAreaLabel(value: string): string {
+  return value.replace(/\s+/g, ' ').replace(/·/g, '⋅').trim()
+}
+
+function cleanContentText(value: string): string {
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/·/g, '⋅')
+    .replace(/\s+([,.)])/g, '$1')
+    .trim()
+}
+
+function normalizeCoreIdeas(items: string[]): string[] {
+  const out: string[] = []
+  let pending = ''
+
+  for (const item of items) {
+    const cleaned = cleanCoreIdeaFragment(item)
+    if (!cleaned) continue
+
+    if (!pending) {
+      pending = cleaned
+    } else if (isCompleteCoreIdea(pending)) {
+      pushCoreIdea(out, pending)
+      pending = cleaned
+    } else {
+      pending = joinCoreIdeaFragments(pending, cleaned)
+    }
+
+    if (isCompleteCoreIdea(pending)) {
+      pushCoreIdea(out, pending)
+      pending = ''
+    }
+  }
+
+  if (isCompleteCoreIdea(pending)) pushCoreIdea(out, pending)
+  return unique(out)
+}
+
+function cleanCoreIdeaFragment(value: string): string {
+  let cleaned = value
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/·/g, '⋅')
+    .replace(/\s+([,.)])/g, '$1')
+    .trim()
+
+  if (!cleaned) return ''
+  if (/^\[별표\s*\d+\]/.test(cleaned)) return ''
+  if (/^(핵심\s*아이디어|핵심아이디어|내용\s*요소|지식\s*⋅?\s*이해|과정\s*⋅?\s*기능|가치\s*⋅?\s*태도)$/.test(cleaned)) return ''
+  if (/^(초등학교|중학교|고등학교|\d~\d학년|\d-\d학년)/.test(cleaned)) return ''
+
+  const schoolHeaderIndex = cleaned.search(/\s+(초등학교|중학교|고등학교)\s+/)
+  if (schoolHeaderIndex > 0) cleaned = cleaned.slice(0, schoolHeaderIndex).trim()
+
+  return cleaned
+}
+
+function joinCoreIdeaFragments(left: string, right: string): string {
+  if (!left) return right
+  if (!right) return left
+  if (/^\d/.test(right) && /^\d+$/.test(left)) return `${left}⋅${right}`
+  if (/([가-힣]+적|분석|해석|판단|평가|연구|개발|제작|활용|교통|사회|문화|과학|기술|산화|환원)$/.test(left) && /^[가-힣]+/.test(right)) {
+    return `${left}⋅${right}`
+  }
+  return `${left} ${right}`
+}
+
+function isCompleteCoreIdea(value: string): boolean {
+  const cleaned = value.trim()
+  if (cleaned.length < 18) return false
+  return /다[.!?]?$/.test(cleaned)
+}
+
+function pushCoreIdea(out: string[], value: string) {
+  const cleaned = cleanCoreIdeaFragment(value)
+  if (!isCompleteCoreIdea(cleaned)) return
+  if (!out.includes(cleaned)) out.push(cleaned)
+}
+
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)]
+}
+
 export function searchContentSystems({
   keywords,
   gradeGroup,
@@ -117,12 +338,20 @@ export function searchContentSystems({
   const normalizedKeywords = [...new Set(keywords.map(normalizeKeyword).filter(Boolean))]
   if (normalizedKeywords.length === 0) return []
 
-  return loadContentSystems()
+  const records = isElementaryGradeGroup(gradeGroup)
+    ? loadElementaryContentSystems()
+    : loadContentSystems()
+
+  return records
     .filter(record => matchesGradeGroup(record, gradeGroup))
     .map(record => scoreRecord(record, normalizedKeywords, targetSubjects))
     .filter((hit): hit is ContentSystemHit => !!hit && hit.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
+}
+
+export function isElementaryGradeGroup(gradeGroup?: string | null): boolean {
+  return !!gradeGroup?.replace(/^초/, '').replace(/~/g, '-').trim().match(/^(1-2|3-4|5-6)/)
 }
 
 export function buildContentSystemContext(
@@ -166,7 +395,7 @@ function getActivityGuidance(activityCode: ActivityCode): string {
     case 'A-1-2':
       return '주제 후보를 비교할 때 핵심아이디어의 공통 문제의식과 과목별 기여 가능성을 근거로만 활용하세요.'
     case 'A-2-1':
-      return '⚠️ 성취기준 분석표의 핵심아이디어, 지식⋅이해, 과정⋅기능, 가치⋅태도 칸은 반드시 아래 내용체계 원문에서 선택하여 인용하세요. AI가 자체적으로 만들어내지 마세요. 표의 열 구조는 바꾸지 마세요.'
+      return '⛔ 핵심아이디어는 [📋 사전 구축된 분석표]의 값을 그대로 사용하세요 (AI 생성·의역 금지). 지식⋅이해, 과정⋅기능, 가치⋅태도 칸도 아래 내용체계 원문에서 선택하여 인용하세요.'
     case 'A-2-2':
       return '통합 수업목표가 지식, 수행, 태도 차원을 모두 포함하는지 점검하는 근거로 활용하세요.'
     case 'Ds-1-1':
@@ -248,7 +477,10 @@ function extractGradeBands(entry: RawObject): string[] {
 }
 
 function matchesGradeGroup(record: ContentSystemRecord, gradeGroup?: string): boolean {
-  if (!gradeGroup || record.gradeBands.length === 0) return true
+  if (!gradeGroup) return true
+  if (record.gradeBands.length === 0) {
+    return !record.curriculum.trim().startsWith('선택 중심 교육과정')
+  }
 
   const aliases: Record<string, string[]> = {
     '초1-2': ['초1-2', '1-2', '1~2'],

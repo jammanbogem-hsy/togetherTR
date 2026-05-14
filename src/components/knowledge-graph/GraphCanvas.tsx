@@ -6,15 +6,12 @@ import type { GNode, GEdge, GraphRelationAnalysis, GraphPinnedStandard, GraphRel
 import {
   RELATION_COLORS, subjectColor, subjectName, normCode, nodeRadius,
   edgeColor, edgeRelationLabel, hasCompletedRelationAnalysis,
-  getRelationDisplayState, getRelationStatusMeta, classifyRelation,
-  buildFallbackRelationExplanation, buildFallbackTeachingHint,
-  normalizedEdgeWeight,
+  getRelationDisplayState, getRelationStatusMeta, buildFallbackRelationExplanation,
 } from './constants'
 import { DEFAULT_GRAPH_RELATION_TYPE } from '@/lib/knowledge-graph/domain'
 
 interface GraphCanvasProps {
   svgRef: React.RefObject<SVGSVGElement | null>
-  graphAreaRef: React.RefObject<HTMLDivElement | null>
   nodesRef: React.MutableRefObject<GNode[]>
   svgWidth: number
   svgHeight: number
@@ -27,7 +24,6 @@ interface GraphCanvasProps {
   chatMentionedCodes: Array<{ code: string; addedBy: string }>
   pinnedStandards: GraphPinnedStandard[]
   recommendedCenterIds: Map<string, string>
-  finalScoreMap: Map<string, number>
   hoveredNodeId: string | null
   algoMode: 'keyword' | 'semantic' | 'hybrid'
   relFilter: GraphRelationFilter
@@ -42,21 +38,16 @@ interface GraphCanvasProps {
 }
 
 export default function GraphCanvas({
-  svgRef, graphAreaRef, nodesRef, svgWidth, svgHeight, height,
+  svgRef, nodesRef, svgWidth, svgHeight, height,
   visibleNodes, visibleEdges, centerNodeId, popup, hoveredNodeId: hoveredNodeIdProp,
   claudeRelations, chatMentionedCodes, pinnedStandards, recommendedCenterIds,
-  finalScoreMap, algoMode, relFilter,
+  algoMode, relFilter,
   onAlgoModeChange, onRelFilterChange,
   onNodeClick, onRightClick, onSetHoveredNodeId, onSetTooltip, onDragStart, onDragEnd,
 }: GraphCanvasProps) {
   const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, scale: 1 })
   const [dragging, setDragging] = useState<string | null>(null)
   const panStartRef = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null)
-
-  // 키워드 변경 시 뷰 리셋
-  useEffect(() => {
-    setViewTransform({ x: 0, y: 0, scale: 1 })
-  }, [visibleNodes.length === 0])
 
   // 마우스 휠 줌
   useEffect(() => {
@@ -117,39 +108,38 @@ export default function GraphCanvas({
 
   return (
     <>
-      {/* 상단 컨트롤: 알고리즘 선택 + 관계 필터 */}
-      <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 pointer-events-auto">
-        <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200 p-1">
-          <span className="text-[9px] font-bold text-gray-400 px-1.5">검색</span>
+      {/* 상단 컨트롤: 검색 방식 + 관계 필터 */}
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 pointer-events-auto">
+        <div className="flex items-center gap-1 bg-white/85 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200 p-1">
+          <span className="text-[10px] font-semibold text-gray-400 px-2">검색 방식</span>
           {([
-            { key: 'keyword', label: '키워드', desc: '채팅 AI와 동일한 알고리즘' },
+            { key: 'keyword', label: '키워드', desc: '키워드 기반 검색' },
             { key: 'semantic', label: '의미망', desc: '개념·맥락 기반 임베딩 검색' },
-            { key: 'hybrid', label: '하이브리드', desc: '의미망 + 키워드 통합' },
+            { key: 'hybrid', label: '통합', desc: '의미망 + 키워드 통합' },
           ] as const).map(({ key, label, desc }) => (
             <button key={key} title={desc} onClick={() => onAlgoModeChange(key)}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${algoMode === key ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${algoMode === key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
             >
               {label}
-              {key === 'keyword' && <span className="ml-1 text-[8px] opacity-60">(=채팅)</span>}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200 p-1 flex-wrap">
-          <span className="text-[9px] font-bold text-gray-400 px-1.5">관계</span>
+        <div className="flex items-center gap-1 bg-white/85 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200 p-1 flex-wrap">
+          <span className="text-[10px] font-semibold text-gray-400 px-2">관계</span>
           {([
-            { key: 'all', label: '전체망', color: '#374151' },
-            { key: '의미연결', label: '🔗 의미연결', color: '#7C3AED' },
-            { key: '도구-활용', label: '🛠 도구-활용', color: '#EF4444' },
-            { key: '현상-가치', label: '⚖️ 현상-가치', color: '#F97316' },
-            { key: '내용-표현', label: '🎨 내용-표현', color: '#22C55E' },
-            { key: '개념-적용', label: '💡 개념-적용', color: '#0EA5E9' },
-            { key: '문제-해결', label: '🧩 문제-해결', color: '#D946EF' },
-            { key: '탐구-실천', label: '🌱 탐구-실천', color: '#84CC16' },
-            { key: '원인-결과', label: '➡️ 원인-결과', color: '#F59E0B' },
+            { key: 'all', label: '전체', color: '#111827' },
+            { key: '의미연결', label: '의미', color: '#7C3AED' },
+            { key: '도구-활용', label: '도구', color: '#EF4444' },
+            { key: '현상-가치', label: '가치', color: '#F97316' },
+            { key: '내용-표현', label: '표현', color: '#22C55E' },
+            { key: '개념-적용', label: '적용', color: '#0EA5E9' },
+            { key: '문제-해결', label: '해결', color: '#D946EF' },
+            { key: '탐구-실천', label: '실천', color: '#84CC16' },
+            { key: '원인-결과', label: '인과', color: '#F59E0B' },
           ] as { key: GraphRelationFilter; label: string; color: string }[]).map(({ key, label, color }) => (
             <button key={key} onClick={() => onRelFilterChange(key)}
               className={`px-2 py-1 rounded-lg text-[9.5px] font-semibold transition-all ${relFilter === key ? 'text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
-              style={relFilter === key ? { backgroundColor: color } : undefined}
+              style={relFilter === key ? { backgroundColor: color } : { color }}
             >{label}</button>
           ))}
         </div>
@@ -167,7 +157,7 @@ export default function GraphCanvas({
       <svg
         ref={svgRef}
         className="w-full h-full"
-        style={{ width: svgWidth, height: height ?? '100%', cursor: panStartRef.current ? 'grabbing' : 'grab' }}
+        style={{ width: svgWidth, height: height ?? '100%', cursor: 'grab' }}
         onMouseDown={e => {
           if (e.button !== 0) return
           panStartRef.current = { mx: e.clientX, my: e.clientY, vx: viewTransform.x, vy: viewTransform.y }
@@ -207,14 +197,15 @@ export default function GraphCanvas({
                 : isCross ? '-purple' : edge.method === 'rule_based' ? '-blue' : ''
               const markerId = `arrow${markerSuffix}`
               const strokeW = isManual
-                ? (edge.relation !== DEFAULT_GRAPH_RELATION_TYPE ? 3 : 1.5)
-                : isCross ? Math.max(1.5, edge.weight * 3) : 1.2
+                ? (edge.relation !== DEFAULT_GRAPH_RELATION_TYPE ? 2.2 : 1.2)
+                : isCross ? Math.max(1.2, edge.weight * 2.2) : 1
 
               const dx = tgt.x - src.x
               const dy = tgt.y - src.y
               const dist = Math.sqrt(dx * dx + dy * dy) || 1
               const srcIsCenter = src.id === centerNodeId
               const tgtIsCenter = tgt.id === centerNodeId
+              const isCenterEdge = srcIsCenter || tgtIsCenter
               const srcR = nodeRadius(src.type, src.similarityScore, srcIsCenter) + 2
               const tgtR = nodeRadius(tgt.type, tgt.similarityScore, tgtIsCenter) + 10
               const x1 = src.x + (dx / dist) * srcR
@@ -239,14 +230,14 @@ export default function GraphCanvas({
                   <path
                     d={`M ${x1},${y1} Q ${cpX},${cpY} ${x2},${y2}`}
                     fill="none" stroke={color} strokeWidth={strokeW}
-                    strokeOpacity={isCross ? 0.85 : 0.4}
+                    strokeOpacity={isCenterEdge ? 0.72 : isCross ? 0.45 : 0.28}
                     markerEnd={`url(#${markerId})`}
                     strokeDasharray={(!isManual && !isCross) ? '4,3' : undefined}
                   />
-                  {(isCross || isManual) && labelText && (
+                  {isCenterEdge && labelText && (
                     <g transform={`translate(${labelX},${labelY})`}>
-                      <rect x={-labelText.length * charW / 2 - 5} y={-8} width={labelText.length * charW + 10} height={15} rx={4} fill="rgba(255,255,255,0.92)" />
-                      <text textAnchor="middle" dy={4} fontSize={11} fontWeight="600" fill={color} style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'system-ui, sans-serif' }}>
+                      <rect x={-labelText.length * charW / 2 - 6} y={-9} width={labelText.length * charW + 12} height={17} rx={8} fill="rgba(255,255,255,0.9)" stroke="rgba(226,232,240,0.9)" />
+                      <text textAnchor="middle" dy={4} fontSize={10} fontWeight="600" fill={color} style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'system-ui, sans-serif' }}>
                         {labelText}
                       </text>
                     </g>
@@ -258,16 +249,13 @@ export default function GraphCanvas({
 
           {/* 노드 */}
           <g>
-            {visibleNodes.map((node, idx) => {
+            {visibleNodes.map(node => {
               const isCenter = node.id === centerNodeId
               const r = nodeRadius(node.type, node.similarityScore, isCenter)
               const color = subjectColor(node.subject_id)
               const sName = subjectName(node.subject_id)
-              const delay = (idx * 0.18).toFixed(2) + 's'
               const isPopup = popup?.id === node.id
               const isHovered = node.id === hoveredNodeIdProp
-              const fscore = finalScoreMap.get(node.id)
-              const simPct = !isCenter && fscore && fscore > 0.01 ? `${Math.round(fscore * 100)}%` : null
               const chatMatch = chatMentionedCodes.find(c => normCode(c.code) === normCode(node.label))
               const pin = pinnedStandards.find(p => p.stdId === node.id)
                 ?? (chatMatch ? { stdId: node.id, addedBy: chatMatch.addedBy, source: 'chat' as const } : undefined)
@@ -291,13 +279,13 @@ export default function GraphCanvas({
                   onContextMenu={e => onRightClick(e, node.id)}
                 >
                   {isCenter
-                    ? <circle r={r + 8} fill="none" stroke="#F59E0B" strokeWidth={4} strokeOpacity={0.9} />
-                    : <circle className="kg-rainbow-ring" r={r + 6} style={{ animationDelay: delay }} />
+                    ? <circle r={r + 6} fill="none" stroke="#D97706" strokeWidth={2.5} strokeOpacity={0.8} />
+                    : <circle r={r + 4} fill="white" stroke={color} strokeWidth={2} strokeOpacity={0.55} />
                   }
-                  {isHovered && !isCenter && <circle r={r + 4} fill="none" stroke="white" strokeWidth={2} strokeOpacity={0.7} />}
-                  {isPopup && <circle r={r + 10} fill="none" stroke="#1D4ED8" strokeWidth={2.5} strokeOpacity={0.7} />}
-                  {pin && !isCenter && <circle r={r + 4} fill="none" stroke="#7C3AED" strokeWidth={1.5} strokeDasharray="4,2" strokeOpacity={0.7} />}
-                  <circle r={isCenter ? r + 4 : r} fill={color} fillOpacity={isCenter ? 1 : 0.9} />
+                  {isHovered && !isCenter && <circle r={r + 6} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.55} />}
+                  {isPopup && <circle r={r + 8} fill="none" stroke="#111827" strokeWidth={2} strokeOpacity={0.55} />}
+                  {pin && !isCenter && <circle r={r + 6} fill="none" stroke="#94A3B8" strokeWidth={1.5} strokeDasharray="4,3" strokeOpacity={0.7} />}
+                  <circle r={isCenter ? r + 1 : r} fill={color} fillOpacity={isCenter ? 0.96 : 0.88} />
                   {(() => {
                     const label = node.label
                     const baseFontSize = isCenter ? 13 : 11
@@ -306,12 +294,11 @@ export default function GraphCanvas({
                     return <text y={yPos} textAnchor="middle" fontSize={fontSize} fontWeight="700" fill="white" style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
                   })()}
                   <text y={isCenter ? 5 : 6} textAnchor="middle" fontSize={isCenter ? 11 : 9} fontWeight="500" fill="rgba(255,255,255,0.85)" style={{ userSelect: 'none', pointerEvents: 'none' }}>({sName})</text>
-                  {simPct && <text y={20} textAnchor="middle" fontSize={9} fontWeight="700" fill="rgba(255,255,255,0.75)" style={{ userSelect: 'none', pointerEvents: 'none' }}>{simPct}</text>}
                   {pin && (
                     <g transform={`translate(0, ${r + 10})`}>
-                      <rect x={-pin.addedBy.length * 3 - 6} y={-6} width={pin.addedBy.length * 6 + 12} height={12} rx={6} fill="#7C3AED" fillOpacity={0.9} />
-                      <text textAnchor="middle" dy={4} fontSize={8} fontWeight="600" fill="white" style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                        {pin.source === 'chat' ? '💬 ' : '+ '}{pin.addedBy.slice(0, 8)}
+                      <rect x={-13} y={-6} width={26} height={12} rx={6} fill="white" stroke="#CBD5E1" />
+                      <text textAnchor="middle" dy={4} fontSize={8} fontWeight="600" fill="#64748B" style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                        시트
                       </text>
                     </g>
                   )}
@@ -319,7 +306,7 @@ export default function GraphCanvas({
                     <g transform={`translate(0, ${-(r + 14)})`}>
                       {(() => {
                         const recommender = recommendedCenterIds.get(node.id) ?? '팀원'
-                        const label = `✋ ${recommender.slice(0, 6)}`
+                        const label = `${recommender.slice(0, 6)} 추천`
                         const w = label.length * 5.5 + 10
                         return (
                           <>
@@ -366,6 +353,8 @@ function AgentHintPanel({
   visibleEdges: GEdge[]
   claudeRelations: Map<string, GraphRelationAnalysis>
 }) {
+  const [showModal, setShowModal] = React.useState(false)
+
   if (!centerNodeId) return null
   const centerNode = visibleNodes.find(n => n.id === centerNodeId)
   if (!centerNode) return null
@@ -416,8 +405,6 @@ function AgentHintPanel({
   }
   const hint = bestClaudeNote?.teachingNote ?? buildHint(topRelLabel)
 
-  const [showModal, setShowModal] = React.useState(false)
-
   // 각 연결 노드의 상세 정보를 재사용하기 위해 미리 계산
   const stdDetails = connectedStds.map(({ node }) => {
     const ck = [centerNodeId, node.id].sort().join('||')
@@ -434,48 +421,33 @@ function AgentHintPanel({
 
   return (
     <>
-      {/* 미니 카드 (클릭 시 모달 열기) */}
-      <div className="absolute top-3 right-3 z-10 max-w-[280px] pointer-events-auto">
+      {/* 연결 요약 카드 */}
+      <div className="absolute top-4 right-4 z-10 w-[236px] pointer-events-auto">
         <button
           onClick={() => setShowModal(true)}
-          className="w-full text-left bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-[#CE93D8] px-3 py-2.5 space-y-2 hover:border-[#7B1FA2] hover:shadow-xl transition-all cursor-pointer group"
+          className="w-full text-left bg-white/90 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-200 px-4 py-3 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer"
         >
-          <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-bold text-[#7B1FA2] bg-[#F3E5F5] px-1.5 py-0.5 rounded-full">
-              {analyzedConnectedCount > 0 ? 'Agent 추천' : '연결 제안'}
-            </span>
-            {topRelLabel && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: topRelColor }}>{topRelLabel}</span>}
-            <span className="ml-auto text-[8px] text-gray-300 group-hover:text-[#7B1FA2] transition-colors">클릭하여 상세 보기 →</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-gray-700">연결 구조</span>
+            <span className="text-[10px] font-semibold text-gray-400">자세히 보기</span>
           </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center gap-1">
-              <span className="text-[8px] text-gray-400 shrink-0">중심</span>
-              <span className="font-mono font-bold text-[10px] leading-none" style={{ color: subjectColor(centerNode.subject_id) }}>{centerNode.label}</span>
-              <span className="text-[8px] text-gray-400">({subjectName(centerNode.subject_id)})</span>
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            <div className="rounded-xl bg-gray-50 px-2 py-1.5">
+              <p className="text-[9px] text-gray-400">중심</p>
+              <p className="mt-0.5 font-mono text-[10px] font-bold truncate" style={{ color: subjectColor(centerNode.subject_id) }}>{centerNode.label}</p>
             </div>
-            {stdDetails.length > 0 && (
-              <div className="pl-3 border-l-2 border-dashed space-y-1" style={{ borderColor: topRelColor }}>
-                {stdDetails.slice(0, 4).map(({ node, cr, crColor, explanation, relationStatus }) => (
-                  <div key={node.id}>
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono font-semibold text-[9px] leading-none" style={{ color: subjectColor(node.subject_id) }}>{node.label}</span>
-                      <span className="text-[8px] text-gray-400">({subjectName(node.subject_id)})</span>
-                      {cr && <span className="text-[7px] font-semibold px-0.5 rounded ml-0.5" style={{ color: crColor, background: (crColor ?? '#999') + '18' }}>{cr.relationType}</span>}
-                      <span className={`text-[7px] font-semibold px-0.5 rounded ml-0.5 ${relationStatus.className}`}>{relationStatus.label}</span>
-                      {node.similarityScore !== undefined && <span className="text-[7px] text-gray-300 ml-auto">{Math.round(node.similarityScore * 100)}%</span>}
-                    </div>
-                    {explanation && <p className="text-[7px] text-gray-400 leading-snug mt-0.5 line-clamp-1">{explanation}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="rounded-xl bg-gray-50 px-2 py-1.5">
+              <p className="text-[9px] text-gray-400">연결</p>
+              <p className="mt-0.5 text-[11px] font-bold text-gray-700">{connectedStds.length}개</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 px-2 py-1.5">
+              <p className="text-[9px] text-gray-400">분석</p>
+              <p className="mt-0.5 text-[11px] font-bold text-gray-700">{analyzedConnectedCount}개</p>
+            </div>
           </div>
-
-          <div className="border-t border-[#F3E5F5] pt-1.5">
-            {analyzedConnectedCount === 0 && <span className="text-[7px] text-gray-400 mb-0.5 block">교과 역할 기반 추정 관계입니다. AI 분석 후 구체화됩니다.</span>}
-            {bestClaudeNote?.source === 'claude' && <span className="text-[7px] font-bold text-[#7B1FA2] mb-0.5 block">Agent 수업 제안</span>}
-            <p className="text-[8px] text-gray-600 leading-[1.5] line-clamp-2">{hint}</p>
+          <div className="mt-2 flex items-center gap-1.5">
+            {topRelLabel && <span className="h-2 w-2 rounded-full" style={{ background: topRelColor }} />}
+            <p className="min-w-0 flex-1 truncate text-[10px] text-gray-500">{topRelLabel || '관계'} 중심으로 수업 예시를 만들 수 있습니다.</p>
           </div>
         </button>
       </div>

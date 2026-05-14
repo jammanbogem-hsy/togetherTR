@@ -20,9 +20,7 @@ import type { GraphRelationFilter, GraphSelectedStandard } from '@/lib/knowledge
 
 import type { GNode, GEdge, KnowledgeGraphViewerProps, RecommendedStandard } from './types'
 import {
-  normCode, classifyRelation, subjectName,
-  hasCompletedRelationAnalysis, RELATION_COLORS,
-  normalizedEdgeWeight,
+  normCode, classifyRelation, normalizedEdgeWeight,
 } from './constants'
 import { useForceSimulation } from './useForceSimulation'
 import { useGraphData } from './useGraphData'
@@ -48,22 +46,6 @@ function useRainbowCSS() {
         0%, 100% { opacity: 0.7; transform: scale(1); }
         50%       { opacity: 1;   transform: scale(1.04); }
       }
-      @keyframes kg-rainbow {
-        0%   { stroke: #f97316; }
-        14%  { stroke: #eab308; }
-        28%  { stroke: #22c55e; }
-        42%  { stroke: #06b6d4; }
-        56%  { stroke: #6366f1; }
-        70%  { stroke: #a855f7; }
-        85%  { stroke: #ec4899; }
-        100% { stroke: #f97316; }
-      }
-      .kg-rainbow-ring {
-        animation: kg-rainbow 2.6s linear infinite;
-        fill: none;
-        stroke-width: 3.5;
-        pointer-events: none;
-      }
     `
     document.head.appendChild(style)
     return () => { document.getElementById(id)?.remove() }
@@ -78,7 +60,6 @@ export default function KnowledgeGraphViewer({
   onSelectStandard,
   height,
   currentUserName,
-  currentUserUid,
   isLeader = false,
   chatMentionedCodes = [],
   pinnedStandards = [],
@@ -89,11 +70,12 @@ export default function KnowledgeGraphViewer({
   externalRecommendations,
   onRecommendCenter,
   externalCenterNodeId,
+  preferredCenterCode,
   onSetCenter,
   onSaveGraph,
-  onSendToChat,
   savedData,
   artifactContext,
+  curriculumSheet,
 }: KnowledgeGraphViewerProps) {
   useRainbowCSS()
 
@@ -338,6 +320,15 @@ export default function KnowledgeGraphViewer({
     if (isLeader && onSetCenter) onSetCenter(nodeId)
   }, [centerNodeId, isLeader, onSetCenter, pendingRef, setRawEdges, setClaudeRelations, claudeAnalyzedCenters])
 
+  // 분석시트에서 지정한 중심 교과의 첫 성취기준을 그래프 중심 노드로 자동 적용
+  const preferredCenterCodeNorm = useMemo(() => preferredCenterCode ? normCode(preferredCenterCode) : '', [preferredCenterCode])
+  useEffect(() => {
+    if (!preferredCenterCodeNorm || centerNodeId || rawNodes.length === 0) return
+    const node = nodesRef.current.find(n => n.type === 'standard' && normCode(n.label) === preferredCenterCodeNorm)
+    if (!node) return
+    applyCenterNode(node.id)
+  }, [preferredCenterCodeNorm, centerNodeId, rawNodes.length, applyCenterNode])
+
   // ── Firestore 중심 노드 동기화 ──────────────────────────────────────
   useEffect(() => {
     if (!externalCenterNodeId) return
@@ -377,7 +368,6 @@ export default function KnowledgeGraphViewer({
       n.vx = 0; n.vy = 0
     })
     setLayoutKey(k => k + 1)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerNodeId, svgWidth, svgHeight])
 
   // ── Claude 결과 반영: 클러스터 + 엣지 재생성 ──────────────────────────
@@ -449,7 +439,6 @@ export default function KnowledgeGraphViewer({
     edgesRef.current = edges
     setManualEdges(edges)
     setLayoutKey(k => k + 1)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerNodeId, claudeRelations, svgWidth, svgHeight])
 
   // ── Derived: visibleIds ──────────────────────────────────────────────
@@ -529,12 +518,6 @@ export default function KnowledgeGraphViewer({
         return b.score - a.score
       })
   }, [rawNodes, chatMentionedCodes, pinnedStandards, centerNodeId, claudeRelations])
-
-  const finalScoreMap = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const { node, score } of recommendedStandards) m.set(node.id, score)
-    return m
-  }, [recommendedStandards])
 
   const subjectsWithResults = useMemo(() => {
     const s = new Set<string>()
@@ -619,7 +602,6 @@ export default function KnowledgeGraphViewer({
         centerNodeId={centerNodeId}
         isLeader={isLeader}
         rawNodes={rawNodes}
-        nodesRef={nodesRef}
         visibleIds={visibleIds}
         checkedStandards={checkedStandards}
         recommendedStandards={recommendedStandards}
@@ -643,7 +625,7 @@ export default function KnowledgeGraphViewer({
       />
 
       {/* 우측 그래프 영역 */}
-      <div ref={graphAreaRef} className="flex-1 relative overflow-hidden bg-[radial-gradient(ellipse_at_center,_#ffffff_0%,_#f1f5f9_100%)]">
+      <div ref={graphAreaRef} className="flex-1 relative overflow-hidden bg-[#F8FAFC]">
 
         {/* 전체 성취기준 브라우저 */}
         {showStandardsBrowser && (
@@ -664,8 +646,8 @@ export default function KnowledgeGraphViewer({
 
         {/* 저장/나가기 버튼 */}
         <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2 pointer-events-auto">
-          {(onSaveGraph || onSendToChat) && (
-            <SaveButtons onSaveGraph={onSaveGraph} onSendToChat={onSendToChat} buildData={buildSaveData} />
+          {onSaveGraph && (
+            <SaveButtons onSaveGraph={onSaveGraph} buildData={buildSaveData} />
           )}
           {onClose && (
             <button onClick={onClose} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 text-[12px] font-semibold shadow-md hover:bg-gray-50 transition-colors">나가기</button>
@@ -675,11 +657,10 @@ export default function KnowledgeGraphViewer({
         {/* 분석 확인 배너 — 팀장만 분석 가능 */}
         {showAnalysisBanner && centerNodeId && !claudeLoading && isLeader && (
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-            <div className="flex items-center gap-2.5 bg-white border border-[#CE93D8] rounded-2xl shadow-xl px-4 py-2.5">
-              <span className="text-[#7B1FA2] text-sm">✦</span>
-              <span className="text-[#3D1C72] font-medium text-[12px] whitespace-nowrap">중심 노드 기준으로 수업 인사이트를 분석할까요?</span>
-              <button onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }} className="px-3 py-1 bg-[#7B1FA2] hover:bg-[#6A1B9A] text-white text-[11px] font-bold rounded-lg transition-colors whitespace-nowrap">분석 시작</button>
-              <button onClick={() => setShowAnalysisBanner(false)} className="px-2 py-1 text-[#9E9E9E] hover:text-[#5F6368] text-[11px] font-medium transition-colors whitespace-nowrap">나중에</button>
+            <div className="flex items-center gap-2.5 bg-white/95 border border-gray-200 rounded-2xl shadow-lg px-4 py-2.5">
+              <span className="text-gray-700 font-semibold text-[12px] whitespace-nowrap">연결을 바탕으로 수업 예시를 만들까요?</span>
+              <button onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }} className="px-3 py-1 bg-gray-900 hover:bg-gray-800 text-white text-[11px] font-bold rounded-lg transition-colors whitespace-nowrap">생성</button>
+              <button onClick={() => setShowAnalysisBanner(false)} className="px-2 py-1 text-gray-400 hover:text-gray-600 text-[11px] font-medium transition-colors whitespace-nowrap">나중에</button>
             </div>
           </div>
         )}
@@ -687,7 +668,7 @@ export default function KnowledgeGraphViewer({
         {/* 재분석 버튼 (노드 추가/삭제 후) — 팀장만 */}
         {nodesChangedAfterAnalysis && centerNodeId && !claudeLoading && !showAnalysisBanner && isLeader && (
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-            <button onClick={() => runAnalysis(centerNodeId)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#CE93D8] rounded-2xl shadow-lg text-[#7B1FA2] text-[11px] font-semibold hover:bg-[#F3E5F5] transition-colors whitespace-nowrap">
+            <button onClick={() => runAnalysis(centerNodeId)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-2xl shadow-lg text-gray-700 text-[11px] font-semibold hover:bg-gray-50 transition-colors whitespace-nowrap">
               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>
@@ -700,10 +681,10 @@ export default function KnowledgeGraphViewer({
         {/* 분석 중 오버레이 */}
         {claudeLoading && centerNodeId && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/70 backdrop-blur-sm pointer-events-none">
-            <div className="flex items-center gap-3 bg-white rounded-2xl shadow-xl border border-[#CE93D8] px-6 py-4">
-              <div className="w-8 h-8 rounded-full border-3 border-[#CE93D8] border-t-[#7B1FA2] animate-spin shrink-0" />
+            <div className="flex items-center gap-3 bg-white rounded-2xl shadow-xl border border-gray-200 px-6 py-4">
+              <div className="w-8 h-8 rounded-full border-3 border-gray-200 border-t-gray-900 animate-spin shrink-0" />
               <div>
-                <p className="text-[12px] font-bold text-[#7B1FA2]">관계 분석 중…</p>
+                <p className="text-[12px] font-bold text-gray-800">관계 분석 중…</p>
                 <p className="text-[10px] text-gray-400">성취기준 간 교육적 관계를 분류하고 있습니다</p>
               </div>
             </div>
@@ -719,7 +700,6 @@ export default function KnowledgeGraphViewer({
         {/* SVG 그래프 캔버스 */}
         <GraphCanvas
           svgRef={svgRef}
-          graphAreaRef={graphAreaRef}
           nodesRef={nodesRef}
           svgWidth={svgWidth}
           svgHeight={svgHeight}
@@ -732,7 +712,6 @@ export default function KnowledgeGraphViewer({
           chatMentionedCodes={chatMentionedCodes}
           pinnedStandards={pinnedStandards}
           recommendedCenterIds={recommendedCenterIds}
-          finalScoreMap={finalScoreMap}
           algoMode={algoMode}
           relFilter={relFilter}
           onAlgoModeChange={setAlgoMode}
@@ -787,7 +766,7 @@ export default function KnowledgeGraphViewer({
         {/* 하단 안내 */}
         {!centerNodeId && !loading && visibleNodes.length > 0 && (
           <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-100 px-3 py-1.5 text-[10px] text-gray-500 pointer-events-none">
-            💡 노드 우클릭 → 중심 성취기준 설정
+            노드 우클릭 → 중심 성취기준 설정
           </div>
         )}
 
@@ -803,6 +782,13 @@ export default function KnowledgeGraphViewer({
             claudeLoading={claudeLoading}
             popupAnalysisLoading={popupAnalysisLoading}
             onClose={() => setPopup(null)}
+            curriculumSheetContext={(() => {
+              if (!curriculumSheet || !popup.label) return null
+              const code = popup.label.replace(/[\[\]]/g, '')
+              const row = curriculumSheet.find(r => r.standard && r.standard.includes(code))
+              if (!row) return null
+              return { coreIdea: row.coreIdea, knowledge: row.knowledge, processFunction: row.processFunction, agentLessonExample: row.agentLessonExample, description: row.description, subject: row.subject }
+            })()}
             onReanalyze={isLeader ? (popupId, cId) => {
               setClaudeRelations(prev => {
                 const next = new Map(prev)

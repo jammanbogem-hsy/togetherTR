@@ -11,6 +11,15 @@ import {
   RELATION_COLORS,
 } from './constants'
 
+interface CurriculumSheetContext {
+  coreIdea?: string
+  knowledge?: string
+  processFunction?: string
+  agentLessonExample?: string
+  description?: string
+  subject?: string
+}
+
 interface NodePopupProps {
   node: GNode
   centerNodeId: string | null
@@ -22,11 +31,13 @@ interface NodePopupProps {
   popupAnalysisLoading: boolean
   onClose: () => void
   onReanalyze?: (popupId: string, centerNodeId: string) => void
+  curriculumSheetContext?: CurriculumSheetContext | null
 }
 
 export default function NodePopup({
   node, centerNodeId, rawNodes, visibleNodes, visibleEdges,
   claudeRelations, claudeLoading, popupAnalysisLoading, onClose, onReanalyze,
+  curriculumSheetContext,
 }: NodePopupProps) {
   if (typeof document === 'undefined' || node.type !== 'standard') return null
 
@@ -89,6 +100,48 @@ export default function NodePopup({
               </div>
             )
           })()}
+
+          {/* 교육과정 시트 맥락 */}
+          {curriculumSheetContext && (curriculumSheetContext.coreIdea || curriculumSheetContext.knowledge || curriculumSheetContext.processFunction || curriculumSheetContext.agentLessonExample || curriculumSheetContext.description) && (
+            <div className="mb-5 rounded-xl p-4" style={{ background: '#F3E5F5', border: '1px solid #CE93D8' }}>
+              <div className="text-xs font-semibold text-[#7B1FA2] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-[#7B1FA2] text-white text-[8px] flex items-center justify-center font-bold">S</span>
+                분석 시트 맥락
+              </div>
+              <div className="space-y-2.5">
+                {curriculumSheetContext.coreIdea && (
+                  <div>
+                    <span className="text-[10px] font-bold text-[#7B1FA2] uppercase">핵심아이디어</span>
+                    <p className="text-sm text-[#4A148C] leading-relaxed mt-0.5">{curriculumSheetContext.coreIdea}</p>
+                  </div>
+                )}
+                {curriculumSheetContext.knowledge && (
+                  <div>
+                    <span className="text-[10px] font-bold text-[#0D47A1] uppercase">지식·이해</span>
+                    <p className="text-sm text-[#1A237E] leading-relaxed mt-0.5">{curriculumSheetContext.knowledge}</p>
+                  </div>
+                )}
+                {curriculumSheetContext.processFunction && (
+                  <div>
+                    <span className="text-[10px] font-bold text-[#137333] uppercase">과정·기능</span>
+                    <p className="text-sm text-[#1B5E20] leading-relaxed mt-0.5">{curriculumSheetContext.processFunction}</p>
+                  </div>
+                )}
+                {curriculumSheetContext.agentLessonExample && (
+                  <div>
+                    <span className="text-[10px] font-bold text-[#7B1FA2] uppercase">Agent 추천 수업 예시</span>
+                    <p className="text-sm text-[#4A148C] leading-relaxed mt-0.5 whitespace-pre-line">{curriculumSheetContext.agentLessonExample}</p>
+                  </div>
+                )}
+                {curriculumSheetContext.description && (
+                  <div>
+                    <span className="text-[10px] font-bold text-[#5F6368] uppercase">수업내용 설명</span>
+                    <p className="text-sm text-[#202124] leading-relaxed mt-0.5">{curriculumSheetContext.description}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 연결된 성취기준 */}
           {(() => {
@@ -159,13 +212,13 @@ export default function NodePopup({
                       {relationType}
                     </span>
                   )}
-                  {onReanalyze && centerNodeId && !loading && (
+                  {onReanalyze && !loading && (
                     <button
-                      onClick={() => onReanalyze(node.id, centerNodeId)}
+                      onClick={() => onReanalyze(node.id, centerNodeId ?? node.id)}
                       className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white text-[#7B1FA2] border border-[#CE93D8] hover:bg-[#F3E5F5] transition"
-                      title="캐시를 무시하고 Claude로 다시 분석"
+                      title="Claude로 분석하기"
                     >
-                      ↻ 다시 분석
+                      ↻ {centerNodeId ? '다시 분석' : 'AI 분석'}
                     </button>
                   )}
                 </div>

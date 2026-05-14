@@ -289,6 +289,7 @@ export interface Project {
   optionVotes?: Record<string, Record<string, string>>
   // 방장이 지식 그래프를 공유 중인지 (팀원 자동 오픈)
   graphOpen?: boolean
+  graphView?: 'sheet' | 'graph'
   graphKeyword?: string  // 방장이 설정한 그래프 키워드
   // 팀원 중심 성취기준 추천 (nodeId → 추천 정보)
   graphCenterRecommendations?: Record<string, { nodeId: string; recommenderName: string; recommenderUid?: string | null }>
@@ -351,6 +352,16 @@ export interface Project {
   // 중요 노트 (포스트잇) — 팀이 채팅에서 "중요"로 저장한 메시지 모음.
   // AI 프롬프트에 자동 주입되어 이전 활동 비공식 대화 맥락 보전.
   keyNotes?: KeyNote[]
+  // 교육과정 시트 — A-2-1 핵심아이디어·성취기준 공동 편집 시트
+  curriculumSheet?: CurriculumSheetRow[]
+  // 교육과정 시트 프레즌스 — 누가 어느 셀을 편집 중인지 실시간 표시
+  curriculumSheetPresence?: Record<string, {
+    uid: string
+    displayName: string
+    color: string
+    cellKey: string
+    updatedAt: number
+  }>
   // 공개 배포 상태 — "공개 링크" 기능으로 보고서를 외부에 공유 중일 때 true.
   // 실제 공개 데이터는 Firestore `public_reports/{projectId}`에 **스냅샷**으로 별도 저장.
   // 원본 프로젝트를 직접 공개하지 않는 이유: 팀원 UID/메시지 등 민감 데이터 분리 보장.
@@ -372,6 +383,24 @@ export interface KeyNote {
   savedBy: string                  // uid of saver
   savedByName?: string             // 저장자 이름
   savedAt: number                  // ms epoch
+}
+
+// ─── 교육과정 시트 (공동 편집) ────────────────────────────
+// A-2-1 핵심아이디어·성취기준 분석을 시트 형태로 공동 작업.
+// Firestore 프로젝트 문서에 저장되어 팀원 간 실시간 동기화.
+export interface CurriculumSheetRow {
+  id: string                    // nanoid
+  session?: string              // 차시 (예: "1차시", "2-3차시")
+  subject: string               // 과목명
+  isCenter?: boolean            // 중심 교과 여부 (지식그래프 중심 노드로 연결)
+  coreIdea: string              // 핵심아이디어 (DB 원문)
+  standard: string              // 성취기준 코드 + 텍스트
+  knowledge: string             // 지식·이해
+  processFunction: string       // 과정·기능
+  agentLessonExample?: string   // Agent 추천 수업 예시 (지식 그래프 관계 분석 기반)
+  description: string           // 수업내용 설명 (자유 입력)
+  updatedBy?: string            // 마지막 수정자 이름
+  updatedAt?: number            // 마지막 수정 시각 (ms)
 }
 
 // ─── 공개 배포 보고서 ─────────────────────────────────

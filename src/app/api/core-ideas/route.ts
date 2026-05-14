@@ -1,18 +1,46 @@
 import { NextResponse } from 'next/server'
-import { loadContentSystems } from '@/lib/curriculum/contentSystemReader'
+import { isElementaryGradeGroup, loadContentSystems, loadElementaryContentSystems } from '@/lib/curriculum/contentSystemReader'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-export async function GET() {
-  const records = loadContentSystems()
-  // 초등학교 항목만 필터 (공통 교육과정 중 초등 학년군)
-  const elementary = records.filter(r =>
-    r.curriculum === '공통 교육과정' ||
-    r.gradeBands.some(gb => /초|1-2|3-4|5-6/.test(gb)) ||
-    r.gradeBands.length === 0 // 학년군 미지정은 포함
-  ).filter(r =>
-    !r.gradeBands.some(gb => /중|고|7-9|10/.test(gb))
-  )
+function gradeNeedle(gradeGroup: string | null): string {
+  return (gradeGroup ?? '').replace(/^초/, '').replace(/~/g, '-').trim()
+}
+
+function recordMatchesGrade(gradeBands: string[], gradeGroup: string | null): boolean {
+  const needle = gradeNeedle(gradeGroup)
+  if (!needle) return true
+  if (gradeBands.length === 0) return true
+  return gradeBands.some(gradeBand => gradeBand.includes(needle))
+}
+
+function filterValuesByGrade(items: string[], gradeGroup: string | null): string[] {
+  const needle = gradeNeedle(gradeGroup)
+  if (!needle) return items
+  const prefixed = items.filter(item => /^\d+-\d+학년군:/.test(item))
+  if (prefixed.length === 0) return items
+  return prefixed.filter(item => item.includes(needle))
+}
+
+function isSelectionCurriculum(curriculum: string): boolean {
+  return curriculum.trim().startsWith('선택 중심 교육과정')
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const gradeGroup = searchParams.get('gradeGroup')
+  const records = gradeNeedle(gradeGroup) && !isElementaryGradeGroup(gradeGroup)
+    ? loadContentSystems()
+    : loadElementaryContentSystems()
+  const elementary = records
+    .filter(r => !isSelectionCurriculum(r.curriculum))
+    .filter(r =>
+      r.curriculum === '공통 교육과정' ||
+      r.gradeBands.some(gb => /초|1-2|3-4|5-6/.test(gb)) ||
+      r.gradeBands.length === 0
+    )
+    .filter(r => recordMatchesGrade(r.gradeBands, gradeGroup))
   const items = elementary.map(r => ({
     id: r.id,
     subject: r.subject,
@@ -20,9 +48,14 @@ export async function GET() {
     area: r.area,
     gradeBands: r.gradeBands,
     coreIdeas: r.coreIdeas,
-    knowledge: r.knowledge.slice(0, 15),
-    functions: r.functions.slice(0, 10),
-    attitudes: r.attitudes.slice(0, 8),
+    knowledge: filterValuesByGrade(r.knowledge, gradeGroup).slice(0, 15),
+    functions: filterValuesByGrade(r.functions, gradeGroup).slice(0, 10),
+    attitudes: filterValuesByGrade(r.attitudes, gradeGroup).slice(0, 8),
   }))
-  return NextResponse.json({ items })
+
+  return NextResponse.json({ items }, {
+    headers: {
+      'Cache-Control': 'no-store, max-age=0',
+    },
+  })
 }

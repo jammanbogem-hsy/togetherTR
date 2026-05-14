@@ -355,7 +355,6 @@ function parseRules(raw: string): T22Rule[] {
 
   // Step 1: 규칙 항목 블록으로 분리 — 번호(1. 2.), 볼드(**), 불릿(-•) 기준
   const blocks: string[] = []
-  const splitPattern = /(?:^|\n)\s*(?:\d+\.\s*|\*\*|[-•]\s*(?=\[))/
   // 번호/볼드/불릿으로 시작하는 줄에서 분리
   const lines = raw.split('\n')
   let current = ''
@@ -468,20 +467,24 @@ export function buildT23Structured(
 // ─── A-1-2 주제 선정 ─────────────────────────────────────────────────────
 
 export interface A12Criterion { criterion: string; description: string; priority: string }
+export interface A12LinkedSubject { subject: string; focus: string }
 
 export interface A12Structured {
   _schema: 'A-1-2'
   criteria: A12Criterion[]
+  linkedSubjects: A12LinkedSubject[]
   selectedTopic: string
   topicType: string        // 내용요소형 / 기능요소형 / 혼합형
   rationale: string
 }
 
 export function buildA12Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A12Structured {
-  const r: A12Structured = { _schema: 'A-1-2', criteria: [], selectedTopic: '', topicType: '', rationale: '' }
+  const r: A12Structured = { _schema: 'A-1-2', criteria: [], linkedSubjects: [], selectedTopic: '', topicType: '', rationale: '' }
   // 기준
   const critRaw = (sections['주제 선정 기준'] ?? '').trim()
   if (critRaw) r.criteria = parseTableRows(critRaw, 2).map(c => ({ criterion: c[0], description: c[1] || '', priority: c[2] || '' }))
+  const linkedRaw = (sections['연계 교과'] ?? sections['교과 연계'] ?? '').trim()
+  if (linkedRaw) r.linkedSubjects = parseLinkedSubjects(linkedRaw)
   // 최종 주제 — 80자 이하만 유효 (긴 텍스트는 AI가 전체 응답을 넣은 것)
   const rawTopic = (sections['최종 선정 주제'] ?? sections['선정 주제'] ?? '').trim()
   r.selectedTopic = rawTopic.length <= 80 ? rawTopic.replace(/\*\*/g, '').replace(/^#+\s*/, '') : ''
@@ -498,6 +501,7 @@ export function buildA12Structured(sections: Record<string, string>, chat: Array
       const rawLines = msg.content.split('\n')
       const lines = rawLines.map(stripMd)
       if (r.criteria.length === 0) { const rows = parseTableRows(msg.content, 2); if (rows.length >= 2) r.criteria = rows.map(c => ({ criterion: stripMd(c[0]), description: stripMd(c[1] || ''), priority: stripMd(c[2] || '') })) }
+      if (r.linkedSubjects.length === 0) r.linkedSubjects = parseLinkedSubjects(msg.content)
       if (!r.selectedTopic) {
         for (const line of lines) {
           const m = line.match(/(?:[-•]\s*)?(?:최종\s*선정\s*주제|선정\s*주제)\s*[:：]\s*(.+)$/)
@@ -542,19 +546,65 @@ export function buildA12Structured(sections: Record<string, string>, chat: Array
   return r
 }
 
+function parseLinkedSubjects(raw: string): A12LinkedSubject[] {
+  const subjectNames = ['국어', '사회', '수학', '과학', '도덕', '실과', '체육', '음악', '미술', '영어']
+  const rows = parseTableRows(raw, 2)
+    .map(c => ({ subject: stripArtifactMd(c[0] ?? ''), focus: stripArtifactMd(c[1] ?? '') }))
+    .filter(item => subjectNames.includes(item.subject) && item.focus)
+  if (rows.length > 0) return uniqueLinkedSubjects(rows)
+
+  const parsed: A12LinkedSubject[] = []
+  for (const line of raw.split('\n')) {
+    const clean = stripArtifactMd(line).replace(/^[-•*\d.\s]+/, '').trim()
+    const match = clean.match(/^([가-힣]+)\s*[:：]\s*(.+)$/)
+    if (!match) continue
+    const subject = match[1].replace(/과$/, '')
+    if (!subjectNames.includes(subject)) continue
+    parsed.push({ subject, focus: match[2].trim() })
+  }
+  return uniqueLinkedSubjects(parsed)
+}
+
+function uniqueLinkedSubjects(items: A12LinkedSubject[]): A12LinkedSubject[] {
+  const seen = new Set<string>()
+  const out: A12LinkedSubject[] = []
+  for (const item of items) {
+    if (seen.has(item.subject)) continue
+    seen.add(item.subject)
+    out.push(item)
+  }
+  return out
+}
+
+function stripArtifactMd(value: string): string {
+  return value.replace(/\*\*/g, '').replace(/__/g, '').replace(/[*_~`]/g, '').trim()
+}
+
+function cleanA21Cell(value: string): string {
+  return stripArtifactMd(value)
+    .replace(/&(?:#124|124);/g, ' / ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim()
+}
+
 // ─── A-2-1 성취기준 분석 (기존 extractA21TableForSave 유지, 구조화는 단순 래핑) ──
 
 export interface A21Row {
   subject: string           // 교과명
   coreIdea: string          // 핵심 아이디어
+  standard?: string         // 성취기준
   knowledgeUnderstanding: string  // 지식·이해
   processFunction: string   // 과정·기능
+  agentLessonExample?: string      // Agent 추천 수업아이디어
+  description?: string             // 교사 수업내용 설명
   isCommon?: boolean        // 공통(팀 조정) 행 여부
 }
 
 export interface A21Structured {
   _schema: 'A-2-1'
   rows: A21Row[]
+  agentLessonIdeas?: string
 }
 
 export function buildA21Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A21Structured {
@@ -563,6 +613,13 @@ export function buildA21Structured(sections: Record<string, string>, chat: Array
   // 기존 "성취기준분석표" 키에서 4열 표 파싱 시도
   const raw = (sections['성취기준분석표'] ?? sections['핵심아이디어분석'] ?? '').trim()
   if (raw) r.rows = parseA21Table(raw)
+  const agentLessonIdeas = (
+    sections['Agent 추천 수업아이디어']
+    ?? sections['Agent 추천 수업 예시']
+    ?? sections['Agent 추천 수업예시']
+    ?? ''
+  ).trim()
+  if (agentLessonIdeas) r.agentLessonIdeas = agentLessonIdeas
 
   // fallback: 채팅에서 4열 또는 7열 표 추출
   if (r.rows.length === 0) {
@@ -581,29 +638,38 @@ function parseA21Table(raw: string): A21Row[] {
   if (tableLines.length < 3) return rows
 
   // 헤더에서 열 인덱스 파악
-  const headerCells = tableLines[0].replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim().replace(/\*\*/g, ''))
+  const headerCells = tableLines[0].replace(/^\|/, '').replace(/\|$/, '').split('|').map(cleanA21Cell)
   const findCol = (keywords: string[]) => headerCells.findIndex(h => keywords.some(k => h.includes(k)))
 
   const subjectIdx = findCol(['교과'])
   const coreIdeaIdx = findCol(['핵심아이디어', '핵심 아이디어'])
+  const standardIdx = findCol(['성취기준'])
   const knowledgeIdx = findCol(['지식', '이해'])
   const functionIdx = findCol(['과정', '기능'])
+  const agentLessonIdx = findCol(['Agent', '추천 수업', '수업아이디어', '수업 아이디어', '수업 예시'])
+  const descriptionIdx = findCol(['수업내용', '수업 내용', '설명'])
 
   // 데이터 행 (헤더 + 구분자 제외)
   const dataLines = tableLines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1)
   for (const line of dataLines) {
-    const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.replace(/\*\*/g, '').trim())
+    const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(cleanA21Cell)
     const subject = cells[subjectIdx >= 0 ? subjectIdx : 0] || ''
     const coreIdea = cells[coreIdeaIdx >= 0 ? coreIdeaIdx : 1] || ''
+    const standard = standardIdx >= 0 ? (cells[standardIdx] || '') : ''
     const knowledge = cells[knowledgeIdx >= 0 ? knowledgeIdx : 2] || ''
     const fn = cells[functionIdx >= 0 ? functionIdx : 3] || ''
+    const agentLessonExample = agentLessonIdx >= 0 ? (cells[agentLessonIdx] || '') : ''
+    const description = descriptionIdx >= 0 ? (cells[descriptionIdx] || '') : ''
 
     if (subject || coreIdea) {
       rows.push({
         subject,
         coreIdea,
+        standard,
         knowledgeUnderstanding: knowledge,
         processFunction: fn,
+        agentLessonExample,
+        description,
         isCommon: /공통|팀\s*조정|통합/.test(subject),
       })
     }
@@ -611,10 +677,9 @@ function parseA21Table(raw: string): A21Row[] {
 
   // 불릿 리스트 형식 fallback: "1. 과학\n• 핵심아이디어: ...\n• 지식·이해: ..."
   if (rows.length === 0) {
-    const stripMd = (s: string) => s.replace(/\*\*/g, '').replace(/[*_~`]/g, '').trim()
     const blocks = raw.split(/(?=\d+\.\s*[가-힣])/).filter(b => b.trim())
     for (const block of blocks) {
-      const lines = block.split('\n').map(stripMd)
+      const lines = block.split('\n').map(cleanA21Cell)
       const subjectMatch = lines[0]?.match(/^\d+\.\s*(.+?)(?:\s*$|\s*[:：])/)
       if (!subjectMatch) continue
       const subject = subjectMatch[1].trim()

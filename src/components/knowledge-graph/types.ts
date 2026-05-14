@@ -69,12 +69,14 @@ export interface KnowledgeGraphViewerProps {
   externalRecommendations?: Array<{ nodeId: string; recommenderName: string; recommenderUid?: string }>
   onRecommendCenter?: (nodeId: string, nodeName: string) => void
   externalCenterNodeId?: string
+  preferredCenterCode?: string
   onSetCenter?: (nodeId: string) => void
   onSaveGraph?: (data: Omit<GraphSavedData, 'savedAt'>) => Promise<void>
-  onSendToChat?: (data: Omit<GraphSavedData, 'savedAt'>) => void | Promise<void>
   savedData?: GraphSavedData | null
   /** 이전 활동 산출물 요약 (관계 분석 프롬프트에 활용) */
   artifactContext?: string
+  /** 교육과정 분석 시트 데이터 — 노드 팝업에 맥락 표시 */
+  curriculumSheet?: Array<{ subject: string; coreIdea: string; standard: string; knowledge: string; processFunction: string; agentLessonExample?: string; description: string }>
 }
 
 // ─── 재사용 서브 컴포넌트 Props ──────────────────────────────────────────

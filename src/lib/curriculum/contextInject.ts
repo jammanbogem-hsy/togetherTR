@@ -25,8 +25,71 @@ import {
 import { searchJsonStandards } from './curriculumJsonReader'
 import {
   buildContentSystemContext,
+  isElementaryGradeGroup,
   isContentSystemContextEnabled,
+  loadElementaryContentSystems,
+  loadContentSystems,
 } from './contentSystemReader'
+
+function normalizeCurriculumText(value: string): string {
+  return value.replace(/\s+/g, '').replace(/[·⋅]/g, '⋅').trim()
+}
+
+function curriculumTextMatches(a: string, b: string): boolean {
+  const na = normalizeCurriculumText(a)
+  const nb = normalizeCurriculumText(b)
+  if (!na || !nb) return false
+  return na === nb || na.includes(nb) || nb.includes(na)
+}
+
+function filterContentByGrade(items: string[], gradeGroup?: string): string[] {
+  if (!gradeGroup) return items
+  const needle = gradeGroup.replace(/^초/, '').replace(/~/g, '-').trim()
+  if (!needle) return items
+  const prefixed = items.filter(item => /^\d+-\d+학년군:/.test(item))
+  if (prefixed.length === 0) return items
+  return prefixed.filter(item => item.includes(needle))
+}
+
+function isSelectionCurriculum(curriculum: string): boolean {
+  return curriculum.trim().startsWith('선택 중심 교육과정')
+}
+
+function dbChoiceTokens(text: string): Set<string> {
+  return new Set(
+    (text.match(/[가-힣A-Za-z0-9]+/g) ?? [])
+      .map(token => token.toLowerCase())
+      .filter(token => token.length >= 2)
+  )
+}
+
+function selectDbCoreIdea(ideas: string[], query: string): string {
+  const candidates = [...new Set(ideas.filter(Boolean))]
+  if (candidates.length <= 1) return candidates[0] ?? ''
+  const queryTokens = dbChoiceTokens(query)
+  let best = candidates[0]
+  let bestScore = -1
+  for (const candidate of candidates) {
+    const candidateTokens = dbChoiceTokens(candidate)
+    let score = 0
+    for (const token of candidateTokens) {
+      if (queryTokens.has(token)) score += 3
+      else {
+        for (const queryToken of queryTokens) {
+          if (queryToken.includes(token) || token.includes(queryToken)) {
+            score += 1
+            break
+          }
+        }
+      }
+    }
+    if (score > bestScore) {
+      best = candidate
+      bestScore = score
+    }
+  }
+  return best
+}
 
 // 활동 코드 → 온톨로지 주입 활성화 여부
 const ONTOLOGY_ENABLED_ACTIVITIES: ActivityCode[] = [
@@ -291,7 +354,7 @@ ${formatStandards(standards)}
  * 지식 그래프 저장 데이터로 A-2-1 컨텍스트를 생성합니다.
  * 그래프에서 선택한 성취기준을 그대로 내용·기능요소 분석의 기초 자료로 사용합니다.
  */
-function buildGraphBasedA21Context(graphData: GraphSavedData): string {
+function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): string {
   const { centerNode, selectedStandards, agentNotes } = graphData
   if (!centerNode && selectedStandards.length === 0) return ''
 
@@ -300,11 +363,6 @@ function buildGraphBasedA21Context(graphData: GraphSavedData): string {
   // 서버에서 그래프 로드하여 핵심아이디어 데이터 주입
   const graph = loadGraph()
   const subjectNameMap = new Map(graph?.subjects.map(s => [s.id, s.name_ko]) ?? [])
-  const stdCoreIdeaIdMap = new Map(
-    (graph?.achievementStandards ?? [])
-      .filter(s => s.core_idea_id)
-      .map(s => [s.id, s.core_idea_id!])
-  )
 
   // ─── 성취기준 → 핵심아이디어 → 내용체계(지식이해/과정기능) 확정 매핑 ───
   // AI가 선택하는 것이 아니라 코드에서 미리 매핑한 확정 데이터를 전달.
@@ -312,26 +370,37 @@ function buildGraphBasedA21Context(graphData: GraphSavedData): string {
   const subjectIdSet = new Set([centerNode?.subjectId, ...selectedStandards.map(s => s.subjectId)].filter(Boolean) as string[])
 
   // 내용체계 리더 (지식이해/과정기능/가치태도 원문 조회용)
-  let csRecords: Array<{ subject: string; area: string; knowledge: string[]; functions: string[]; attitudes: string[] }> = []
-  try {
-    const csReader = require('./contentSystemReader') as typeof import('./contentSystemReader')
-    csRecords = csReader.loadContentSystems()
-  } catch { /* 없으면 무시 */ }
+  const csRecords = isElementaryGradeGroup(gradeGroup)
+    ? loadElementaryContentSystems()
+    : loadContentSystems()
 
   function getContentSystemForArea(subjectId: string, area: string) {
     const subjName = subjectNameMap.get(subjectId) ?? ''
     // 퍼지 매칭: 교과명 + 영역명
     const match = csRecords.find(r =>
+      !isSelectionCurriculum(r.curriculum) &&
       (r.subject.includes(subjName) || subjName.includes(r.subject)) &&
-      (r.area === area || r.area.includes(area) || area.includes(r.area))
+      curriculumTextMatches(r.area, area)
     )
-    if (match) return { knowledgeUnderstanding: match.knowledge, processFunction: match.functions, valueAttitude: match.attitudes }
+    if (match) return {
+      knowledgeUnderstanding: filterContentByGrade(match.knowledge, gradeGroup),
+      processFunction: filterContentByGrade(match.functions, gradeGroup),
+      valueAttitude: filterContentByGrade(match.attitudes, gradeGroup),
+    }
     // 특수 매핑
     const specialMap: Record<string, string> = { '역사 일반': '역사', '사회·문화': '사회와 문화', '법': '법과 사회', '한국사': '한국사1' }
     const mappedArea = specialMap[area]
     if (mappedArea) {
-      const m2 = csRecords.find(r => (r.subject.includes(subjName) || subjName.includes(r.subject)) && r.area === mappedArea)
-      if (m2) return { knowledgeUnderstanding: m2.knowledge, processFunction: m2.functions, valueAttitude: m2.attitudes }
+      const m2 = csRecords.find(r =>
+        !isSelectionCurriculum(r.curriculum) &&
+        (r.subject.includes(subjName) || subjName.includes(r.subject)) &&
+        r.area === mappedArea
+      )
+      if (m2) return {
+        knowledgeUnderstanding: filterContentByGrade(m2.knowledge, gradeGroup),
+        processFunction: filterContentByGrade(m2.functions, gradeGroup),
+        valueAttitude: filterContentByGrade(m2.attitudes, gradeGroup),
+      }
     }
     return { knowledgeUnderstanding: [] as string[], processFunction: [] as string[], valueAttitude: [] as string[] }
   }
@@ -359,19 +428,37 @@ function buildGraphBasedA21Context(graphData: GraphSavedData): string {
     // 내용체계에서 지식이해/과정기능 원문 조회
     const area = subjectStds[0].area
     const cs = getContentSystemForArea(subjectId, area)
+    const sameAreaStandards = (graph.achievementStandards ?? [])
+      .filter(s =>
+        s.subject_id === subjectId &&
+        curriculumTextMatches(s.area, area) &&
+        (!gradeGroup || (s.grade_band ?? '').includes(gradeGroup.replace(/^초/, '').replace(/~/g, '-')))
+      )
+      .sort((a, b) => a.code.localeCompare(b.code))
+    const currentIndex = sameAreaStandards.findIndex(s => subjectStds.some(std => std.id === s.id || std.code === s.code))
+    const alignedKnowledge = currentIndex >= 0 && cs.knowledgeUnderstanding.length === sameAreaStandards.length
+      ? [cs.knowledgeUnderstanding[currentIndex]].filter(Boolean)
+      : cs.knowledgeUnderstanding
+    const alignedFunctions = currentIndex >= 0 && cs.processFunction.length === sameAreaStandards.length
+      ? [cs.processFunction[currentIndex]].filter(Boolean)
+      : cs.processFunction
+    const alignedAttitudes = currentIndex >= 0 && cs.valueAttitude.length === sameAreaStandards.length
+      ? [cs.valueAttitude[currentIndex]].filter(Boolean)
+      : cs.valueAttitude
 
-    // 그래프 데이터의 knowledge/functions/competencies (내용체계 없을 때 fallback)
-    const graphKnowledge = subjectStds.flatMap(s => s.knowledge ?? []).slice(0, 6)
-    const graphFunctions = subjectStds.flatMap(s => s.functions ?? []).slice(0, 5)
-    const graphCompetencies = subjectStds.flatMap(s => s.competencies ?? []).slice(0, 4)
-
-    const knowledgeItems = cs.knowledgeUnderstanding.length > 0 ? cs.knowledgeUnderstanding.slice(0, 8) : graphKnowledge
-    const functionItems = cs.processFunction.length > 0 ? cs.processFunction.slice(0, 6) : graphFunctions
-    const attitudeItems = cs.valueAttitude.length > 0 ? cs.valueAttitude.slice(0, 5) : graphCompetencies
+    const knowledgeItems = alignedKnowledge.slice(0, 8)
+    const functionItems = alignedFunctions.slice(0, 6)
+    const attitudeItems = alignedAttitudes.slice(0, 5)
+    const coreIdeaForStandard = selectDbCoreIdea(coreIdeaTexts, [
+      subjectStds.map(std => std.text).join(' '),
+      knowledgeItems.join(' '),
+      functionItems.join(' '),
+      area,
+    ].join(' '))
 
     confirmedMappings.push(
       `${isCenterSubj ? '★ ' : ''}[${subjName} · ${area}] 성취기준: ${subjectStds.map(s => s.code).join(', ')}
-  ✅ 핵심 아이디어: ${coreIdeaText}${coreIdeaTexts.length > 1 ? `\n     (대안: ${coreIdeaTexts.slice(1, 3).join(' / ')})` : ''}
+  ✅ 핵심 아이디어: ${coreIdeaForStandard || coreIdeaText}${coreIdeaTexts.length > 1 ? `\n     (DB 후보: ${coreIdeaTexts.join(' / ')})` : ''}
   ✅ 지식·이해: ${knowledgeItems.join(', ') || '(데이터 없음)'}
   ✅ 과정·기능: ${functionItems.join(', ') || '(데이터 없음)'}
   ✅ 가치·태도: ${attitudeItems.join(', ') || '(데이터 없음)'}`
@@ -395,16 +482,20 @@ function buildGraphBasedA21Context(graphData: GraphSavedData): string {
     : ''
 
   const coreIdeasSection = confirmedMappings.length > 0
-    ? `\n## 📌 교과별 핵심아이디어 확정 매핑 (교육과정 JSON DB에서 성취기준 코드로 직접 조회한 결과)
+    ? `\n## 📌 교과별 핵심아이디어 확정 매핑 (교육과정 데이터에서 성취기준 코드로 직접 조회한 확정 결과)
 
-⚠️⚠️ **아래 데이터는 AI가 생성한 것이 아닙니다. 교육과정 DB에서 자동 추출한 확정 결과입니다.**
-AI는 핵심아이디어·지식이해·과정기능을 **절대 자체 생성하지 마세요**. 아래 원문을 **그대로 사용**하세요.
+⛔⛔⛔ **아래 데이터는 교육과정에서 코드 레벨로 자동 추출한 확정 문구입니다. AI가 생성한 것이 아닙니다.**
+- "핵심아이디어" = 2022 개정 교육과정의 고유 항목. "수업의 핵심적인 아이디어"가 아님.
+- AI는 핵심아이디어를 **절대 자체 생성·요약·의역하지 마세요**. 아래 원문을 **한 글자도 바꾸지 않고** 사용.
+- 지식이해·과정기능도 아래 원문 그대로 사용.
 
 ${confirmedMappings.join('\n\n')}
 
-### 📋 사전 구축된 분석표 (AI는 이 표를 첫 응답에서 교사에게 그대로 보여주세요)
+### 📋 사전 구축된 분석표 (아래 표를 Step 1에서 그대로 출력하세요 — 셀 값 변경 금지)
 ${prebuiltTable}
-| **공통 (팀 조정)** | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) |`
+| **공통 (팀 조정)** | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) |
+
+⛔ 검증 규칙: AI가 출력한 표의 "핵심아이디어" 열 값이 위 표와 한 글자라도 다르면 오답입니다.`
     : ''
 
   const centerSection = centerNode
@@ -462,7 +553,7 @@ export function buildCurriculumContext(
 
   // A-2-1: 지식 그래프 저장 데이터 우선 사용
   if (activityCode === 'A-2-1' && graphSavedData) {
-    const ctx = buildGraphBasedA21Context(graphSavedData)
+    const ctx = buildGraphBasedA21Context(graphSavedData, gradeGroup)
     if (ctx) {
       const contentSystemContext = isContentSystemContextEnabled()
         ? buildContentSystemContext(

@@ -5,11 +5,10 @@ import type { GraphSavedData, SaveState } from './types'
 
 interface SaveButtonsProps {
   onSaveGraph?: (data: Omit<GraphSavedData, 'savedAt'>) => Promise<void>
-  onSendToChat?: (data: Omit<GraphSavedData, 'savedAt'>) => void | Promise<void>
   buildData: () => Omit<GraphSavedData, 'savedAt'>
 }
 
-export default function SaveButtons({ onSaveGraph, onSendToChat, buildData }: SaveButtonsProps) {
+export default function SaveButtons({ onSaveGraph, buildData }: SaveButtonsProps) {
   const [saveState, setSaveState] = useState<SaveState>('idle')
 
   async function handleSave() {
@@ -28,23 +27,33 @@ export default function SaveButtons({ onSaveGraph, onSendToChat, buildData }: Sa
   const saveLabel = saveState === 'saving' ? '저장 중…'
     : saveState === 'success' ? '✓ 저장 완료'
     : saveState === 'error' ? '✗ 저장 실패'
-    : '지식 그래프 저장'
+    : '지식 그래프·수업 예시 저장'
 
   const saveClass = saveState === 'success'
-    ? 'bg-[#2E7D32] hover:bg-[#2E7D32] cursor-default'
+    ? 'bg-[#2E7D32] hover:bg-[#2E7D32] cursor-default shadow-md'
     : saveState === 'error'
-    ? 'bg-[#C62828] hover:bg-[#C62828] cursor-default'
+    ? 'bg-[#C62828] hover:bg-[#C62828] cursor-default shadow-md'
     : saveState === 'saving'
-    ? 'bg-[#7B1FA2] opacity-70 cursor-not-allowed'
-    : 'bg-[#7B1FA2] hover:bg-[#6A1B9A]'
+    ? 'bg-gray-900 opacity-70 cursor-not-allowed shadow-md'
+    : 'bg-gray-900 hover:bg-gray-800 shadow-md'
 
   return (
-    <>
-      {onSaveGraph && (
+    onSaveGraph ? (
+      <div className="relative flex items-center">
+        <div className="absolute bottom-[calc(100%+12px)] right-0 w-[270px] rounded-2xl border border-gray-200 bg-white px-4 py-3 text-gray-700 shadow-lg">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 h-2.5 w-2.5 rounded-full bg-[#7B1FA2]" />
+            <div className="min-w-0">
+              <p className="text-[12px] font-bold leading-snug">이 버튼을 누르면 산출물 저장을 할 수 있어요</p>
+              <p className="mt-1 text-[11px] leading-snug text-gray-500">그래프와 수업 예시가 분석시트에 반영됩니다.</p>
+            </div>
+          </div>
+          <span className="absolute -bottom-2 right-9 h-4 w-4 rotate-45 border-b border-r border-gray-200 bg-white" />
+        </div>
         <button
           onClick={handleSave}
           disabled={saveState === 'saving'}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-[12px] font-bold shadow-lg transition-colors ${saveClass}`}
+          className={`relative flex items-center gap-2 px-5 py-3 rounded-2xl text-white text-[13px] font-bold transition-colors ${saveClass}`}
         >
           {saveState === 'saving' && (
             <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
@@ -54,15 +63,7 @@ export default function SaveButtons({ onSaveGraph, onSendToChat, buildData }: Sa
           )}
           {saveLabel}
         </button>
-      )}
-      {onSendToChat && (
-        <button
-          onClick={() => onSendToChat(buildData())}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1565C0] text-white text-[12px] font-bold shadow-lg hover:bg-[#0D47A1] transition-colors"
-        >
-          채팅으로 보내기
-        </button>
-      )}
-    </>
+      </div>
+    ) : null
   )
 }

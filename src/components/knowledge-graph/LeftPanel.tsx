@@ -1,8 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { DEFAULT_GRAPH_RELATION_TYPE } from '@/lib/knowledge-graph/domain'
-import type { GNode, GEdge, GraphRelationAnalysis, GraphPinnedStandard, RecommendedStandard } from './types'
+import type { GNode, GraphRelationAnalysis, GraphPinnedStandard, RecommendedStandard } from './types'
 import {
   SUBJECT_NAMES, RELATION_COLORS, subjectColor, subjectName, normCode,
   classifyRelation, hasCompletedRelationAnalysis, getRelationDisplayState, getRelationStatusMeta,
@@ -15,7 +14,6 @@ interface LeftPanelProps {
   centerNodeId: string | null
   isLeader: boolean
   rawNodes: GNode[]
-  nodesRef: React.MutableRefObject<GNode[]>
   visibleIds: Set<string>
   checkedStandards: Set<string>
   recommendedStandards: RecommendedStandard[]
@@ -40,7 +38,7 @@ interface LeftPanelProps {
 
 export default function LeftPanel({
   loading, claudeLoading, centerNodeId, isLeader,
-  rawNodes, nodesRef, visibleIds, checkedStandards,
+  rawNodes, visibleIds, checkedStandards,
   recommendedStandards, claudeRelations, recommendedCenterIds,
   pinnedStandards, subjectsWithResults,
   svgWidth, svgHeight, keyword, gradeGroup, algoMode, currentUserName,
@@ -100,11 +98,11 @@ export default function LeftPanel({
     : recommendedStandards
 
   return (
-    <div className="w-80 shrink-0 border-r border-gray-100 flex flex-col bg-gray-50 overflow-hidden">
+    <div className="w-[286px] shrink-0 border-r border-gray-200 flex flex-col bg-white overflow-hidden">
       {/* 헤더 */}
-      <div className="px-3 pt-3 pb-2 border-b border-gray-200 bg-[#F3E5F5]">
-        <div className="text-[11px] font-bold text-[#7B1FA2] mb-0.5">성취기준 추천</div>
-        <p className="text-[9px] text-[#9C27B0] leading-tight">AI 언급 우선 · 중심 노드 기준 유사도순</p>
+      <div className="px-4 pt-4 pb-3 border-b border-gray-200 bg-white">
+        <div className="text-[12px] font-bold text-gray-800 mb-0.5">연결 노드</div>
+        <p className="text-[10px] text-gray-400 leading-tight">시트에서 넘어온 노드를 켜고 끕니다</p>
       </div>
 
       {/* 관계 유형별 분포 바 (중심 노드 설정 후에만) */}
@@ -122,7 +120,7 @@ export default function LeftPanel({
         if (total === 0) return null
         const sorted = Object.entries(relCounts).sort((a, b) => b[1] - a[1])
         return (
-          <div className="px-2 py-1.5 border-b border-gray-200">
+          <div className="px-3 py-2 border-b border-gray-100">
             <div className="flex h-2 rounded-full overflow-hidden mb-1">
               {sorted.map(([rel, count]) => (
                 <div
@@ -134,7 +132,7 @@ export default function LeftPanel({
             </div>
             <div className="flex flex-wrap gap-x-2 gap-y-0.5">
               {sorted.map(([rel, count]) => (
-                <span key={rel} className="text-[8px] font-semibold" style={{ color: RELATION_COLORS[rel] ?? '#6B7280' }}>
+                <span key={rel} className="text-[8px] font-semibold text-gray-400">
                   {rel} {Math.round((count / total) * 100)}%
                 </span>
               ))}
@@ -144,11 +142,11 @@ export default function LeftPanel({
       })()}
 
       {/* 교과 필터 버튼 */}
-      <div className="px-2 py-1.5 border-b border-gray-200 flex flex-wrap gap-1">
+      <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap gap-1">
         <button
           onClick={() => setSubjectFilter(null)}
           className={`px-2 py-0.5 rounded-full text-[9px] font-semibold transition-colors border ${
-            subjectFilter === null ? 'bg-[#7B1FA2] text-white border-[#7B1FA2]' : 'text-gray-500 border-gray-200 hover:border-gray-300'
+            subjectFilter === null ? 'bg-gray-900 text-white border-gray-900' : 'text-gray-500 border-gray-200 hover:border-gray-300'
           }`}
         >전체</button>
         {Object.entries(SUBJECT_NAMES).map(([id, name]) => {
@@ -192,7 +190,7 @@ export default function LeftPanel({
       </div>
 
       {/* 상태 안내 */}
-      <div className="px-3 py-2 border-b border-gray-200">
+      <div className="px-4 py-2 border-b border-gray-100">
         {!centerNodeId ? (
           <div>
             <p className="text-[11px] text-gray-500">{isLeader ? '노드 우클릭 → 중심으로 설정하세요.' : '노드 우클릭 → 중심으로 추천하세요.'}</p>
@@ -208,7 +206,7 @@ export default function LeftPanel({
                       className="w-full flex items-center gap-2 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors text-left"
                     >
                       <span className="font-mono font-bold text-[11px]" style={{ color: subjectColor(rNode.subject_id) }}>{rNode.label}</span>
-                      <span className="text-[10px] text-amber-700 flex-1 truncate">✋ {recommender} 추천</span>
+                      <span className="text-[10px] text-amber-700 flex-1 truncate">{recommender} 추천</span>
                       <span className="text-[10px] text-amber-600 font-semibold shrink-0">설정</span>
                     </button>
                   )
@@ -217,12 +215,12 @@ export default function LeftPanel({
             )}
           </div>
         ) : (
-          <p className="text-[11px] text-[#9C27B0] font-semibold">중심 선택됨</p>
+          <p className="text-[11px] text-gray-600 font-semibold">중심 노드 선택됨</p>
         )}
       </div>
 
       {/* 추천 목록 */}
-      <div className="flex-1 overflow-y-auto py-2 space-y-1.5 px-2">
+      <div className="flex-1 overflow-y-auto py-2 space-y-1.5 px-3">
         {loading && <div className="text-[11px] text-gray-400 text-center py-4 animate-pulse">불러오는 중…</div>}
         {!loading && filteredStandards.length === 0 && (
           <div className="text-[11px] text-gray-400 text-center py-4">성취기준 없음</div>
@@ -251,10 +249,10 @@ export default function LeftPanel({
               className={`w-full text-left rounded-xl border transition-all cursor-pointer ${
                 isCenter
                   ? 'border-amber-400 bg-amber-50'
-                  : isSelected
-                  ? 'border-[#7B1FA2] bg-[#F3E5F5]/40 shadow-sm'
-                  : isVisible
-                  ? 'border-[#E1BEE7] bg-white shadow-sm hover:border-[#CE93D8]'
+                : isSelected
+                  ? 'border-gray-400 bg-gray-50 shadow-sm'
+                : isVisible
+                  ? 'border-gray-200 bg-white shadow-sm hover:border-gray-300'
                   : 'border-dashed border-gray-200 bg-white/60 opacity-50'
               }`}
               onClick={() => onSetSelectedCardId(isSelected ? null : n.id)}
@@ -266,7 +264,7 @@ export default function LeftPanel({
                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: color + '18', color }}>{subjectName(n.subject_id)}</span>
                   </div>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    {isCenter && <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">⭐ 중심</span>}
+                    {isCenter && <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">중심</span>}
                     {isAIMentioned && !isCenter && <span className="text-[10px] font-semibold text-[#7B1FA2] bg-[#F3E5F5] px-1.5 py-0.5 rounded-full">AI 언급</span>}
                     {score > 0.01 && !isCenter && <span className="text-[10px] font-bold text-gray-500">{Math.round(score * 100)}%</span>}
                     {effectiveRelation && !isCenter && (
@@ -278,7 +276,7 @@ export default function LeftPanel({
                     {centerNodeId && !isCenter && effectiveRelation && (
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${relationStatus.className}`}>{relationStatus.label}</span>
                     )}
-                    {!centerNodeId && isRecommendedCenter && <span className="text-[10px] text-amber-600 font-semibold">✋ 추천됨</span>}
+                    {!centerNodeId && isRecommendedCenter && <span className="text-[10px] text-amber-600 font-semibold">추천됨</span>}
                   </div>
                 </div>
                 <button
@@ -301,7 +299,6 @@ export default function LeftPanel({
                   <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all" style={{ left: isVisible ? '15px' : '2px' }} />
                 </button>
               </div>
-              {n.text && <p className="px-3 pb-2.5 text-[11px] text-gray-500 leading-relaxed line-clamp-2">{n.text}</p>}
             </div>
           )
         })}

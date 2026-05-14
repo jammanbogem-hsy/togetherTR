@@ -2,18 +2,16 @@
  * A-2-1 핵심아이디어 선정 API
  * ─────────────────────────────
  * 중심 성취기준의 핵심아이디어 목록과 연관 성취기준들을 받아,
- * Claude API를 통해 가장 밀접한 핵심아이디어를 선정하고
- * 지식·이해 / 과정·기능 / 가치·태도 분석 초안을 반환합니다.
+ * 교육과정 DB 원문에 있는 핵심아이디어 / 지식·이해 / 과정·기능 /
+ * 가치·태도만 반환합니다.
  */
 
-import OpenAI from 'openai'
 import { loadGraph } from '@/lib/curriculum/graphReader'
+import { isElementaryGradeGroup, loadContentSystems, loadElementaryContentSystems } from '@/lib/curriculum/contentSystemReader'
 import type { GraphCenterNode, GraphRelationType, GraphSelectedStandard } from '@/lib/knowledge-graph/domain'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
-
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 interface CoreIdeaResult {
   subjectId: string
@@ -35,11 +33,51 @@ interface StandardAnalysis {
   isCenterStandard: boolean
 }
 
+function normalizeCurriculumText(value: string): string {
+  return value.replace(/\s+/g, '').replace(/[·⋅]/g, '⋅').trim()
+}
+
+function curriculumTextMatches(a: string, b: string): boolean {
+  const na = normalizeCurriculumText(a)
+  const nb = normalizeCurriculumText(b)
+  if (!na || !nb) return false
+  return na === nb || na.includes(nb) || nb.includes(na)
+}
+
+function filterByGrade(items: string[], gradeGroup?: string): string[] {
+  if (!gradeGroup) return items
+  const needle = gradeGroup.replace(/^초/, '').replace(/~/g, '-').trim()
+  if (!needle) return items
+  const prefixed = items.filter(item => /^\d+-\d+학년군:/.test(item))
+  if (prefixed.length === 0) return items
+  return prefixed.filter(item => item.includes(needle))
+}
+
+function isSelectionCurriculum(curriculum: string): boolean {
+  return curriculum.trim().startsWith('선택 중심 교육과정')
+}
+
+function scoreChoice(choice: string, query: string): number {
+  const queryTokens = new Set((query.match(/[가-힣A-Za-z0-9]+/g) ?? []).map(token => token.toLowerCase()))
+  return (choice.match(/[가-힣A-Za-z0-9]+/g) ?? [])
+    .map(token => token.toLowerCase())
+    .reduce((score, token) => score + (queryTokens.has(token) ? 3 : [...queryTokens].some(q => q.includes(token) || token.includes(q)) ? 1 : 0), 0)
+}
+
+function selectDbCoreIdea(ideas: string[], query: string): string {
+  const candidates = [...new Set(ideas.filter(Boolean))]
+  if (candidates.length <= 1) return candidates[0] ?? ''
+  return candidates
+    .map(idea => ({ idea, score: scoreChoice(idea, query) }))
+    .sort((a, b) => b.score - a.score)[0]?.idea ?? candidates[0]
+}
+
 export async function POST(request: Request) {
   try {
-    const { centerNode, selectedStandards }: {
+    const { centerNode, selectedStandards, targetGradeGroup }: {
       centerNode: GraphCenterNode | null
       selectedStandards: GraphSelectedStandard[]
+      targetGradeGroup?: string
     } = await request.json()
 
     if (!centerNode && selectedStandards.length === 0) {
@@ -98,77 +136,85 @@ export async function POST(request: Request) {
       .map(s => `• ${s.label} (${subjectNameMap.get(s.subjectId) ?? s.subjectId}${s.relationType ? `, ${s.relationType}` : ''}): "${s.text}"`)
       .join('\n')
 
-    const coreIdeasSection = [...subjectCoreIdeasMap.entries()]
-      .map(([subjId, ideas]) => {
-        const name = subjectNameMap.get(subjId) ?? subjId
-        return `[${name} 핵심아이디어 후보]\n${ideas.map((idea, i) => `  ${i + 1}. ${idea}`).join('\n')}`
+    // ─── 내용체계 데이터에서 지식·이해 / 과정·기능 원문 로드 ───
+    const csRecords = isElementaryGradeGroup(targetGradeGroup)
+      ? loadElementaryContentSystems()
+      : loadContentSystems()
+
+    function getContentSystemForSubject(subjectId: string, area: string) {
+      const subjName = subjectNameMap.get(subjectId) ?? ''
+      const match = csRecords.find(r =>
+        !isSelectionCurriculum(r.curriculum) &&
+        (r.subject.includes(subjName) || subjName.includes(r.subject)) &&
+        curriculumTextMatches(r.area, area)
+      )
+      return match ? {
+        knowledge: filterByGrade(match.knowledge, targetGradeGroup),
+        functions: filterByGrade(match.functions, targetGradeGroup),
+        attitudes: filterByGrade(match.attitudes, targetGradeGroup),
+      } : null
+    }
+
+    // ─── 코드 레벨에서 핵심아이디어 확정 (AI 선택 아님) ───
+    // 핵심아이디어는 교육과정에 제시된 확정 문구이므로 AI가 선택·생성하는 것이 아님.
+    // core_idea_id 매핑으로 확정된 첫 번째 핵심아이디어를 사용.
+    const coreIdeas: CoreIdeaResult[] = []
+    const subjectSelectedMap = new Map<string, string>()
+
+    for (const subjectId of subjectIdSet) {
+      const std = allStandards.find(item => item.subjectId === subjectId)
+      const dbIdeas = subjectCoreIdeasMap.get(subjectId) ?? []
+      const graphStd = graph.achievementStandards.find(item => item.id === std?.id)
+      const selected = selectDbCoreIdea(dbIdeas, `${graphStd?.text ?? std?.text ?? ''} ${graphStd?.area ?? ''}`) || '(핵심아이디어 미매핑)'
+      subjectSelectedMap.set(subjectId, selected)
+      coreIdeas.push({
+        subjectId,
+        subjectName: subjectNameMap.get(subjectId) ?? subjectId,
+        selectedIdea: selected,
+        allIdeas: dbIdeas,
+        justification: '교육과정 데이터에서 성취기준 코드로 직접 매핑된 핵심아이디어',
       })
-      .join('\n\n')
-
-    const prompt = `당신은 교육과정 전문가입니다. 아래 정보를 바탕으로 JSON을 정확히 반환하세요.
-
-## 분석 대상
-
-${centerText}
-
-연관 성취기준:
-${connectedText || '(없음)'}
-
-## 교과별 핵심아이디어 후보
-
-${coreIdeasSection}
-
-## 요청 사항
-
-1. **핵심아이디어 선정**: 각 교과별로 후보 핵심아이디어 중 중심 성취기준 + 연관 성취기준들과 가장 밀접하게 부합하는 핵심아이디어 1개를 선정하세요. 특히 중심 성취기준 교과의 핵심아이디어는 이 통합 수업 전체를 관통하는 개념을 담아야 합니다.
-
-2. **성취기준별 분석**: 각 성취기준(중심 + 연관)에 대해 아래 3요소를 **루브릭 기준으로 활용 가능한 수준**으로 서술하세요:
-   - 지식·이해: 학생이 알아야 할 핵심 개념·원리 (명사구, 지필 평가 기준 수준, 2-3항목)
-   - 과정·기능: "~하기" 형식의 수행 동사 (수행평가 행동 지표 수준, 2-3개)
-   - 가치·태도: 이 학습을 통해 기대되는 정의적 요소 (루브릭 태도 영역 기준 수준, 1-2항목)
-
-반드시 아래 JSON 형식으로만 응답하세요:
-
-{
-  "coreIdeas": [
-    {
-      "subjectId": "교과 ID",
-      "subjectName": "교과명",
-      "selectedIdea": "선정된 핵심아이디어 원문",
-      "allIdeas": ["후보1", "후보2"],
-      "justification": "선정 이유 1-2문장"
     }
-  ],
-  "standardAnalyses": [
-    {
-      "standardId": "성취기준 ID",
-      "standardLabel": "성취기준 코드",
-      "subjectName": "교과명",
-      "isCenterStandard": true,
-      "coreIdea": "이 성취기준에 해당하는 선정된 핵심아이디어 원문 (위 coreIdeas 중 같은 교과의 selectedIdea와 동일해야 함)",
-      "knowledgeUnderstanding": ["개념1", "개념2"],
-      "processFunction": ["~하기1", "~하기2"],
-      "valueAttitude": ["태도1"],
-      "relationType": null
-    }
-  ]
-}`
 
-    const completion = await client.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 2000,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [{ role: 'user', content: prompt }],
+    void centerText
+    void connectedText
+
+    const standardAnalyses: StandardAnalysis[] = allStandards.map(std => {
+      const graphStd = graph.achievementStandards.find(item => item.id === std.id)
+      const area = graphStd?.area ?? ''
+      const cs = getContentSystemForSubject(std.subjectId, area)
+      const sameAreaStandards = graph.achievementStandards
+        .filter(item =>
+          item.subject_id === std.subjectId &&
+          curriculumTextMatches(item.area, area) &&
+          (!targetGradeGroup || (item.grade_band ?? '').includes(targetGradeGroup.replace(/^초/, '').replace(/~/g, '-')))
+        )
+        .sort((a, b) => a.code.localeCompare(b.code))
+      const standardIndex = sameAreaStandards.findIndex(item => item.id === std.id)
+      const knowledge = cs?.knowledge ?? []
+      const functions = cs?.functions ?? []
+      const attitudes = cs?.attitudes ?? []
+
+      return {
+        standardId: std.id,
+        standardLabel: std.label,
+        subjectName: subjectNameMap.get(std.subjectId) ?? std.subjectId,
+        coreIdea: subjectSelectedMap.get(std.subjectId) ?? '(핵심아이디어 미매핑)',
+        knowledgeUnderstanding: standardIndex >= 0 && knowledge.length === sameAreaStandards.length
+          ? [knowledge[standardIndex]].filter(Boolean)
+          : knowledge.slice(0, 4),
+        processFunction: standardIndex >= 0 && functions.length === sameAreaStandards.length
+          ? [functions[standardIndex]].filter(Boolean)
+          : functions.slice(0, 3),
+        valueAttitude: standardIndex >= 0 && attitudes.length === sameAreaStandards.length
+          ? [attitudes[standardIndex]].filter(Boolean)
+          : attitudes.slice(0, 2),
+        relationType: ('relationType' in std ? std.relationType : undefined) as GraphRelationType | undefined,
+        isCenterStandard: std.id === centerNode?.id,
+      }
     })
 
-    const raw = completion.choices[0]?.message?.content ?? '{}'
-    const parsed = JSON.parse(raw) as {
-      coreIdeas: CoreIdeaResult[]
-      standardAnalyses: StandardAnalysis[]
-    }
-
-    return Response.json(parsed)
+    return Response.json({ coreIdeas, standardAnalyses })
   } catch (err) {
     console.error('[analyze/a21]', err)
     return Response.json({ error: 'analysis failed' }, { status: 500 })

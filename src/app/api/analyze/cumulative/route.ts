@@ -26,7 +26,48 @@ const STAGE_DESCRIPTIONS: Record<string, string> = {
   DI: '개발 자료 목록 수립',
 }
 
+function reportTableCell(value?: string): string {
+  const cleaned = (value || '-')
+    .replace(/&(?:#124|124);/g, ' / ')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s*\|\s*/g, ' / ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || '-'
+}
+
 function renderArtifactContent(content: Record<string, unknown>): string {
+  if (content._schema === 'A-2-1' && Array.isArray(content.rows)) {
+    const rows = content.rows as Array<{
+      subject?: string
+      coreIdea?: string
+      standard?: string
+      knowledgeUnderstanding?: string
+      processFunction?: string
+      agentLessonExample?: string
+      description?: string
+    }>
+    const table = [
+      '| 교과 | 핵심 아이디어 | 성취기준 | 지식·이해 | 과정·기능 | Agent 추천 수업아이디어 | 수업내용 설명 |',
+      '| --- | --- | --- | --- | --- | --- | --- |',
+      ...rows.map(row => `| ${[
+        row.subject,
+        row.coreIdea,
+        row.standard,
+        row.knowledgeUnderstanding,
+        row.processFunction,
+        row.agentLessonExample,
+        row.description,
+      ].map(reportTableCell).join(' | ')} |`),
+    ].join('\n')
+    const hasRowAgentIdeas = rows.some(row => row.agentLessonExample?.trim())
+    const agentLessonIdeas = !hasRowAgentIdeas && typeof content.agentLessonIdeas === 'string' && content.agentLessonIdeas.trim()
+      ? `\n\n**Agent 추천 수업아이디어**\n\n${content.agentLessonIdeas.trim()}`
+      : ''
+    return `**성취기준분석표**\n\n${table}${agentLessonIdeas}`
+  }
+
   return Object.entries(content)
     .filter(([, v]) => v !== null && v !== undefined && v !== '')
     .map(([k, v]) => {
