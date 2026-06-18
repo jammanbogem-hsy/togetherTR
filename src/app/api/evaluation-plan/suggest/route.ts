@@ -1,0 +1,195 @@
+import Anthropic from '@anthropic-ai/sdk'
+import { recoverTruncatedJson } from '@/lib/llm/recoverJson'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+// Ds-1-1 "평가 계획 수립" 산출물용 AI 제안 API. (2-mode + basedOn + customPrompts)
+//  - artifact: 채팅에서 이미 생성된 Ds-1-1 산출물(existingArtifact)을 출발점으로 정교화
+//  - chat:    빈 워크스페이스 — 팀 채팅 대화(chatContext)에서 평가 아이디어 단서를 읽고 반영
+// Backward Design: A-2-2 통합 수업목표 ↔ 루브릭 항목 1:1 대응 필수.
+
+export interface EvaluationPlanRubricRow {
+  item: string
+  method: string
+  timing: string
+  high: string
+  mid: string
+  low: string
+}
+
+export interface EvaluationPlanSuggestRequest {
+  projectTitle?: string
+  targetGradeGroup?: string
+  targetSubjects?: string[]
+  /** 이전 단계 산출물 */
+  integratedGoal?: string          // A-2-2 통합 수업목표
+  subjectGoals?: Array<{ subject: string; goal: string }>  // A-2-2 교과별 목표
+  learnerProfile?: string          // A-2-3 학습자·맥락 요약
+  /** 현재 워크스페이스 초안 */
+  currentDraft?: { rubric?: EvaluationPlanRubricRow[] }
+  mode?: 'artifact' | 'chat'
+  existingArtifact?: { rubric?: Array<Partial<EvaluationPlanRubricRow>> }
+  chatContext?: Array<{ role: 'user' | 'assistant' | string; content: string; displayName?: string }>
+  customPrompts?: Array<{ teacherName: string; text: string }>
+}
+
+export interface EvaluationPlanSuggestResult {
+  rubric: EvaluationPlanRubricRow[]
+  rationale?: string
+  basedOn?: {
+    mode: 'artifact' | 'chat'
+    summary: string
+    references?: Array<{ source: string; text: string }>
+  }
+}
+
+const SYSTEM_PROMPT = `당신은 초·중등 협력적 수업설계의 평가 계획 코치입니다.
+Ds-1-1 "평가 계획 수립" 산출물의 추천 형식(상/중/하 3단계 루브릭 표)에 맞춰 두 가지 모드 중 하나로 제안합니다.
+
+[mode='artifact'] — 채팅에서 이미 만들어진 산출물(existingArtifact)이 출발점입니다. 각 평가 항목을 존중하되, 모호하거나 상/중/하 기준이 불명확한 부분을 정교화하고, 누락된 결과 평가·과정 평가 관점이 있으면 1-2개 보강합니다.
+
+[mode='chat'] — 빈 워크스페이스에서 시작합니다. 팀 채팅 대화(chatContext)에서 어떤 평가 아이디어·성공 기준·과정 요소가 언급됐는지 읽고, A-2-2 통합 수업목표와 결합해 루브릭 초안을 작성합니다.
+
+반드시 아래 JSON 형식으로만 응답하세요. JSON 이외의 텍스트는 절대 포함하지 마세요.
+
+{
+  "rubric": [
+    { "item": "평가 항목 (수업목표와 연결)", "method": "평가 방법 — (평가자) 교사평가/동료평가/자기평가 + (과제 유형) 포트폴리오/서논술형/구술발표/토의토론/프로젝트/실험실습 등. ※루브릭은 평가 방법이 아니라 채점 기준표이므로 method에 쓰지 말 것", "timing": "평가 시점(과정/결과)", "high": "상 수준 수행 기술", "mid": "중 수준 수행 기술", "low": "하 수준 수행 기술" }
+  ],
+  "rationale": "이 루브릭이 A-2-2 수업목표와 어떻게 연결되는지 1-2문장 (선택)",
+  "basedOn": {
+    "mode": "artifact 또는 chat",
+    "summary": "이 제안이 무엇에 근거했는지 2-3문장. 채팅 모드면 '~팀원이 ~을 강조한 흐름을 반영', 산출물 모드면 '기존 산출물의 ~항목을 정교화' 식.",
+    "references": [ { "source": "채팅: 김나희 / 산출물: 항목2 등", "text": "구체 인용 한두 줄" } ]
+  }
+}
+
+작성 규칙:
+- 각 평가 항목은 A-2-2의 각 수업목표와 1:1 대응. 모든 수업목표가 빠짐없이 1개 이상의 평가 항목으로 등장.
+- 결과 평가(최종 산출물)와 과정 평가(탐색·협의·자기점검 등)가 모두 포함되어야 함.
+- [루브릭 개념] 이 표 자체가 '루브릭(채점 기준표)'입니다. 루브릭은 평가 방법이 아니라, 어떤 평가 방법으로 모은 학생 수행을 채점하는 기준 도구입니다. 따라서 method에는 '루브릭'을 적지 말고, 평가자(교사/동료/자기)와 과제 유형(포트폴리오/서논술형/구술발표/토의토론/프로젝트/실험실습 등)을 적습니다.
+- [상/중/하 기술] 인지 수준(이해도·사고 깊이: '통합적 이해/부분적 이해/미흡한 이해' 등)으로 구분하지 마세요. 대신 과제 수행 정도(완성도·정확성·참여·적용)를 관찰 가능한 학생 행동으로, 다음 단계로 성장할 수 있는 성장중심 피드백의 기준이 되도록 기술합니다.
+- 추상적 표현('열심히 함') 금지.
+- 학습자 다양성(learnerProfile)을 고려해 평가 접근성을 반영.
+- 항목 수는 과도하지 않게(통상 4~7개). 실제 차시 수업에서 운영 가능한 수준.
+- 본문에 마크다운·코드 블록·추가 설명 절대 금지 (JSON만).
+- 존중하는 동료 교사 어조.
+`
+
+function resolveMode(body: EvaluationPlanSuggestRequest): 'artifact' | 'chat' {
+  if (body.mode) return body.mode
+  return (body.existingArtifact?.rubric && body.existingArtifact.rubric.length > 0) ? 'artifact' : 'chat'
+}
+
+function buildUserPrompt(body: EvaluationPlanSuggestRequest, mode: 'artifact' | 'chat'): string {
+  const lines: string[] = []
+  lines.push(`### 모드: ${mode}`)
+  lines.push(mode === 'artifact'
+    ? '→ 기존 산출물을 출발점으로 보강·정교화합니다. basedOn에 어느 항목을 어떻게 다듬었는지 인용하세요.'
+    : '→ 빈 워크스페이스 초안입니다. 채팅 대화에서 누가 무엇을 언급했는지 읽고 반영하세요.')
+  lines.push('')
+
+  if (body.projectTitle || body.targetGradeGroup || (body.targetSubjects && body.targetSubjects.length)) {
+    lines.push('### 프로젝트 메타')
+    if (body.projectTitle) lines.push(`- 제목: ${body.projectTitle}`)
+    if (body.targetGradeGroup) lines.push(`- 학년군: ${body.targetGradeGroup}`)
+    if (body.targetSubjects?.length) lines.push(`- 교과: ${body.targetSubjects.join(', ')}`)
+    lines.push('')
+  }
+  if (body.integratedGoal?.trim()) {
+    lines.push('### A-2-2 통합 수업목표 (루브릭과 1:1 대응)')
+    lines.push(body.integratedGoal.trim())
+    lines.push('')
+  }
+  if (body.subjectGoals?.length) {
+    lines.push('### A-2-2 교과별 수업목표')
+    for (const sg of body.subjectGoals) {
+      if (!sg.subject && !sg.goal) continue
+      lines.push(`- ${sg.subject || '(교과)'}: ${sg.goal || ''}`)
+    }
+    lines.push('')
+  }
+  if (body.learnerProfile?.trim()) {
+    lines.push('### A-2-3 학습자·맥락 (평가 접근성 고려)')
+    lines.push(body.learnerProfile.trim().slice(0, 800))
+    lines.push('')
+  }
+  if (mode === 'artifact' && body.existingArtifact?.rubric && body.existingArtifact.rubric.length > 0) {
+    lines.push('### 채팅에서 만들어진 기존 산출물 (출발점 — 이 항목들을 정교화)')
+    body.existingArtifact.rubric.forEach((r, idx) => {
+      lines.push(`- 항목${idx + 1}: ${r.item ?? ''} / 방법:${r.method ?? ''} / 시점:${r.timing ?? ''} / 상:${r.high ?? ''} / 중:${r.mid ?? ''} / 하:${r.low ?? ''}`)
+    })
+    lines.push('')
+  }
+  if (mode === 'chat' && body.chatContext && body.chatContext.length > 0) {
+    lines.push('### 팀 채팅 대화 (시간순)')
+    for (const msg of body.chatContext) {
+      const speaker = msg.role === 'assistant' ? 'AI' : (msg.displayName?.trim() || '팀원')
+      const text = (msg.content ?? '').trim().slice(0, 500)
+      if (text) lines.push(`- [${speaker}] ${text}`)
+    }
+    lines.push('')
+  }
+  if (body.currentDraft?.rubric?.length) {
+    const meaningful = body.currentDraft.rubric.filter(r => r.item?.trim() || r.method?.trim())
+    if (meaningful.length > 0) {
+      lines.push('### 현재 워크스페이스 초안 (중복/누락 참고)')
+      for (const r of meaningful) lines.push(`- ${r.item || '(항목 미작성)'} / ${r.method || ''}`)
+      lines.push('')
+    }
+  }
+  if (body.customPrompts && body.customPrompts.length > 0) {
+    const meaningful = body.customPrompts.filter(p => (p.text ?? '').trim().length > 0)
+    if (meaningful.length > 0) {
+      lines.push('### 팀원별 추가 요청 (협업 프롬프트 — 각 팀원이 자기 의견을 직접 적은 것)')
+      lines.push('이 의견들을 모두 의미 있게 반영하되, 충돌하면 다수 의견 또는 수업목표와의 정합성을 우선으로 합의안을 만드세요. basedOn에 어떤 팀원의 의견을 어떻게 반영했는지 명시하세요.')
+      for (const p of meaningful) lines.push(`- ${p.teacherName || '팀원'}: ${p.text.trim()}`)
+      lines.push('')
+    }
+  }
+  lines.push('위 정보를 종합하여 평가 계획(루브릭) 산출물 형식의 JSON으로만 응답하세요. basedOn 필드를 반드시 채우세요.')
+  return lines.join('\n')
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as EvaluationPlanSuggestRequest
+    const hasContext = !!body.integratedGoal?.trim() ||
+      !!(body.subjectGoals && body.subjectGoals.length > 0) ||
+      !!(body.currentDraft?.rubric && body.currentDraft.rubric.length > 0) ||
+      !!(body.existingArtifact?.rubric && body.existingArtifact.rubric.length > 0) ||
+      !!(body.chatContext && body.chatContext.length > 0)
+    if (!hasContext) {
+      return Response.json({ error: 'A-2-2 통합 수업목표가 아직 준비되지 않아 평가 계획을 제안할 수 없습니다.' }, { status: 400 })
+    }
+    const mode = resolveMode(body)
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: buildUserPrompt(body, mode) }],
+    })
+    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+    const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\})/)
+    const jsonStr = jsonMatch ? jsonMatch[1] ?? jsonMatch[0] : rawText
+    let result: EvaluationPlanSuggestResult
+    try {
+      result = JSON.parse(jsonStr.trim()) as EvaluationPlanSuggestResult
+    } catch {
+      // max_tokens 초과 등으로 JSON이 잘린 경우 — 마지막 완결 객체까지만 복구 시도.
+      const recovered = recoverTruncatedJson(jsonStr.trim())
+      if (!recovered) {
+        return Response.json({ error: 'AI 응답이 잘려 JSON으로 파싱하지 못했습니다. 다시 시도해 주세요.' }, { status: 500 })
+      }
+      result = recovered as EvaluationPlanSuggestResult
+    }
+    result.rubric = Array.isArray(result.rubric) ? result.rubric : []
+    return Response.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return Response.json({ error: msg }, { status: 500 })
+  }
+}

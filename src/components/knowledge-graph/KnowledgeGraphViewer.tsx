@@ -526,10 +526,23 @@ export default function KnowledgeGraphViewer({
   }, [rawNodes])
 
   // ── 노드 추가 헬퍼 ──────────────────────────────────────────────────
+  const autoAnalyzeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const addNode = useCallback((newNode: GNode) => {
     nodesRef.current = [...nodesRef.current, newNode]
     setRawNodes(prev => [...prev, newNode])
-  }, [setRawNodes])
+    // 중심 노드가 있으면 추가된 노드의 관계를 자동 재분석한다 (수동 '노드 재분석' 클릭 불필요).
+    // 디바운스로 연속 추가를 한 번에 묶고, runAnalysis가 lastAnalyzedNodeCountRef를 현재 수로
+    // 갱신하므로 변경 감지 effect가 재트리거되지 않아 루프가 없다.
+    if (isLeader && centerNodeId) {
+      if (autoAnalyzeTimerRef.current) clearTimeout(autoAnalyzeTimerRef.current)
+      autoAnalyzeTimerRef.current = setTimeout(() => {
+        autoAnalyzeTimerRef.current = null
+        setNodesChangedAfterAnalysis(false)
+        runAnalysis(centerNodeId)
+      }, 1200)
+    }
+  }, [setRawNodes, isLeader, centerNodeId, runAnalysis])
+  useEffect(() => () => { if (autoAnalyzeTimerRef.current) clearTimeout(autoAnalyzeTimerRef.current) }, [])
 
   // ── 이벤트 핸들러 ────────────────────────────────────────────────────
   const onNodeClick = useCallback((node: GNode) => {

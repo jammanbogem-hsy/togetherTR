@@ -96,17 +96,13 @@ function cosineSim(a: number[], b: number[]): number {
 // 쿼리 임베딩 인메모리 캐시 (동일 키워드 재요청 방지)
 const _queryEmbCache = new Map<string, number[]>()
 
-// 환경에 따라 경로 탐색 (초등 그래프 우선)
+// [strict-elementary 2026-05-14] 이 웹앱은 초등 전용 — multi(중·고 포함) 그래프 fallback 제거.
+// Why: 사용자 보고로 초등 프로젝트에 중학교 내용("대푯값/도수분포/경우의 수와 확률") 매핑됨.
 function findGraphPath(): string | null {
   const candidates = [
-    // public 폴더 (배포 환경 최우선)
     path.join(process.cwd(), 'public/elementary_knowledge_graph.json'),
-    // 프로젝트 내 data 폴더
     path.join(process.cwd(), 'data/elementary_knowledge_graph.json'),
-    // 로컬 개발 환경
     path.join(process.cwd(), '../교육과정/curri/output/elementary_knowledge_graph.json'),
-    // 폴백: 전체 그래프
-    path.join(process.cwd(), '../교육과정/curri/output/knowledge_graph_multi.json'),
     path.join(process.cwd(), 'public', 'elementary_knowledge_graph.json'),
   ]
   for (const p of candidates) {
@@ -115,15 +111,35 @@ function findGraphPath(): string | null {
   return null
 }
 
+// 초등 판정: 비어 있거나(메타 부족 표준 허용 X — strict 모드에서 명시 안 된 것은 제외) 정확히 초등 접두사
+function isElementaryLevel(schoolLevel?: string, gradeBand?: string): boolean {
+  // school_level이 있으면 그것이 진실의 근원
+  if (schoolLevel) return /^초/.test(schoolLevel)
+  // school_level이 없으면 grade_band로 판단 (초1-2/초3-4/초5-6)
+  if (gradeBand) return /^초/.test(gradeBand)
+  // 둘 다 없으면 strict 모드에서는 제외
+  return false
+}
+
 export function loadGraph(): KnowledgeGraph | null {
-  if (_cache && Date.now() - _cacheAt < TTL) return _cache
+  // [2026-05-14] dev 환경에선 매번 reload (JSON 수정 즉시 반영). prod는 TTL 캐시 유지.
+  const cacheActive = process.env.NODE_ENV !== 'development' && _cache && Date.now() - _cacheAt < TTL
+  if (cacheActive) return _cache
 
   const graphPath = findGraphPath()
   if (!graphPath) return null
 
   try {
     const raw = fs.readFileSync(graphPath, 'utf-8')
-    _cache = JSON.parse(raw) as KnowledgeGraph
+    const parsed = JSON.parse(raw) as KnowledgeGraph
+    // [strict-elementary] 안전망: 그래프 파일에 비초등 항목이 섞여 있어도 강제 제거
+    if (Array.isArray(parsed.achievementStandards)) {
+      parsed.achievementStandards = parsed.achievementStandards.filter(s => isElementaryLevel(s.school_level, s.grade_band))
+    }
+    if (Array.isArray(parsed.links_cross_subject)) {
+      parsed.links_cross_subject = parsed.links_cross_subject.filter(l => isElementaryLevel(undefined, l.grade_band))
+    }
+    _cache = parsed
     _cacheAt = Date.now()
     return _cache
   } catch {

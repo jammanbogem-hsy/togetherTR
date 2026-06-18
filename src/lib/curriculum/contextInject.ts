@@ -305,17 +305,20 @@ ${formatStandards(standards, true)}
       const allFunctions = [...new Set(standards.flatMap(s => s.functions ?? []))].filter(Boolean)
       const allConcepts  = [...new Set(standards.flatMap(s => s.concepts  ?? []))].filter(Boolean)
 
-      return `## 🎯 온톨로지 기반 통합 목표 수립 근거 (A-2-2)
+      return `## 🎯 온톨로지 기반 통합 목표 보조 참고 (A-2-2)
 
-관련 성취기준:
+⚠️ **최우선 근거는 "이전 활동 산출물" 섹션의 A-2-1 산출물**. 아래는 채팅 키워드 기반 ontology 검색 결과(보조 참고용)이며, A-2-1에서 팀이 선택한 성취기준과 다를 수 있다.
+⚠️ 이전 활동 산출물(A-2-1) 브리핑·인용 요청에는 절대 아래 키워드 기반 후보를 사용하지 말 것. A-2-1 산출물의 실제 성취기준 코드와 핵심아이디어를 그대로 인용하라.
+
+키워드 매칭 성취기준 후보(채팅 키워드 기반, 보조):
 ${formatStandards(standards)}
 
-통합 목표 작성에 활용할 요소:
-• 통합 가능 기능: ${allFunctions.join(', ') || '(성취기준 원문에서 동사구 추출 필요)'}
-• 통합 가능 개념: ${allConcepts.join(', ') || '(성취기준 원문에서 명사구 추출 필요)'}
+통합 목표 작성에 활용할 후보 요소(보조):
+• 통합 가능 기능 후보: ${allFunctions.join(', ') || '(성취기준 원문에서 동사구 추출 필요)'}
+• 통합 가능 개념 후보: ${allConcepts.join(', ') || '(성취기준 원문에서 명사구 추출 필요)'}
 
 ▶ "~을 이해하고 ~할 수 있다" ABCD 목표 형식으로 통합하세요.
-▶ 모든 교과의 성취기준이 포함되어야 융합 수업으로 인정됩니다.`
+▶ A-2-1에서 합의된 모든 교과의 성취기준이 포함되어야 융합 수업으로 인정됩니다.`
     }
 
     case 'A-2-3': {
@@ -369,10 +372,8 @@ function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): 
   const allStdIds = [centerNode?.id, ...selectedStandards.map(s => s.id)].filter(Boolean) as string[]
   const subjectIdSet = new Set([centerNode?.subjectId, ...selectedStandards.map(s => s.subjectId)].filter(Boolean) as string[])
 
-  // 내용체계 리더 (지식이해/과정기능/가치태도 원문 조회용)
-  const csRecords = isElementaryGradeGroup(gradeGroup)
-    ? loadElementaryContentSystems()
-    : loadContentSystems()
+  // [strict-elementary 2026-05-14] 초등 전용 웹앱 — gradeGroup과 무관하게 초등 데이터만 사용.
+  const csRecords = loadElementaryContentSystems()
 
   function getContentSystemForArea(subjectId: string, area: string) {
     const subjName = subjectNameMap.get(subjectId) ?? ''

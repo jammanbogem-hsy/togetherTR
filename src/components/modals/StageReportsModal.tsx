@@ -42,6 +42,20 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
     )
     .join('\n')
 
+  // 분석시트 변경 감지 — 보고서가 현재 분석시트를 반영하는지 "내용 기반"으로 판정 (A 분석 보고서).
+  // 타임스탬프 대신 본문 교과 비교를 쓰는 이유: updatedAt은 재저장(replace-all/set-center)만 해도
+  // 전 행에 찍혀 false-positive가 잦다. 본문 비교는 실제 교과 추가/삭제만 잡는다.
+  const SHEET_SUBJECTS = ['국어', '수학', '과학', '사회', '도덕', '미술', '음악', '체육', '영어', '실과']
+  const sheetRows = project?.curriculumSheet ?? []
+  const currentSubjects = [...new Set(sheetRows.map(r => r.subject).filter(Boolean))]
+  const currentCenter = sheetRows.find(r => r.isCenter)?.subject ?? ''
+  const reportText = selectedReport?.content ?? ''
+  const subjectsInReport = SHEET_SUBJECTS.filter(s => reportText.includes(s))
+  const addedNotInReport = currentSubjects.filter(s => !subjectsInReport.includes(s))      // 시트엔 있으나 보고서엔 없음 (예: 미술 추가)
+  const removedStillInReport = subjectsInReport.filter(s => !currentSubjects.includes(s))   // 보고서엔 있으나 시트엔 없음 (예: 도덕 삭제)
+  const reportStale = !!selectedReport && selectedStage === 'A' && currentSubjects.length > 0
+    && (addedNotInReport.length > 0 || removedStillInReport.length > 0)
+
   function formatDate(ts: number) {
     return new Date(ts).toLocaleDateString('ko-KR', {
       year: 'numeric', month: 'long', day: 'numeric',
@@ -245,6 +259,18 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
                 {formatDate(selectedReport!.savedAt)}
               </span>
             </div>
+
+            {/* 분석시트 변경 감지 — 내용 불일치 경고 */}
+            {reportStale && (
+              <div className="px-6 py-3 bg-[#FEF7E0] border-b border-[#FFE082]">
+                <p className="text-[12px] font-bold text-[#B06000]">⚠ 이 보고서가 현재 분석시트와 일치하지 않습니다 — 보고서를 다시 생성해야 최신 교과·중심 교과가 반영됩니다.</p>
+                <p className="text-[11px] text-[#7A5200] mt-1">
+                  {addedNotInReport.length > 0 && <>추가됨: {addedNotInReport.join('·')} · </>}
+                  {removedStillInReport.length > 0 && <>삭제됨: {removedStillInReport.join('·')} · </>}
+                  현재 분석시트 — 교과: {currentSubjects.join('·')}{currentCenter ? ` · 중심 교과: ${currentCenter}` : ''}
+                </p>
+              </div>
+            )}
 
             {/* 마크다운 */}
             <div className="px-10 py-7" ref={contentRef}>

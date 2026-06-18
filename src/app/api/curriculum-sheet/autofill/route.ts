@@ -137,7 +137,10 @@ function isSelectionCurriculum(curriculum: string): boolean {
 }
 
 function canonicalSubject(value: string): string {
-  const compact = value.trim()
+  const compact = (value ?? '').trim()
+  // 빈 문자열은 어떤 교과로도 매핑하지 않는다.
+  // (subject.includes('')가 항상 true라서 빈 값이 '국어'로 잘못 매핑되는 것을 방지)
+  if (!compact) return ''
   return SUBJECTS.find(subject => compact.includes(subject) || subject.includes(compact)) ?? compact
 }
 
@@ -267,8 +270,12 @@ function deriveSubjects(
   graphSavedData: GraphSavedData | undefined,
   graph: KnowledgeGraph | null,
   chatContext: string | undefined,
+  existingRows: ExistingRow[] = [],
 ): string[] {
   const subjects: string[] = []
+  // 사용자가 분석시트에 직접 입력한 과목을 최우선으로 사용한다.
+  // (주제/그래프 데이터가 없어도 표의 과목만으로 자동 채우기가 동작해야 함)
+  subjects.push(...existingRows.map(row => canonicalSubject(row.subject)).filter(Boolean))
   subjects.push(...linkedSubjects.map(item => item.subject))
 
   const rawTargets = a12Artifact?.['targetSubjects'] || a12Artifact?.['대상 교과']
@@ -436,6 +443,9 @@ function contentMatchesIdea(mappingIdeas: string[], selectedIdea: string): boole
   })
 }
 
+// [절대 규칙 2026-05-14] 핵심아이디어가 속한 내용체계의 성취기준·지식이해/과정기능만 매핑.
+// Why: 사용자 명시 — fallback에서 area만 매칭하면 같은 area의 다른 핵심아이디어 record가 잡혀
+//      엉뚱한 지식이해/과정기능이 들어옴. coreIdea 매칭은 항상 필수.
 function findOfficialContentRecord(
   contentSystems: ContentSystemRecord[],
   subject: string,
@@ -446,11 +456,12 @@ function findOfficialContentRecord(
     canonicalSubject(record.subject) === canonicalSubject(subject) &&
     !isSelectionCurriculum(record.curriculum)
   )
+  // 1순위: area+coreIdea 둘 다 매칭 (가장 정밀)
+  // 2순위: coreIdea만 매칭 (같은 핵심아이디어가 다른 area 라벨일 수 있음)
+  // **금지: area만 매칭 fallback** — 다른 핵심아이디어의 데이터 유입
   return sameSubjectContent.find(record =>
     matchesNormalized(record.area, area) &&
     contentMatchesIdea(record.coreIdeas, selectedIdea)
-  ) ?? sameSubjectContent.find(record =>
-    matchesNormalized(record.area, area)
   ) ?? sameSubjectContent.find(record =>
     contentMatchesIdea(record.coreIdeas, selectedIdea)
   )
@@ -464,6 +475,7 @@ function findOfficialAreaMapping(
 ): AreaMapping | undefined {
   const mappingAreaMatches = (item: AreaMapping) =>
     !area || [item.entryArea, item.subArea].some(candidate => candidate && matchesNormalized(candidate, area))
+  // [절대 규칙] coreIdea 매칭은 항상 필수. area는 보조.
   return areaMappings.find(item =>
     canonicalSubject(item.subject) === canonicalSubject(subject) &&
     contentMatchesIdea(item.coreIdeas, selectedIdea) &&
@@ -762,19 +774,15 @@ export async function POST(request: NextRequest) {
     if (!graph) return NextResponse.json({ error: '교육과정 지식 그래프를 불러오지 못했습니다.' }, { status: 500 })
 
     const gradeGroup = targetGradeGroup ?? ''
-    // gradeGroup이 비어 있거나 초등 학년군이면 elementary synthetic 레코드 우선 사용
-    // (raw 사회내용체계.json 등은 공통 교육과정 데이터가 일부 영역만 채워져 있어
-    //  경제·정치·법 등 graph로 합성되는 영역을 찾지 못함)
-    const contentSystems = !gradeGroup || isElementaryGradeGroup(gradeGroup)
-      ? loadElementaryContentSystems()
-      : loadContentSystems()
+    // [strict-elementary 2026-05-14] 초등 전용 웹앱 — 비초등 gradeGroup이 와도 강제로 초등 데이터만.
+    const contentSystems = loadElementaryContentSystems()
     const areaMappings = loadAreaMappings()
     const linkedSubjects = parseLinkedSubjects(a12Artifact)
-    const subjects = deriveSubjects(a12Artifact, linkedSubjects, graphSavedData, graph, chatContext)
+    const subjects = deriveSubjects(a12Artifact, linkedSubjects, graphSavedData, graph, chatContext, existingRows)
     const topic = String(a12Artifact?.['selectedTopic'] || a12Artifact?.['선택 주제'] || a12Artifact?.['주제'] || '')
 
     if (subjects.length === 0) {
-      return NextResponse.json({ error: '교과 정보를 찾을 수 없습니다.' }, { status: 400 })
+      return NextResponse.json({ error: '교과 정보를 찾을 수 없습니다. 분석표에 과목을 입력하거나 주제(A-1-2)를 먼저 선정한 뒤 다시 시도하세요.' }, { status: 400 })
     }
 
     const proposals = (await Promise.all(subjects.map(subject => buildCoreIdeaProposal({
@@ -792,9 +800,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '학년군과 교과에 맞는 핵심아이디어 후보를 찾지 못했습니다.' }, { status: 404 })
     }
 
-    const centeredProposals = proposals.some(proposal => proposal.isCenter)
-      ? proposals
-      : proposals.map((proposal, index) => ({ ...proposal, isCenter: index === 0 }))
+    // 중심 교과 결정: 사용자가 분석시트에서 지정한 중심 교과 > 그래프 중심 노드 > 첫 번째
+    const existingCenterSubject = existingRows.find(row => row.isCenter && row.subject)?.subject
+    const centeredProposals = existingCenterSubject
+      ? proposals.map(proposal => ({
+          ...proposal,
+          isCenter: canonicalSubject(proposal.subject) === canonicalSubject(existingCenterSubject),
+        }))
+      : proposals.some(proposal => proposal.isCenter)
+        ? proposals
+        : proposals.map((proposal, index) => ({ ...proposal, isCenter: index === 0 }))
 
     if (mode === 'coreIdeas') {
       return NextResponse.json({
@@ -803,9 +818,21 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // complete 모드: 교사가 핵심아이디어 확인 창에서 제외한 교과는 행으로 만들지 않는다.
+    // selectedCoreIdeas에 포함된 교과로만 제한 (창에서 삭제한 교과는 selectedCoreIdeas에서 빠짐).
+    const selectedSubjectSet = new Set(selectedCoreIdeas.map(item => canonicalSubject(item.subject)))
+    const scopedProposals = selectedSubjectSet.size > 0
+      ? centeredProposals.filter(proposal => selectedSubjectSet.has(canonicalSubject(proposal.subject)))
+      : centeredProposals
+    const finalProposals = scopedProposals.length > 0
+      ? (scopedProposals.some(proposal => proposal.isCenter)
+          ? scopedProposals
+          : scopedProposals.map((proposal, index) => ({ ...proposal, isCenter: index === 0 })))
+      : centeredProposals
+
     const builtRows = await buildRowsFromSelections({
       graph,
-      proposals: centeredProposals,
+      proposals: finalProposals,
       selectedCoreIdeas,
       existingRows,
       graphSavedData,

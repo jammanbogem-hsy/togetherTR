@@ -11,10 +11,10 @@ export function T23Renderer({ data }: { data: T23Structured }) {
       </div>
       {schedule.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm border-collapse">
+          <table className="w-full min-w-[480px] text-sm border-collapse [word-break:keep-all]">
             <thead className="bg-[#1A73E8]">
               <tr>
-                {['기간', '활동 내용', '마감·산출물', '담당자'].map(h => (
+                {['기간', '활동', '내용', '담당자'].map(h => (
                   <th key={h} className="px-3 py-2.5 text-left text-xs font-bold text-white whitespace-nowrap border-b border-[#1557B0]">{h}</th>
                 ))}
               </tr>
@@ -24,7 +24,7 @@ export function T23Renderer({ data }: { data: T23Structured }) {
                 <tr key={i} className="hover:bg-[#F8F9FA]/50">
                   <td className="px-3 py-2.5 font-semibold text-[#1A73E8] whitespace-nowrap">{s.period}</td>
                   <td className="px-3 py-2.5 leading-relaxed">{s.activity}</td>
-                  <td className="px-3 py-2.5 text-[#5F6368] leading-relaxed">{s.deliverable || '-'}</td>
+                  <td className="px-3 py-2.5 text-[#5F6368] leading-relaxed">{s.content || (s as { deliverable?: string }).deliverable || '-'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">{s.assignee || '-'}</td>
                 </tr>
               ))}

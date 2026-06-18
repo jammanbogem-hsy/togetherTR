@@ -4,12 +4,29 @@ import {
   runTransaction, type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { db } from './config'
-import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow } from '@/types'
+import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow, TeamVisionWorkspace, TeamVisionWorkspaceBlock, TeamVisionWorkspaceColumn, TeamVisionWorkspaceRow, IntegratedGoalWorkspace, IntegratedGoalWorkspaceBlock, IntegratedGoalWorkspaceColumn, IntegratedGoalWorkspaceRow, IntegratedGoalMethod } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
 import { extractImprovementText, parseNextCycleChoice } from '@/lib/activity/completion'
+
+// ─── Firestore nested undefined 청소 ─────────────────
+// Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
+// 기존 cleanXxxRow/cleanXxxBlock 같은 1-level cleanup은 row.cells / block.table 같은 nested 객체 안의
+// undefined를 잡지 못해 워크스페이스 저장 실패가 발생. 모든 patch 함수의 최종 송신 직전에 적용.
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(stripUndefinedDeep) as unknown as T
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === undefined) continue
+      out[k] = stripUndefinedDeep(v)
+    }
+    return out as T
+  }
+  return value
+}
 
 // ─── 대시보드 폴더 ──────────────────────────────────
 
@@ -183,6 +200,22 @@ export async function joinProject(
     updates[`memberInfo.${uid}`] = { ...memberInfo, uid, joinedAt: Date.now() }
   }
   await updateDoc(ref, updates)
+  addJoinedProjectId(projectId)
+}
+
+export async function ensureProjectMemberUid(
+  projectId: string,
+  uid: string,
+  memberInfo?: { displayName: string; color: string; emoji: string }
+): Promise<void> {
+  const updates: Record<string, unknown> = {
+    memberUids: arrayUnion(uid),
+    updatedAt: serverTimestamp(),
+  }
+  if (memberInfo) {
+    updates[`memberInfo.${uid}`] = { ...memberInfo, uid, joinedAt: Date.now() }
+  }
+  await updateDoc(doc(db, 'projects', projectId), updates)
   addJoinedProjectId(projectId)
 }
 
@@ -394,12 +427,33 @@ export async function setProjectArtifact(
     ? { ...data, _schemaVersion: 'v2-sections' as const }
     : data
 
-  // Firestore는 undefined 값을 허용하지 않으므로 제거
-  const clean = Object.fromEntries(
-    Object.entries(normalized).filter(([, v]) => v !== undefined)
-  )
+  // 이력 적재 — 새 content 덮어쓰기 전 현재 스냅샷을 versions에 push (최대 20개 유지).
+  // race-safety는 lag fix 라운드에서 trade-off 수용. 트랜잭션 없이 read-then-write.
+  const projectRef = doc(db, 'projects', projectId)
+  const snap = await getDoc(projectRef)
+  const projectData = snap.exists() ? (snap.data() as Project) : undefined
+  const current = projectData?.artifacts?.[activityCode]
+  const priorVersions = current?.versions ?? []
+  const nextVersions = [...priorVersions]
+  if (current?.content && Object.keys(current.content).length > 0 && typeof current.version === 'number') {
+    nextVersions.push({
+      version: current.version,
+      content: current.content as Record<string, unknown>,
+      savedAt: current.confirmedAt ?? Date.now(),
+      savedBy: current.confirmedBy,
+    })
+  }
+  const trimmedVersions = nextVersions.slice(-20)
+
+  // Firestore는 nested undefined까지 거부 — top-level의 confirmedBy/revisionNote 같은 optional 필드뿐 아니라
+  // content.manualWorkspace.blocks[].table, versions[].savedBy 등 깊은 곳까지 모두 청소해야 한다.
+  // versions 합친 결과 전체를 한 번에 deep clean (versions[].savedBy === undefined 같은 케이스가 reject 원인).
+  const baseMerged: Record<string, unknown> = trimmedVersions.length > 0
+    ? { ...normalized, versions: trimmedVersions }
+    : { ...normalized }
+  const mergedArtifact = stripUndefinedDeep(baseMerged) as Record<string, unknown>
   const updates: Record<string, unknown> = {
-    [`artifacts.${activityCode}`]: clean,
+    [`artifacts.${activityCode}`]: mergedArtifact,
     updatedAt: serverTimestamp(),
   }
 
@@ -409,6 +463,24 @@ export async function setProjectArtifact(
     updates.isA23Completed = hasContent && data.status !== 'ai_draft'
   }
 
+  await updateDoc(projectRef, updates)
+}
+
+// 산출물 삭제 — 호스트 전용. artifacts.{activityCode}를 통째로 제거하고
+// 의존 상태(activityStatuses, isA23Completed)도 함께 reset해 다른 화면 정합성 보존.
+// Why: 잘못 보낸 산출물을 호스트가 되돌릴 수 있어야 한다는 사용자 요청.
+export async function deleteProjectArtifact(
+  projectId: string,
+  activityCode: ActivityCode,
+): Promise<void> {
+  const updates: Record<string, unknown> = {
+    [`artifacts.${activityCode}`]: deleteField(),
+    [`activityStatuses.${activityCode}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  }
+  if (activityCode === 'A-2-3') {
+    updates.isA23Completed = false
+  }
   await updateDoc(doc(db, 'projects', projectId), updates)
 }
 
@@ -723,6 +795,2058 @@ export async function patchCurriculumSheet(
   return nextRows
 }
 
+// ─── 팀 공통 비전 워크스페이스 공동 편집 ─────────────────────
+
+const DEFAULT_TEAM_VISION_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'teacherName', label: '교사명', color: '#E8F0FE' },
+  { id: 'keywords', label: '개인 비전 키워드', color: '#E8F0FE' },
+  { id: 'refinedVision', label: '정교화 비전 문장', color: '#E8F0FE' },
+  { id: 'agreementNote', label: '합의 근거', color: '#E8F0FE' },
+]
+
+function cleanTeamVisionRow(row: TeamVisionWorkspaceRow): TeamVisionWorkspaceRow {
+  return Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined),
+  ) as TeamVisionWorkspaceRow
+}
+
+function cleanTeamVisionBlock(block: TeamVisionWorkspaceBlock): TeamVisionWorkspaceBlock {
+  return Object.fromEntries(
+    Object.entries(block).filter(([, value]) => value !== undefined),
+  ) as TeamVisionWorkspaceBlock
+}
+
+function cleanTeamVisionWorkspace(workspace: TeamVisionWorkspace): TeamVisionWorkspace {
+  return {
+    ...workspace,
+    columns: workspace.columns.map(column => ({ ...column })),
+    rows: workspace.rows.map(cleanTeamVisionRow),
+    blocks: workspace.blocks.map(cleanTeamVisionBlock),
+  }
+}
+
+function emptyTeamVisionWorkspace(): TeamVisionWorkspace {
+  return {
+    columns: DEFAULT_TEAM_VISION_COLUMNS,
+    rows: [],
+    teamVision: '',
+    coreKeywords: [],
+    blocks: [],
+  }
+}
+
+export type TeamVisionWorkspacePatch =
+  | { type: 'replace-all'; workspace: TeamVisionWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'update-meta'; field: 'teamVision' | 'coreKeywords'; value: string | string[]; updatedBy?: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyTeamVisionWorkspacePatch(
+  current: TeamVisionWorkspace | undefined,
+  patch: TeamVisionWorkspacePatch,
+): TeamVisionWorkspace {
+  const now = Date.now()
+  const workspace = cleanTeamVisionWorkspace(current ?? emptyTeamVisionWorkspace())
+  const stampWorkspace = (value: TeamVisionWorkspace, updatedBy?: string): TeamVisionWorkspace => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampRow = (value: TeamVisionWorkspaceRow, updatedBy?: string): TeamVisionWorkspaceRow => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampBlock = (value: TeamVisionWorkspaceBlock, updatedBy?: string): TeamVisionWorkspaceBlock => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+
+  if (patch.type === 'replace-all') {
+    return cleanTeamVisionWorkspace(stampWorkspace(patch.workspace, patch.updatedBy))
+  }
+
+  if (patch.type === 'update-cell') {
+    const rows = workspace.rows.map(row => {
+      if (row.id !== patch.rowId) return row
+      return stampRow({
+        ...row,
+        cells: { ...row.cells, [patch.columnId]: patch.value },
+      }, patch.updatedBy)
+    })
+    return cleanTeamVisionWorkspace(stampWorkspace({ ...workspace, rows }, patch.updatedBy))
+  }
+
+  if (patch.type === 'add-row') {
+    return cleanTeamVisionWorkspace(stampWorkspace({
+      ...workspace,
+      rows: [...workspace.rows, stampRow(patch.row, patch.updatedBy)],
+    }, patch.updatedBy))
+  }
+
+  if (patch.type === 'delete-row') {
+    return cleanTeamVisionWorkspace(stampWorkspace({
+      ...workspace,
+      rows: workspace.rows.filter(row => row.id !== patch.rowId),
+    }))
+  }
+
+  if (patch.type === 'add-column') {
+    return cleanTeamVisionWorkspace(stampWorkspace({
+      ...workspace,
+      columns: [...workspace.columns, patch.column],
+      rows: workspace.rows.map(row => ({ ...row, cells: { ...row.cells, [patch.column.id]: '' } })),
+    }, patch.updatedBy))
+  }
+
+  if (patch.type === 'update-column') {
+    return cleanTeamVisionWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.map(column => column.id === patch.columnId
+        ? { ...column, label: patch.label, color: patch.color ?? column.color }
+        : column),
+    }, patch.updatedBy))
+  }
+
+  if (patch.type === 'delete-column') {
+    return cleanTeamVisionWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.filter(column => column.id !== patch.columnId),
+      rows: workspace.rows.map(row => {
+        const cells = { ...row.cells }
+        delete cells[patch.columnId]
+        return { ...row, cells }
+      }),
+    }))
+  }
+
+  if (patch.type === 'update-meta') {
+    return cleanTeamVisionWorkspace(stampWorkspace({
+      ...workspace,
+      [patch.field]: patch.value,
+    }, patch.updatedBy))
+  }
+
+  if (patch.type === 'upsert-block') {
+    const index = workspace.blocks.findIndex(block => block.id === patch.block.id)
+    const block = stampBlock(patch.block, patch.updatedBy)
+    const blocks = [...workspace.blocks]
+    if (index >= 0) blocks[index] = block
+    else blocks.push(block)
+    return cleanTeamVisionWorkspace(stampWorkspace({ ...workspace, blocks }, patch.updatedBy))
+  }
+
+  if (patch.type === 'delete-block') {
+    return cleanTeamVisionWorkspace(stampWorkspace({
+      ...workspace,
+      blocks: workspace.blocks.filter(block => block.id !== patch.blockId),
+    }))
+  }
+
+  if (patch.type === 'reorder-blocks') {
+    const byId = new Map(workspace.blocks.map(block => [block.id, block]))
+    const ordered = patch.blockIds.map(id => byId.get(id)).filter(Boolean) as TeamVisionWorkspaceBlock[]
+    const orderedIds = new Set(ordered.map(block => block.id))
+    const missing = workspace.blocks.filter(block => !orderedIds.has(block.id))
+    return cleanTeamVisionWorkspace(stampWorkspace({ ...workspace, blocks: [...ordered, ...missing] }))
+  }
+
+  return workspace
+}
+
+export async function patchTeamVisionWorkspace(
+  projectId: string,
+  patch: TeamVisionWorkspacePatch,
+): Promise<TeamVisionWorkspace> {
+  // [lag fix 2026-05-14] runTransaction → getDoc+updateDoc 단순화 (IGW와 동일 path).
+  // Why: 같은 사용자가 빠른 blur/click으로 연속 commit하면 자기 자신과 base-version 충돌(failed-precondition) →
+  //      5회 backoff retry 후 throw → "저장 못함" + retry 동안 main thread lag.
+  //      동시 편집 race-safety는 last-write-wins로 trade-off.
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyTeamVisionWorkspacePatch(data.teamVisionWorkspace, patch)
+  // row.cells / block.table 등 nested 객체 안 undefined까지 제거 — cleanTeamVisionRow/Block은 1-level만 처리
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+  await updateDoc(ref, {
+    teamVisionWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+// presence는 부모 projects/{id}를 건드리지 않도록 subcollection으로 분리 (IGW와 동일).
+// Why: focus/blur마다 부모 문서 필드를 update하면 onSnapshot cascade로 ChatPanel 전체 re-render 폭주.
+export type TeamVisionPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  /** textarea selectionStart — 다른 팀원 화면에 구글 문서식 caret 표시용 (IGW와 동일 패턴) */
+  caretPos?: number
+  updatedAt: number
+}
+
+const TVW_PRESENCE_DEBOUNCE_MS = 300
+const tvwPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushTvwPresence(
+  projectId: string,
+  uid: string,
+  presence: TeamVisionPresenceEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'teamVisionPresence', uid)
+  if (presence) {
+    // Firestore는 undefined 필드를 거부 — caretPos 같은 optional이 비어 있으면 키 자체를 제거.
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setTeamVisionWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: TeamVisionPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = tvwPresenceTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    tvwPresenceTimers.delete(key)
+  }
+  if (presence === null) {
+    await flushTvwPresence(projectId, uid, null)
+    return
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      tvwPresenceTimers.delete(key)
+      flushTvwPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setTeamVisionWorkspacePresence] flush failed:', err)
+        resolve()
+      })
+    }, TVW_PRESENCE_DEBOUNCE_MS)
+    tvwPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchTeamVisionWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, TeamVisionPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'teamVisionPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, TeamVisionPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as TeamVisionPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 통합 수업목표 워크스페이스 공동 편집 (A-2-2) ────────────
+// teamVisionWorkspace 패턴을 그대로 답습. update-meta 필드만 A-2-2 도메인으로 확장.
+
+const DEFAULT_INTEGRATED_GOAL_COLUMNS: IntegratedGoalWorkspaceColumn[] = [
+  { id: 'subject', label: '교과', color: '#E8F0FE' },
+  { id: 'goal', label: '교과별 수업목표', color: '#E6F4EA' },
+  { id: 'knowledge', label: '지식·이해', color: '#FEF7E0' },
+  { id: 'process', label: '과정·기능', color: '#FCE8E6' },
+  { id: 'attitude', label: '가치·태도', color: '#F3E8FF' },
+]
+
+function cleanIntegratedGoalRow(row: IntegratedGoalWorkspaceRow): IntegratedGoalWorkspaceRow {
+  return Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined),
+  ) as IntegratedGoalWorkspaceRow
+}
+
+function cleanIntegratedGoalBlock(block: IntegratedGoalWorkspaceBlock): IntegratedGoalWorkspaceBlock {
+  return Object.fromEntries(
+    Object.entries(block).filter(([, value]) => value !== undefined),
+  ) as IntegratedGoalWorkspaceBlock
+}
+
+function cleanIntegratedGoalWorkspace(workspace: IntegratedGoalWorkspace): IntegratedGoalWorkspace {
+  const cleaned: IntegratedGoalWorkspace = {
+    ...workspace,
+    columns: workspace.columns.map(column => ({ ...column })),
+    rows: workspace.rows.map(cleanIntegratedGoalRow),
+    blocks: workspace.blocks.map(cleanIntegratedGoalBlock),
+  }
+  // method가 undefined면 Firestore 저장 불가 — 명시 제거
+  return Object.fromEntries(
+    Object.entries(cleaned).filter(([, value]) => value !== undefined),
+  ) as IntegratedGoalWorkspace
+}
+
+function emptyIntegratedGoalWorkspace(): IntegratedGoalWorkspace {
+  return {
+    columns: DEFAULT_INTEGRATED_GOAL_COLUMNS,
+    rows: [],
+    commonCoreIdea: '',
+    integratedGoal: '',
+    convergentKeywords: [],
+    blocks: [],
+  }
+}
+
+export type IntegratedGoalWorkspacePatch =
+  | { type: 'replace-all'; workspace: IntegratedGoalWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: IntegratedGoalWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: IntegratedGoalWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'update-meta'; field: 'commonCoreIdea' | 'integratedGoal' | 'convergentKeywords' | 'method'; value: string | string[] | IntegratedGoalMethod | null; updatedBy?: string }
+  | { type: 'upsert-block'; block: IntegratedGoalWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyIntegratedGoalWorkspacePatch(
+  current: IntegratedGoalWorkspace | undefined,
+  patch: IntegratedGoalWorkspacePatch,
+): IntegratedGoalWorkspace {
+  const now = Date.now()
+  const workspace = cleanIntegratedGoalWorkspace(current ?? emptyIntegratedGoalWorkspace())
+  const stampWorkspace = (value: IntegratedGoalWorkspace, updatedBy?: string): IntegratedGoalWorkspace => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampRow = (value: IntegratedGoalWorkspaceRow, updatedBy?: string): IntegratedGoalWorkspaceRow => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampBlock = (value: IntegratedGoalWorkspaceBlock, updatedBy?: string): IntegratedGoalWorkspaceBlock => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+
+  if (patch.type === 'replace-all') {
+    return cleanIntegratedGoalWorkspace(stampWorkspace(patch.workspace, patch.updatedBy))
+  }
+
+  if (patch.type === 'update-cell') {
+    const rows = workspace.rows.map(row => {
+      if (row.id !== patch.rowId) return row
+      return stampRow({
+        ...row,
+        cells: { ...row.cells, [patch.columnId]: patch.value },
+      }, patch.updatedBy)
+    })
+    return cleanIntegratedGoalWorkspace(stampWorkspace({ ...workspace, rows }, patch.updatedBy))
+  }
+
+  if (patch.type === 'add-row') {
+    return cleanIntegratedGoalWorkspace(stampWorkspace({
+      ...workspace,
+      rows: [...workspace.rows, stampRow(patch.row, patch.updatedBy)],
+    }, patch.updatedBy))
+  }
+
+  if (patch.type === 'delete-row') {
+    return cleanIntegratedGoalWorkspace(stampWorkspace({
+      ...workspace,
+      rows: workspace.rows.filter(row => row.id !== patch.rowId),
+    }))
+  }
+
+  if (patch.type === 'add-column') {
+    return cleanIntegratedGoalWorkspace(stampWorkspace({
+      ...workspace,
+      columns: [...workspace.columns, patch.column],
+      rows: workspace.rows.map(row => ({ ...row, cells: { ...row.cells, [patch.column.id]: '' } })),
+    }, patch.updatedBy))
+  }
+
+  if (patch.type === 'update-column') {
+    return cleanIntegratedGoalWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.map(column => column.id === patch.columnId
+        ? { ...column, label: patch.label, color: patch.color ?? column.color }
+        : column),
+    }, patch.updatedBy))
+  }
+
+  if (patch.type === 'delete-column') {
+    return cleanIntegratedGoalWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.filter(column => column.id !== patch.columnId),
+      rows: workspace.rows.map(row => {
+        const cells = { ...row.cells }
+        delete cells[patch.columnId]
+        return { ...row, cells }
+      }),
+    }))
+  }
+
+  if (patch.type === 'update-meta') {
+    // method 필드는 null이면 제거 (undefined Firestore 저장 불가)
+    if (patch.field === 'method') {
+      const next = { ...workspace }
+      if (patch.value === null || patch.value === undefined || patch.value === '') {
+        delete (next as Partial<IntegratedGoalWorkspace>).method
+      } else {
+        next.method = patch.value as IntegratedGoalMethod
+      }
+      return cleanIntegratedGoalWorkspace(stampWorkspace(next, patch.updatedBy))
+    }
+    return cleanIntegratedGoalWorkspace(stampWorkspace({
+      ...workspace,
+      [patch.field]: patch.value,
+    } as IntegratedGoalWorkspace, patch.updatedBy))
+  }
+
+  if (patch.type === 'upsert-block') {
+    const index = workspace.blocks.findIndex(block => block.id === patch.block.id)
+    const block = stampBlock(patch.block, patch.updatedBy)
+    const blocks = [...workspace.blocks]
+    if (index >= 0) blocks[index] = block
+    else blocks.push(block)
+    return cleanIntegratedGoalWorkspace(stampWorkspace({ ...workspace, blocks }, patch.updatedBy))
+  }
+
+  if (patch.type === 'delete-block') {
+    return cleanIntegratedGoalWorkspace(stampWorkspace({
+      ...workspace,
+      blocks: workspace.blocks.filter(block => block.id !== patch.blockId),
+    }))
+  }
+
+  if (patch.type === 'reorder-blocks') {
+    const byId = new Map(workspace.blocks.map(block => [block.id, block]))
+    const ordered = patch.blockIds.map(id => byId.get(id)).filter(Boolean) as IntegratedGoalWorkspaceBlock[]
+    const orderedIds = new Set(ordered.map(block => block.id))
+    const missing = workspace.blocks.filter(block => !orderedIds.has(block.id))
+    return cleanIntegratedGoalWorkspace(stampWorkspace({ ...workspace, blocks: [...ordered, ...missing] }))
+  }
+
+  return workspace
+}
+
+export async function patchIntegratedGoalWorkspace(
+  projectId: string,
+  patch: IntegratedGoalWorkspacePatch,
+): Promise<IntegratedGoalWorkspace> {
+  // [lag fix 2026-05-14] runTransaction → getDoc+updateDoc 로 단순화.
+  // Why: 같은 사용자가 빠른 blur/click으로 연속 commit하면 자기 자신과 base-version 충돌(failed-precondition)이 나
+  //      5회 backoff retry 후 throw → "저장하지 못했습니다" + retry 동안 main thread lag.
+  //      동시 편집의 race-safety는 last-write-wins로 trade-off (다중 사용자 동시 편집 시 한쪽 변경이 덮어쓸 수 있음).
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyIntegratedGoalWorkspacePatch(data.integratedGoalWorkspace, patch)
+  // row.cells / block.table 등 nested 객체 안 undefined까지 제거 — cleanXxxRow/Block은 1-level만 처리
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+  await updateDoc(ref, {
+    integratedGoalWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+// presence는 부모 projects/{id}를 건드리지 않도록 subcollection으로 분리
+// (focus/blur 시 부모 updateTime이 바뀌면 patchIntegratedGoalWorkspace 트랜잭션이 failed-precondition으로 무한 재시도)
+export type IntegratedGoalPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  /** textarea selectionStart — 다른 팀원 화면에 구글 문서식 caret 표시용 */
+  caretPos?: number
+  updatedAt: number
+}
+
+// 셀 focus 이동마다 setDoc이 즉시 호출되면 트래픽 폭주 + 다른 팀원의 watch onSnapshot 폭주.
+// 같은 uid의 연속 호출은 마지막 것만 실제 write (300ms window).
+// 단, presence=null(unfocus)은 즉시 — 다른 팀원 화면에서 cursor가 빠르게 사라져야 자연스럽다.
+const PRESENCE_DEBOUNCE_MS = 300
+const presenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushPresence(
+  projectId: string,
+  uid: string,
+  presence: IntegratedGoalPresenceEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'integratedGoalPresence', uid)
+  if (presence) {
+    // Firestore는 undefined 필드를 거부하므로 제거 후 write
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setIntegratedGoalWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: IntegratedGoalPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  // pending timer가 있으면 일단 취소 (마지막 것만 적용)
+  const pending = presenceTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    presenceTimers.delete(key)
+  }
+
+  // unfocus(null)는 즉시 flush — 다른 팀원 화면에서 cursor가 빠르게 사라지도록.
+  if (presence === null) {
+    await flushPresence(projectId, uid, null)
+    return
+  }
+
+  // focus/move는 디바운스. 호출자는 await를 걸지만 실제 write는 trailing-edge에서만 일어난다.
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      presenceTimers.delete(key)
+      flushPresence(projectId, uid, presence).then(resolve, (err) => {
+        // 실패해도 resolve — presence는 best-effort, 호출자 흐름을 막지 않는다.
+        console.warn('[setIntegratedGoalWorkspacePresence] flush failed:', err)
+        resolve()
+      })
+    }, PRESENCE_DEBOUNCE_MS)
+    presenceTimers.set(key, timer)
+  })
+}
+
+export function watchIntegratedGoalWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, IntegratedGoalPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'integratedGoalPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, IntegratedGoalPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as IntegratedGoalPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 수업설계 방향 워크스페이스 공동 편집 (T-1-2) ────────────
+// shape은 TeamVisionWorkspace와 동일하므로 apply 로직을 그대로 위임한다.
+// (관련 type alias는 types/index.ts에서 정의)
+
+import type { LessonDesignDirectionWorkspace, EvaluationPlanWorkspace, ProblemSituationWorkspace, SupportToolWorkspace } from '@/types'
+
+const DEFAULT_LESSON_DESIGN_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'principle', label: '설계 원칙', color: '#E8F0FE' },
+  { id: 'rationale', label: '근거', color: '#E8F0FE' },
+]
+
+function emptyLessonDesignDirectionWorkspace(): LessonDesignDirectionWorkspace {
+  return {
+    columns: DEFAULT_LESSON_DESIGN_COLUMNS,
+    rows: [],
+    blocks: [],
+  }
+}
+
+// 수업설계 방향 patch는 TeamVision과 동일 union을 재사용 (의미적 alias만 분리).
+// update-meta는 'teamVision'/'coreKeywords'에 한정되므로 LDD에선 사용 불가 (호출자 책임).
+export type LessonDesignDirectionWorkspacePatch =
+  | { type: 'replace-all'; workspace: LessonDesignDirectionWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyLessonDesignDirectionWorkspacePatch(
+  current: LessonDesignDirectionWorkspace | undefined,
+  patch: LessonDesignDirectionWorkspacePatch,
+): LessonDesignDirectionWorkspace {
+  // TeamVision의 apply는 update-meta를 제외하면 동일 동작. fakeAsTeamVision 헬퍼로 위임.
+  const tvCurrent = current
+    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+    : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_LESSON_DESIGN_COLUMNS } as TeamVisionWorkspace)
+  const tvPatch = patch as TeamVisionWorkspacePatch
+  const next = applyTeamVisionWorkspacePatch(tvCurrent, tvPatch)
+  // T-1-2 워크스페이스에는 teamVision/coreKeywords 필드가 없으므로 떼어낸다.
+  const result: LessonDesignDirectionWorkspace = {
+    columns: next.columns,
+    rows: next.rows,
+    blocks: next.blocks,
+    updatedBy: next.updatedBy,
+    updatedAt: next.updatedAt,
+  }
+  return result
+}
+
+export async function patchLessonDesignDirectionWorkspace(
+  projectId: string,
+  patch: LessonDesignDirectionWorkspacePatch,
+): Promise<LessonDesignDirectionWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyLessonDesignDirectionWorkspacePatch(data.lessonDesignDirectionWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+  await updateDoc(ref, {
+    lessonDesignDirectionWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type LessonDesignDirectionPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const LDD_PRESENCE_DEBOUNCE_MS = 300
+const lddPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushLddPresence(
+  projectId: string,
+  uid: string,
+  presence: LessonDesignDirectionPresenceEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'lessonDesignDirectionPresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setLessonDesignDirectionWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: LessonDesignDirectionPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = lddPresenceTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    lddPresenceTimers.delete(key)
+  }
+  if (presence === null) {
+    await flushLddPresence(projectId, uid, null)
+    return
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      lddPresenceTimers.delete(key)
+      flushLddPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setLessonDesignDirectionWorkspacePresence] flush failed:', err)
+        resolve()
+      })
+    }, LDD_PRESENCE_DEBOUNCE_MS)
+    lddPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchLessonDesignDirectionWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, LessonDesignDirectionPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'lessonDesignDirectionPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, LessonDesignDirectionPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as LessonDesignDirectionPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 평가 계획 워크스페이스 공동 편집 (Ds-1-1) ────────────
+// LDD와 동일 패턴 — shape은 TeamVisionWorkspace 재사용, apply는 그대로 위임.
+
+const DEFAULT_EVALUATION_PLAN_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'item',   label: '평가 항목', color: '#E8F0FE' },
+  { id: 'method', label: '평가 방법', color: '#E8F0FE' },
+  { id: 'timing', label: '평가 시점', color: '#E8F0FE' },
+  { id: 'high',   label: '상',        color: '#E6F4EA' },
+  { id: 'mid',    label: '중',        color: '#FEF7E0' },
+  { id: 'low',    label: '하',        color: '#FCE8E6' },
+]
+
+export type EvaluationPlanWorkspacePatch =
+  | { type: 'replace-all'; workspace: EvaluationPlanWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyEvaluationPlanWorkspacePatch(
+  current: EvaluationPlanWorkspace | undefined,
+  patch: EvaluationPlanWorkspacePatch,
+): EvaluationPlanWorkspace {
+  const tvCurrent = current
+    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+    : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_EVALUATION_PLAN_COLUMNS } as TeamVisionWorkspace)
+  const next = applyTeamVisionWorkspacePatch(tvCurrent, patch as TeamVisionWorkspacePatch)
+  return {
+    columns: next.columns,
+    rows: next.rows,
+    blocks: next.blocks,
+    updatedBy: next.updatedBy,
+    updatedAt: next.updatedAt,
+  }
+}
+
+export async function patchEvaluationPlanWorkspace(
+  projectId: string,
+  patch: EvaluationPlanWorkspacePatch,
+): Promise<EvaluationPlanWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyEvaluationPlanWorkspacePatch(data.evaluationPlanWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+  await updateDoc(ref, {
+    evaluationPlanWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type EvaluationPlanPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const EVP_PRESENCE_DEBOUNCE_MS = 300
+const evpPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushEvpPresence(
+  projectId: string,
+  uid: string,
+  presence: EvaluationPlanPresenceEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'evaluationPlanPresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setEvaluationPlanWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: EvaluationPlanPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = evpPresenceTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    evpPresenceTimers.delete(key)
+  }
+  if (presence === null) {
+    await flushEvpPresence(projectId, uid, null)
+    return
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      evpPresenceTimers.delete(key)
+      flushEvpPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setEvaluationPlanWorkspacePresence] flush failed:', err)
+        resolve()
+      })
+    }, EVP_PRESENCE_DEBOUNCE_MS)
+    evpPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchEvaluationPlanWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, EvaluationPlanPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'evaluationPlanPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, EvaluationPlanPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as EvaluationPlanPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 문제상황 워크스페이스 공동 편집 (Ds-1-2) ────────────
+const DEFAULT_PROBLEM_SITUATION_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'element', label: '요소', color: '#E8F0FE' },
+  { id: 'content', label: '내용', color: '#E8F0FE' },
+]
+
+export type ProblemSituationWorkspacePatch =
+  | { type: 'replace-all'; workspace: ProblemSituationWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyProblemSituationWorkspacePatch(
+  current: ProblemSituationWorkspace | undefined,
+  patch: ProblemSituationWorkspacePatch,
+): ProblemSituationWorkspace {
+  const tvCurrent = current
+    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+    : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_PROBLEM_SITUATION_COLUMNS } as TeamVisionWorkspace)
+  const next = applyTeamVisionWorkspacePatch(tvCurrent, patch as TeamVisionWorkspacePatch)
+  return {
+    columns: next.columns,
+    rows: next.rows,
+    blocks: next.blocks,
+    updatedBy: next.updatedBy,
+    updatedAt: next.updatedAt,
+  }
+}
+
+export async function patchProblemSituationWorkspace(
+  projectId: string,
+  patch: ProblemSituationWorkspacePatch,
+): Promise<ProblemSituationWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyProblemSituationWorkspacePatch(data.problemSituationWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+  await updateDoc(ref, {
+    problemSituationWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type ProblemSituationPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const PSW_PRESENCE_DEBOUNCE_MS = 300
+const pswPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushPswPresence(
+  projectId: string,
+  uid: string,
+  presence: ProblemSituationPresenceEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'problemSituationWorkspacePresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setProblemSituationWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: ProblemSituationPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = pswPresenceTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    pswPresenceTimers.delete(key)
+  }
+  if (presence === null) {
+    await flushPswPresence(projectId, uid, null)
+    return
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      pswPresenceTimers.delete(key)
+      flushPswPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setProblemSituationWorkspacePresence] flush failed:', err)
+        resolve()
+      })
+    }, PSW_PRESENCE_DEBOUNCE_MS)
+    pswPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchProblemSituationWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, ProblemSituationPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'problemSituationWorkspacePresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, ProblemSituationPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as ProblemSituationPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 지원 도구(자료) 설계 워크스페이스 공동 편집 (Ds-2-1) ────────────
+const DEFAULT_SUPPORT_TOOL_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'activity', label: '대상 활동', color: '#E8F0FE' },
+  { id: 'name', label: '자료/도구명', color: '#E8F0FE' },
+  { id: 'purpose', label: '활용 이유', color: '#E8F0FE' },
+  { id: 'sourceType', label: '탐색/개발', color: '#E8F0FE' },
+  { id: 'devScope', label: '공동/개별', color: '#E8F0FE' },
+  { id: 'owner', label: '담당 교사', color: '#E8F0FE' },
+  { id: 'schedule', label: '일정', color: '#E8F0FE' },
+]
+
+export type SupportToolWorkspacePatch =
+  | { type: 'replace-all'; workspace: SupportToolWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applySupportToolWorkspacePatch(
+  current: SupportToolWorkspace | undefined,
+  patch: SupportToolWorkspacePatch,
+): SupportToolWorkspace {
+  const tvCurrent = current
+    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+    : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_SUPPORT_TOOL_COLUMNS } as TeamVisionWorkspace)
+  const next = applyTeamVisionWorkspacePatch(tvCurrent, patch as TeamVisionWorkspacePatch)
+  return {
+    columns: next.columns,
+    rows: next.rows,
+    blocks: next.blocks,
+    updatedBy: next.updatedBy,
+    updatedAt: next.updatedAt,
+  }
+}
+
+export async function patchSupportToolWorkspace(
+  projectId: string,
+  patch: SupportToolWorkspacePatch,
+): Promise<SupportToolWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applySupportToolWorkspacePatch(data.supportToolWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+  await updateDoc(ref, {
+    supportToolWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type SupportToolPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const STW_PRESENCE_DEBOUNCE_MS = 300
+const stwPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushStwPresence(
+  projectId: string,
+  uid: string,
+  presence: SupportToolPresenceEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'supportToolWorkspacePresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setSupportToolWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: SupportToolPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = stwPresenceTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    stwPresenceTimers.delete(key)
+  }
+  if (presence === null) {
+    await flushStwPresence(projectId, uid, null)
+    return
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      stwPresenceTimers.delete(key)
+      flushStwPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setSupportToolWorkspacePresence] flush failed:', err)
+        resolve()
+      })
+    }, STW_PRESENCE_DEBOUNCE_MS)
+    stwPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchSupportToolWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, SupportToolPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'supportToolWorkspacePresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, SupportToolPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as SupportToolPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 역할 배분 워크스페이스 공동 편집 (T-2-1) ────────────
+// shape은 TeamVisionWorkspace와 동일 (5열 표 + 블록). update-meta 필드 없음.
+
+import type { RoleDistributionWorkspace } from '@/types'
+
+const DEFAULT_ROLE_DISTRIBUTION_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'teacherName',     label: '교사명',         color: '#E8F0FE' },
+  { id: 'subject',          label: '담당 교과',      color: '#E8F0FE' },
+  { id: 'strengths',        label: '강점·전문성',    color: '#E8F0FE' },
+  { id: 'role',             label: '팀 내 역할',     color: '#E8F0FE' },
+  { id: 'responsibilities', label: '담당 업무',      color: '#E8F0FE' },
+]
+
+function emptyRoleDistributionWorkspace(): RoleDistributionWorkspace {
+  return {
+    columns: DEFAULT_ROLE_DISTRIBUTION_COLUMNS,
+    rows: [],
+    blocks: [],
+  }
+}
+
+// patch union은 TeamVision과 동일 (update-meta는 호출처가 사용하지 않음).
+export type RoleDistributionWorkspacePatch =
+  | { type: 'replace-all'; workspace: RoleDistributionWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyRoleDistributionWorkspacePatch(
+  current: RoleDistributionWorkspace | undefined,
+  patch: RoleDistributionWorkspacePatch,
+): RoleDistributionWorkspace {
+  const tvCurrent = current
+    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+    : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_ROLE_DISTRIBUTION_COLUMNS } as TeamVisionWorkspace)
+  const tvPatch = patch as TeamVisionWorkspacePatch
+  const next = applyTeamVisionWorkspacePatch(tvCurrent, tvPatch)
+  return {
+    columns: next.columns,
+    rows: next.rows,
+    blocks: next.blocks,
+    updatedBy: next.updatedBy,
+    updatedAt: next.updatedAt,
+  }
+}
+
+export async function patchRoleDistributionWorkspace(
+  projectId: string,
+  patch: RoleDistributionWorkspacePatch,
+): Promise<RoleDistributionWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyRoleDistributionWorkspacePatch(data.roleDistributionWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as RoleDistributionWorkspace
+  await updateDoc(ref, {
+    roleDistributionWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type RoleDistributionPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const RD_PRESENCE_DEBOUNCE_MS = 300
+const rdPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushRdPresence(
+  projectId: string,
+  uid: string,
+  presence: RoleDistributionPresenceEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'roleDistributionPresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setRoleDistributionWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: RoleDistributionPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = rdPresenceTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    rdPresenceTimers.delete(key)
+  }
+  if (presence === null) {
+    await flushRdPresence(projectId, uid, null)
+    return
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      rdPresenceTimers.delete(key)
+      flushRdPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setRoleDistributionWorkspacePresence] flush failed:', err)
+        resolve()
+      })
+    }, RD_PRESENCE_DEBOUNCE_MS)
+    rdPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchRoleDistributionWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, RoleDistributionPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'roleDistributionPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, RoleDistributionPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as RoleDistributionPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 팀 규칙 워크스페이스 공동 편집 (T-2-2) ─────────────
+// shape은 TeamVisionWorkspace와 동일 — apply는 TVW에 위임 후 meta 필드만 떼어낸다.
+
+import type { TeamRulesWorkspace, TeamScheduleWorkspace } from '@/types'
+
+const DEFAULT_TEAM_RULES_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'category',    label: '분류',         color: '#E8F0FE' },
+  { id: 'name',        label: '규칙명',       color: '#E8F0FE' },
+  { id: 'description', label: '설명',         color: '#E8F0FE' },
+  { id: 'violation',   label: '위반 시 조치', color: '#E8F0FE' },
+]
+
+function emptyTeamRulesWorkspace(): TeamRulesWorkspace {
+  return { columns: DEFAULT_TEAM_RULES_COLUMNS, rows: [], blocks: [] }
+}
+
+export type TeamRulesWorkspacePatch =
+  | { type: 'replace-all'; workspace: TeamRulesWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyTeamRulesWorkspacePatch(
+  current: TeamRulesWorkspace | undefined,
+  patch: TeamRulesWorkspacePatch,
+): TeamRulesWorkspace {
+  const tvCurrent = current
+    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+    : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_TEAM_RULES_COLUMNS } as TeamVisionWorkspace)
+  const next = applyTeamVisionWorkspacePatch(tvCurrent, patch as TeamVisionWorkspacePatch)
+  return { columns: next.columns, rows: next.rows, blocks: next.blocks, updatedBy: next.updatedBy, updatedAt: next.updatedAt }
+}
+
+export async function patchTeamRulesWorkspace(
+  projectId: string,
+  patch: TeamRulesWorkspacePatch,
+): Promise<TeamRulesWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyTeamRulesWorkspacePatch(data.teamRulesWorkspace, patch)
+  const clean = stripUndefinedDeep(nextWorkspace) as TeamRulesWorkspace
+  await updateDoc(ref, { teamRulesWorkspace: clean, updatedAt: serverTimestamp() })
+  return clean
+}
+
+export type TeamRulesPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const TR_PRESENCE_DEBOUNCE_MS = 300
+const trPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushTrPresence(projectId: string, uid: string, presence: TeamRulesPresenceEntry | null): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'teamRulesPresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setTeamRulesWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: TeamRulesPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = trPresenceTimers.get(key)
+  if (pending) { clearTimeout(pending); trPresenceTimers.delete(key) }
+  if (presence === null) { await flushTrPresence(projectId, uid, null); return }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      trPresenceTimers.delete(key)
+      flushTrPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setTeamRulesWorkspacePresence] flush failed:', err); resolve()
+      })
+    }, TR_PRESENCE_DEBOUNCE_MS)
+    trPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchTeamRulesWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, TeamRulesPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'teamRulesPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, TeamRulesPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as TeamRulesPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 팀 일정 워크스페이스 공동 편집 (T-2-3) ─────────────
+
+const DEFAULT_TEAM_SCHEDULE_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'period',      label: '기간',         color: '#E8F0FE' },
+  { id: 'activity',    label: '활동',         color: '#E8F0FE' },
+  { id: 'content',     label: '내용',         color: '#E8F0FE' },
+  { id: 'assignee',    label: '담당자',       color: '#E8F0FE' },
+]
+
+function emptyTeamScheduleWorkspace(): TeamScheduleWorkspace {
+  return { columns: DEFAULT_TEAM_SCHEDULE_COLUMNS, rows: [], blocks: [] }
+}
+
+export type TeamScheduleWorkspacePatch =
+  | { type: 'replace-all'; workspace: TeamScheduleWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyTeamScheduleWorkspacePatch(
+  current: TeamScheduleWorkspace | undefined,
+  patch: TeamScheduleWorkspacePatch,
+): TeamScheduleWorkspace {
+  const tvCurrent = current
+    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+    : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_TEAM_SCHEDULE_COLUMNS } as TeamVisionWorkspace)
+  const next = applyTeamVisionWorkspacePatch(tvCurrent, patch as TeamVisionWorkspacePatch)
+  return { columns: next.columns, rows: next.rows, blocks: next.blocks, updatedBy: next.updatedBy, updatedAt: next.updatedAt }
+}
+
+export async function patchTeamScheduleWorkspace(
+  projectId: string,
+  patch: TeamScheduleWorkspacePatch,
+): Promise<TeamScheduleWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyTeamScheduleWorkspacePatch(data.teamScheduleWorkspace, patch)
+  const clean = stripUndefinedDeep(nextWorkspace) as TeamScheduleWorkspace
+  await updateDoc(ref, { teamScheduleWorkspace: clean, updatedAt: serverTimestamp() })
+  return clean
+}
+
+export type TeamSchedulePresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const TS_PRESENCE_DEBOUNCE_MS = 300
+const tsPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushTsPresence(projectId: string, uid: string, presence: TeamSchedulePresenceEntry | null): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'teamSchedulePresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setTeamScheduleWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: TeamSchedulePresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = tsPresenceTimers.get(key)
+  if (pending) { clearTimeout(pending); tsPresenceTimers.delete(key) }
+  if (presence === null) { await flushTsPresence(projectId, uid, null); return }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      tsPresenceTimers.delete(key)
+      flushTsPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setTeamScheduleWorkspacePresence] flush failed:', err); resolve()
+      })
+    }, TS_PRESENCE_DEBOUNCE_MS)
+    tsPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchTeamScheduleWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, TeamSchedulePresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'teamSchedulePresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, TeamSchedulePresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as TeamSchedulePresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 주제 선정 워크스페이스 공동 편집 (A-1-2) ────────────
+// IGW 패턴 답습 — 메타 단일 필드(selectedTopic·topicType·rationale) + 기준 표 + 블록.
+
+import type { TopicSelectionWorkspace } from '@/types'
+
+const DEFAULT_TOPIC_SELECTION_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'criterion',   label: '선정 기준', color: '#E8F0FE' },
+  { id: 'description', label: '설명',      color: '#E8F0FE' },
+  { id: 'priority',    label: '우선순위',  color: '#E8F0FE' },
+]
+
+function cleanTopicSelectionRow(row: TeamVisionWorkspaceRow): TeamVisionWorkspaceRow {
+  return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined)) as TeamVisionWorkspaceRow
+}
+
+function cleanTopicSelectionBlock(block: TeamVisionWorkspaceBlock): TeamVisionWorkspaceBlock {
+  return Object.fromEntries(Object.entries(block).filter(([, v]) => v !== undefined)) as TeamVisionWorkspaceBlock
+}
+
+function cleanTopicSelectionWorkspace(workspace: TopicSelectionWorkspace): TopicSelectionWorkspace {
+  const cleaned: TopicSelectionWorkspace = {
+    ...workspace,
+    columns: workspace.columns.map(column => ({ ...column })),
+    rows: workspace.rows.map(cleanTopicSelectionRow),
+    blocks: workspace.blocks.map(cleanTopicSelectionBlock),
+  }
+  return Object.fromEntries(Object.entries(cleaned).filter(([, v]) => v !== undefined)) as TopicSelectionWorkspace
+}
+
+function emptyTopicSelectionWorkspace(): TopicSelectionWorkspace {
+  return {
+    columns: DEFAULT_TOPIC_SELECTION_COLUMNS,
+    rows: [],
+    selectedTopic: '',
+    topicType: '',
+    rationale: '',
+    blocks: [],
+  }
+}
+
+export type TopicSelectionWorkspacePatch =
+  | { type: 'replace-all'; workspace: TopicSelectionWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'update-meta'; field: 'selectedTopic' | 'topicType' | 'rationale'; value: string; updatedBy?: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyTopicSelectionWorkspacePatch(
+  current: TopicSelectionWorkspace | undefined,
+  patch: TopicSelectionWorkspacePatch,
+): TopicSelectionWorkspace {
+  const now = Date.now()
+  const workspace = cleanTopicSelectionWorkspace(current ?? emptyTopicSelectionWorkspace())
+  const stampWorkspace = (value: TopicSelectionWorkspace, updatedBy?: string): TopicSelectionWorkspace => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampRow = (value: TeamVisionWorkspaceRow, updatedBy?: string): TeamVisionWorkspaceRow => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampBlock = (value: TeamVisionWorkspaceBlock, updatedBy?: string): TeamVisionWorkspaceBlock => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+
+  if (patch.type === 'replace-all') {
+    return cleanTopicSelectionWorkspace(stampWorkspace(patch.workspace, patch.updatedBy))
+  }
+  if (patch.type === 'update-cell') {
+    const rows = workspace.rows.map(row => row.id === patch.rowId
+      ? stampRow({ ...row, cells: { ...row.cells, [patch.columnId]: patch.value } }, patch.updatedBy)
+      : row)
+    return cleanTopicSelectionWorkspace(stampWorkspace({ ...workspace, rows }, patch.updatedBy))
+  }
+  if (patch.type === 'add-row') {
+    return cleanTopicSelectionWorkspace(stampWorkspace({
+      ...workspace,
+      rows: [...workspace.rows, stampRow(patch.row, patch.updatedBy)],
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-row') {
+    return cleanTopicSelectionWorkspace(stampWorkspace({
+      ...workspace,
+      rows: workspace.rows.filter(row => row.id !== patch.rowId),
+    }))
+  }
+  if (patch.type === 'add-column') {
+    return cleanTopicSelectionWorkspace(stampWorkspace({
+      ...workspace,
+      columns: [...workspace.columns, patch.column],
+      rows: workspace.rows.map(row => ({ ...row, cells: { ...row.cells, [patch.column.id]: '' } })),
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'update-column') {
+    return cleanTopicSelectionWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.map(column => column.id === patch.columnId
+        ? { ...column, label: patch.label, color: patch.color ?? column.color }
+        : column),
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-column') {
+    return cleanTopicSelectionWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.filter(column => column.id !== patch.columnId),
+      rows: workspace.rows.map(row => {
+        const cells = { ...row.cells }
+        delete cells[patch.columnId]
+        return { ...row, cells }
+      }),
+    }))
+  }
+  if (patch.type === 'update-meta') {
+    return cleanTopicSelectionWorkspace(stampWorkspace({
+      ...workspace,
+      [patch.field]: patch.value,
+    } as TopicSelectionWorkspace, patch.updatedBy))
+  }
+  if (patch.type === 'upsert-block') {
+    const index = workspace.blocks.findIndex(block => block.id === patch.block.id)
+    const block = stampBlock(patch.block, patch.updatedBy)
+    const blocks = [...workspace.blocks]
+    if (index >= 0) blocks[index] = block
+    else blocks.push(block)
+    return cleanTopicSelectionWorkspace(stampWorkspace({ ...workspace, blocks }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-block') {
+    return cleanTopicSelectionWorkspace(stampWorkspace({
+      ...workspace,
+      blocks: workspace.blocks.filter(block => block.id !== patch.blockId),
+    }))
+  }
+  if (patch.type === 'reorder-blocks') {
+    const byId = new Map(workspace.blocks.map(block => [block.id, block]))
+    const ordered = patch.blockIds.map(id => byId.get(id)).filter(Boolean) as TeamVisionWorkspaceBlock[]
+    const orderedIds = new Set(ordered.map(block => block.id))
+    const missing = workspace.blocks.filter(block => !orderedIds.has(block.id))
+    return cleanTopicSelectionWorkspace(stampWorkspace({ ...workspace, blocks: [...ordered, ...missing] }))
+  }
+  return workspace
+}
+
+export async function patchTopicSelectionWorkspace(
+  projectId: string,
+  patch: TopicSelectionWorkspacePatch,
+): Promise<TopicSelectionWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyTopicSelectionWorkspacePatch(data.topicSelectionWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as TopicSelectionWorkspace
+  await updateDoc(ref, {
+    topicSelectionWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type TopicSelectionPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const TPS_PRESENCE_DEBOUNCE_MS = 300
+const tpsPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushTpsPresence(projectId: string, uid: string, presence: TopicSelectionPresenceEntry | null): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'topicSelectionPresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setTopicSelectionWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: TopicSelectionPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = tpsPresenceTimers.get(key)
+  if (pending) { clearTimeout(pending); tpsPresenceTimers.delete(key) }
+  if (presence === null) { await flushTpsPresence(projectId, uid, null); return }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      tpsPresenceTimers.delete(key)
+      flushTpsPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setTopicSelectionWorkspacePresence] flush failed:', err); resolve()
+      })
+    }, TPS_PRESENCE_DEBOUNCE_MS)
+    tpsPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchTopicSelectionWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, TopicSelectionPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'topicSelectionPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, TopicSelectionPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as TopicSelectionPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 학습활동 설계 워크스페이스 공동 편집 (Ds-1-3) ────────────
+// IGW 패턴 — 메타 단일 필드(review) + 8열 활동 표 + 블록.
+
+import type { LearningActivityWorkspace } from '@/types'
+
+const DEFAULT_LEARNING_ACTIVITY_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'order',       label: '순서',       color: '#E8F0FE' },
+  { id: 'phase',       label: '흐름 단계',  color: '#E8F0FE' },
+  { id: 'name',        label: '활동명',     color: '#E8F0FE' },
+  { id: 'description', label: '활동 설명',  color: '#E8F0FE' },
+  { id: 'coreType',    label: '핵심/부가',  color: '#E8F0FE' },
+  { id: 'subject',     label: '담당 교과',  color: '#E8F0FE' },
+  { id: 'session',     label: '누적 차시',  color: '#E8F0FE' },
+  { id: 'operation',   label: '차시 운영(시간·지원·자료·평가)', color: '#E8F0FE' },
+]
+
+function cleanLearningActivityRow(row: TeamVisionWorkspaceRow): TeamVisionWorkspaceRow {
+  return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined)) as TeamVisionWorkspaceRow
+}
+
+function cleanLearningActivityBlock(block: TeamVisionWorkspaceBlock): TeamVisionWorkspaceBlock {
+  return Object.fromEntries(Object.entries(block).filter(([, v]) => v !== undefined)) as TeamVisionWorkspaceBlock
+}
+
+function cleanLearningActivityWorkspace(workspace: LearningActivityWorkspace): LearningActivityWorkspace {
+  const cleaned: LearningActivityWorkspace = {
+    ...workspace,
+    columns: workspace.columns.map(column => ({ ...column })),
+    rows: workspace.rows.map(cleanLearningActivityRow),
+    blocks: workspace.blocks.map(cleanLearningActivityBlock),
+  }
+  return Object.fromEntries(Object.entries(cleaned).filter(([, v]) => v !== undefined)) as LearningActivityWorkspace
+}
+
+function emptyLearningActivityWorkspace(): LearningActivityWorkspace {
+  return {
+    columns: DEFAULT_LEARNING_ACTIVITY_COLUMNS,
+    rows: [],
+    review: '',
+    blocks: [],
+  }
+}
+
+export type LearningActivityWorkspacePatch =
+  | { type: 'replace-all'; workspace: LearningActivityWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'update-meta'; field: 'review'; value: string; updatedBy?: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyLearningActivityWorkspacePatch(
+  current: LearningActivityWorkspace | undefined,
+  patch: LearningActivityWorkspacePatch,
+): LearningActivityWorkspace {
+  const now = Date.now()
+  const workspace = cleanLearningActivityWorkspace(current ?? emptyLearningActivityWorkspace())
+  const stampWorkspace = (value: LearningActivityWorkspace, updatedBy?: string): LearningActivityWorkspace => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampRow = (value: TeamVisionWorkspaceRow, updatedBy?: string): TeamVisionWorkspaceRow => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampBlock = (value: TeamVisionWorkspaceBlock, updatedBy?: string): TeamVisionWorkspaceBlock => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+
+  if (patch.type === 'replace-all') {
+    return cleanLearningActivityWorkspace(stampWorkspace(patch.workspace, patch.updatedBy))
+  }
+  if (patch.type === 'update-cell') {
+    const rows = workspace.rows.map(row => row.id === patch.rowId
+      ? stampRow({ ...row, cells: { ...row.cells, [patch.columnId]: patch.value } }, patch.updatedBy)
+      : row)
+    return cleanLearningActivityWorkspace(stampWorkspace({ ...workspace, rows }, patch.updatedBy))
+  }
+  if (patch.type === 'add-row') {
+    return cleanLearningActivityWorkspace(stampWorkspace({
+      ...workspace,
+      rows: [...workspace.rows, stampRow(patch.row, patch.updatedBy)],
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-row') {
+    return cleanLearningActivityWorkspace(stampWorkspace({
+      ...workspace,
+      rows: workspace.rows.filter(row => row.id !== patch.rowId),
+    }))
+  }
+  if (patch.type === 'add-column') {
+    return cleanLearningActivityWorkspace(stampWorkspace({
+      ...workspace,
+      columns: [...workspace.columns, patch.column],
+      rows: workspace.rows.map(row => ({ ...row, cells: { ...row.cells, [patch.column.id]: '' } })),
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'update-column') {
+    return cleanLearningActivityWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.map(column => column.id === patch.columnId
+        ? { ...column, label: patch.label, color: patch.color ?? column.color }
+        : column),
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-column') {
+    return cleanLearningActivityWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.filter(column => column.id !== patch.columnId),
+      rows: workspace.rows.map(row => {
+        const cells = { ...row.cells }
+        delete cells[patch.columnId]
+        return { ...row, cells }
+      }),
+    }))
+  }
+  if (patch.type === 'update-meta') {
+    return cleanLearningActivityWorkspace(stampWorkspace({
+      ...workspace,
+      [patch.field]: patch.value,
+    } as LearningActivityWorkspace, patch.updatedBy))
+  }
+  if (patch.type === 'upsert-block') {
+    const index = workspace.blocks.findIndex(block => block.id === patch.block.id)
+    const block = stampBlock(patch.block, patch.updatedBy)
+    const blocks = [...workspace.blocks]
+    if (index >= 0) blocks[index] = block
+    else blocks.push(block)
+    return cleanLearningActivityWorkspace(stampWorkspace({ ...workspace, blocks }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-block') {
+    return cleanLearningActivityWorkspace(stampWorkspace({
+      ...workspace,
+      blocks: workspace.blocks.filter(block => block.id !== patch.blockId),
+    }))
+  }
+  if (patch.type === 'reorder-blocks') {
+    const byId = new Map(workspace.blocks.map(block => [block.id, block]))
+    const ordered = patch.blockIds.map(id => byId.get(id)).filter(Boolean) as TeamVisionWorkspaceBlock[]
+    const orderedIds = new Set(ordered.map(block => block.id))
+    const missing = workspace.blocks.filter(block => !orderedIds.has(block.id))
+    return cleanLearningActivityWorkspace(stampWorkspace({ ...workspace, blocks: [...ordered, ...missing] }))
+  }
+  return workspace
+}
+
+export async function patchLearningActivityWorkspace(
+  projectId: string,
+  patch: LearningActivityWorkspacePatch,
+): Promise<LearningActivityWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyLearningActivityWorkspacePatch(data.learningActivityWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as LearningActivityWorkspace
+  await updateDoc(ref, {
+    learningActivityWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type LearningActivityPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const LAW_PRESENCE_DEBOUNCE_MS = 300
+const lawPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushLawPresence(projectId: string, uid: string, presence: LearningActivityPresenceEntry | null): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'learningActivityPresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setLearningActivityWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: LearningActivityPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = lawPresenceTimers.get(key)
+  if (pending) { clearTimeout(pending); lawPresenceTimers.delete(key) }
+  if (presence === null) { await flushLawPresence(projectId, uid, null); return }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      lawPresenceTimers.delete(key)
+      flushLawPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setLearningActivityWorkspacePresence] flush failed:', err); resolve()
+      })
+    }, LAW_PRESENCE_DEBOUNCE_MS)
+    lawPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchLearningActivityWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, LearningActivityPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'learningActivityPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, LearningActivityPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as LearningActivityPresenceEntry })
+    onChange(out)
+  })
+}
+
+// ─── 스캐폴딩 설계 워크스페이스 공동 편집 (Ds-2-2) ────────────
+// IGW 패턴 — 메타 단일 필드(review) + 5열 스캐폴딩 계획 표 + 블록.
+
+import type { ScaffoldingWorkspace } from '@/types'
+
+const DEFAULT_SCAFFOLDING_COLUMNS: TeamVisionWorkspaceColumn[] = [
+  { id: 'targetActivity', label: '대상 활동',      color: '#E8F0FE' },
+  { id: 'type',           label: '스캐폴딩 유형',  color: '#E8F0FE' },
+  { id: 'content',        label: '구체적 내용',    color: '#E8F0FE' },
+  { id: 'level',          label: '대상 수준',      color: '#E8F0FE' },
+  { id: 'fadeOut',        label: '점진적 제거 계획', color: '#E8F0FE' },
+]
+
+function cleanScaffoldingRow(row: TeamVisionWorkspaceRow): TeamVisionWorkspaceRow {
+  return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined)) as TeamVisionWorkspaceRow
+}
+
+function cleanScaffoldingBlock(block: TeamVisionWorkspaceBlock): TeamVisionWorkspaceBlock {
+  return Object.fromEntries(Object.entries(block).filter(([, v]) => v !== undefined)) as TeamVisionWorkspaceBlock
+}
+
+function cleanScaffoldingWorkspace(workspace: ScaffoldingWorkspace): ScaffoldingWorkspace {
+  const cleaned: ScaffoldingWorkspace = {
+    ...workspace,
+    columns: workspace.columns.map(column => ({ ...column })),
+    rows: workspace.rows.map(cleanScaffoldingRow),
+    blocks: workspace.blocks.map(cleanScaffoldingBlock),
+  }
+  return Object.fromEntries(Object.entries(cleaned).filter(([, v]) => v !== undefined)) as ScaffoldingWorkspace
+}
+
+function emptyScaffoldingWorkspace(): ScaffoldingWorkspace {
+  return { columns: DEFAULT_SCAFFOLDING_COLUMNS, rows: [], review: '', blocks: [] }
+}
+
+export type ScaffoldingWorkspacePatch =
+  | { type: 'replace-all'; workspace: ScaffoldingWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: TeamVisionWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: TeamVisionWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'update-meta'; field: 'review'; value: string; updatedBy?: string }
+  | { type: 'upsert-block'; block: TeamVisionWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+function applyScaffoldingWorkspacePatch(
+  current: ScaffoldingWorkspace | undefined,
+  patch: ScaffoldingWorkspacePatch,
+): ScaffoldingWorkspace {
+  const now = Date.now()
+  const workspace = cleanScaffoldingWorkspace(current ?? emptyScaffoldingWorkspace())
+  const stampWorkspace = (value: ScaffoldingWorkspace, updatedBy?: string): ScaffoldingWorkspace => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampRow = (value: TeamVisionWorkspaceRow, updatedBy?: string): TeamVisionWorkspaceRow => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+  const stampBlock = (value: TeamVisionWorkspaceBlock, updatedBy?: string): TeamVisionWorkspaceBlock => ({
+    ...value,
+    ...(updatedBy ? { updatedBy } : {}),
+    updatedAt: now,
+  })
+
+  if (patch.type === 'replace-all') {
+    return cleanScaffoldingWorkspace(stampWorkspace(patch.workspace, patch.updatedBy))
+  }
+  if (patch.type === 'update-cell') {
+    const rows = workspace.rows.map(row => row.id === patch.rowId
+      ? stampRow({ ...row, cells: { ...row.cells, [patch.columnId]: patch.value } }, patch.updatedBy)
+      : row)
+    return cleanScaffoldingWorkspace(stampWorkspace({ ...workspace, rows }, patch.updatedBy))
+  }
+  if (patch.type === 'add-row') {
+    return cleanScaffoldingWorkspace(stampWorkspace({
+      ...workspace,
+      rows: [...workspace.rows, stampRow(patch.row, patch.updatedBy)],
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-row') {
+    return cleanScaffoldingWorkspace(stampWorkspace({
+      ...workspace,
+      rows: workspace.rows.filter(row => row.id !== patch.rowId),
+    }))
+  }
+  if (patch.type === 'add-column') {
+    return cleanScaffoldingWorkspace(stampWorkspace({
+      ...workspace,
+      columns: [...workspace.columns, patch.column],
+      rows: workspace.rows.map(row => ({ ...row, cells: { ...row.cells, [patch.column.id]: '' } })),
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'update-column') {
+    return cleanScaffoldingWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.map(column => column.id === patch.columnId
+        ? { ...column, label: patch.label, color: patch.color ?? column.color }
+        : column),
+    }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-column') {
+    return cleanScaffoldingWorkspace(stampWorkspace({
+      ...workspace,
+      columns: workspace.columns.filter(column => column.id !== patch.columnId),
+      rows: workspace.rows.map(row => {
+        const cells = { ...row.cells }
+        delete cells[patch.columnId]
+        return { ...row, cells }
+      }),
+    }))
+  }
+  if (patch.type === 'update-meta') {
+    return cleanScaffoldingWorkspace(stampWorkspace({
+      ...workspace,
+      [patch.field]: patch.value,
+    } as ScaffoldingWorkspace, patch.updatedBy))
+  }
+  if (patch.type === 'upsert-block') {
+    const index = workspace.blocks.findIndex(block => block.id === patch.block.id)
+    const block = stampBlock(patch.block, patch.updatedBy)
+    const blocks = [...workspace.blocks]
+    if (index >= 0) blocks[index] = block
+    else blocks.push(block)
+    return cleanScaffoldingWorkspace(stampWorkspace({ ...workspace, blocks }, patch.updatedBy))
+  }
+  if (patch.type === 'delete-block') {
+    return cleanScaffoldingWorkspace(stampWorkspace({
+      ...workspace,
+      blocks: workspace.blocks.filter(block => block.id !== patch.blockId),
+    }))
+  }
+  if (patch.type === 'reorder-blocks') {
+    const byId = new Map(workspace.blocks.map(block => [block.id, block]))
+    const ordered = patch.blockIds.map(id => byId.get(id)).filter(Boolean) as TeamVisionWorkspaceBlock[]
+    const orderedIds = new Set(ordered.map(block => block.id))
+    const missing = workspace.blocks.filter(block => !orderedIds.has(block.id))
+    return cleanScaffoldingWorkspace(stampWorkspace({ ...workspace, blocks: [...ordered, ...missing] }))
+  }
+  return workspace
+}
+
+export async function patchScaffoldingWorkspace(
+  projectId: string,
+  patch: ScaffoldingWorkspacePatch,
+): Promise<ScaffoldingWorkspace> {
+  const ref = doc(db, 'projects', projectId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const nextWorkspace = applyScaffoldingWorkspacePatch(data.scaffoldingWorkspace, patch)
+  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as ScaffoldingWorkspace
+  await updateDoc(ref, {
+    scaffoldingWorkspace: cleanWorkspace,
+    updatedAt: serverTimestamp(),
+  })
+  return cleanWorkspace
+}
+
+export type ScaffoldingPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const SCF_PRESENCE_DEBOUNCE_MS = 300
+const scfPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushScfPresence(projectId: string, uid: string, presence: ScaffoldingPresenceEntry | null): Promise<void> {
+  const ref = doc(db, 'projects', projectId, 'scaffoldingPresence', uid)
+  if (presence) {
+    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setScaffoldingWorkspacePresence(
+  projectId: string,
+  uid: string,
+  presence: ScaffoldingPresenceEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${uid}`
+  const pending = scfPresenceTimers.get(key)
+  if (pending) { clearTimeout(pending); scfPresenceTimers.delete(key) }
+  if (presence === null) { await flushScfPresence(projectId, uid, null); return }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      scfPresenceTimers.delete(key)
+      flushScfPresence(projectId, uid, presence).then(resolve, (err) => {
+        console.warn('[setScaffoldingWorkspacePresence] flush failed:', err); resolve()
+      })
+    }, SCF_PRESENCE_DEBOUNCE_MS)
+    scfPresenceTimers.set(key, timer)
+  })
+}
+
+export function watchScaffoldingWorkspacePresence(
+  projectId: string,
+  onChange: (presence: Record<string, ScaffoldingPresenceEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'scaffoldingPresence')
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, ScaffoldingPresenceEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as ScaffoldingPresenceEntry })
+    onChange(out)
+  })
+}
+
 // 문제상황 디자이너 오픈 상태 설정 (팀원 자동 오픈)
 export async function setProblemSituationOpen(projectId: string, open: boolean): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
@@ -919,15 +3043,17 @@ export async function logStageTransition(
   projectId: string,
   data: Omit<StageTransition, 'id' | 'createdAt'>
 ): Promise<void> {
+  const cycleFinalize = data.direction === 'cycle'
+    ? finalizeCycleTransition(projectId, data.cycleNumber).catch(err => {
+      console.warn('finalizeCycleTransition failed:', err)
+    })
+    : Promise.resolve()
+
   await addDoc(collection(db, `projects/${projectId}/stage_transitions`), {
     ...data,
     createdAt: serverTimestamp(),
   })
-  // E→T 순환: isECompleted 플래그 + previousCycleImprovements 추출 + currentCycle 증가를
-  // 단일 updateDoc으로 통합 (이중 write 방지).
-  if (data.direction === 'cycle') {
-    await finalizeCycleTransition(projectId, data.cycleNumber)
-  }
+  await cycleFinalize
 }
 
 /**
@@ -939,7 +3065,7 @@ export async function logStageTransition(
  * 추출 실패는 cycle 전환 자체를 막지 않음. best-effort.
  * 레거시(_schemaVersion !== 'v2-sections') 산출물도 best-effort로 시도.
  */
-async function finalizeCycleTransition(
+export async function finalizeCycleTransition(
   projectId: string,
   completedCycleNumber: number
 ): Promise<void> {
@@ -1052,4 +3178,100 @@ export function watchStreamingState(
       callback(states)
     }
   )
+}
+
+// ─── 협업 프롬프트 초안 (모든 단계 공용) ────────────
+// 각 단계 모달의 "구체적으로 AI에게 요청하기" 협업 입력.
+// scope 별로 subcollection 분리: `<scope>PromptDraft` (이름 컨벤션 firestore.rules wildcard 매칭).
+//   scope = 'roleDistribution' | 'teamVision' | 'integratedGoal' | 'lessonDesignDirection' | ...
+// uid별 1행. 본인만 자기 행 write, 멤버 전원 read.
+
+export type CollaborativePromptScope =
+  | 'roleDistribution'
+  | 'teamVision'
+  | 'integratedGoal'
+  | 'lessonDesignDirection'
+  | 'evaluationPlan'
+  | 'problemSituation'
+  | 'supportTool'
+
+export type CollaborativePromptEntry = {
+  uid: string
+  displayName: string
+  color: string
+  text: string
+  updatedAt: number
+}
+
+function promptCollectionName(scope: CollaborativePromptScope): string {
+  return `${scope}PromptDraft`
+}
+
+const COLLAB_PROMPT_DEBOUNCE_MS = 250
+const collabPromptTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushCollabPrompt(
+  projectId: string,
+  scope: CollaborativePromptScope,
+  uid: string,
+  entry: CollaborativePromptEntry | null,
+): Promise<void> {
+  const ref = doc(db, 'projects', projectId, promptCollectionName(scope), uid)
+  if (entry) {
+    const clean = Object.fromEntries(Object.entries(entry).filter(([, v]) => v !== undefined))
+    await setDoc(ref, clean)
+  } else {
+    await deleteDoc(ref)
+  }
+}
+
+export async function setCollaborativePromptDraft(
+  projectId: string,
+  scope: CollaborativePromptScope,
+  uid: string,
+  entry: CollaborativePromptEntry | null,
+): Promise<void> {
+  const key = `${projectId}::${scope}::${uid}`
+  const pending = collabPromptTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    collabPromptTimers.delete(key)
+  }
+  if (entry === null) {
+    await flushCollabPrompt(projectId, scope, uid, null)
+    return
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      collabPromptTimers.delete(key)
+      flushCollabPrompt(projectId, scope, uid, entry).then(resolve, (err) => {
+        console.warn('[setCollaborativePromptDraft] flush failed:', err)
+        resolve()
+      })
+    }, COLLAB_PROMPT_DEBOUNCE_MS)
+    collabPromptTimers.set(key, timer)
+  })
+}
+
+export function watchCollaborativePromptDraft(
+  projectId: string,
+  scope: CollaborativePromptScope,
+  onChange: (entries: Record<string, CollaborativePromptEntry>) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, promptCollectionName(scope))
+  return onSnapshot(ref, (snap) => {
+    const out: Record<string, CollaborativePromptEntry> = {}
+    snap.forEach(d => { out[d.id] = d.data() as CollaborativePromptEntry })
+    onChange(out)
+  })
+}
+
+/** 모달 닫기 또는 AI 제안 호출 후 일괄 삭제 (호출자 책임) */
+export async function clearCollaborativePromptDraft(
+  projectId: string,
+  scope: CollaborativePromptScope,
+): Promise<void> {
+  const colRef = collection(db, 'projects', projectId, promptCollectionName(scope))
+  const snap = await getDocs(colRef)
+  await Promise.all(snap.docs.map(d => deleteDoc(d.ref)))
 }

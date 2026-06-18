@@ -30,9 +30,8 @@ function isSelectionCurriculum(curriculum: string): boolean {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const gradeGroup = searchParams.get('gradeGroup')
-  const records = gradeNeedle(gradeGroup) && !isElementaryGradeGroup(gradeGroup)
-    ? loadContentSystems()
-    : loadElementaryContentSystems()
+  // [strict-elementary 2026-05-14] 초등 전용 웹앱 — 비초등 gradeGroup이 와도 강제로 초등 데이터만.
+  const records = loadElementaryContentSystems()
   const elementary = records
     .filter(r => !isSelectionCurriculum(r.curriculum))
     .filter(r =>

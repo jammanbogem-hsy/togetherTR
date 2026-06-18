@@ -97,7 +97,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'T-2-3': {
     code: 'T-2-3', label: '팀 일정 협의', stage: 'T',
     recommendedSections: [
-      { key: '팀 일정', label: '팀 일정 (기간·활동·마감·담당자)', minChars: 20, required: 'any' },
+      { key: '팀 일정', label: '팀 일정 (기간·활동·내용·담당자)', minChars: 20, required: 'any' },
     ],
   },
   'A-1-1': { code: 'A-1-1', label: '주제 선정 기준', stage: 'A' },
@@ -126,8 +126,6 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
       { key: '공통 핵심 아이디어', label: '공통 핵심 아이디어 (1문장)',      minChars: 10, required: 'any' },
       { key: '통합 수업목표',     label: '통합 수업목표 (단일 문장)',       minChars: 15, required: 'any' },
       { key: '교과별 수업목표',   label: '교과별 수업목표 (태그 포함 표)', minChars: 20, required: 'any' },
-      { key: '핵심 키워드',       label: '수렴 핵심 키워드',                 minChars: 2,  required: 'any' },
-      { key: '진술 방식',         label: '진술 방식 (귀납/연역)',            minChars: 2,  required: 'any' },
     ],
   },
   'A-2-3': {
@@ -147,20 +145,21 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     code: 'Ds-1-2', label: '문제상황 개발', stage: 'Ds', isGuardrailTarget: true,
     recommendedSections: [
       { key: '문제상황',  label: '문제상황 시나리오 (제목·실제성·학습내용+산출물·청중+행위)', minChars: 20, required: 'any' },
-      { key: '핵심 질문', label: '핵심 질문 (Driving Question)',                          minChars: 10, required: 'any' },
+      { key: '핵심 질문', label: '탐구 질문 (Driving Question)',                          minChars: 10, required: 'any' },
     ],
   },
   'Ds-1-3': {
     code: 'Ds-1-3', label: '학습활동 설계', stage: 'Ds', isGuardrailTarget: true,
     recommendedSections: [
-      { key: '학습 활동', label: '학습 활동 (순서·활동명·설명·교과·누적 차시)', minChars: 20, required: 'any' },
+      { key: '학습 활동', label: '학습 활동 (흐름 단계·동사형 활동명·핵심/부가·누적 차시·운영)', minChars: 20, required: 'any' },
+      { key: 'AI 점검',  label: 'AI 점검 (목표·평가 정합성, 실행 적절성)',                  minChars: 20, required: 'any' },
     ],
   },
   'Ds-2-1': {
     code: 'Ds-2-1', label: '지원 도구 설계', stage: 'Ds', isGuardrailTarget: true,
     recommendedSections: [
-      { key: '경험한 도구 정리',   label: '경험한 도구 정리 (도구명·활용 경험)',           minChars: 20, required: 'any' },
-      { key: '학습활동-도구 매칭', label: '학습활동-도구 매칭 (활동·도구·활용 방안·대안)', minChars: 20, required: 'any' },
+      { key: '활동별 자료 설계', label: '활동별 자료 설계 (활동·자료·이유·탐색/개발·공동/개별·담당·일정)', minChars: 20, required: 'any' },
+      { key: 'AI 점검',          label: 'AI 점검 (학생 수준·출처·저작권·개인정보·접근성)',              minChars: 20, required: 'any' },
     ],
   },
   'Ds-2-2': {
@@ -168,6 +167,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     recommendedSections: [
       { key: '지원 방안 정리', label: '지원 방안 정리 (지원 방안·대상 활동)',                   minChars: 20, required: 'any' },
       { key: '스캐폴딩 계획',  label: '스캐폴딩 계획 (활동·유형·내용·대상·점진적 제거)',        minChars: 20, required: 'any' },
+      { key: 'AI 점검',       label: 'AI 점검 (GRR 부합·개별화 충분성·제거 시점)',             minChars: 20, required: 'any' },
     ],
   },
   'DI-1-1': {
@@ -339,6 +339,8 @@ export interface Project {
     // P1-I: 섹션 검증 스키마 버전. 'v2-sections' 이면 ACTIVITY_META[code].requiredSections 검증 적용.
     // undefined 또는 다른 값이면 레거시(grandfather) — 기존 로직으로만 완료 판정.
     _schemaVersion?: string
+    // 산출물 이력 (최신 = 가장 큰 version). content 덮어쓰기 전 push, 최대 20개 유지.
+    versions?: ArtifactVersion[]
   }>
   // P1-I: E→T 순환 시 직전 주기 E 산출물에서 추출된 개선안.
   // 다음 주기 T-1-1 프롬프트에 주입되어 지식 누적의 흐름을 만든다.
@@ -374,6 +376,40 @@ export interface Project {
     cellKey: string
     updatedAt: number
   }>
+  // 통합 수업목표 워크스페이스 — A-2-2 수동 공동 편집 초안
+  // Presence는 projects/{id}/integratedGoalPresence subcollection로 분리됨
+  // (부모 문서 updateTime 충돌로 인한 patchIntegratedGoalWorkspace 트랜잭션 failed-precondition 회피)
+  integratedGoalWorkspace?: IntegratedGoalWorkspace
+  // 수업설계 방향 워크스페이스 — T-1-2 수동 공동 편집 초안.
+  // shape은 TeamVisionWorkspace와 동일 (열·행·블록). Presence는 projects/{id}/lessonDesignDirectionPresence subcollection로 분리.
+  lessonDesignDirectionWorkspace?: LessonDesignDirectionWorkspace
+  // 평가 계획 워크스페이스 — Ds-1-1 수동 공동 편집 초안. Presence는 projects/{id}/evaluationPlanPresence subcollection.
+  evaluationPlanWorkspace?: EvaluationPlanWorkspace
+  // 문제상황 워크스페이스 — Ds-1-2 수동 공동 편집 초안 (기존 problemSituationData와 별개).
+  problemSituationWorkspace?: ProblemSituationWorkspace
+  // 역할 배분 워크스페이스 — T-2-1 수동 공동 편집 초안.
+  // 5열 표(교사명·담당교과·강점·전문성·팀내역할·담당업무) + 자유 블록. Presence는 projects/{id}/roleDistributionPresence subcollection로 분리.
+  roleDistributionWorkspace?: RoleDistributionWorkspace
+  // 팀 규칙 워크스페이스 — T-2-2 수동 공동 편집 초안.
+  // 4열 표(분류·규칙명·설명·위반 시 조치) + 자유 블록. Presence는 projects/{id}/teamRulesPresence subcollection로 분리.
+  teamRulesWorkspace?: TeamRulesWorkspace
+  // 팀 일정 워크스페이스 — T-2-3 수동 공동 편집 초안.
+  // 4열 표(기간·활동·산출/마감·담당자) + 자유 블록. Presence는 projects/{id}/teamSchedulePresence subcollection로 분리.
+  teamScheduleWorkspace?: TeamScheduleWorkspace
+  // 주제 선정 워크스페이스 — A-1-2 수동 공동 편집 초안.
+  // 기준 표(기준·설명·우선순위) + 메타(선정 주제·주제 유형·선정 근거) + 자유 블록.
+  // Presence는 projects/{id}/topicSelectionPresence subcollection로 분리.
+  topicSelectionWorkspace?: TopicSelectionWorkspace
+  // 학습활동 설계 워크스페이스 — Ds-1-3 수동 공동 편집 초안.
+  // 8열 활동 표(순서·흐름단계·활동명·설명·핵심부가·교과·차시·운영) + 메타(AI 점검) + 자유 블록.
+  // Presence는 projects/{id}/learningActivityPresence subcollection로 분리.
+  learningActivityWorkspace?: LearningActivityWorkspace
+  // 지원 도구(자료) 설계 워크스페이스 — Ds-2-1 수동 공동 편집 초안.
+  supportToolWorkspace?: SupportToolWorkspace
+  // 스캐폴딩 설계 워크스페이스 — Ds-2-2 수동 공동 편집 초안.
+  // 5열 스캐폴딩 계획 표(대상활동·유형·내용·대상수준·점진적제거) + 메타(AI 점검) + 자유 블록.
+  // Presence는 projects/{id}/scaffoldingPresence subcollection로 분리.
+  scaffoldingWorkspace?: ScaffoldingWorkspace
   // 공개 배포 상태 — "공개 링크" 기능으로 보고서를 외부에 공유 중일 때 true.
   // 실제 공개 데이터는 Firestore `public_reports/{projectId}`에 **스냅샷**으로 별도 저장.
   // 원본 프로젝트를 직접 공개하지 않는 이유: 팀원 UID/메시지 등 민감 데이터 분리 보장.
@@ -432,7 +468,7 @@ export interface TeamVisionWorkspaceRow {
   updatedAt?: number
 }
 
-export type TeamVisionWorkspaceBlockType = 'heading' | 'paragraph' | 'checklist' | 'quote' | 'table'
+export type TeamVisionWorkspaceBlockType = 'heading' | 'subheading' | 'paragraph' | 'checklist' | 'quote' | 'table'
 
 export interface TeamVisionWorkspaceTableData {
   columns: TeamVisionWorkspaceColumn[]
@@ -457,6 +493,233 @@ export interface TeamVisionWorkspace {
   teamVision: string
   coreKeywords: string[]
   blocks: TeamVisionWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 통합 수업목표 워크스페이스 (A-2-2 공동 편집) ─────────
+// A-2-2에서 공통 핵심 아이디어·통합 수업목표·교과별 목표 표를 함께 다루는 수동 편집 상태.
+// 최종 저장 시 A-2-2 구조화 산출물(A22Structured)의 manualWorkspace로 보존된다.
+// 컬럼/행/블록 타입은 TeamVisionWorkspace와 동일 구조를 재사용한다.
+export type IntegratedGoalWorkspaceColumn = TeamVisionWorkspaceColumn
+export type IntegratedGoalWorkspaceRow = TeamVisionWorkspaceRow
+export type IntegratedGoalWorkspaceBlock = TeamVisionWorkspaceBlock
+export type IntegratedGoalWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type IntegratedGoalWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export type IntegratedGoalMethod = 'inductive' | 'deductive'
+
+export interface IntegratedGoalWorkspace {
+  /** 교과별 수업목표 표의 컬럼 (디폴트: 교과·목표·지식·이해·과정·기능·가치·태도) */
+  columns: IntegratedGoalWorkspaceColumn[]
+  /** 교과별 수업목표 표의 행 */
+  rows: IntegratedGoalWorkspaceRow[]
+  /** 공통 핵심 아이디어 (단일 문장) */
+  commonCoreIdea: string
+  /** 통합 수업목표 (단일 문장, "학생은 ~ 할 수 있다") */
+  integratedGoal: string
+  /** 핵심 키워드 (수렴 키워드, 최대 8개) */
+  convergentKeywords: string[]
+  /** 진술 방식 — 귀납적/연역적 */
+  method?: IntegratedGoalMethod
+  /** 자유 형식 블록 (문단·제목·표·인용·체크리스트) */
+  blocks: IntegratedGoalWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 수업설계 방향 워크스페이스 (T-1-2 공동 편집) ─────────
+// T-1-2에서 "설계 원칙·근거" 표와 자유 편집 블록을 함께 다루는 수동 편집 상태.
+// 최종 저장 시 T-1-2 구조화 산출물(T12Structured)의 manualWorkspace로 보존된다.
+// 컬럼/행/블록 타입은 TeamVisionWorkspace와 동일 구조를 재사용 (의미적 분리만 위한 alias).
+export type LessonDesignDirectionWorkspaceColumn = TeamVisionWorkspaceColumn
+export type LessonDesignDirectionWorkspaceRow = TeamVisionWorkspaceRow
+export type LessonDesignDirectionWorkspaceBlock = TeamVisionWorkspaceBlock
+export type LessonDesignDirectionWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type LessonDesignDirectionWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface LessonDesignDirectionWorkspace {
+  /** 설계 원칙·근거 표의 컬럼 (디폴트: principle·rationale) */
+  columns: LessonDesignDirectionWorkspaceColumn[]
+  /** 표의 행 */
+  rows: LessonDesignDirectionWorkspaceRow[]
+  /** 자유 형식 블록 */
+  blocks: LessonDesignDirectionWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 평가 계획 워크스페이스 (Ds-1-1 공동 편집) ─────────
+// Ds-1-1에서 "평가 항목·방법·시점·상·중·하" 6열 루브릭 표와 자유 편집 블록을 다루는 수동 편집 상태.
+// 최종 저장 시 Ds-1-1 구조화 산출물(Ds11Structured)의 manualWorkspace로 보존된다.
+export type EvaluationPlanWorkspaceColumn = TeamVisionWorkspaceColumn
+export type EvaluationPlanWorkspaceRow = TeamVisionWorkspaceRow
+export type EvaluationPlanWorkspaceBlock = TeamVisionWorkspaceBlock
+export type EvaluationPlanWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type EvaluationPlanWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface EvaluationPlanWorkspace {
+  /** 루브릭 표 컬럼 (디폴트: item·method·timing·high·mid·low) */
+  columns: EvaluationPlanWorkspaceColumn[]
+  /** 표의 행 */
+  rows: EvaluationPlanWorkspaceRow[]
+  /** 자유 형식 블록 */
+  blocks: EvaluationPlanWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 문제상황 워크스페이스 (Ds-1-2 공동 편집) ─────────
+// "문제상황 시나리오 요소·내용" 표(요소|내용) + 자유 편집 블록. 시드 행: 제목/실제성/학습 내용+산출물/청중+행위/핵심 질문.
+export type ProblemSituationWorkspaceColumn = TeamVisionWorkspaceColumn
+export type ProblemSituationWorkspaceRow = TeamVisionWorkspaceRow
+export type ProblemSituationWorkspaceBlock = TeamVisionWorkspaceBlock
+export type ProblemSituationWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type ProblemSituationWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface ProblemSituationWorkspace {
+  columns: ProblemSituationWorkspaceColumn[]
+  rows: ProblemSituationWorkspaceRow[]
+  blocks: ProblemSituationWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 지원 도구(자료) 워크스페이스 (Ds-2-1 공동 편집) ─────────
+// 활동별 필요 자료 표(대상 활동·자료명·활용 이유·탐색/개발·공동/개별·담당·일정) + 자유 편집 블록.
+// 최종 저장 시 Ds-2-1 구조화 산출물(Ds21Structured)의 manualWorkspace로 보존.
+export type SupportToolWorkspaceColumn = TeamVisionWorkspaceColumn
+export type SupportToolWorkspaceRow = TeamVisionWorkspaceRow
+export type SupportToolWorkspaceBlock = TeamVisionWorkspaceBlock
+export type SupportToolWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type SupportToolWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface SupportToolWorkspace {
+  columns: SupportToolWorkspaceColumn[]
+  rows: SupportToolWorkspaceRow[]
+  blocks: SupportToolWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 역할 배분 워크스페이스 (T-2-1 공동 편집) ─────────────
+// T-2-1에서 5열 역할 배분 표(교사명·담당교과·강점·전문성·팀내역할·담당업무)와
+// 자유 편집 블록을 함께 다루는 수동 편집 상태.
+// 최종 저장 시 T-2-1 구조화 산출물(T21Structured)의 manualWorkspace로 보존된다.
+// 컬럼/행/블록 타입은 TeamVisionWorkspace와 동일 구조를 재사용 (의미적 분리만 위한 alias).
+export type RoleDistributionWorkspaceColumn = TeamVisionWorkspaceColumn
+export type RoleDistributionWorkspaceRow = TeamVisionWorkspaceRow
+export type RoleDistributionWorkspaceBlock = TeamVisionWorkspaceBlock
+export type RoleDistributionWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type RoleDistributionWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface RoleDistributionWorkspace {
+  /** 역할 배분 표의 컬럼 (디폴트 5열: teacherName·subject·strengths·role·responsibilities) */
+  columns: RoleDistributionWorkspaceColumn[]
+  /** 표의 행 (팀원별 한 줄) */
+  rows: RoleDistributionWorkspaceRow[]
+  /** 자유 형식 블록 (문단·제목·표·인용·체크리스트) */
+  blocks: RoleDistributionWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 팀 규칙 워크스페이스 (T-2-2 공동 편집) ──────────────
+// 4열 표(category·name·description·violation) + 자유 블록.
+export type TeamRulesWorkspaceColumn = TeamVisionWorkspaceColumn
+export type TeamRulesWorkspaceRow = TeamVisionWorkspaceRow
+export type TeamRulesWorkspaceBlock = TeamVisionWorkspaceBlock
+export type TeamRulesWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type TeamRulesWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface TeamRulesWorkspace {
+  columns: TeamRulesWorkspaceColumn[]
+  rows: TeamRulesWorkspaceRow[]
+  blocks: TeamRulesWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 팀 일정 워크스페이스 (T-2-3 공동 편집) ──────────────
+// 4열 표(period·activity·content·assignee) + 자유 블록.
+export type TeamScheduleWorkspaceColumn = TeamVisionWorkspaceColumn
+export type TeamScheduleWorkspaceRow = TeamVisionWorkspaceRow
+export type TeamScheduleWorkspaceBlock = TeamVisionWorkspaceBlock
+export type TeamScheduleWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type TeamScheduleWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface TeamScheduleWorkspace {
+  columns: TeamScheduleWorkspaceColumn[]
+  rows: TeamScheduleWorkspaceRow[]
+  blocks: TeamScheduleWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 주제 선정 워크스페이스 (A-1-2 공동 편집) ─────────────
+// IGW 패턴: 메타 단일 필드 + 기준 표 + 자유 블록.
+// 기준 표(criterion·description·priority) + 메타(selectedTopic·topicType·rationale).
+export type TopicSelectionWorkspaceColumn = TeamVisionWorkspaceColumn
+export type TopicSelectionWorkspaceRow = TeamVisionWorkspaceRow
+export type TopicSelectionWorkspaceBlock = TeamVisionWorkspaceBlock
+export type TopicSelectionWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type TopicSelectionWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface TopicSelectionWorkspace {
+  /** 주제 선정 기준 표의 컬럼 (디폴트 3열: criterion·description·priority) */
+  columns: TopicSelectionWorkspaceColumn[]
+  /** 기준 표의 행 */
+  rows: TopicSelectionWorkspaceRow[]
+  /** 최종 선정 주제 (단일 문장) */
+  selectedTopic: string
+  /** 주제 유형 — 내용요소형 / 기능요소형 / 혼합형 */
+  topicType: string
+  /** 선정 근거 (비전·교과·학생 맥락) */
+  rationale: string
+  /** 자유 형식 블록 (문단·제목·표·인용·체크리스트) */
+  blocks: TopicSelectionWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 학습활동 설계 워크스페이스 (Ds-1-3 공동 편집) ─────────
+// IGW 패턴: 메타 단일 필드(review) + 8열 활동 표 + 자유 블록.
+export type LearningActivityWorkspaceColumn = TeamVisionWorkspaceColumn
+export type LearningActivityWorkspaceRow = TeamVisionWorkspaceRow
+export type LearningActivityWorkspaceBlock = TeamVisionWorkspaceBlock
+export type LearningActivityWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type LearningActivityWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface LearningActivityWorkspace {
+  /** 학습활동 표의 컬럼 (디폴트 8열: order·phase·name·description·coreType·subject·session·operation) */
+  columns: LearningActivityWorkspaceColumn[]
+  /** 활동 표의 행 */
+  rows: LearningActivityWorkspaceRow[]
+  /** AI 점검 — 목표·평가 정합성, 흐름·실행 적절성 단락 */
+  review: string
+  /** 자유 형식 블록 (문단·제목·표·인용·체크리스트) */
+  blocks: LearningActivityWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+// ─── 스캐폴딩 설계 워크스페이스 (Ds-2-2 공동 편집) ─────────
+// IGW 패턴: 메타 단일 필드(review) + 5열 스캐폴딩 계획 표 + 자유 블록.
+export type ScaffoldingWorkspaceColumn = TeamVisionWorkspaceColumn
+export type ScaffoldingWorkspaceRow = TeamVisionWorkspaceRow
+export type ScaffoldingWorkspaceBlock = TeamVisionWorkspaceBlock
+export type ScaffoldingWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type ScaffoldingWorkspaceTableData = TeamVisionWorkspaceTableData
+
+export interface ScaffoldingWorkspace {
+  /** 스캐폴딩 계획 표의 컬럼 (디폴트 5열: targetActivity·type·content·level·fadeOut) */
+  columns: ScaffoldingWorkspaceColumn[]
+  /** 스캐폴딩 계획 표의 행 */
+  rows: ScaffoldingWorkspaceRow[]
+  /** AI 점검 — GRR 부합·개별화 충분성·제거 시점 명확성 단락 */
+  review: string
+  /** 자유 형식 블록 (문단·제목·표·인용·체크리스트). 지원 방안 정리는 표 블록으로 자유 작성 */
+  blocks: ScaffoldingWorkspaceBlock[]
   updatedBy?: string
   updatedAt?: number
 }
@@ -574,6 +837,14 @@ export interface MaterialSearchHit {
 
 // ─── 산출물 ──────────────────────────────────────────
 export type ArtifactStatus = 'ai_draft' | 'in_review' | 'confirmed' | 'rejected'
+
+// 산출물 이력 스냅샷 — content 덮어쓰기 전 push되어 rollback dropdown의 소스.
+export interface ArtifactVersion {
+  version: number
+  content: Record<string, unknown>
+  savedAt: number  // ms timestamp
+  savedBy?: string  // displayName
+}
 
 export interface Artifact {
   id: string

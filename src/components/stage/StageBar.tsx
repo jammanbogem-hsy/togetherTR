@@ -352,7 +352,8 @@ export function StageBar() {
   // E→T 순환 화살표: E 단계가 모두 완료되었거나 isECompleted true일 때
   const eStage = STAGES.find(s => s.code === 'E')!
   const eAllDone = eStage.activities.every(a => isEffectivelyDone(a))
-  const showCycleArrow = eAllDone || project.isECompleted === true
+  const canOpenCycleMove = currentStage !== 'T'
+  const showCycleArrow = canOpenCycleMove && (eAllDone || project.isECompleted === true)
 
   return (
     // Task #31: items-start로 변경 — 모든 컬럼이 top 정렬되고, 각 컬럼 첫 요소가 노드 슬롯이라 노드 수평선 자동 통일.
@@ -391,7 +392,7 @@ export function StageBar() {
           containerRef={containerRef}
           fromRef={eNodeRef}
           toRef={tNodeRef}
-          onLabelClick={() => { if (isHost) setPendingStageMove('T') }}
+          onLabelClick={() => { if (isHost && canOpenCycleMove) setPendingStageMove('T') }}
         />
       )}
     </div>

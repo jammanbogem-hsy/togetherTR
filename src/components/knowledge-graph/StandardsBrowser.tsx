@@ -52,11 +52,30 @@ export default function StandardsBrowser({
     return true
   })
 
-  const grouped: Record<string, typeof filtered> = {}
+  // [2026-05-14] 사용자 요청 — 교과 → 영역 → 학년 순으로 계층 그룹화·정렬.
+  const GRADE_ORDER = ['초1-2', '초3-4', '초5-6']
+  const gradeSortKey = (gb?: string): number => {
+    if (!gb) return 999
+    const idx = GRADE_ORDER.indexOf(gb)
+    return idx >= 0 ? idx : 999
+  }
+  const grouped: Record<string, Record<string, typeof filtered>> = {}
   for (const n of filtered) {
     const s = n.subject_id ?? 'unknown'
-    if (!grouped[s]) grouped[s] = []
-    grouped[s].push(n)
+    const area = (n.area && n.area.trim()) ? n.area : '기타'
+    if (!grouped[s]) grouped[s] = {}
+    if (!grouped[s][area]) grouped[s][area] = []
+    grouped[s][area].push(n)
+  }
+  // 영역 안에서 학년 → 코드 순 정렬
+  for (const s of Object.keys(grouped)) {
+    for (const a of Object.keys(grouped[s])) {
+      grouped[s][a].sort((x, y) => {
+        const g = gradeSortKey(x.grade_band) - gradeSortKey(y.grade_band)
+        if (g !== 0) return g
+        return (x.code || '').localeCompare(y.code || '')
+      })
+    }
   }
 
   return (
@@ -106,14 +125,19 @@ export default function StandardsBrowser({
         ) : filtered.length === 0 ? (
           <p className="text-[12px] text-gray-400 text-center py-8">성취기준 없음</p>
         ) : (
-          Object.entries(grouped).map(([subId, nodes]) => (
+          Object.entries(grouped).map(([subId, byArea]) => {
+            const totalCount = Object.values(byArea).reduce((sum, arr) => sum + arr.length, 0)
+            return (
             <div key={subId} className="mb-4">
               <div className="text-[11px] font-bold mb-2 flex items-center gap-1.5" style={{ color: subjectColor(subId) }}>
                 <span className="w-2 h-2 rounded-full inline-block" style={{ background: subjectColor(subId) }} />
-                {subjectName(subId)} ({nodes.length})
+                {subjectName(subId)} ({totalCount})
               </div>
-              <div className="space-y-1.5">
-                {nodes.map(n => {
+              {Object.entries(byArea).map(([area, nodes]) => (
+              <div key={area} className="mb-3 ml-1.5 pl-2 border-l-2" style={{ borderColor: subjectColor(subId) + '40' }}>
+                <div className="text-[10px] font-semibold text-gray-500 mb-1.5">{area} <span className="text-gray-400">({nodes.length})</span></div>
+                <div className="space-y-1.5">
+                  {nodes.map(n => {
                   const alreadyIn = checkedStandards.has(n.id) || rawNodes.some(rn => rn.id === n.id)
                   return (
                     <div key={n.id} className={`flex items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors ${alreadyIn ? 'border-[#CE93D8]/50 bg-[#F3E5F5]/30' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
@@ -149,10 +173,13 @@ export default function StandardsBrowser({
                       </button>
                     </div>
                   )
-                })}
+                  })}
+                </div>
               </div>
+              ))}
             </div>
-          ))
+            )
+          })
         )}
       </div>
     </div>

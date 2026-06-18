@@ -94,8 +94,8 @@ function renderArtifactContent(content: Record<string, unknown>): string {
     return ''
   }
   if (content._schema === 'T-2-3') {
-    const sched = content.schedule as Array<{ period: string; activity: string; deliverable: string; assignee: string }> | undefined
-    if (sched?.length) return '**팀 일정**\n\n| 기간 | 활동 내용 | 마감·산출물 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n')
+    const sched = content.schedule as Array<{ period: string; activity: string; content?: string; deliverable?: string; assignee: string }> | undefined
+    if (sched?.length) return '**팀 일정**\n\n| 기간 | 활동 | 내용 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.content || s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n')
     return ''
   }
 

@@ -81,7 +81,10 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setUserProfile: (p) => set({ userProfile: p }),
 
   project: null,
-  setProject: (p) => set({ project: p }),
+  setProject: (p) => set((state) => ({
+    project: p,
+    pendingStageMove: p?.currentStage === state.pendingStageMove ? null : state.pendingStageMove,
+  })),
 
   activityStatus: {},
   setActivityStatus: (code, status) =>
@@ -137,7 +140,13 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setShowCycleModal: (show) => set({ showCycleModal: show }),
 
   pendingStageMove: null,
-  setPendingStageMove: (stage) => set({ pendingStageMove: stage }),
+  setPendingStageMove: (stage) => set((state) => {
+    if (stage && state.project?.currentStage === stage) {
+      return state.pendingStageMove ? { pendingStageMove: null } : {}
+    }
+    if (state.pendingStageMove === stage) return {}
+    return { pendingStageMove: stage }
+  }),
 
   discussionMode: 'ai_facilitated',
   setDiscussionMode: (mode) => set({ discussionMode: mode }),

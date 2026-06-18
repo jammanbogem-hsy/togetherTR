@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, type ReactNode, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, PencilRulerIcon as PencilRuler, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass } from '@phosphor-icons/react'
+import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass, FileTextIcon as FileText, SidebarSimpleIcon as SidebarSimple, CaretRightIcon as CaretRight, CircleNotchIcon as CircleNotch, PencilRulerIcon as PencilRuler } from '@phosphor-icons/react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import type { ProblemSituationResult } from '@/app/api/problem-situation/generate/route'
+import type { ProblemSituationResult, ProblemScenarioCandidate } from '@/app/api/problem-situation/generate/route'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 
 // ─── 교과 색상 ────────────────────────────────────────
@@ -30,6 +30,15 @@ function shortStdId(id: string) {
   const last = id.lastIndexOf('_')
   return last >= 0 ? id.slice(last + 1) : id
 }
+
+// 생성 진행 단계 라벨 (로딩 화면용)
+const GEN_STEPS = [
+  '성취기준·지식 그래프 분석',
+  'A단계 수업목표·평가 계획 연계 지점 확인',
+  '실생활 맥락·실제 데이터 출처 탐색',
+  '교과 융합 문제상황 후보 3안 생성',
+  '탐구 질문·하위 탐구 질문 도출',
+]
 
 // ─── 타입 ─────────────────────────────────────────────
 interface ProblemScenario {
@@ -81,20 +90,109 @@ function parsePsReady(text: string): ProblemSituationData | null {
 }
 function cleanPsReady(text: string) { return text.replace(/\[PS_READY:[^\]]+\]/g, '').trim() }
 
-// result → ProblemSituationData 매핑
-function resultToSaveData(result: ProblemSituationResult): ProblemSituationData {
-  const r = result.recommended
+// 후보 상세 (recommended 또는 candidate.fullScenario 채워진 경우)
+type ScenarioDetail = {
+  title: string
+  fullScenario: string
+  standardsAlignment: ProblemSituationResult['recommended']['standardsAlignment']
+  realData: ProblemSituationResult['recommended']['realData']
+  learningContent: string
+  artifacts: string
+  alignmentCheck: string
+}
+
+// 선택된 후보 index 기준 상세 추출 (옛 데이터 호환: 상세 없으면 null → 요약만)
+function getScenarioDetail(result: ProblemSituationResult, i: number): ScenarioDetail | null {
+  const c: ProblemScenarioCandidate | undefined = result.candidates[i]
+  if (c?.fullScenario) {
+    return {
+      title: c.title,
+      fullScenario: c.fullScenario,
+      standardsAlignment: c.standardsAlignment ?? [],
+      realData: c.realData ?? [],
+      learningContent: c.learningContent ?? '',
+      artifacts: c.artifacts ?? '',
+      alignmentCheck: c.alignmentCheck ?? '',
+    }
+  }
+  if (result.recommended && result.recommended.index === i) return result.recommended
+  return null
+}
+
+// result → ProblemSituationData 매핑 (idx 주어지면 해당 후보 기준, 상세 없으면 recommended fallback)
+// ⚠️ 산출물에는 "선택된 1개 문제상황"만 담는다 — fullResult.candidates를 선택 후보 하나로 축소.
+function resultToSaveData(result: ProblemSituationResult, idx?: number): ProblemSituationData {
+  const i = idx ?? result.recommended?.index ?? 0
+  const detail = getScenarioDetail(result, i) ?? result.recommended
+  const chosenCandidate = result.candidates?.[i]
+  // 선택된 후보만 남긴 단일 후보 결과 사본 (recommended도 그 후보로 통일, index=0)
+  const fullResult: ProblemSituationResult = {
+    ...result,
+    candidates: chosenCandidate ? [chosenCandidate] : [],
+    recommended: {
+      index: 0,
+      title: detail.title,
+      fullScenario: detail.fullScenario,
+      standardsAlignment: detail.standardsAlignment ?? [],
+      realData: detail.realData ?? [],
+      learningContent: detail.learningContent,
+      artifacts: detail.artifacts,
+      alignmentCheck: detail.alignmentCheck,
+    },
+  }
   return {
     scenario: {
-      title: r.title,
-      row1: r.fullScenario,
-      row2: [r.learningContent, r.artifacts].filter(Boolean).join('\n\n산출물: '),
-      row3: (r.realData ?? []).map(d => typeof d === 'string' ? d : d.label).join(' / '),
+      title: detail.title,
+      row1: detail.fullScenario,
+      row2: [detail.learningContent, detail.artifacts].filter(Boolean).join('\n\n산출물: '),
+      row3: (detail.realData ?? []).map(d => typeof d === 'string' ? d : d.label).join(' / '),
     },
     drivingQuestion: result.drivingQuestion,
     essentialQuestions: result.essentialQuestions,
-    fullResult: result,  // 전체 결과 보존 → onSave에서 산출물 구조 그대로 저장
+    fullResult,  // 전체 결과 보존 → onSave에서 산출물 구조 그대로 저장
   }
+}
+
+// ─── 확대 가능한 섹션 블록 ───────────────────────────
+// 결과 패널의 각 섹션. hover 시 '확대' 버튼 → 같은 내용을 큰 글씨 모달로.
+function Block({
+  label,
+  labelColor = '#5F6368',
+  bg,
+  borderless,
+  onZoom,
+  children,
+}: {
+  label: string
+  labelColor?: string
+  bg?: string
+  borderless?: boolean
+  onZoom: (title: string, body: ReactNode) => void
+  children: ReactNode
+}) {
+  const body = (
+    <>
+      {label && (
+        <div className="text-[10px] font-bold mb-1.5 uppercase tracking-wide" style={{ color: labelColor }}>
+          {label}
+        </div>
+      )}
+      {children}
+    </>
+  )
+  return (
+    <div className={`relative group/zoom px-4 py-3 ${borderless ? '' : 'border-b border-[#DADCE0]'} ${bg ?? ''}`}>
+      <button
+        type="button"
+        onClick={() => onZoom(label || '내용', body)}
+        title="확대해서 보기"
+        className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-full border border-[#DADCE0] bg-white px-2 py-1 text-[10px] font-bold text-[#5F6368] shadow-sm opacity-0 transition-opacity group-hover/zoom:opacity-100 hover:bg-[#F1F3F4]"
+      >
+        <ArrowsOut size={11} weight="bold" /> 확대
+      </button>
+      {body}
+    </div>
+  )
 }
 
 // ─── 노드 맵 컴포넌트 ─────────────────────────────────
@@ -159,180 +257,288 @@ function ResultView({
   result: ProblemSituationResult
   onSelect: (data: ProblemSituationData) => void
 }) {
+  const [selectedIndex, setSelectedIndex] = useState(result.recommended?.index ?? 0)
+  const [zoom, setZoom] = useState<{ title: string; body: ReactNode } | null>(null)
+  // 산출물로 보낼 단 하나의 확정 후보 (기본값: AI 추천 후보)
+  const [committedIndex, setCommittedIndex] = useState(result.recommended?.index ?? 0)
+  const openZoom = (title: string, body: ReactNode) => setZoom({ title, body })
+  const candidates = result.candidates ?? []
+  const selected = candidates[selectedIndex]
+  const detail = getScenarioDetail(result, selectedIndex)
+  const isRecommended = result.recommended?.index === selectedIndex
+  const isCommitted = committedIndex === selectedIndex
+  const commitSelected = () => {
+    setCommittedIndex(selectedIndex)
+    try { onSelect(resultToSaveData(result, selectedIndex)) }
+    catch (e) { console.error('[후보 선택] resultToSaveData 오류:', e) }
+  }
+  const essentials = result.essentialQuestions ?? []
+  const hasQuestions = !!result.drivingQuestion?.trim() || essentials.length > 0
+
+  if (candidates.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-2">
+        <p className="text-sm font-bold text-[#5F6368]">생성된 문제 상황 후보가 없습니다.</p>
+        <p className="text-[12px] text-[#9AA0A6]">다시 생성하거나 공동 편집에서 직접 작성해 주세요.</p>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto h-full">
 
-      {/* ① 문제 상황 후보 테이블 */}
+      {/* ① 문제 상황 후보 — 책갈피 탭 */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <div className="w-1 h-4 rounded-full bg-[#7C3AED]" />
+          <div className="w-1 h-4 rounded-full bg-[#1A73E8]" />
           <h3 className="text-xs font-bold text-[#202124]">문제 상황 후보</h3>
+          <span className="text-[10px] text-[#9AA0A6]">({candidates.length}개 · 하나만 산출물로 선택)</span>
         </div>
-        <div className="rounded-xl border border-[#E8EAED] overflow-hidden">
-          {/* 테이블 헤더 */}
-          <div className="grid grid-cols-[2fr_4fr_2.5fr] bg-[#F3F0FF] border-b border-[#E8EAED]">
-            <div className="px-3 py-2 text-[10px] font-bold text-[#7C3AED]">제목</div>
-            <div className="px-3 py-2 text-[10px] font-bold text-[#7C3AED] border-l border-[#E8EAED]">문제 상황</div>
-            <div className="px-3 py-2 text-[10px] font-bold text-[#7C3AED] border-l border-[#E8EAED]">데이터 출처</div>
-          </div>
-          {/* 후보 행 */}
-          {result.candidates.map((c, i) => (
-            <div
-              key={i}
-              className={`grid grid-cols-[2fr_4fr_2.5fr] border-b border-[#E8EAED] last:border-b-0 transition-colors ${
-                result.recommended.index === i ? 'bg-[#FAF8FF]' : 'bg-white hover:bg-[#FAFAFA]'
-              }`}
-            >
-              <div className="px-3 py-2.5 flex items-start gap-1.5">
-                {result.recommended.index === i && (
-                  <span className="mt-0.5 flex-shrink-0 w-3.5 h-3.5 rounded-full bg-[#7C3AED] flex items-center justify-center">
-                    <CheckCircle size={9} weight="fill" color="white" />
-                  </span>
+        <div className="flex items-end gap-1 border-b border-[#DADCE0]">
+          {candidates.map((c, i) => {
+            const active = selectedIndex === i
+            const committed = committedIndex === i
+            return (
+              <button
+                key={i}
+                onClick={() => setSelectedIndex(i)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-[11px] font-semibold transition-colors -mb-px border-b-2 ${
+                  active
+                    ? 'bg-[#E8F0FE] text-[#1A73E8] border-[#1A73E8]'
+                    : 'bg-transparent text-[#5F6368] border-transparent hover:bg-[#F1F3F4]'
+                }`}
+              >
+                <span className={`flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
+                  committed ? 'bg-[#1A73E8] border-[#1A73E8]' : active ? 'border-[#1A73E8]' : 'border-[#9AA0A6]'
+                }`}>
+                  {committed && <CheckCircle size={9} weight="fill" color="white" />}
+                </span>
+                <span className="leading-snug max-w-[150px] truncate">{c.title}</span>
+                {result.recommended?.index === i && !committed && (
+                  <span className="flex-shrink-0 text-[9px] font-bold text-[#1A73E8] bg-white border border-[#AECBFA] px-1 py-px rounded">추천</span>
                 )}
-                <span className="text-[11px] font-semibold text-[#202124] leading-snug">{c.title}</span>
-              </div>
-              <div className="px-3 py-2.5 border-l border-[#E8EAED]">
-                <p className="text-[11px] text-[#444] leading-relaxed">{c.scenario}</p>
-              </div>
-              <div className="px-3 py-2.5 border-l border-[#E8EAED]">
-                <p className="text-[11px] text-[#666] leading-relaxed">{c.dataSources}</p>
-              </div>
-            </div>
-          ))}
+              </button>
+            )
+          })}
+        </div>
+        {/* 선택 후보 요약 + 선택 CTA */}
+        <div className="rounded-b-xl border border-t-0 border-[#DADCE0] bg-white px-4 py-3">
+          <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.scenario}</p>
+          {selected?.dataSources && (
+            <p className="text-[10px] text-[#5F6368] leading-relaxed mt-1.5">
+              <span className="font-bold text-[#1967D2]">데이터 출처</span> · {selected.dataSources}
+            </p>
+          )}
+          <div className="mt-3 flex items-center gap-2">
+            {isCommitted ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#137333] bg-[#E6F4EA] border border-[#A8D5B5] px-3 py-1.5 rounded-full">
+                <CheckCircle size={13} weight="fill" /> 이 후보가 산출물로 선택됨
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={commitSelected}
+                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-[#1A73E8] hover:bg-[#1557B0] px-3 py-1.5 rounded-full transition-colors"
+              >
+                <CheckCircle size={13} weight="fill" /> 이 후보를 산출물로 선택
+              </button>
+            )}
+            <span className="text-[10px] text-[#9AA0A6]">산출물에는 선택한 1개 후보만 저장됩니다</span>
+          </div>
         </div>
       </section>
 
-      {/* ② 선정 문제 상황 상세 */}
+      {/* ② 선정 문제 상황 상세 (선택 후보 기준) */}
       <section>
         <div className="flex items-center gap-2 mb-2">
           <div className="w-1 h-4 rounded-full bg-[#1A73E8]" />
           <h3 className="text-xs font-bold text-[#202124]">선정 문제 상황</h3>
-          <span className="text-[10px] text-[#7C3AED] bg-[#F3F0FF] px-2 py-0.5 rounded-full font-medium">
-            {result.recommended.title}
+          <span className="text-[10px] text-[#1967D2] bg-[#E8F0FE] px-2 py-0.5 rounded-full font-medium">
+            {selected?.title}
           </span>
-        </div>
-        <div className="rounded-xl border border-[#E8EAED] bg-white overflow-hidden">
-          {/* 전문 */}
-          <div className="px-4 py-3 border-b border-[#E8EAED]">
-            <p className="text-[12px] text-[#202124] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>
-              {result.recommended.fullScenario}
-            </p>
-          </div>
-
-          {/* 성취기준 연결 */}
-          {result.recommended.standardsAlignment?.length > 0 && (
-            <div className="px-4 py-3 border-b border-[#E8EAED]">
-              <div className="text-[10px] font-bold text-[#5F6368] mb-2 uppercase tracking-wide">성취기준 연결</div>
-              <div className="space-y-2">
-                {result.recommended.standardsAlignment.map((s, i) => (
-                  <div key={i} className={`rounded-lg px-3 py-2.5 border ${s.isCenter
-                    ? 'bg-[#FFF8E1] border-[#FFE082]'
-                    : 'bg-[#F8F9FA] border-[#E8EAED]'}`}>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      {s.isCenter && (
-                        <span className="text-[9px] font-black bg-[#F9A825] text-white px-1.5 py-0.5 rounded-full">중심</span>
-                      )}
-                      <span className={`text-[11px] font-bold ${s.isCenter ? 'text-[#B06000]' : 'text-[#5F6368]'}`}>
-                        [{s.standardId}]
-                      </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.isCenter ? 'bg-[#FFE082] text-[#B06000]' : 'bg-[#E8EAED] text-[#5F6368]'}`}>
-                        {s.subject}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{s.connection}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {isCommitted && (
+            <span className="text-[10px] text-white bg-[#137333] px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <CheckCircle size={9} weight="fill" /> 선택됨
+            </span>
           )}
-
-          {/* 실제 데이터 */}
-          <div className="px-4 py-3 border-b border-[#E8EAED]">
-            <div className="text-[10px] font-bold text-[#5F6368] mb-1.5 uppercase tracking-wide">실제 데이터</div>
-            <ol className="space-y-1.5">
-              {result.recommended.realData.map((d, i) => {
-                const item = typeof d === 'string' ? { label: d, url: undefined } : d
-                return (
-                  <li key={i} className="flex gap-2 text-[11px] text-[#444] leading-relaxed">
-                    <span className="flex-shrink-0 text-[#7C3AED] font-bold">{i + 1})</span>
-                    <span className="flex-1">
-                      {item.label}
-                      {item.url && (
-                        <a href={item.url} target="_blank" rel="noopener noreferrer"
-                          className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-[#1A73E8] hover:underline font-medium">
-                          링크 ↗
-                        </a>
-                      )}
-                    </span>
-                  </li>
-                )
-              })}
-            </ol>
-          </div>
-
-          {/* 학습 내용 */}
-          <div className="px-4 py-3 border-b border-[#E8EAED]">
-            <div className="text-[10px] font-bold text-[#5F6368] mb-1.5 uppercase tracking-wide">교과별 학습 내용</div>
-            <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-              {result.recommended.learningContent}
-            </p>
-          </div>
-
-          {/* 산출물 */}
-          <div className="px-4 py-3 border-b border-[#E8EAED]">
-            <div className="text-[10px] font-bold text-[#5F6368] mb-1.5 uppercase tracking-wide">산출물</div>
-            <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-              {result.recommended.artifacts}
-            </p>
-          </div>
-
-          {/* AI 점검 */}
-          <div className="px-4 py-3 bg-[#F3F0FF]">
-            <div className="text-[10px] font-bold text-[#7C3AED] mb-1.5">AI 점검: 학습내용/산출물 반영 검토</div>
-            <p className="text-[11px] text-[#5B21B6] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-              {result.recommended.alignmentCheck}
-            </p>
-          </div>
+          {isRecommended && !isCommitted && (
+            <span className="text-[10px] text-[#1A73E8] bg-white border border-[#AECBFA] px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+              AI 추천
+            </span>
+          )}
         </div>
+
+        {detail == null ? (
+          <div className="rounded-2xl border border-[#DADCE0] bg-white overflow-hidden">
+            <div className="px-4 py-3 bg-[#FEF7E0] border-b border-[#DADCE0]">
+              <p className="text-[11px] text-[#B06000] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                이 후보는 요약만 생성되었습니다. &lsquo;재생성&rsquo;하면 모든 후보의 상세를 받을 수 있습니다.
+              </p>
+            </div>
+            <Block label="문제 상황 요약" onZoom={openZoom}>
+              <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.scenario}</p>
+            </Block>
+            <Block label="데이터 출처" borderless onZoom={openZoom}>
+              <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.dataSources}</p>
+            </Block>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[#DADCE0] bg-white overflow-hidden">
+            <Block label="문제 상황 전문" onZoom={openZoom}>
+              <p className="text-[12px] text-[#202124] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>
+                {detail.fullScenario}
+              </p>
+            </Block>
+
+            {detail.standardsAlignment?.length > 0 && (
+              <Block label="성취기준 연결" onZoom={openZoom}>
+                <div className="space-y-2">
+                  {detail.standardsAlignment.map((s, i) => (
+                    <div key={i} className={`rounded-lg px-3 py-2.5 border ${s.isCenter
+                      ? 'bg-[#E8F0FE] border-[#C5CAE9]'
+                      : 'bg-[#F8F9FA] border-[#DADCE0]'}`}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {s.isCenter && (
+                          <span className="text-[9px] font-black bg-[#1A73E8] text-white px-1.5 py-0.5 rounded-full">중심</span>
+                        )}
+                        <span className={`text-[11px] font-bold ${s.isCenter ? 'text-[#1557B0]' : 'text-[#5F6368]'}`}>
+                          [{s.standardId}]
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.isCenter ? 'bg-[#C5CAE9] text-[#1557B0]' : 'bg-[#E8EAED] text-[#5F6368]'}`}>
+                          {s.subject}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{s.connection}</p>
+                    </div>
+                  ))}
+                </div>
+              </Block>
+            )}
+
+            <Block label="실제 데이터" onZoom={openZoom}>
+              <ol className="space-y-1.5">
+                {(detail.realData ?? []).map((d, i) => {
+                  const item = typeof d === 'string' ? { label: d, url: undefined } : d
+                  return (
+                    <li key={i} className="flex gap-2 text-[11px] text-[#444] leading-relaxed">
+                      <span className="flex-shrink-0 text-[#1A73E8] font-bold">{i + 1})</span>
+                      <span className="flex-1">
+                        {item.label}
+                        {item.url && (
+                          <a href={item.url} target="_blank" rel="noopener noreferrer"
+                            className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-[#1A73E8] hover:underline font-medium">
+                            링크 ↗
+                          </a>
+                        )}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ol>
+            </Block>
+
+            <Block label="교과별 학습 내용" onZoom={openZoom}>
+              <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                {detail.learningContent}
+              </p>
+            </Block>
+
+            <Block label="산출물" onZoom={openZoom}>
+              <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                {detail.artifacts}
+              </p>
+            </Block>
+
+            <Block label="AI 점검: 학습내용/산출물 반영 검토" labelColor="#1967D2" bg="bg-[#E8F0FE]" borderless onZoom={openZoom}>
+              <p className="text-[11px] text-[#1967D2] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                {detail.alignmentCheck}
+              </p>
+            </Block>
+          </div>
+        )}
       </section>
 
-      {/* ③ 핵심 질문 & 탐구 질문 */}
+      {/* ③ 탐구 질문 & 하위 탐구 질문 */}
       <section>
         <div className="flex items-center gap-2 mb-2">
           <div className="w-1 h-4 rounded-full bg-[#059669]" />
-          <h3 className="text-xs font-bold text-[#202124]">핵심 질문 & 탐구 질문</h3>
+          <h3 className="text-xs font-bold text-[#202124]">탐구 질문 &amp; 하위 탐구 질문</h3>
         </div>
-        <div className="rounded-xl border border-[#E8EAED] bg-white overflow-hidden">
-          {/* 핵심 질문 */}
-          <div className="px-4 py-3 bg-[#F0FDF4] border-b border-[#E8EAED]">
-            <div className="text-[10px] font-bold text-[#059669] mb-1">핵심 질문 (Driving Question)</div>
-            <p className="text-[12px] font-semibold text-[#065F46] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-              {result.drivingQuestion}
-            </p>
-          </div>
-          {/* 탐구 질문 */}
-          <div className="px-4 py-3">
-            <div className="text-[10px] font-bold text-[#5F6368] mb-1.5">탐구 질문 (Essential Questions)</div>
-            <ol className="space-y-1.5">
-              {result.essentialQuestions.map((q, i) => (
-                <li key={i} className="flex gap-2 text-[11px] text-[#444] leading-relaxed">
-                  <span className="flex-shrink-0 font-bold text-[#059669]">{i + 1}.</span>
-                  <span style={{ wordBreak: 'keep-all' }}>{q}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
+        <div className="rounded-2xl border border-[#DADCE0] bg-white overflow-hidden">
+          {hasQuestions ? (
+            <>
+              <Block label="탐구 질문 (Driving Question)" labelColor="#059669" bg="bg-[#F0FDF4]" onZoom={openZoom}>
+                <p className="text-[13px] font-semibold text-[#065F46] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                  {result.drivingQuestion || '— (생성되지 않음, 재생성 권장)'}
+                </p>
+              </Block>
+              <Block label="하위 탐구 질문 (Essential Questions)" borderless onZoom={openZoom}>
+                {essentials.length > 0 ? (
+                  <ol className="space-y-1.5">
+                    {essentials.map((q, i) => (
+                      <li key={i} className="flex gap-2 text-[12px] text-[#444] leading-relaxed">
+                        <span className="flex-shrink-0 font-bold text-[#059669]">{i + 1}.</span>
+                        <span style={{ wordBreak: 'keep-all' }}>{q}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-[11px] text-[#9AA0A6]">하위 탐구 질문이 생성되지 않았습니다. 상단 &lsquo;재생성&rsquo;을 눌러 다시 시도하세요.</p>
+                )}
+              </Block>
+            </>
+          ) : (
+            <div className="px-4 py-6 flex flex-col items-center justify-center gap-2 text-center bg-[#FEF7E0]">
+              <p className="text-[12px] font-bold text-[#B06000]">탐구 질문·하위 탐구 질문이 생성되지 않았습니다</p>
+              <p className="text-[11px] text-[#B06000]/80 leading-relaxed">AI 응답이 잘렸을 수 있습니다. 상단 우측 &lsquo;재생성&rsquo; 버튼을 눌러 다시 생성하면 탐구 질문과 하위 탐구 질문이 함께 채워집니다.</p>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* 선택 저장 버튼 */}
+      {/* 선택 저장 버튼 — 선택된(현재 보고 있는) 후보를 산출물 후보로 확정 */}
       <button
-        onClick={() => { try { onSelect(resultToSaveData(result)) } catch (e) { console.error('[확정 버튼] resultToSaveData 오류:', e) } }}
-        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#1A73E8] text-white text-xs font-semibold hover:bg-[#1557B0] transition-colors"
+        onClick={commitSelected}
+        className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-semibold transition-colors ${
+          isCommitted
+            ? 'bg-[#E6F4EA] text-[#137333] border border-[#A8D5B5] cursor-default'
+            : 'bg-[#1A73E8] text-white hover:bg-[#1557B0]'
+        }`}
       >
         <CheckCircle size={14} weight="fill" />
-        이 시나리오로 확정
+        {isCommitted ? `‘${selected?.title ?? ''}’ 후보 선택됨` : '이 후보를 산출물로 선택'}
       </button>
+
+      {/* 섹션 확대 보기 모달 */}
+      {zoom && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 p-4" onClick={() => setZoom(null)}>
+          <div
+            className="bg-white w-full max-w-[860px] max-h-[88vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3.5 border-b border-[#DADCE0] bg-white">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0FE] px-3 py-1.5 text-[12px] font-extrabold text-[#1A73E8]">
+                <ArrowsOut size={13} weight="bold" /> 확대 보기
+              </span>
+              <span className="text-[14px] font-extrabold text-[#202124] truncate">{zoom.title}</span>
+              <button
+                type="button"
+                onClick={() => setZoom(null)}
+                className="ml-auto w-9 h-9 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+                aria-label="닫기"
+              >
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-7 py-6">
+              <div style={{ zoom: 1.5 } as unknown as CSSProperties}>
+                {zoom.body}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
@@ -359,6 +565,10 @@ export default function ProblemSituationDesigner({
   const [showDataModal, setShowDataModal] = useState(false)
   // 기존 저장 내용이 있을 때 선택지 표시
   const [showExistingChoice, setShowExistingChoice] = useState(!!(savedData?.scenario?.title))
+  // 좌측 성취기준 사이드바 접기/펼치기
+  const [showStandards, setShowStandards] = useState(true)
+  // 생성 진행 단계 인디케이터
+  const [genStep, setGenStep] = useState(0)
 
   // graphSavedData: Firestore 실시간 리스너로 항상 최신 데이터 유지
   const [localGraphData, setLocalGraphData] = useState<Props['graphSavedData']>(graphSavedData ?? null)
@@ -429,6 +639,16 @@ export default function ProblemSituationDesigner({
 
   // 채팅 자동 스크롤
   useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages, chatStreamingText])
+
+  // 생성 중 단계 인디케이터 — 일정 간격으로 다음 단계로 진행 (마지막 단계에서 정지)
+  useEffect(() => {
+    if (!isGenerating) { setGenStep(0); return }
+    setGenStep(0)
+    const t = setInterval(() => {
+      setGenStep(s => (s < GEN_STEPS.length - 1 ? s + 1 : s))
+    }, 2600)
+    return () => clearInterval(t)
+  }, [isGenerating])
 
   // ── 채팅 전송 ──────────────────────────────────────
   const sendChat = useCallback(async () => {
@@ -504,23 +724,28 @@ export default function ProblemSituationDesigner({
 
   return (
     <div className="fixed inset-0 z-50 bg-[#F8F9FA] flex flex-col" style={{ fontFamily: 'inherit' }}>
-      {/* 헤더 */}
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-[#E8EAED] flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <div
-            className="w-12 h-12 bg-[#00897B] flex items-center justify-center flex-shrink-0"
-            style={{ animation: 'morph-shape 9s ease-in-out infinite, stage-bounce 3.5s ease-in-out infinite', boxShadow: '0 6px 18px rgba(0,137,123,0.42)' }}
-          >
-            <PencilRuler size={24} weight="fill" className="text-white" />
-          </div>
-          <div>
-            <div className="text-base font-bold text-[#202124]">문제상황 개발 워크숍</div>
-            <div className="text-xs text-[#9AA0A6] mt-0.5">Ds-1-2 · Claude AI 에이전트가 교과 융합 문제상황을 설계합니다</div>
-          </div>
+      {/* 헤더 — 공동 편집 모달과 톤 통일 */}
+      <div className="flex items-center gap-3 px-5 py-3 bg-white border-b border-[#DADCE0] flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => setShowStandards(v => !v)}
+          title={showStandards ? '성취기준 사이드바 접기' : '성취기준 사이드바 펼치기'}
+          className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+        >
+          <SidebarSimple size={18} weight={showStandards ? 'fill' : 'regular'} />
+        </button>
+        <span className="inline-flex items-center gap-1 rounded-full border border-[#E8EAED] bg-white px-3 py-2 text-[12px] font-extrabold text-[#3C4043] shadow-sm">
+          <FileText size={15} weight="bold" />
+          Ds-1-2
+        </span>
+        <div className="min-w-0">
+          <div className="text-[14px] font-extrabold text-[#202124] leading-tight">문제상황 개발 워크숍</div>
+          <div className="text-[11px] text-[#9AA0A6] mt-0.5 truncate">Claude AI 에이전트가 교과 융합 문제상황을 설계합니다</div>
         </div>
+        <div className="flex-1" />
         <div className="flex items-center gap-2">
           {currentData && (
-            <span className="text-[11px] text-[#34A853] bg-[#E6F4EA] px-2.5 py-1 rounded-full font-medium flex items-center gap-1">
+            <span className="text-[11px] text-[#1A73E8] bg-[#E8F0FE] px-2.5 py-1.5 rounded-full font-bold flex items-center gap-1">
               <CheckCircle size={11} weight="fill" /> 시나리오 확정됨
             </span>
           )}
@@ -528,14 +753,14 @@ export default function ProblemSituationDesigner({
             <button
               onClick={() => { setShowExistingChoice(false); generate() }}
               disabled={isGenerating}
-              className="flex items-center gap-1.5 text-xs text-[#5F6368] hover:text-[#1A73E8] px-3 py-1.5 rounded-lg hover:bg-[#F1F3F4] transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 text-[12px] font-bold text-[#5F6368] hover:text-[#1A73E8] px-3 py-1.5 rounded-full hover:bg-[#F1F3F4] transition-colors disabled:opacity-40"
             >
               <ArrowClockwise size={14} className={isGenerating ? 'animate-spin' : ''} />
               재생성
             </button>
           )}
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#F1F3F4] text-[#5F6368] transition-colors">
-            <X size={18} />
+          <button onClick={onClose} className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors" aria-label="닫기">
+            <X size={18} weight="bold" />
           </button>
         </div>
       </div>
@@ -543,23 +768,45 @@ export default function ProblemSituationDesigner({
       {/* 본문 3-컬럼 */}
       <div className="flex-1 flex overflow-hidden gap-3 p-3">
 
-        {/* ── 왼쪽: 노드 맵 ── */}
-        <div className="w-72 flex-shrink-0 flex flex-col bg-white rounded-xl border border-[#E8EAED] overflow-hidden">
-          <div className="px-3 py-2 border-b border-[#E8EAED] flex-shrink-0">
-            <div className="text-xs font-semibold text-[#444]">교과 융합 성취기준</div>
-            <div className="text-[10px] text-[#9AA0A6] mt-0.5">A-2-1 지식 그래프에서 저장된 노드</div>
+        {/* ── 왼쪽: 노드 맵 (접기/펼치기) ── */}
+        {showStandards ? (
+          <div className="w-72 flex-shrink-0 flex flex-col bg-white rounded-xl border border-[#DADCE0] overflow-hidden">
+            <div className="px-3 py-2.5 border-b border-[#DADCE0] flex-shrink-0 flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-[#202124]">교과 융합 성취기준</div>
+                <div className="text-[10px] text-[#9AA0A6] mt-0.5">A-2-1 지식 그래프에서 저장된 노드</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStandards(false)}
+                title="사이드바 접기"
+                className="w-7 h-7 rounded-full hover:bg-[#F1F3F4] text-[#9AA0A6] hover:text-[#5F6368] flex items-center justify-center transition-colors flex-shrink-0"
+              >
+                <SidebarSimple size={15} weight="fill" />
+              </button>
+            </div>
+            <NodeMap
+              centerNode={localGraphData?.centerNode ?? null}
+              selectedStandards={localGraphData?.selectedStandards ?? []}
+            />
           </div>
-          <NodeMap
-            centerNode={localGraphData?.centerNode ?? null}
-            selectedStandards={localGraphData?.selectedStandards ?? []}
-          />
-        </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowStandards(true)}
+            title="성취기준 사이드바 펼치기"
+            className="w-8 flex-shrink-0 flex flex-col items-center justify-center gap-2 bg-white rounded-xl border border-[#DADCE0] text-[#5F6368] hover:bg-[#F1F3F4] hover:text-[#1A73E8] transition-colors"
+          >
+            <CaretRight size={14} weight="bold" />
+            <span className="text-[10px] font-bold tracking-wide" style={{ writingMode: 'vertical-rl' }}>성취기준</span>
+          </button>
+        )}
 
         {/* ── 가운데: 결과 패널 ── */}
-        <div className="flex-1 flex flex-col bg-white rounded-xl border border-[#E8EAED] overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-[#E8EAED] flex-shrink-0 bg-[#F3F0FF]">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
-            <span className="text-xs font-semibold text-[#7C3AED]">Claude — 문제상황 설계 결과</span>
+        <div className="flex-1 flex flex-col bg-white rounded-xl border border-[#DADCE0] overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#DADCE0] flex-shrink-0 bg-[#E8F0FE]">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#1A73E8]" />
+            <span className="text-xs font-bold text-[#1967D2]">Claude — 문제상황 설계 결과</span>
             {isGenerating && (
               <span className="ml-auto text-[10px] text-[#9AA0A6] flex items-center gap-1">
                 <SpinnerGap size={11} className="animate-spin" /> 분석 중…
@@ -607,7 +854,7 @@ export default function ProblemSituationDesigner({
                         setShowExistingChoice(false)
                         generate()
                       }}
-                      className="flex-1 py-2.5 rounded-xl bg-[#F3F0FF] text-[#7C3AED] text-sm font-semibold hover:bg-[#EDE9FE] transition-colors border border-[#C4B5FD]"
+                      className="flex-1 py-2.5 rounded-xl bg-[#E8F0FE] text-[#1967D2] text-sm font-semibold hover:bg-[#D2E3FC] transition-colors border border-[#C5CAE9]"
                     >
                       새로 생성하기
                     </button>
@@ -616,11 +863,44 @@ export default function ProblemSituationDesigner({
               </div>
             )}
             {isGenerating && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-[#9AA0A6]">
-                <SpinnerGap size={32} className="animate-spin text-[#7C3AED]" />
-                <div className="text-center">
-                  <p className="text-sm font-medium text-[#7C3AED]">문제상황 설계 중</p>
-                  <p className="text-xs text-[#9AA0A6] mt-1">성취기준·평가계획을 분석하여 최적의 아이디어를 생성합니다</p>
+              <div className="flex flex-col items-center justify-center h-full gap-6 px-8">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="relative w-14 h-14 flex items-center justify-center">
+                    <CircleNotch size={56} className="animate-spin text-[#1A73E8]" weight="bold" />
+                    <PencilRuler size={22} weight="fill" className="absolute text-[#1A73E8]" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[15px] font-extrabold text-[#1967D2]">문제상황 설계 중…</p>
+                    <p className="text-[12px] text-[#9AA0A6] mt-1">평균 30초~1분 정도 소요됩니다. 잠시만 기다려 주세요.</p>
+                  </div>
+                </div>
+                <div className="w-full max-w-md bg-[#F8F9FA] rounded-2xl border border-[#DADCE0] px-5 py-4 space-y-2.5">
+                  {GEN_STEPS.map((label, i) => {
+                    const done = i < genStep
+                    const active = i === genStep
+                    return (
+                      <div key={i} className="flex items-center gap-2.5">
+                        <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
+                          done ? 'bg-[#34A853] text-white'
+                          : active ? 'bg-[#1A73E8] text-white'
+                          : 'bg-[#E8EAED] text-[#9AA0A6]'
+                        }`}>
+                          {done
+                            ? <CheckCircle size={13} weight="fill" />
+                            : active
+                              ? <SpinnerGap size={12} className="animate-spin" weight="bold" />
+                              : <span className="text-[10px] font-bold">{i + 1}</span>}
+                        </span>
+                        <span className={`text-[12px] leading-snug ${
+                          done ? 'text-[#5F6368]'
+                          : active ? 'text-[#1967D2] font-bold'
+                          : 'text-[#9AA0A6]'
+                        }`}>
+                          {label}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -656,9 +936,9 @@ export default function ProblemSituationDesigner({
         </div>
 
         {/* ── 오른쪽: 채팅 패널 ── */}
-        <div className="w-72 flex-shrink-0 flex flex-col bg-white rounded-xl border border-[#E8EAED] overflow-hidden">
-          <div className="px-3 py-2 border-b border-[#E8EAED] flex-shrink-0">
-            <div className="text-xs font-semibold text-[#444]">수정 채팅</div>
+        <div className="w-72 flex-shrink-0 flex flex-col bg-white rounded-xl border border-[#DADCE0] overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-[#DADCE0] flex-shrink-0">
+            <div className="text-xs font-bold text-[#202124]">수정 채팅</div>
             <div className="text-[10px] text-[#9AA0A6] mt-0.5">아이디어 수정·선택·확정</div>
           </div>
 
@@ -696,8 +976,8 @@ export default function ProblemSituationDesigner({
             <div ref={chatBottomRef} />
           </div>
 
-          <div className="p-2 border-t border-[#E8EAED] flex-shrink-0">
-            <div className="flex items-end gap-1.5 bg-[#F8F9FA] rounded-xl border border-[#E8EAED] p-2">
+          <div className="p-2 border-t border-[#DADCE0] flex-shrink-0">
+            <div className="flex items-end gap-1.5 bg-[#F8F9FA] rounded-xl border border-[#DADCE0] p-2">
               <textarea
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
@@ -720,7 +1000,7 @@ export default function ProblemSituationDesigner({
 
       {/* 하단 저장 바 */}
       {isLeader && (
-        <div className="flex-shrink-0 bg-white border-t border-[#E8EAED] px-5 py-3 flex items-center justify-between gap-3">
+        <div className="flex-shrink-0 bg-white border-t border-[#DADCE0] px-5 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             {currentData ? (
               <button
@@ -789,14 +1069,14 @@ export default function ProblemSituationDesigner({
               </div>
             </div>
 
-            {/* ── 핵심 질문 배너 ── */}
+            {/* ── 탐구 질문 배너 ── */}
             <div className="mx-6 -mt-3 mb-1 flex-shrink-0 relative z-10">
               <div className="rounded-2xl bg-white border border-[#B2DFDB] shadow-md px-5 py-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
                     <PencilRuler size={13} weight="fill" className="text-white" />
                   </div>
-                  <span className="text-[10px] font-black text-[#00897B] uppercase tracking-widest">핵심 질문 (Driving Question)</span>
+                  <span className="text-[10px] font-black text-[#00897B] uppercase tracking-widest">탐구 질문 (Driving Question)</span>
                 </div>
                 <p className="text-[15px] font-bold text-[#004D40] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                   {currentData.drivingQuestion}
@@ -861,14 +1141,14 @@ export default function ProblemSituationDesigner({
                 </ol>
               </div>
 
-              {/* 탐구 질문 */}
+              {/* 하위 탐구 질문 */}
               <div className="bg-white rounded-2xl border border-[#E8EAED] overflow-hidden">
                 <div className="flex items-center gap-2.5 px-5 py-3 bg-[#FFF8E1] border-b border-[#FFE082]">
                   <MagnifyingGlass size={15} weight="fill" className="text-[#F9A825] flex-shrink-0" />
-                  <span className="text-[11px] font-black text-[#B06000] uppercase tracking-wider">탐구 질문 (Essential Questions)</span>
+                  <span className="text-[11px] font-black text-[#B06000] uppercase tracking-wider">하위 탐구 질문 (Essential Questions)</span>
                 </div>
                 <ol className="divide-y divide-[#F8F9FA]">
-                  {currentData.essentialQuestions.map((q, i) => (
+                  {(currentData.essentialQuestions ?? []).map((q, i) => (
                     <li key={i} className="flex items-start gap-3 px-5 py-3.5">
                       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#FFF8E1] border border-[#FFE082] flex items-center justify-center text-[10px] font-black text-[#F9A825] mt-0.5">
                         {i + 1}

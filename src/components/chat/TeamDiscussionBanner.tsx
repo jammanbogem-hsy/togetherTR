@@ -37,11 +37,12 @@ export function TeamDiscussionBanner({ topic, onEnd, isHost }: Props) {
       {isHost ? (
         <button
           onClick={onEnd}
-          className="morph-btn flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-bold text-white bg-[#00897B] hover:bg-[#00746a] transition-colors"
-          style={{ filter: 'drop-shadow(0 2px 8px rgba(0,137,123,0.42))' }}
+          title="팀 자유 토의를 종료하고 AI가 논의 내용을 분석합니다"
+          className="morph-btn flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-extrabold text-white bg-[#E8710A] hover:bg-[#C75E00] ring-2 ring-white transition-colors"
+          style={{ filter: 'drop-shadow(0 2px 10px rgba(232,113,10,0.45))' }}
         >
-          <StopCircle size={14} weight="fill" />
-          종료 → AI 분석
+          <StopCircle size={16} weight="fill" />
+          회의 종료 → AI 분석
         </button>
       ) : (
         <span className="text-[11px] text-[#00695C] flex-shrink-0">방장이 종료할 수 있어요</span>

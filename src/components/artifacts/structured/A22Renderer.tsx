@@ -46,13 +46,14 @@ export function A22Renderer({ data }: { data: A22Structured }) {
         )}
       </div>
 
-      {/* 2. 통합 수업목표 (단일 문장) */}
-      <div className="rounded-2xl border border-[#1A73E8]/30 overflow-hidden bg-[#F8FBFF]">
-        <div className="bg-[#1A73E8] px-4 py-2.5 border-b border-[#1557B0]">
-          <span className="text-[11px] font-bold text-white uppercase tracking-wider">통합 수업목표</span>
+      {/* 2. 통합 수업목표 (단일 문장) — 다른 산출물의 강조 카드(예: 주제 선정의 선정 주제 박스) 톤에 맞춰
+          외곽·헤더는 절제된 연파랑, 본문에서 진파랑 텍스트로 핵심을 부각한다. */}
+      <div className="rounded-2xl border border-[#1A73E8]/30 overflow-hidden bg-white">
+        <div className="bg-[#E8F0FE] px-4 py-2.5 border-b border-[#1A73E8]/20">
+          <span className="text-[11px] font-bold text-[#1A73E8] uppercase tracking-wider">통합 수업목표</span>
         </div>
         {integratedGoal ? (
-          <p className="px-4 py-3.5 text-[15px] font-semibold leading-relaxed text-[#1A237E]">
+          <p className="px-4 py-3 text-sm leading-relaxed text-[#202124]">
             <HighlightedGoal text={integratedGoal} />
           </p>
         ) : (
@@ -68,7 +69,7 @@ export function A22Renderer({ data }: { data: A22Structured }) {
           </div>
           <div className="px-4 py-3 flex flex-wrap gap-2">
             {keywords.map((kw, i) => (
-              <span key={i} className="px-2.5 py-1 rounded-full text-xs font-semibold text-[#34A853] bg-[#E6F4EA] border border-[#A8DAB5]">
+              <span key={i} className="px-2.5 py-1 rounded-full text-xs font-semibold text-[#1A73E8] bg-[#E8F0FE] border border-[#BBDEFB]">
                 {kw}
               </span>
             ))}
@@ -83,7 +84,7 @@ export function A22Renderer({ data }: { data: A22Structured }) {
         </div>
         {subjectGoals.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm border-collapse">
+            <table className="w-full min-w-[480px] text-sm border-collapse [word-break:keep-all]">
               <thead className="bg-[#E8F0FE]">
                 <tr>
                   <th className="px-3 py-2.5 text-left text-xs font-bold text-[#1A237E] border-b border-[#BBDEFB] w-20">교과</th>

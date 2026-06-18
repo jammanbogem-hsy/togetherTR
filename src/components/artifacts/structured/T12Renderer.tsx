@@ -6,6 +6,21 @@ interface Props {
   data: T12Structured
 }
 
+// AI가 `**프로젝트 기반 학습(PBL)**: ...` 같은 마크다운 굵은체로 산출물을 작성하는 경우가 있어,
+// raw 마크다운이 사용자에게 그대로 보이지 않도록 inline bold만 변환한다. (`*italic*`/링크 등은 무시)
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith('**') && p.endsWith('**') && p.length > 4
+          ? <strong key={i} className="font-extrabold">{p.slice(2, -2)}</strong>
+          : <span key={i}>{p}</span>
+      )}
+    </>
+  )
+}
+
 export function T12Renderer({ data }: Props) {
   const designPrinciples = data?.designPrinciples ?? []
 
@@ -25,11 +40,11 @@ export function T12Renderer({ data }: Props) {
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-[#202124] leading-relaxed">
-                      {dp.principle}
+                      <InlineMarkdown text={dp.principle} />
                     </p>
                     {dp.rationale && (
                       <p className="mt-1.5 text-xs text-[#5F6368] leading-relaxed">
-                        {dp.rationale}
+                        <InlineMarkdown text={dp.rationale} />
                       </p>
                     )}
                   </div>

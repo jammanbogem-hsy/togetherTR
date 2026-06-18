@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       project: Pick<Project, 'title' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'>
       learnerProfileSummary?: string
       currentArtifact?: { title: string; content: Record<string, unknown>; status: string; version: number } | null
-      confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>
+      confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown>; status?: string }>
       teamMembers?: string
       activityStatus?: string
       graphSavedData?: GraphSavedData | null

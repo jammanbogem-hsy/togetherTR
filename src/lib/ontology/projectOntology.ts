@@ -279,8 +279,8 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
     const rules = c.rules as Array<{ category: string; name: string; description: string; violation: string }> | undefined
     if (rules?.length) sections.push({ key: '팀 규칙', value: '| 범주 | 규칙명 | 설명 | 위반 시 |\n| --- | --- | --- | --- |\n' + rules.map(r => `| ${r.category || '-'} | ${r.name} | ${r.description} | ${r.violation || '-'} |`).join('\n') })
   } else if (c._schema === 'T-2-3') {
-    const sched = c.schedule as Array<{ period: string; activity: string; deliverable: string; assignee: string }> | undefined
-    if (sched?.length) sections.push({ key: '팀 일정', value: '| 기간 | 활동 내용 | 마감·산출물 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n') })
+    const sched = c.schedule as Array<{ period: string; activity: string; content?: string; deliverable?: string; assignee: string }> | undefined
+    if (sched?.length) sections.push({ key: '팀 일정', value: '| 기간 | 활동 | 내용 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.content || s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n') })
   } else if (c._schema === 'A-1-2') {
     const crit = c.criteria as Array<{ criterion: string; description: string; priority: string }> | undefined
     if (crit?.length) sections.push({ key: '주제 선정 기준', value: '| 기준 | 설명 | 우선순위 |\n| --- | --- | --- |\n' + crit.map(cr => `| ${cr.criterion} | ${cr.description || '-'} | ${cr.priority || '-'} |`).join('\n') })

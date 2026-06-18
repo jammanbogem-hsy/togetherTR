@@ -1,12 +1,13 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence } from '@/lib/firebase/projects'
-import type { TeamVisionWorkspacePatch } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence } from '@/lib/firebase/projects'
+import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch } from '@/lib/firebase/projects'
+import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import type { GraphPinnedStandard, GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { TeamDiscussionBanner } from './TeamDiscussionBanner'
@@ -20,7 +21,18 @@ import { CoreIdeaFinderModal } from './CoreIdeaFinderModal'
 import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
 import { CurriculumWorkspaceModal } from './CurriculumWorkspaceModal'
 import { TeamVisionWorkspaceModal } from '@/components/artifacts/TeamVisionWorkspaceModal'
-import type { T11Structured } from '@/lib/artifacts/schemas'
+import { LessonDesignDirectionWorkspaceModal } from '@/components/artifacts/LessonDesignDirectionWorkspaceModal'
+import { EvaluationPlanWorkspaceModal } from '@/components/artifacts/EvaluationPlanWorkspaceModal'
+import { ProblemSituationWorkspaceModal } from '@/components/artifacts/ProblemSituationWorkspaceModal'
+import { SupportToolWorkspaceModal } from '@/components/artifacts/SupportToolWorkspaceModal'
+import { IntegratedGoalWorkspaceModal } from '@/components/artifacts/IntegratedGoalWorkspaceModal'
+import { RoleDistributionWorkspaceModal } from '@/components/artifacts/RoleDistributionWorkspaceModal'
+import { TeamRulesWorkspaceModal } from '@/components/artifacts/TeamRulesWorkspaceModal'
+import { TeamScheduleWorkspaceModal } from '@/components/artifacts/TeamScheduleWorkspaceModal'
+import { TopicSelectionWorkspaceModal } from '@/components/artifacts/TopicSelectionWorkspaceModal'
+import { LearningActivityWorkspaceModal } from '@/components/artifacts/LearningActivityWorkspaceModal'
+import { ScaffoldingWorkspaceModal } from '@/components/artifacts/ScaffoldingWorkspaceModal'
+import type { T11Structured, T12Structured, T21Structured, T22Structured, T23Structured, A12Structured, A22Structured, Ds11Structured, Ds12Structured, Ds13Structured, Ds21Structured, Ds22Structured } from '@/lib/artifacts/schemas'
 import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -1163,6 +1175,29 @@ export function ChatPanel() {
   const [showKeyNotes, setShowKeyNotes] = useState(false)
   const [showWorkspace, setShowWorkspace] = useState(false)
   const [showTeamVisionWorkspace, setShowTeamVisionWorkspace] = useState(false)
+  const [showIntegratedGoalWorkspace, setShowIntegratedGoalWorkspace] = useState(false)
+  const [showLessonDesignDirectionWorkspace, setShowLessonDesignDirectionWorkspace] = useState(false)
+  const [showRoleDistributionWorkspace, setShowRoleDistributionWorkspace] = useState(false)
+  const [showTeamRulesWorkspace, setShowTeamRulesWorkspace] = useState(false)
+  const [showTeamScheduleWorkspace, setShowTeamScheduleWorkspace] = useState(false)
+  const [showTopicSelectionWorkspace, setShowTopicSelectionWorkspace] = useState(false)
+  const [showEvaluationPlanWorkspace, setShowEvaluationPlanWorkspace] = useState(false)
+  const [showProblemSituationWorkspace, setShowProblemSituationWorkspace] = useState(false)
+  const [showSupportToolWorkspace, setShowSupportToolWorkspace] = useState(false)
+  const [showLearningActivityWorkspace, setShowLearningActivityWorkspace] = useState(false)
+  const [showScaffoldingWorkspace, setShowScaffoldingWorkspace] = useState(false)
+  const [integratedGoalPresence, setIntegratedGoalPresence] = useState<Record<string, IntegratedGoalPresenceEntry>>({})
+  const [teamVisionPresence, setTeamVisionPresence] = useState<Record<string, TeamVisionPresenceEntry>>({})
+  const [lessonDesignDirectionPresence, setLessonDesignDirectionPresence] = useState<Record<string, LessonDesignDirectionPresenceEntry>>({})
+  const [roleDistributionPresence, setRoleDistributionPresence] = useState<Record<string, RoleDistributionPresenceEntry>>({})
+  const [teamRulesPresence, setTeamRulesPresence] = useState<Record<string, TeamRulesPresenceEntry>>({})
+  const [teamSchedulePresence, setTeamSchedulePresence] = useState<Record<string, TeamSchedulePresenceEntry>>({})
+  const [topicSelectionPresence, setTopicSelectionPresence] = useState<Record<string, TopicSelectionPresenceEntry>>({})
+  const [evaluationPlanPresence, setEvaluationPlanPresence] = useState<Record<string, EvaluationPlanPresenceEntry>>({})
+  const [problemSituationPresence, setProblemSituationPresence] = useState<Record<string, ProblemSituationPresenceEntry>>({})
+  const [supportToolPresence, setSupportToolPresence] = useState<Record<string, SupportToolPresenceEntry>>({})
+  const [learningActivityPresence, setLearningActivityPresence] = useState<Record<string, LearningActivityPresenceEntry>>({})
+  const [scaffoldingPresence, setScaffoldingPresence] = useState<Record<string, ScaffoldingPresenceEntry>>({})
   const [workspaceInitialView, setWorkspaceInitialView] = useState<'sheet' | 'graph'>('sheet')
   const [noteTooltip, setNoteTooltip] = useState<{ num: number; preview: string; x: number; y: number } | null>(null)
   // 우클릭 컨텍스트 메뉴 상태
@@ -1326,6 +1361,9 @@ export function ChatPanel() {
     else if (activity === 'A-2-1' && (responseText.includes('|') || /핵심.*아이디어|지식.*이해/.test(responseText))) { const s = schemas.buildA21Structured({}, ctx); if (s.rows.length > 0) structured = s }
     else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = schemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoal) structured = s }
     else if (activity === 'A-2-3' && /학습자|프로필|선수/.test(responseText)) { const s = schemas.buildA23Structured({}, ctx); if (s.commonProfile.length > 0) structured = s }
+    else if (activity === 'Ds-1-1' && (responseText.includes('|') || /평가|루브릭|상.*중.*하/.test(responseText))) { const s = schemas.buildDs11Structured({}, ctx); if (s.rubric.length > 0) structured = s }
+    else if (activity === 'Ds-1-2' && /문제\s*상황|시나리오|실제성|핵심\s*질문/.test(responseText)) { const s = schemas.buildDs12Structured({}, ctx); if (s.scenario.title || s.scenario.authenticity || s.scenario.contentProduct || s.drivingQuestion) structured = s }
+    else if (activity === 'Ds-2-1' && /자료|도구|탐색|개발|담당|일정/.test(responseText)) { const s = schemas.buildDs21Structured({}, ctx); if (s.materials.length > 0) structured = s }
 
     if (structured) applyArtifactUpdates(structured as Record<string, string>, activity)
   }
@@ -1515,6 +1553,311 @@ export function ChatPanel() {
     return () => { unsub(); setRemoteStreamingText(''); setIsRemoteLoading(false) }
   }, [project?.id, currentActivity, userProfile?.uid])
 
+  // A-2-2 통합 수업목표 워크스페이스 presence subcollection 구독 — IGW와 TVW 동일 패턴.
+  // 부모 projects 문서를 건드리지 않으므로 cascade·트랜잭션 충돌 없음.
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchIntegratedGoalWorkspacePresence(project.id, (next) => {
+      setIntegratedGoalPresence((prev) => {
+        // [2026-05-15] cellKey + caretPos 비교 — updatedAt 변화만으로 인한 깜빡임은 무시,
+        // 위치/caret 변경은 즉시 반영.
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setIntegratedGoalPresence({}) }
+  }, [project?.id])
+
+  // T-1-1 팀 비전 워크스페이스 presence subcollection 구독 — IGW와 동일 패턴
+  // 부모 projects 문서를 건드리지 않으므로 트랜잭션과 충돌 없음.
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchTeamVisionWorkspacePresence(project.id, (next) => {
+      setTeamVisionPresence((prev) => {
+        // [2026-05-15] cellKey + caretPos 비교 — updatedAt만 변하는 noise는 무시(깜빡임 방지),
+        // 위치/caret 변경은 즉시 반영(타이핑 위치 실시간 표시).
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setTeamVisionPresence({}) }
+  }, [project?.id])
+
+  // T-1-2 수업설계 방향 워크스페이스 presence subcollection 구독 — IGW/TVW와 동일 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchLessonDesignDirectionWorkspacePresence(project.id, (next) => {
+      setLessonDesignDirectionPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setLessonDesignDirectionPresence({}) }
+  }, [project?.id])
+
+  // Ds-1-1 평가 계획 워크스페이스 presence subcollection 구독 — 동일 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchEvaluationPlanWorkspacePresence(project.id, (next) => {
+      setEvaluationPlanPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setEvaluationPlanPresence({}) }
+  }, [project?.id])
+
+  // Ds-1-2 문제상황 워크스페이스 presence subcollection 구독 — 동일 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchProblemSituationWorkspacePresence(project.id, (next) => {
+      setProblemSituationPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setProblemSituationPresence({}) }
+  }, [project?.id])
+
+  // Ds-2-1 지원 도구 워크스페이스 presence subcollection 구독 — 동일 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchSupportToolWorkspacePresence(project.id, (next) => {
+      setSupportToolPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setSupportToolPresence({}) }
+  }, [project?.id])
+
+  // Ds-1-3 학습활동 설계 워크스페이스 presence subcollection 구독 — 동일 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchLearningActivityWorkspacePresence(project.id, (next) => {
+      setLearningActivityPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setLearningActivityPresence({}) }
+  }, [project?.id])
+
+  // Ds-2-2 스캐폴딩 설계 워크스페이스 presence subcollection 구독 — 동일 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchScaffoldingWorkspacePresence(project.id, (next) => {
+      setScaffoldingPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setScaffoldingPresence({}) }
+  }, [project?.id])
+
+  // T-2-1 역할 배분 워크스페이스 presence subcollection 구독 — 같은 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchRoleDistributionWorkspacePresence(project.id, (next) => {
+      setRoleDistributionPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setRoleDistributionPresence({}) }
+  }, [project?.id])
+
+  // T-2-2 팀 규칙 워크스페이스 presence subcollection 구독 — 같은 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchTeamRulesWorkspacePresence(project.id, (next) => {
+      setTeamRulesPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setTeamRulesPresence({}) }
+  }, [project?.id])
+
+  // T-2-3 팀 일정 워크스페이스 presence subcollection 구독 — 같은 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchTeamScheduleWorkspacePresence(project.id, (next) => {
+      setTeamSchedulePresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setTeamSchedulePresence({}) }
+  }, [project?.id])
+
+  // A-1-2 주제 선정 워크스페이스 presence subcollection 구독 — 같은 패턴
+  useEffect(() => {
+    if (!project?.id) return
+    const unsub = watchTopicSelectionWorkspacePresence(project.id, (next) => {
+      setTopicSelectionPresence((prev) => {
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(next)
+        if (prevKeys.length !== nextKeys.length) return next
+        for (const k of nextKeys) {
+          const a = prev[k]
+          const b = next[k]
+          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+        }
+        return prev
+      })
+    })
+    return () => { unsub(); setTopicSelectionPresence({}) }
+  }, [project?.id])
+
+  // Why: 모달 prop으로 넘기는 콜백/객체 reference를 안정화 → 모달 내부 useEffect dependency 폭주 방지.
+  //      early return 이전에 호출해 Rules of Hooks 위반 회피.
+  const projectId = project?.id
+  const projectArtifacts = project?.artifacts
+  const projectMemberInfo = project?.memberInfo
+  const projectHostUid = project?.hostUid
+  const projectCreatedBy = project?.createdBy
+
+  const handleIntegratedGoalWorkspacePatch = useCallback(async (patch: IntegratedGoalWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchIntegratedGoalWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleIntegratedGoalPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setIntegratedGoalWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  const handleIntegratedGoalSendArtifact = useCallback(async (content: A22Structured) => {
+    if (!projectId) return
+    const hostNow = projectHostUid === userProfile?.uid || projectCreatedBy === userProfile?.uid
+    if (!hostNow) return
+    const firestoreArtifact = projectArtifacts?.['A-2-2']
+    const existing = currentArtifact?.activityCode === 'A-2-2' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(projectId, 'A-2-2', {
+      status: 'in_review',
+      title: '통합 수업목표 진술 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('A-2-2')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'A-2-2',
+      artifactType: '통합 수업목표 진술',
+      title: '통합 수업목표 진술 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '통합 수업목표 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }, [projectId, projectArtifacts, projectHostUid, projectCreatedBy, currentArtifact, userProfile?.uid, setViewingActivity, setCurrentArtifact])
+
+  // Why: 모달 prop으로 매번 새 reference 전달 시 모달 내부 useEffect가 매 render fire → setWorkspace 폭주.
+  //      projectArtifacts reference가 안정적인 동안 캐스팅 결과도 동일 reference로 유지.
+  const integratedGoalArtifactContent = useMemo(
+    () => projectArtifacts?.['A-2-2']?.content as Record<string, unknown> | undefined,
+    [projectArtifacts],
+  )
+  const integratedGoalExistingCoreIdea = useMemo(
+    () => (projectArtifacts?.['A-2-1']?.content as { commonCoreIdea?: string } | undefined)?.commonCoreIdea,
+    [projectArtifacts],
+  )
+  const integratedGoalCurrentUserColor = useMemo(
+    () => (userProfile?.uid ? (projectMemberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color),
+    [projectMemberInfo, userProfile?.uid, userProfile?.color],
+  )
+
   if (!project) return null
   const proj = project  // non-null 확정 캡처
 
@@ -1593,26 +1936,21 @@ export function ChatPanel() {
         },
         // 현재 활동의 기존 산출물 내용 전달 (AI가 수정 시 참조)
         currentArtifact: proj.artifacts?.[currentActivity] ?? null,
-        // 이전 단계 산출물 전달: Ds/DI/E 단계에서는 A단계 산출물을 확정 여부와 무관하게 포함
-        // (확정을 안 했더라도 내용이 있으면 설계 근거로 전달, 미래 활동 산출물은 제외)
+        // 이전 활동 산출물 전달: 내용이 있는 모든 과거 활동을 status와 함께 포함.
+        // 같은 단계 내 진행(A-2-1 → A-2-2 등)에서도 in_review 초안을 다음 활동의 입력으로 사용해야 함.
+        // AI는 함께 전달된 status('confirmed'/'in_review'/'ai_draft' 등)로 확정/검토중을 구분한다.
         confirmedArtifacts: proj.artifacts
           ? (() => {
               const allActivities = STAGES.flatMap(s => s.activities)
               const currentIdx = allActivities.indexOf(currentActivity)
-              const curStage = activityMeta.stage
               return Object.fromEntries(
                 Object.entries(proj.artifacts)
                   .filter(([code, a]) => {
                     const idx = allActivities.indexOf(code as ActivityCode)
-                    if (idx >= currentIdx) return false
-                    // Ds/DI/E 단계: A단계 산출물은 내용만 있으면 확정 여부 무관하게 포함
-                    const codeStage = ACTIVITY_META[code as ActivityCode]?.stage
-                    if (['Ds', 'DI', 'E'].includes(curStage) && codeStage === 'A') {
-                      return Object.keys((a.content as Record<string, unknown>) ?? {}).length > 0
-                    }
-                    return a.status === 'confirmed'
+                    if (idx < 0 || idx >= currentIdx) return false
+                    return Object.keys((a.content as Record<string, unknown>) ?? {}).length > 0
                   })
-                  .map(([code, a]) => [code, { title: a.title, content: a.content }])
+                  .map(([code, a]) => [code, { title: a.title, content: a.content, status: a.status }])
               )
             })()
           : undefined,
@@ -1700,6 +2038,9 @@ export function ChatPanel() {
       throw new Error(serverError)
     }
     if (fullText) onDone(fullText)
+    // 스트림이 done/error/timeout 없이 빈 응답으로 끝난 경우 — 조용한 무응답("문의에 답 없음") 방지.
+    // 호출부 catch가 chatError를 띄워 사용자가 재시도할 수 있게 한다.
+    else throw new Error('AI 응답이 도착하지 않았습니다. 네트워크 상태를 확인하고 재시도 버튼을 눌러주세요.')
   }
 
   // ─── 활동 전진 처리 (Firestore 동기화 포함, 크로스 스테이지 지원) ──
@@ -2131,19 +2472,490 @@ ${discussionSummary}
   const isTeamMode = discussionMode === 'team_discussion'
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
 
-  async function handleTeamVisionWorkspacePatch(patch: TeamVisionWorkspacePatch) {
-    if (!project?.id) return undefined
-    return patchTeamVisionWorkspace(project.id, patch)
-  }
+  // [2026-05-15] useCallback으로 reference 안정화 — 매 render마다 새 함수가 prop으로 들어가면
+  // 모달의 useEffect cleanup이 폭주해 본인 presence가 등록·삭제 cycle을 만들어 팀원 칩 깜빡임 발생했음.
+  const handleTeamVisionWorkspacePatch = useCallback(async (patch: TeamVisionWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchTeamVisionWorkspace(projectId, patch)
+  }, [projectId])
 
-  async function handleTeamVisionPresence(entry: { uid: string; displayName: string; color: string; cellKey: string; updatedAt: number } | null) {
-    if (!project?.id || !userProfile?.uid) return
-    const color = project.memberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+  const handleTeamVisionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setTeamVisionWorkspacePresence(
-      project.id,
+      projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  // T-1-2 핸들러
+  const handleLessonDesignDirectionWorkspacePatch = useCallback(async (patch: LessonDesignDirectionWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchLessonDesignDirectionWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleLessonDesignDirectionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setLessonDesignDirectionWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  // T-2-1 역할 배분 핸들러 — LDD와 동일 패턴
+  const handleRoleDistributionWorkspacePatch = useCallback(async (patch: RoleDistributionWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchRoleDistributionWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleRoleDistributionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setRoleDistributionWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  // T-2-2 팀 규칙 핸들러
+  const handleTeamRulesWorkspacePatch = useCallback(async (patch: TeamRulesWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchTeamRulesWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleTeamRulesPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setTeamRulesWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleTeamRulesSendArtifact(content: T22Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['T-2-2']
+    const existing = currentArtifact?.activityCode === 'T-2-2' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'T-2-2', {
+      status: 'in_review',
+      title: '팀 규칙 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('T-2-2')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'T-2-2',
+      artifactType: '팀 규칙 수립',
+      title: '팀 규칙 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '팀 규칙 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  // T-2-3 팀 일정 핸들러
+  const handleTeamScheduleWorkspacePatch = useCallback(async (patch: TeamScheduleWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchTeamScheduleWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleTeamSchedulePresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setTeamScheduleWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleTeamScheduleSendArtifact(content: T23Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['T-2-3']
+    const existing = currentArtifact?.activityCode === 'T-2-3' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'T-2-3', {
+      status: 'in_review',
+      title: '팀 일정 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('T-2-3')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'T-2-3',
+      artifactType: '팀 일정 협의',
+      title: '팀 일정 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '팀 일정 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  // A-1-2 주제 선정 핸들러
+  const handleTopicSelectionWorkspacePatch = useCallback(async (patch: TopicSelectionWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchTopicSelectionWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleTopicSelectionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setTopicSelectionWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleTopicSelectionSendArtifact(content: A12Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['A-1-2']
+    const existing = currentArtifact?.activityCode === 'A-1-2' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'A-1-2', {
+      status: 'in_review',
+      title: '주제 선정 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('A-1-2')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'A-1-2',
+      artifactType: '주제 선정',
+      title: '주제 선정 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '주제 선정 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  // Ds-1-3 학습활동 설계 핸들러
+  const handleLearningActivityWorkspacePatch = useCallback(async (patch: LearningActivityWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchLearningActivityWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleLearningActivityPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setLearningActivityWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleLearningActivitySendArtifact(content: Ds13Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['Ds-1-3']
+    const existing = currentArtifact?.activityCode === 'Ds-1-3' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'Ds-1-3', {
+      status: 'in_review',
+      title: '학습활동 설계 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('Ds-1-3')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'Ds-1-3',
+      artifactType: '학습활동 설계',
+      title: '학습활동 설계 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '학습활동 설계 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  // Ds-2-2 스캐폴딩 설계 핸들러
+  const handleScaffoldingWorkspacePatch = useCallback(async (patch: ScaffoldingWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchScaffoldingWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleScaffoldingPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setScaffoldingWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleScaffoldingSendArtifact(content: Ds22Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['Ds-2-2']
+    const existing = currentArtifact?.activityCode === 'Ds-2-2' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'Ds-2-2', {
+      status: 'in_review',
+      title: '스캐폴딩 설계 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('Ds-2-2')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'Ds-2-2',
+      artifactType: '스캐폴딩 설계',
+      title: '스캐폴딩 설계 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '스캐폴딩 설계 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  async function handleRoleDistributionSendArtifact(content: T21Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['T-2-1']
+    const existing = currentArtifact?.activityCode === 'T-2-1' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'T-2-1', {
+      status: 'in_review',
+      title: '역할 배분 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('T-2-1')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'T-2-1',
+      artifactType: '역할 배분',
+      title: '역할 배분 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '역할 배분 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  async function handleLessonDesignDirectionSendArtifact(content: T12Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['T-1-2']
+    const existing = currentArtifact?.activityCode === 'T-1-2' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'T-1-2', {
+      status: 'in_review',
+      title: '수업설계 방향 설정 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('T-1-2')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'T-1-2',
+      artifactType: '수업설계 방향 설정',
+      title: '수업설계 방향 설정 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '수업설계 방향 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  // Ds-1-1 평가 계획 핸들러 — LDD와 동일 패턴
+  const handleEvaluationPlanWorkspacePatch = useCallback(async (patch: EvaluationPlanWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchEvaluationPlanWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleEvaluationPlanPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setEvaluationPlanWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleEvaluationPlanSendArtifact(content: Ds11Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['Ds-1-1']
+    const existing = currentArtifact?.activityCode === 'Ds-1-1' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'Ds-1-1', {
+      status: 'in_review',
+      title: '평가 계획 수립 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('Ds-1-1')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'Ds-1-1',
+      artifactType: '평가 계획 수립',
+      title: '평가 계획 수립 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '평가 계획 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  // Ds-1-2 문제상황 핸들러 — Ds-1-1과 동일 패턴
+  const handleProblemSituationWorkspacePatch = useCallback(async (patch: ProblemSituationWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchProblemSituationWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleProblemSituationPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setProblemSituationWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleProblemSituationSendArtifact(content: Ds12Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['Ds-1-2']
+    const existing = currentArtifact?.activityCode === 'Ds-1-2' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'Ds-1-2', {
+      status: 'in_review',
+      title: '문제상황 개발 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('Ds-1-2')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'Ds-1-2',
+      artifactType: '문제상황 개발',
+      title: '문제상황 개발 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '문제상황 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
+  }
+
+  const handleSupportToolWorkspacePatch = useCallback(async (patch: SupportToolWorkspacePatch) => {
+    if (!projectId) return undefined
+    return patchSupportToolWorkspace(projectId, patch)
+  }, [projectId])
+
+  const handleSupportToolPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
+    if (!projectId || !userProfile?.uid) return
+    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    await setSupportToolWorkspacePresence(
+      projectId,
+      userProfile.uid,
+      entry ? { ...entry, color } : null,
+    ).catch(console.error)
+  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  async function handleSupportToolSendArtifact(content: Ds21Structured) {
+    if (!project?.id || !isHost) return
+    const firestoreArtifact = project.artifacts?.['Ds-2-1']
+    const existing = currentArtifact?.activityCode === 'Ds-2-1' ? currentArtifact : null
+    const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+    await setProjectArtifact(project.id, 'Ds-2-1', {
+      status: 'in_review',
+      title: '지원 도구 설계 산출물',
+      content: content as unknown as Record<string, unknown>,
+      version,
+    })
+    setViewingActivity('Ds-2-1')
+    setCurrentArtifact({
+      id: existing?.id ?? Date.now().toString(),
+      activityCode: 'Ds-2-1',
+      artifactType: '지원 도구 설계',
+      title: '지원 도구 설계 산출물',
+      status: 'in_review',
+      currentVersion: version,
+      aiDraft: content as unknown as Record<string, unknown>,
+      createdBy: userProfile?.uid ?? 'manual',
+      meta: {
+        author: '수동 공동 편집',
+        createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        evidence: '지원 도구 워크스페이스',
+        approvalStatus: 'pending',
+      },
+    })
   }
 
   async function handleTeamVisionSendArtifact(content: T11Structured) {
@@ -2830,6 +3642,116 @@ ${discussionSummary}
               비전 공동 편집
             </button>
           )}
+          {currentActivity === 'T-1-2' && (
+            <button
+              onClick={() => setShowLessonDesignDirectionWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="수업설계 방향 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              설계 방향 공동 편집
+            </button>
+          )}
+          {currentActivity === 'Ds-1-1' && (
+            <button
+              onClick={() => setShowEvaluationPlanWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="평가 계획 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              평가 계획 공동 편집
+            </button>
+          )}
+          {currentActivity === 'Ds-1-2' && (
+            <button
+              onClick={() => setShowProblemSituationWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="문제상황 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              문제상황 공동 편집
+            </button>
+          )}
+          {currentActivity === 'Ds-2-1' && (
+            <button
+              onClick={() => setShowSupportToolWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="지원 도구 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              지원 도구 공동 편집
+            </button>
+          )}
+          {currentActivity === 'T-2-1' && (
+            <button
+              onClick={() => setShowRoleDistributionWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="역할 배분 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              역할 배분 공동 편집
+            </button>
+          )}
+          {currentActivity === 'T-2-2' && (
+            <button
+              onClick={() => setShowTeamRulesWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="팀 규칙 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              팀 규칙 공동 편집
+            </button>
+          )}
+          {currentActivity === 'T-2-3' && (
+            <button
+              onClick={() => setShowTeamScheduleWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="팀 일정 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              팀 일정 공동 편집
+            </button>
+          )}
+          {currentActivity === 'A-1-2' && (
+            <button
+              onClick={() => setShowTopicSelectionWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="주제 선정 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              주제 선정 공동 편집
+            </button>
+          )}
+          {currentActivity === 'Ds-1-3' && (
+            <button
+              onClick={() => setShowLearningActivityWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="학습활동 설계 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              학습활동 공동 편집
+            </button>
+          )}
+          {currentActivity === 'Ds-2-2' && (
+            <button
+              onClick={() => setShowScaffoldingWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="스캐폴딩 설계 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              스캐폴딩 공동 편집
+            </button>
+          )}
+          {currentActivity === 'A-2-2' && (
+            <button
+              onClick={() => setShowIntegratedGoalWorkspace(true)}
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+              title="통합 수업목표 진술 공동 편집"
+            >
+              <PencilSimple size={13} weight="bold" />
+              수업목표 공동 편집
+            </button>
+          )}
           {/* 교육과정 분석 워크스페이스 버튼 (A단계 활동에서만 표시) */}
           {GRAPH_ACTIVITIES.includes(currentActivity) && (
             <div className="relative flex items-center">
@@ -2864,28 +3786,38 @@ ${discussionSummary}
           )}
           {/* 문제상황 개발 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
           {currentActivity === 'Ds-1-2' && (
-            <button
-              onClick={() => {
-                const next = !showProblemSituationDesigner
-                setShowProblemSituationDesigner(next)
-                if (isHost) {
-                  import('@/lib/firebase/projects').then(m =>
-                    m.setProblemSituationOpen(proj.id, next).catch(console.error)
-                  )
-                }
-              }}
-              className={cn(
-                'flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full border transition-colors',
-                showProblemSituationDesigner
-                  ? 'bg-[#00897B] text-white border-[#00897B]'
-                  : 'bg-white text-[#00897B] border-[#80CBC4] hover:bg-[#E0F2F1]',
+            <div className="relative flex items-center">
+              {!showProblemSituationDesigner && (
+                <div className="pointer-events-none absolute top-full mt-2 right-0 z-[60] min-w-[280px] rounded-2xl border border-white/80 bg-[#00897B] px-3 py-2 text-center text-[12px] font-bold leading-snug text-white shadow-[0_8px_24px_rgba(0,137,123,0.35)]">
+                  <span className="absolute -top-1.5 right-8 h-3 w-3 rotate-45 border-l border-t border-white/80 bg-[#00897B]" />
+                  문제상황 워크숍을 이용한 후 공동 편집을 하는 것도 좋습니다.
+                </div>
               )}
-              title="문제상황 개발 워크숍"
-            >
-              <PencilRuler size={13} weight={showProblemSituationDesigner ? 'fill' : 'regular'} />
-              문제상황 워크숍
-              {isHost && <span className="text-[8px] opacity-70 ml-0.5">{showProblemSituationDesigner ? '공유중' : ''}</span>}
-            </button>
+              <button
+                onClick={() => {
+                  const next = !showProblemSituationDesigner
+                  setShowProblemSituationDesigner(next)
+                  if (isHost) {
+                    import('@/lib/firebase/projects').then(m =>
+                      m.setProblemSituationOpen(proj.id, next).catch(console.error)
+                    )
+                  }
+                }}
+                className={cn(
+                  'workshop-glow flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border-2 transition-colors whitespace-nowrap',
+                  showProblemSituationDesigner
+                    ? 'bg-[#00897B] text-white border-[#00897B]'
+                    : 'bg-white text-[#00897B] border-[#4DB6AC] hover:bg-[#E0F2F1]',
+                )}
+                title="문제상황 개발 워크숍 (이 단계 전용 특별 기능)"
+              >
+                <span className="relative z-10 flex items-center gap-1">
+                  <PencilRuler size={13} weight={showProblemSituationDesigner ? 'fill' : 'regular'} />
+                  문제상황 워크숍
+                  {isHost && <span className="text-[8px] opacity-70 ml-0.5">{showProblemSituationDesigner ? '공유중' : ''}</span>}
+                </span>
+              </button>
+            </div>
           )}
           {userProfile && (
             <div className="flex items-center gap-1.5">
@@ -2976,6 +3908,8 @@ ${discussionSummary}
               const fr = data.fullResult as import('@/app/api/problem-situation/generate/route').ProblemSituationResult | undefined
               if (fr) {
                 const artifactContent: Record<string, unknown> = {
+                  // _schema로 전용 Ds12Renderer가 구조화 렌더 (없으면 raw JSON 노출)
+                  _schema: 'Ds-1-2',
                   '문제상황 후보': fr.candidates.map((c, i) => ({
                     번호: i + 1,
                     제목: c.title,
@@ -3010,6 +3944,7 @@ ${discussionSummary}
                   status: 'confirmed',
                   title: data.scenario.title,
                   content: {
+                    _schema: 'Ds-1-2',
                     '문제상황': data.scenario.row1,
                     '교과별 학습 내용 및 산출물': data.scenario.row2,
                     '데이터 출처': data.scenario.row3,
@@ -3041,10 +3976,10 @@ ${discussionSummary}
                 ``,
                 `---`,
                 ``,
-                `## 🎯 핵심 질문`,
+                `## 🎯 탐구 질문`,
                 data.drivingQuestion,
                 ``,
-                `## 🔍 탐구 질문`,
+                `## 🔍 하위 탐구 질문`,
                 eqList,
                 ``,
                 `---`,
@@ -3428,11 +4363,321 @@ ${discussionSummary}
           currentUid={userProfile?.uid}
           currentUserName={userProfile?.displayName}
           currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
-          presence={proj.teamVisionWorkspacePresence}
+          presence={teamVisionPresence}
           isHost={isHost}
           onPatchSave={handleTeamVisionWorkspacePatch}
           onPresenceUpdate={handleTeamVisionPresence}
           onSendArtifact={handleTeamVisionSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          projectId={proj.id}
+          collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
+        />
+
+        <LessonDesignDirectionWorkspaceModal
+          open={showLessonDesignDirectionWorkspace}
+          onClose={() => setShowLessonDesignDirectionWorkspace(false)}
+          workspace={proj.lessonDesignDirectionWorkspace}
+          artifactContent={proj.artifacts?.['T-1-2']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={lessonDesignDirectionPresence}
+          isHost={isHost}
+          onPatchSave={handleLessonDesignDirectionWorkspacePatch}
+          onPresenceUpdate={handleLessonDesignDirectionPresence}
+          onSendArtifact={handleLessonDesignDirectionSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          existingTeamVision={(proj.artifacts?.['T-1-1']?.content as { teamVision?: string } | undefined)?.teamVision ?? proj.teamVisionWorkspace?.teamVision}
+          existingCoreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          projectId={proj.id}
+          collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
+        />
+
+        <EvaluationPlanWorkspaceModal
+          open={showEvaluationPlanWorkspace}
+          onClose={() => setShowEvaluationPlanWorkspace(false)}
+          workspace={proj.evaluationPlanWorkspace}
+          artifactContent={proj.artifacts?.['Ds-1-1']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={evaluationPlanPresence}
+          isHost={isHost}
+          onPatchSave={handleEvaluationPlanWorkspacePatch}
+          onPresenceUpdate={handleEvaluationPlanPresence}
+          onSendArtifact={handleEvaluationPlanSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          integratedGoal={(proj.artifacts?.['A-2-2']?.content as { integratedGoal?: string } | undefined)?.integratedGoal ?? proj.integratedGoalWorkspace?.integratedGoal}
+          subjectGoals={(proj.artifacts?.['A-2-2']?.content as { subjectGoals?: Array<{ subject: string; goal: string }> } | undefined)?.subjectGoals}
+          learnerProfile={(() => {
+            const a23 = proj.artifacts?.['A-2-3']?.content as Record<string, unknown> | undefined
+            if (!a23) return undefined
+            return Object.entries(a23).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+          })()}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          projectId={proj.id}
+          collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
+        />
+
+        <ProblemSituationWorkspaceModal
+          open={showProblemSituationWorkspace}
+          onClose={() => setShowProblemSituationWorkspace(false)}
+          workspace={proj.problemSituationWorkspace}
+          artifactContent={proj.artifacts?.['Ds-1-2']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={problemSituationPresence}
+          isHost={isHost}
+          onPatchSave={handleProblemSituationWorkspacePatch}
+          onPresenceUpdate={handleProblemSituationPresence}
+          onSendArtifact={handleProblemSituationSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          integratedGoal={(proj.artifacts?.['A-2-2']?.content as { integratedGoal?: string } | undefined)?.integratedGoal ?? proj.integratedGoalWorkspace?.integratedGoal}
+          subjectGoals={(proj.artifacts?.['A-2-2']?.content as { subjectGoals?: Array<{ subject: string; goal: string }> } | undefined)?.subjectGoals}
+          learnerProfile={(() => {
+            const a23 = proj.artifacts?.['A-2-3']?.content as Record<string, unknown> | undefined
+            if (!a23) return undefined
+            return Object.entries(a23).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+          })()}
+          evaluationPlan={(() => {
+            const ds11 = proj.artifacts?.['Ds-1-1']?.content as { rubric?: Array<{ item?: string; method?: string; timing?: string }> } | undefined
+            if (!ds11?.rubric || ds11.rubric.length === 0) return undefined
+            return ds11.rubric.map(r => `- ${r.item ?? ''} (${r.method ?? ''} · ${r.timing ?? ''})`).join('\n')
+          })()}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          projectId={proj.id}
+          collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
+        />
+
+        <SupportToolWorkspaceModal
+          open={showSupportToolWorkspace}
+          onClose={() => setShowSupportToolWorkspace(false)}
+          workspace={proj.supportToolWorkspace}
+          artifactContent={proj.artifacts?.['Ds-2-1']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={supportToolPresence}
+          isHost={isHost}
+          onPatchSave={handleSupportToolWorkspacePatch}
+          onPresenceUpdate={handleSupportToolPresence}
+          onSendArtifact={handleSupportToolSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          integratedGoal={(proj.artifacts?.['A-2-2']?.content as { integratedGoal?: string } | undefined)?.integratedGoal ?? proj.integratedGoalWorkspace?.integratedGoal}
+          subjectGoals={(proj.artifacts?.['A-2-2']?.content as { subjectGoals?: Array<{ subject: string; goal: string }> } | undefined)?.subjectGoals}
+          learnerProfile={(() => {
+            const a23 = proj.artifacts?.['A-2-3']?.content as Record<string, unknown> | undefined
+            if (!a23) return undefined
+            return Object.entries(a23).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+          })()}
+          learningActivities={(() => {
+            const ds13 = proj.artifacts?.['Ds-1-3']?.content as Record<string, unknown> | undefined
+            if (!ds13) return undefined
+            return Object.entries(ds13).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+          })()}
+          evaluationPlan={(() => {
+            const ds11 = proj.artifacts?.['Ds-1-1']?.content as { rubric?: Array<{ item?: string; method?: string; timing?: string }> } | undefined
+            if (!ds11?.rubric || ds11.rubric.length === 0) return undefined
+            return ds11.rubric.map(r => `- ${r.item ?? ''} (${r.method ?? ''} · ${r.timing ?? ''})`).join('\n')
+          })()}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          projectId={proj.id}
+          collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
+        />
+
+        <RoleDistributionWorkspaceModal
+          open={showRoleDistributionWorkspace}
+          onClose={() => setShowRoleDistributionWorkspace(false)}
+          workspace={proj.roleDistributionWorkspace}
+          artifactContent={proj.artifacts?.['T-2-1']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={roleDistributionPresence}
+          isHost={isHost}
+          onPatchSave={handleRoleDistributionWorkspacePatch}
+          onPresenceUpdate={handleRoleDistributionPresence}
+          onSendArtifact={handleRoleDistributionSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          memberNames={Object.values(proj.memberInfo ?? {}).map(m => m.displayName).filter(Boolean) as string[]}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          teamVision={(proj.artifacts?.['T-1-1']?.content as { teamVision?: string } | undefined)?.teamVision ?? proj.teamVisionWorkspace?.teamVision}
+          coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
+          projectId={proj.id}
+          collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
+        />
+
+        <TeamRulesWorkspaceModal
+          open={showTeamRulesWorkspace}
+          onClose={() => setShowTeamRulesWorkspace(false)}
+          workspace={proj.teamRulesWorkspace}
+          artifactContent={proj.artifacts?.['T-2-2']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={teamRulesPresence}
+          isHost={isHost}
+          onPatchSave={handleTeamRulesWorkspacePatch}
+          onPresenceUpdate={handleTeamRulesPresence}
+          onSendArtifact={handleTeamRulesSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          teamVision={(proj.artifacts?.['T-1-1']?.content as { teamVision?: string } | undefined)?.teamVision ?? proj.teamVisionWorkspace?.teamVision}
+          coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
+          existingRoles={(proj.artifacts?.['T-2-1']?.content as { roles?: Array<{ teacherName?: string; role?: string }> } | undefined)?.roles}
+        />
+
+        <TeamScheduleWorkspaceModal
+          open={showTeamScheduleWorkspace}
+          onClose={() => setShowTeamScheduleWorkspace(false)}
+          workspace={proj.teamScheduleWorkspace}
+          artifactContent={proj.artifacts?.['T-2-3']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={teamSchedulePresence}
+          isHost={isHost}
+          onPatchSave={handleTeamScheduleWorkspacePatch}
+          onPresenceUpdate={handleTeamSchedulePresence}
+          onSendArtifact={handleTeamScheduleSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          teamVision={(proj.artifacts?.['T-1-1']?.content as { teamVision?: string } | undefined)?.teamVision ?? proj.teamVisionWorkspace?.teamVision}
+          coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
+          existingRoles={(proj.artifacts?.['T-2-1']?.content as { roles?: Array<{ teacherName?: string; role?: string }> } | undefined)?.roles}
+          existingRules={(proj.artifacts?.['T-2-2']?.content as { rules?: Array<{ category?: string; name?: string }> } | undefined)?.rules}
+        />
+
+        <TopicSelectionWorkspaceModal
+          open={showTopicSelectionWorkspace}
+          onClose={() => setShowTopicSelectionWorkspace(false)}
+          workspace={proj.topicSelectionWorkspace}
+          artifactContent={proj.artifacts?.['A-1-2']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={topicSelectionPresence}
+          isHost={isHost}
+          onPatchSave={handleTopicSelectionWorkspacePatch}
+          onPresenceUpdate={handleTopicSelectionPresence}
+          onSendArtifact={handleTopicSelectionSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          teamVision={(proj.artifacts?.['T-1-1']?.content as { teamVision?: string } | undefined)?.teamVision ?? proj.teamVisionWorkspace?.teamVision}
+          coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
+        />
+
+        <LearningActivityWorkspaceModal
+          open={showLearningActivityWorkspace}
+          onClose={() => setShowLearningActivityWorkspace(false)}
+          workspace={proj.learningActivityWorkspace}
+          artifactContent={proj.artifacts?.['Ds-1-3']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={learningActivityPresence}
+          isHost={isHost}
+          onPatchSave={handleLearningActivityWorkspacePatch}
+          onPresenceUpdate={handleLearningActivityPresence}
+          onSendArtifact={handleLearningActivitySendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          problemScenario={proj.problemSituationData?.scenario
+            ? [proj.problemSituationData.scenario.title, proj.problemSituationData.scenario.row1, proj.problemSituationData.scenario.row2, proj.problemSituationData.scenario.row3].filter(Boolean).join(' / ')
+            : undefined}
+          drivingQuestion={proj.problemSituationData?.drivingQuestion}
+          evaluationPlan={(() => {
+            const c = proj.artifacts?.['Ds-1-1']?.content as { rubric?: Array<{ item?: string; method?: string }> } | undefined
+            if (!c?.rubric?.length) return undefined
+            return c.rubric.map(r => [r.item, r.method].filter(Boolean).join(' · ')).filter(Boolean).join('\n')
+          })()}
+        />
+
+        <ScaffoldingWorkspaceModal
+          open={showScaffoldingWorkspace}
+          onClose={() => setShowScaffoldingWorkspace(false)}
+          workspace={proj.scaffoldingWorkspace}
+          artifactContent={proj.artifacts?.['Ds-2-2']?.content as Record<string, unknown> | undefined}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={scaffoldingPresence}
+          isHost={isHost}
+          onPatchSave={handleScaffoldingWorkspacePatch}
+          onPresenceUpdate={handleScaffoldingPresence}
+          onSendArtifact={handleScaffoldingSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          learningActivities={(() => {
+            const c = proj.artifacts?.['Ds-1-3']?.content as { activities?: Array<{ name?: string; session?: string }> } | undefined
+            if (!c?.activities?.length) return undefined
+            return c.activities.map(a => [a.name, a.session].filter(Boolean).join(' (') + (a.session ? ')' : '')).filter(Boolean).join('\n')
+          })()}
+          learnerProfile={(() => {
+            const c = proj.artifacts?.['A-2-3']?.content as Record<string, unknown> | undefined
+            if (!c) return undefined
+            const v = c['학습자 프로필'] ?? c['commonProfile']
+            return typeof v === 'string' ? v : v ? JSON.stringify(v).slice(0, 800) : undefined
+          })()}
+        />
+
+        <IntegratedGoalWorkspaceModal
+          open={showIntegratedGoalWorkspace}
+          onClose={() => setShowIntegratedGoalWorkspace(false)}
+          workspace={proj.integratedGoalWorkspace}
+          artifactContent={integratedGoalArtifactContent}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={integratedGoalCurrentUserColor}
+          presence={integratedGoalPresence}
+          isHost={isHost}
+          onPatchSave={handleIntegratedGoalWorkspacePatch}
+          onPresenceUpdate={handleIntegratedGoalPresence}
+          onSendArtifact={handleIntegratedGoalSendArtifact}
+          projectTitle={proj.title}
+          targetGradeGroup={proj.targetGradeGroup}
+          targetSubjects={proj.targetSubjects}
+          existingCoreIdea={integratedGoalExistingCoreIdea}
+          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          existingAnalysis={(proj.curriculumSheet ?? [])
+            .filter(r => r.coreIdea?.trim() || r.subject?.trim() || r.standard?.trim())
+            .map(r => {
+              const parts: string[] = []
+              parts.push(`[${r.subject ?? ''}]`)
+              if (r.coreIdea?.trim()) parts.push(`핵심아이디어: ${r.coreIdea.trim()}`)
+              if (r.standard?.trim()) parts.push(`성취기준: ${r.standard.trim()}`)
+              if (r.knowledge?.trim()) parts.push(`지식·이해: ${r.knowledge.trim()}`)
+              if (r.processFunction?.trim()) parts.push(`과정·기능: ${r.processFunction.trim()}`)
+              return parts.join(' / ')
+            })
+            .join('\n') || undefined}
+          projectId={proj.id}
+          collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
         />
 
         {/* 교육과정 분석 워크스페이스 — 분석시트 ↔ 지식그래프 통합 모달 */}

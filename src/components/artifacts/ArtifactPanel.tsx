@@ -6,10 +6,10 @@ import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES } from '@/types'
 import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
-import { setProjectArtifact, setActivityStatus } from '@/lib/firebase/projects'
+import { setProjectArtifact, setActivityStatus, deleteProjectArtifact } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import { cn } from '@/lib/utils'
-import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, type Icon } from '@phosphor-icons/react'
+import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, Trash, type Icon } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
 import { CumulativeReportModal } from '@/components/modals/CumulativeReportModal'
 // 스펙 §1-2 — 단계 컬러 단일 출처. 로컬 선언 제거하고 공통 모듈 참조.
@@ -205,7 +205,7 @@ function ArtifactPreviewModal({
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[95vw] lg:max-w-[1400px] max-h-[92vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className={cn(modalStageColor.light, 'px-6 py-4 flex items-center gap-3 border-b border-[#DADCE0] flex-shrink-0')}>
@@ -241,7 +241,7 @@ function ArtifactPreviewModal({
             <X size={18} weight="regular" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-auto px-6 py-5">
           <ArtifactContent content={modal.content} activityCode={modal.activityCode} />
         </div>
       </div>
@@ -316,6 +316,41 @@ function RequiredSectionsChecklist({
         filled = s.schedule.reduce((sum, i) => sum + (i.period?.length ?? 0) + (i.activity?.length ?? 0), 0)
       }
     }
+    if (filled === 0 && content._schema === 'Ds-1-3') {
+      const s = content as unknown as { activities?: Array<{ name: string; description: string }>; review?: string }
+      if (sec.key === '학습 활동' && s.activities?.length) {
+        filled = s.activities.reduce((sum, a) => sum + (a.name?.length ?? 0) + (a.description?.length ?? 0), 0)
+      } else if (sec.key === 'AI 점검' && s.review) {
+        filled = s.review.length
+      }
+    }
+    if (filled === 0 && content._schema === 'Ds-2-1') {
+      const s = content as unknown as {
+        materials?: Array<{ activity?: string; name?: string; purpose?: string }>
+        envCheck?: string
+        '활동별 자료 설계'?: string
+        'AI 점검'?: string
+      }
+      if (sec.key === '활동별 자료 설계') {
+        if (s.materials?.length) {
+          filled = s.materials.reduce((sum, m) => sum + (m.activity?.length ?? 0) + (m.name?.length ?? 0) + (m.purpose?.length ?? 0), 0)
+        } else if (typeof s['활동별 자료 설계'] === 'string') {
+          filled = countKoreanChars(s['활동별 자료 설계'])
+        }
+      } else if (sec.key === 'AI 점검') {
+        filled = (s.envCheck?.length ?? 0) || countKoreanChars(s['AI 점검'])
+      }
+    }
+    if (filled === 0 && content._schema === 'Ds-2-2') {
+      const s = content as unknown as { supportPlans?: unknown[]; scaffolds?: Array<{ type: string; content: string }>; review?: string }
+      if (sec.key === '지원 방안 정리' && s.supportPlans?.length) {
+        filled = s.supportPlans.length * 20
+      } else if (sec.key === '스캐폴딩 계획' && s.scaffolds?.length) {
+        filled = s.scaffolds.reduce((sum, x) => sum + (x.type?.length ?? 0) + (x.content?.length ?? 0), 0)
+      } else if (sec.key === 'AI 점검' && s.review) {
+        filled = s.review.length
+      }
+    }
     if (filled === 0 && content._schema === 'A-1-2') {
       const s = content as unknown as { criteria?: unknown[]; selectedTopic?: string; topicType?: string; rationale?: string }
       if (sec.key === '주제 선정 기준' && s.criteria?.length) filled = 20
@@ -348,6 +383,31 @@ function RequiredSectionsChecklist({
     if (filled === 0 && content._schema === 'A-2-3') {
       const s = content as unknown as { commonProfile?: unknown[] }
       if (sec.key === '학습자 프로필' && s.commonProfile?.length) filled = 20
+    }
+    // Ds-1-2 문제상황: 워크숍 저장(선정 문제상황/문제상황 후보)·공동편집(scenario) 양쪽 형태 모두 매핑
+    if (filled === 0 && content._schema === 'Ds-1-2') {
+      const s = content as unknown as {
+        scenario?: { title?: string; authenticity?: string; contentProduct?: string; audienceAction?: string }
+        drivingQuestion?: string
+        '선정 문제상황'?: { 제목?: string; 문제상황?: string; 교과별학습내용?: string; 산출물?: string }
+        '문제상황 후보'?: Array<{ 제목?: string; 문제상황?: string; 선정?: boolean }>
+        '핵심 질문'?: string
+      }
+      if (sec.key === '문제상황') {
+        if (s.scenario) {
+          filled = (s.scenario.title?.length ?? 0) + (s.scenario.authenticity?.length ?? 0)
+            + (s.scenario.contentProduct?.length ?? 0) + (s.scenario.audienceAction?.length ?? 0)
+        } else if (s['선정 문제상황']) {
+          const sel = s['선정 문제상황']
+          filled = (sel.제목?.length ?? 0) + (sel.문제상황?.length ?? 0)
+            + (sel.교과별학습내용?.length ?? 0) + (sel.산출물?.length ?? 0)
+        } else if (Array.isArray(s['문제상황 후보']) && s['문제상황 후보'].length > 0) {
+          const chosen = s['문제상황 후보'].find(c => c.선정) ?? s['문제상황 후보'][0]
+          filled = (chosen?.제목?.length ?? 0) + (chosen?.문제상황?.length ?? 0)
+        }
+      } else if (sec.key === '핵심 질문') {
+        filled = (s.drivingQuestion?.length ?? 0) || (s['핵심 질문']?.length ?? 0)
+      }
     }
     const satisfied = filled >= sec.minChars
     const pct = Math.min(100, Math.round((filled / sec.minChars) * 100))
@@ -746,7 +806,12 @@ export const ARTIFACT_STATUS_DOT: Record<ArtifactStatus, string> = {
 }
 
 // ─── 구조화된 산출물 렌더러 분기 ──────────────────────────────────────────
-function StructuredArtifactRenderer({ content, onDelete }: { content: Record<string, unknown>; onDelete?: () => void }) {
+function StructuredArtifactRenderer({ content, onDelete, onDeleteField }: {
+  content: Record<string, unknown>
+  onDelete?: () => void
+  /** 구조화 산출물의 카드(필드) 단위 부분 삭제 — sentinel key `__field:<name>`로 호출자에게 전달 */
+  onDeleteField?: (key: string) => void
+}) {
   const schema = content._schema as string | undefined
   const { ExpandableWrapper } = require('./structured/ExpandableWrapper') as { ExpandableWrapper: React.ComponentType<{ title: string; children: React.ReactNode; onDelete?: () => void }> }
 
@@ -760,14 +825,23 @@ function StructuredArtifactRenderer({ content, onDelete }: { content: Record<str
     'A-2-1': { mod: './structured/A21Renderer', label: '핵심아이디어 및 성취기준 분석' },
     'A-2-2': { mod: './structured/A22Renderer', label: '통합 수업목표 진술' },
     'A-2-3': { mod: './structured/A23Renderer', label: '학습자·맥락 분석' },
+    'Ds-1-1': { mod: './structured/Ds11Renderer', label: '평가 계획 수립' },
+    'Ds-1-2': { mod: './structured/Ds12Renderer', label: '문제상황 개발' },
+    'Ds-1-3': { mod: './structured/Ds13Renderer', label: '학습활동 설계' },
+    'Ds-2-1': { mod: './structured/Ds21Renderer', label: '지원 도구 설계' },
+    'Ds-2-2': { mod: './structured/Ds22Renderer', label: '스캐폴딩 설계' },
   }
 
   if (!schema || !SCHEMA_MAP[schema]) return null
 
   const { label } = SCHEMA_MAP[schema]
+  // T-1-1만 우선 필드별 부분 삭제 지원 — 다른 단계도 추후 동일 패턴으로 확장.
+  const t11FieldDelete = onDeleteField
+    ? (field: 'personalVisions' | 'teamVision' | 'coreKeywords' | 'blocks') => onDeleteField(`__field:${field}__`)
+    : undefined
   let inner: React.ReactNode = null
   const renderers: Record<string, () => React.ReactNode> = {
-    'T-1-1': () => { const { T11Renderer } = require('./structured/T11Renderer'); return <T11Renderer data={content} /> },
+    'T-1-1': () => { const { T11Renderer } = require('./structured/T11Renderer'); return <T11Renderer data={content} onDeleteField={t11FieldDelete} /> },
     'T-1-2': () => { const { T12Renderer } = require('./structured/T12Renderer'); return <T12Renderer data={content} /> },
     'T-2-1': () => { const { T21Renderer } = require('./structured/T21Renderer'); return <T21Renderer data={content} /> },
     'T-2-2': () => { const { T22Renderer } = require('./structured/T22Renderer'); return <T22Renderer data={content} /> },
@@ -776,6 +850,11 @@ function StructuredArtifactRenderer({ content, onDelete }: { content: Record<str
     'A-2-1': () => { const { A21Renderer } = require('./structured/A21Renderer'); return <A21Renderer data={content} /> },
     'A-2-2': () => { const { A22Renderer } = require('./structured/A22Renderer'); return <A22Renderer data={content} /> },
     'A-2-3': () => { const { A23Renderer } = require('./structured/A23Renderer'); return <A23Renderer data={content} /> },
+    'Ds-1-1': () => { const { Ds11Renderer } = require('./structured/Ds11Renderer'); return <Ds11Renderer data={content} /> },
+    'Ds-1-2': () => { const { Ds12Renderer } = require('./structured/Ds12Renderer'); return <Ds12Renderer data={content} /> },
+    'Ds-1-3': () => { const { Ds13Renderer } = require('./structured/Ds13Renderer'); return <Ds13Renderer data={content} /> },
+    'Ds-2-1': () => { const { Ds21Renderer } = require('./structured/Ds21Renderer'); return <Ds21Renderer data={content} /> },
+    'Ds-2-2': () => { const { Ds22Renderer } = require('./structured/Ds22Renderer'); return <Ds22Renderer data={content} /> },
   }
   if (schema && renderers[schema]) inner = renderers[schema]()
 
@@ -793,12 +872,22 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
   allowTableExpand?: boolean
   recentlyUpdatedKeys?: Set<string>  // 방금 변경된 섹션 키 집합 (플래시 대상)
 }) {
+  // Ds-1-2(문제상황 개발)는 _schema 없이 한글 키 중첩 객체로 저장된 옛 데이터가 있다.
+  // 그대로 두면 일반 섹션 렌더가 객체를 raw JSON으로 노출하므로, 전용 Renderer로 보내도록 보정.
+  const effectiveContent = (!content._schema && activityCode === 'Ds-1-2')
+    ? { ...content, _schema: 'Ds-1-2' }
+    : content
+
   // 구조화된 산출물이면 고정 렌더러 사용 (AI 자유 형식 대신)
-  if (content._schema) {
-    return <StructuredArtifactRenderer content={content} onDelete={onDeleteSection ? () => {
-      // 구조화 산출물 전체를 빈 객체로 교체 (한 번에 삭제)
-      onDeleteSection('__clear_all__')
-    } : undefined} />
+  if (effectiveContent._schema) {
+    return <StructuredArtifactRenderer
+      content={effectiveContent}
+      onDelete={onDeleteSection ? () => {
+        // 구조화 산출물 전체를 빈 객체로 교체 (한 번에 삭제)
+        onDeleteSection('__clear_all__')
+      } : undefined}
+      onDeleteField={onDeleteSection}
+    />
   }
 
   const filteredEntries = Object.entries(content).filter(
@@ -917,6 +1006,8 @@ export function ArtifactPanel() {
   const [directInputText, setDirectInputText] = useState('')
   const [previewModal, setPreviewModal] = useState<ArtifactPreviewModalState | null>(null)
   const [showCumulativeReport, setShowCumulativeReport] = useState(false)
+  // 버전 dropdown — 현재 v 라벨 클릭 시 토글, 항목 클릭 시 rollback confirm.
+  const [showVersionMenu, setShowVersionMenu] = useState(false)
 
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
   const stageColor = STAGE_COLOR[project?.currentStage ?? 'T']
@@ -1107,6 +1198,23 @@ export function ArtifactPanel() {
     if (currentArtifact) setCurrentArtifact({ ...currentArtifact, status: 'in_review' })
   }
 
+  async function handleDeleteArtifact() {
+    if (!displayArtifact || !project || !viewingActivity) return
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(`'${displayArtifact.title || viewingActivity}' 산출물을 정말 삭제할까요?\n\n공동 편집 워크스페이스 초안은 그대로 남아 있으며, 산출물 카드만 제거됩니다.`)
+      : true
+    if (!ok) return
+    setIsSaving(true)
+    try {
+      await deleteProjectArtifact(project.id, viewingActivity)
+      setCurrentArtifact(null)
+    } catch (err) {
+      console.error('산출물 삭제 실패:', err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   async function handleRevisionRequest() {
     if (!displayArtifact || !project) return
     await setProjectArtifact(project.id, currentActivity, {
@@ -1129,6 +1237,18 @@ export function ArtifactPanel() {
     if (key === '__clear_all__') {
       // 구조화 산출물 전체 삭제
       newContent = {}
+    } else if (key.startsWith('__field:') && key.endsWith('__')) {
+      // 구조화 산출물 카드(필드) 단위 부분 삭제 — sentinel `__field:<name>__`.
+      // 현재 T-1-1 지원: personalVisions / teamVision / coreKeywords / blocks
+      const field = key.slice('__field:'.length, -2)
+      newContent = { ...(firestoreArtifact.content as Record<string, unknown>) }
+      if (field === 'personalVisions') newContent.personalVisions = []
+      else if (field === 'teamVision') newContent.teamVision = ''
+      else if (field === 'coreKeywords') newContent.coreKeywords = []
+      else if (field === 'blocks') {
+        const ws = (newContent.manualWorkspace as Record<string, unknown> | undefined) ?? null
+        if (ws) newContent.manualWorkspace = { ...ws, blocks: [] }
+      }
     } else {
       newContent = { ...(firestoreArtifact.content as Record<string, unknown>) }
       delete newContent[key]
@@ -1154,6 +1274,40 @@ export function ArtifactPanel() {
         lastEditedContent: newContent,
         confirmedContent: isEmpty ? undefined : newContent,
       })
+    }
+  }
+
+  // 선택한 과거 버전을 새 버전으로 재기록 — 현재 content는 setProjectArtifact 내부에서 versions에 자동 push.
+  async function handleRollback(targetVersion: number) {
+    if (!project || !firestoreArtifact) return
+    const versions = firestoreArtifact.versions ?? []
+    const target = versions.find(v => v.version === targetVersion)
+    if (!target) return
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(`이 버전(v${target.version})으로 되돌리시겠습니까? 현재 내용도 새 버전으로 기록됩니다.`)
+      : true
+    if (!ok) return
+    setShowVersionMenu(false)
+    setIsSaving(true)
+    try {
+      await setProjectArtifact(project.id, viewingActivity, {
+        status: firestoreArtifact.status as 'confirmed' | 'in_review' | 'ai_draft',
+        title: firestoreArtifact.title,
+        content: target.content,
+        version: firestoreArtifact.version + 1,
+      })
+      if (currentArtifact) {
+        setCurrentArtifact({
+          ...currentArtifact,
+          aiDraft: target.content,
+          lastEditedContent: target.content,
+          confirmedContent: firestoreArtifact.status === 'confirmed' ? target.content : currentArtifact.confirmedContent,
+        })
+      }
+    } catch (err) {
+      console.error('산출물 rollback 실패:', err)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -1243,9 +1397,80 @@ export function ArtifactPanel() {
             </span>
           )}
           {firestoreArtifact && (
-            <span className="ml-auto text-[10px] font-semibold text-[#5F6368] tabular-nums">
-              v{firestoreArtifact.version}
-            </span>
+            <div className="ml-auto relative">
+              <button
+                type="button"
+                onClick={() => setShowVersionMenu(prev => !prev)}
+                disabled={isSaving}
+                className={cn(
+                  'flex items-center gap-1 text-[10px] font-semibold text-[#5F6368] tabular-nums',
+                  'rounded-full px-2 py-0.5 bg-white/70 hover:bg-white transition-colors',
+                  'disabled:opacity-50',
+                )}
+                title="버전 이력"
+                aria-haspopup="menu"
+                aria-expanded={showVersionMenu}
+              >
+                <ClockCounterClockwise size={11} weight="bold" />
+                v{firestoreArtifact.version}
+                <CaretDown size={9} weight="bold" />
+              </button>
+              {showVersionMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-30"
+                    aria-hidden="true"
+                    onClick={() => setShowVersionMenu(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 z-40 w-64 bg-white rounded-xl shadow-lg border border-[#E0E0E0] py-1.5 max-h-80 overflow-y-auto">
+                    <div className="px-3 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-[#9AA0A6]">
+                      버전 이력
+                    </div>
+                    <div className="px-3 py-1.5 flex items-center justify-between border-b border-[#F1F3F4] mb-1">
+                      <span className="text-[11px] font-bold text-[#202124] tabular-nums">
+                        v{firestoreArtifact.version} (현재)
+                      </span>
+                      <span className="text-[10px] text-[#9AA0A6]">최신</span>
+                    </div>
+                    {(firestoreArtifact.versions ?? []).length === 0 ? (
+                      <div className="px-3 py-3 text-[11px] text-[#9AA0A6]">
+                        이전 버전 이력이 없습니다.
+                      </div>
+                    ) : (
+                      [...(firestoreArtifact.versions ?? [])]
+                        .sort((a, b) => b.version - a.version)
+                        .slice(0, 10)
+                        .map((v, idx) => (
+                          // Why: setProjectArtifact가 같은 version을 두 번 push하는 경로(rollback 등)가 있어
+                          //      v.version만으로는 unique 보장이 안 됨. savedAt + idx로 fallback.
+                          <div
+                            key={`${v.version}-${v.savedAt}-${idx}`}
+                            className="px-3 py-1.5 flex items-center justify-between hover:bg-[#F8F9FA] transition-colors"
+                          >
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[11px] font-semibold text-[#202124] tabular-nums">
+                                v{v.version}
+                              </span>
+                              <span className="text-[10px] text-[#9AA0A6] truncate">
+                                {new Date(v.savedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                {v.savedBy ? ` · ${v.savedBy}` : ''}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRollback(v.version)}
+                              disabled={isSaving}
+                              className="ml-2 text-[10px] font-semibold text-[#1A73E8] hover:text-[#1557B0] disabled:opacity-50 flex-shrink-0"
+                            >
+                              되돌리기
+                            </button>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -1540,19 +1765,21 @@ export function ArtifactPanel() {
         {/* 누적 산출물 — 스펙 §7-3: 현재 산출물 이후 아래 섹션으로 분리
             (빈 상태에서도 참고로 볼 수 있도록 항상 노출) */}
         {previousArtifacts.length > 0 && (
-          <div className="mt-6 rounded-2xl border border-[#DADCE0] bg-[#F8F9FA] p-4">
+          <div className="mt-6 rounded-2xl border-2 border-[#C2D7F8] bg-[#F5FAFF] p-4">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2 min-w-0">
-                <Stack size={16} weight="fill" className="text-[#5F6368] flex-shrink-0" />
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-[#1A73E8]">
+                  <Stack size={15} weight="fill" className="text-white" />
+                </span>
                 <div className="min-w-0">
-                  <p className="text-[12px] font-bold text-[#202124]">누적 산출물</p>
+                  <p className="text-[12px] font-bold text-[#1557B0]">저장된 산출물 (이전 활동)</p>
                   <p className="text-[11px] text-[#5F6368] mt-0.5 leading-snug">
-                    이전 활동의 산출물을 열어보며 현재 설계를 이어갈 수 있습니다.
+                    저장한 이전 활동 결과물입니다. 카드를 클릭하면 새 창에서 열립니다.
                   </p>
                 </div>
               </div>
-              <span className="text-[10px] font-bold text-[#1A73E8] bg-[#E8F0FE] px-2.5 py-1 rounded-full whitespace-nowrap tabular-nums">
-                {previousArtifacts.length}개
+              <span className="text-[10px] font-bold text-white bg-[#1A73E8] px-2.5 py-1 rounded-full whitespace-nowrap tabular-nums">
+                저장됨 {previousArtifacts.length}
               </span>
             </div>
             {/* §7-3.8 — 각 이전 산출물에 관계 pill 부착 */}
@@ -1601,6 +1828,17 @@ export function ArtifactPanel() {
                   <ClockCounterClockwise size={16} weight="regular" />
                   확정 취소 · 재검토
                 </button>
+                <button
+                  onClick={handleDeleteArtifact}
+                  disabled={isSaving}
+                  className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
+                    text-[#C62828] bg-[rgba(217,48,37,0.08)] hover:bg-[rgba(217,48,37,0.16)] text-sm font-semibold
+                    disabled:opacity-60 transition-colors"
+                  title="산출물 카드를 삭제합니다 (워크스페이스 초안은 유지)"
+                >
+                  <Trash size={16} weight="regular" />
+                  산출물 삭제
+                </button>
               </>
             ) : (
               <>
@@ -1621,6 +1859,17 @@ export function ArtifactPanel() {
                 >
                   <ClockCounterClockwise size={16} weight="regular" />
                   AI 재초안 요청
+                </button>
+                <button
+                  onClick={handleDeleteArtifact}
+                  disabled={isSaving}
+                  className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
+                    text-[#C62828] bg-[rgba(217,48,37,0.08)] hover:bg-[rgba(217,48,37,0.16)] text-sm font-semibold
+                    disabled:opacity-60 transition-colors"
+                  title="산출물 카드를 삭제합니다 (워크스페이스 초안은 유지)"
+                >
+                  <Trash size={16} weight="regular" />
+                  산출물 삭제
                 </button>
               </>
             )

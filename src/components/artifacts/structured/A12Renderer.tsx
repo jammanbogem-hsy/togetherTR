@@ -17,7 +17,7 @@ export function A12Renderer({ data }: { data: A12Structured }) {
         </div>
         {criteria.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm border-collapse">
+            <table className="w-full min-w-[480px] text-sm border-collapse [word-break:keep-all]">
               <thead className="bg-[#1A73E8]"><tr>
                 {['기준', '설명', '우선순위'].map(h => <th key={h} className="px-3 py-2.5 text-left text-xs font-bold text-white border-b border-[#1557B0]">{h}</th>)}
               </tr></thead>

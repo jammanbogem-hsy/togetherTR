@@ -137,9 +137,8 @@ export async function POST(request: Request) {
       .join('\n')
 
     // ─── 내용체계 데이터에서 지식·이해 / 과정·기능 원문 로드 ───
-    const csRecords = isElementaryGradeGroup(targetGradeGroup)
-      ? loadElementaryContentSystems()
-      : loadContentSystems()
+    // [strict-elementary 2026-05-14] 초등 전용 웹앱 — gradeGroup 무관하게 초등만.
+    const csRecords = loadElementaryContentSystems()
 
     function getContentSystemForSubject(subjectId: string, area: string) {
       const subjName = subjectNameMap.get(subjectId) ?? ''

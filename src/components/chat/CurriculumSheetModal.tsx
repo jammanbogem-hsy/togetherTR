@@ -389,6 +389,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const dirtyCellVersionsRef = useRef<Record<string, number>>({})
   const pendingRowIdsRef = useRef<Set<string>>(new Set())
   const pendingStructuralCountRef = useRef(0)
+  const rowsRef = useRef<CurriculumSheetRow[]>([])
+  const serverRowIdsRef = useRef<Set<string>>(new Set())
+
+  // 디바운스 타이머 안에서 최신 rows를 읽기 위한 ref
+  useEffect(() => { rowsRef.current = rows }, [rows])
 
   const hasPendingLocalChanges = useCallback(() => (
     Object.keys(dirtyCellVersionsRef.current).length > 0
@@ -399,6 +404,18 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const syncDirtyFromPending = useCallback(() => {
     setDirty(hasPendingLocalChanges())
   }, [hasPendingLocalChanges])
+
+  // 서버에 실제로 저장된 행 id 집합을 추적한다.
+  // 셀 단위 패치(update-cell)는 서버에 존재하는 행만 갱신하므로, 아직 저장되지 않은 행은
+  // 전체 행 upsert로 보내야 한다. 서버에 반영된 pending 행은 여기서 정리한다.
+  useEffect(() => {
+    serverRowIdsRef.current = new Set(savedRows.map(row => row.id))
+    let changed = false
+    for (const id of [...pendingRowIdsRef.current]) {
+      if (serverRowIdsRef.current.has(id)) { pendingRowIdsRef.current.delete(id); changed = true }
+    }
+    if (changed) syncDirtyFromPending()
+  }, [savedRows, syncDirtyFromPending])
 
   const mergeIncomingRows = useCallback((incomingRows: CurriculumSheetRow[], currentRows: CurriculumSheetRow[]) => {
     const incoming = (incomingRows.length > 0 ? incomingRows : [])
@@ -550,6 +567,30 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     }, 700)
   }, [applySavedRows, currentUserName, onPatchSave, syncDirtyFromPending])
 
+  // 아직 서버에 저장되지 않은 행(최초 기본 행 등)은 셀 단위 패치가 no-op이 되므로
+  // 전체 행을 upsert한다. 디바운스 타이머가 끝날 때 최신 행 전체를 보낸다.
+  const scheduleRowUpsert = useCallback((rowId: string) => {
+    if (!onPatchSave) return
+    const timerKey = `__row__:${rowId}`
+    pendingRowIdsRef.current.add(rowId)
+    setDirty(true)
+    if (patchTimersRef.current[timerKey]) clearTimeout(patchTimersRef.current[timerKey])
+    patchTimersRef.current[timerKey] = setTimeout(async () => {
+      delete patchTimersRef.current[timerKey]
+      const fullRow = rowsRef.current.find(row => row.id === rowId)
+      if (!fullRow) { syncDirtyFromPending(); return }
+      try {
+        const saved = await onPatchSave({ type: 'upsert-row', row: fullRow, updatedBy: currentUserName })
+        applySavedRows(saved)
+      } catch (e) {
+        console.error('[curriculumSheet row upsert]', e)
+      } finally {
+        // pendingRowIdsRef는 savedRows 동기화 effect가 서버 반영 확인 후 정리한다.
+        syncDirtyFromPending()
+      }
+    }, 700)
+  }, [applySavedRows, currentUserName, onPatchSave, syncDirtyFromPending])
+
   const clearPendingCellTimers = useCallback(() => {
     for (const timer of Object.values(patchTimersRef.current)) clearTimeout(timer)
     patchTimersRef.current = {}
@@ -567,11 +608,16 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   function updateRow(id: string, field: CurriculumSheetEditableField, value: string) {
     setRows(prev => {
       const n = prev.map(r => r.id === id ? { ...r, [field]: value, updatedBy: currentUserName, updatedAt: Date.now() } : r)
+      rowsRef.current = n
       setDirty(true)
       if (!onPatchSave) triggerSave(n)
       return n
     })
-    scheduleCellPatch(id, field, value)
+    if (onPatchSave) {
+      // 서버에 저장된 행은 셀 단위로, 아직 저장 안 된 행은 전체 행 upsert로 보낸다.
+      if (serverRowIdsRef.current.has(id)) scheduleCellPatch(id, field, value)
+      else scheduleRowUpsert(id)
+    }
     updatePresence(`${id}:${field}`)
   }
   function removeTag(rowId: string, field: CurriculumSheetEditableField, tag: string) {
@@ -705,6 +751,20 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     finally { setAutofillLoading(false) }
   }
 
+  // 핵심아이디어 확인 창에서 AI가 제안한 교과 중 원하지 않는 교과를 제외한다.
+  function removeAutofillProposal(subject: string) {
+    setAutofillReview(prev => {
+      if (!prev) return prev
+      const proposals = prev.proposals.filter(p => p.subject !== subject)
+      return proposals.length > 0 ? { ...prev, proposals } : null
+    })
+    setCoreIdeaSelections(prev => {
+      const next = { ...prev }
+      delete next[subject]
+      return next
+    })
+  }
+
   function getPickerOptions(rowId: string, field: PickerField): string[] {
     const row = rows.find(r => r.id === rowId); const subj = row?.subject ?? ''; const ci = row?.coreIdea ?? ''
     const si = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
@@ -807,6 +867,10 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const myColor = currentUserColor ?? (currentUid ? PRESENCE_COLORS[(currentUid.charCodeAt(0) + currentUid.charCodeAt(Math.min(currentUid.length - 1, 5))) % PRESENCE_COLORS.length] : '#999')
   const hasGraphRows = rows.some(r => r.subject && r.standard)
   const hasCenterGraphRow = rows.some(r => r.isCenter && r.standard)
+  // 과목·내용은 채웠지만 성취기준이 비어 지식 그래프에 표시되지 않을 교과들
+  const subjectsMissingStandard = [...new Set(
+    rows.filter(r => r.subject && !r.standard.trim()).map(r => r.subject),
+  )]
 
   // 래퍼(CurriculumWorkspaceModal)가 portal을 관리. 여기서는 컨테이너를 채우는 div만 반환.
   return (
@@ -882,7 +946,16 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                             <span className="text-sm font-bold text-[#202124]">{proposal.subject}</span>
                             {proposal.isCenter && <span className="px-2 py-0.5 rounded-full bg-[#FEF7E0] text-[#E65100] text-[10px] font-bold">중심</span>}
                           </div>
-                          <span className="text-[11px] font-semibold text-[#7B1FA2]">{selectedOption?.area ?? '영역'}</span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-[11px] font-semibold text-[#7B1FA2]">{selectedOption?.area ?? '영역'}</span>
+                            <button
+                              onClick={() => removeAutofillProposal(proposal.subject)}
+                              title={`${proposal.subject} 제외`}
+                              className="w-6 h-6 rounded-full hover:bg-[#FCE8E6] flex items-center justify-center text-[#9AA0A6] hover:text-[#C5221F] text-base leading-none transition"
+                            >
+                              &times;
+                            </button>
+                          </div>
                         </div>
                         {proposal.focus && <p className="mb-2 text-xs text-[#5F6368]">{proposal.focus}</p>}
                         <select
@@ -945,15 +1018,15 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                 </colgroup>
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-[#F8F9FA] border-b-2 border-[#DADCE0]">
-                    <th className="px-1 py-3" />
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#5F6368] whitespace-nowrap">과목</th>
+                    <th className="px-1 py-3 sticky left-0 z-20 bg-[#F8F9FA]" />
+                    <th className="px-3 py-3 text-left text-sm font-bold text-[#5F6368] whitespace-nowrap sticky left-[36px] z-20 bg-[#F8F9FA] border-r border-[#DADCE0]">과목</th>
                     <th className="px-3 py-3 text-left text-sm font-bold text-[#7B1FA2] whitespace-nowrap">핵심아이디어</th>
                     <th className="px-3 py-3 text-left text-sm font-bold text-[#1A73E8] whitespace-nowrap">성취기준</th>
                     <th className="px-3 py-3 text-left text-sm font-bold text-[#0D47A1] whitespace-nowrap">지식·이해</th>
                     <th className="px-3 py-3 text-left text-sm font-bold text-[#137333] whitespace-nowrap">과정·기능</th>
                     <th className="px-3 py-3 text-left text-sm font-bold text-[#7B1FA2] whitespace-nowrap">Agent 추천 수업 예시</th>
                     <th className="px-3 py-3 text-left text-sm font-bold text-[#5F6368] whitespace-nowrap">수업내용 설명</th>
-                    <th className="px-2 py-3" />
+                    <th className="px-2 py-3 sticky right-0 z-20 bg-[#F8F9FA] border-l border-[#DADCE0]" />
                   </tr>
                 </thead>
                 <tbody>
@@ -970,13 +1043,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       dragOverRowId === row.id && dragRowId !== row.id && 'border-t-2 border-t-[#1A73E8] bg-[#E8F0FE]',
                     )}
                   >
-                    {/* 드래그 핸들 */}
-                    <td className="px-1 py-2 align-top text-center cursor-grab active:cursor-grabbing">
+                    {/* 드래그 핸들 — 좌측 고정 */}
+                    <td className="px-1 py-2 align-top text-center cursor-grab active:cursor-grabbing sticky left-0 z-[5] bg-white group-hover:bg-[#F8F9FA]">
                       <span className="text-[#DADCE0] hover:text-[#9AA0A6] text-sm select-none">⠿</span>
                     </td>
 
-                    {/* 과목 + 중심교과 */}
-                    <td className="px-2 py-2 align-top">
+                    {/* 과목 + 중심교과 — 좌측 고정 */}
+                    <td className="px-2 py-2 align-top sticky left-[36px] z-[5] bg-white group-hover:bg-[#F8F9FA] border-r border-[#E8EAED]">
                       <select value={row.subject} onChange={e => updateRow(row.id, 'subject', e.target.value)}
                         className="w-full px-1.5 py-2 rounded-xl border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-sm font-semibold text-[#202124] cursor-pointer">
                         <option value="">선택</option>
@@ -997,9 +1070,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                                   updatedBy: r.id === row.id ? currentUserName : r.updatedBy,
                                   updatedAt: r.id === row.id ? Date.now() : r.updatedAt,
                                 }))
+                                rowsRef.current = next
                                 setDirty(true)
                                 if (!onPatchSave) triggerSave(next)
-                                else void saveStructuralPatch({ type: 'set-center', rowId: nextCenterId, updatedBy: currentUserName })
+                                else {
+                                  void saveStructuralPatch({ type: 'set-center', rowId: nextCenterId, updatedBy: currentUserName })
+                                  // set-center는 서버에 존재하는 행만 갱신하므로, 아직 저장 안 된 중심 행은 전체 행 upsert로 보장한다.
+                                  if (nextCenterId && !serverRowIdsRef.current.has(nextCenterId)) scheduleRowUpsert(nextCenterId)
+                                }
                                 return next
                               })
                             }}
@@ -1089,8 +1167,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       })()}
                     </td>
 
-                    {/* 행 삭제 — 항상 표시 */}
-                    <td className="px-2 py-2 align-top text-center">
+                    {/* 행 삭제 — 우측 고정 (가로 스크롤 없이 항상 보임) */}
+                    <td className="px-2 py-2 align-top text-center sticky right-0 z-[5] bg-white group-hover:bg-[#F8F9FA] border-l border-[#E8EAED]">
                       <button onClick={() => removeRow(row.id)} title={`${rowIdx + 1}행 삭제`}
                         className="w-8 h-8 rounded-full border border-[#F1F3F4] hover:bg-[#FCE8E6] hover:border-[#F28B82] text-[#C5221F] flex items-center justify-center transition text-base">
                         &times;
@@ -1126,6 +1204,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             )}
           </div>
           <div className="flex items-center gap-4 text-xs text-[#9AA0A6]">
+            {subjectsMissingStandard.length > 0 && (
+              <span className="font-semibold text-[#C5221F]" title="지식 그래프 노드는 성취기준 기준으로 만들어집니다. 성취기준이 없는 교과는 그래프에 나타나지 않습니다.">
+                ⚠ {subjectsMissingStandard.join('·')} — 성취기준을 선택해야 지식 그래프에 표시됩니다
+              </span>
+            )}
             {hasGraphRows && !hasCenterGraphRow && (
               <span className="font-semibold text-[#E65100]">중심 교과 체크 후 그래프를 생성할 수 있습니다.</span>
             )}

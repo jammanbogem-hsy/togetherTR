@@ -47,6 +47,8 @@ type RawObject = Record<string, unknown>
 
 let contentSystemCache: ContentSystemRecord[] | null = null
 let elementaryContentSystemCache: ContentSystemRecord[] | null = null
+// [2026-05-14] dev 환경에선 JSON 수정 즉시 반영을 위해 캐시 비활성. prod는 그대로.
+const CACHE_ENABLED = process.env.NODE_ENV !== 'development'
 
 const GRAPH_SUBJECT_NAME: Record<string, string> = {
   sub_kor: '국어',
@@ -77,7 +79,7 @@ function findContentSystemDir(): string | null {
 }
 
 export function loadContentSystems(): ContentSystemRecord[] {
-  if (contentSystemCache) return contentSystemCache
+  if (CACHE_ENABLED && contentSystemCache) return contentSystemCache
 
   const dir = findContentSystemDir()
   if (!dir) {
@@ -124,7 +126,7 @@ export function loadContentSystems(): ContentSystemRecord[] {
 }
 
 export function loadElementaryContentSystems(): ContentSystemRecord[] {
-  if (elementaryContentSystemCache) return elementaryContentSystemCache
+  if (CACHE_ENABLED && elementaryContentSystemCache) return elementaryContentSystemCache
 
   const rawRecords = loadContentSystems()
   const graphRecords = buildElementaryGraphContentSystems(rawRecords)
@@ -188,13 +190,15 @@ function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = 
       if (coreIdeas.length === 0) return null
       const gradeBands = unique(group.standards.map(s => formatGradeBand(s.grade_band)).filter(Boolean))
       const rawRecord = findRawContentSystemRecord(rawRecords, group.subject, group.area)
-      // 큐레이션된 PDF 데이터(rawRecord)를 우선. graph의 standard-레벨 knowledge/functions는
-      // 학년군 매핑이 부정확해 초등 표준에 중학교 내용이 섞여 들어가는 케이스가 있음.
+      // [절대 규칙 2026-05-14] graph의 standard-레벨 knowledge/functions는 학년군 매핑이 부정확하다.
+      // 예: data/elementary_knowledge_graph.json의 모든 수학 standards(초1-2/3-4/5-6)에 동일하게
+      //     ['대푯값','도수분포표와 상대도수','경우의 수와 확률','산포도','상자그림과 산점도'](중학교 내용)
+      //     이 잘못 복제되어 있어, prefixedContentByGrade가 "5-6학년군: 대푯값" 같이 잘못 라벨링.
+      // → 큐레이션된 PDF 데이터(rawRecord = data/curriculum-content-systems/*.json)만 사용.
+      //   rawRecord가 없으면 빈 배열을 반환해 자동 매핑을 안 함이 잘못된 자동 매핑보다 안전.
       const rawKnowledge = cleanContentItems(rawRecord?.knowledge ?? [])
       const rawFunctions = cleanContentItems(rawRecord?.functions ?? [])
       const rawAttitudes = cleanContentItems(rawRecord?.attitudes ?? [])
-      const graphKnowledge = prefixedContentByGrade(group.standards, 'knowledge', [])
-      const graphFunctions = prefixedContentByGrade(group.standards, 'functions', [])
 
       return {
         id: `elementary_knowledge_graph.json#${group.coreIdeaIds.join('+')}`,
@@ -206,9 +210,9 @@ function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = 
         area: group.area,
         gradeBands,
         coreIdeas,
-        knowledge: rawKnowledge.length > 0 ? rawKnowledge : graphKnowledge,
-        functions: rawFunctions.length > 0 ? rawFunctions : graphFunctions,
-        attitudes: rawAttitudes.length > 0 ? rawAttitudes : prefixedContentByGrade(group.standards, 'competencies', []),
+        knowledge: rawKnowledge,
+        functions: rawFunctions,
+        attitudes: rawAttitudes,
       }
     })
     .filter((record): record is ContentSystemRecord => Boolean(record))
@@ -370,9 +374,9 @@ export function searchContentSystems({
   const normalizedKeywords = [...new Set(keywords.map(normalizeKeyword).filter(Boolean))]
   if (normalizedKeywords.length === 0) return []
 
-  const records = isElementaryGradeGroup(gradeGroup)
-    ? loadElementaryContentSystems()
-    : loadContentSystems()
+  // [strict-elementary 2026-05-14] 이 웹앱은 초등 전용 — gradeGroup이 비초등이라도 강제로 초등 사용.
+  // Why: 사용자가 초등 프로젝트에 중·고 내용이 매핑되는 사례를 보고. content systems 단계에서 차단.
+  const records = loadElementaryContentSystems()
 
   return records
     .filter(record => matchesGradeGroup(record, gradeGroup))

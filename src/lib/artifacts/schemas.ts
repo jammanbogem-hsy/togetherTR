@@ -2,7 +2,7 @@
 // AI 자유 형식 마크다운 대신 **코드가 구조를 강제**하는 방식.
 // AI가 뭘 빠뜨리든, 형식이 이상하든 스키마가 보장한다.
 
-import type { TeamVisionWorkspace } from '@/types'
+import type { TeamVisionWorkspace, IntegratedGoalWorkspace } from '@/types'
 
 // ─── T-1-1 팀 공통 비전 설정 ─────────────────────────────────────────────
 
@@ -195,6 +195,8 @@ export interface T12DesignPrinciple {
 export interface T12Structured {
   _schema: 'T-1-2'
   designPrinciples: T12DesignPrinciple[]
+  /** 수동 공동 편집 워크스페이스 스냅샷 — T-1-2 모달에서 작성한 표·블록을 그대로 보존 */
+  manualWorkspace?: import('@/types').LessonDesignDirectionWorkspace
 }
 
 export function buildT12Structured(
@@ -282,6 +284,121 @@ function extractDesignPrinciplesFromChat(
   return entries
 }
 
+// ─── Ds-1-1 평가 계획 수립 ───────────────────────────────────────────────
+
+export interface Ds11RubricRow {
+  item: string    // 평가 항목
+  method: string  // 평가 방법
+  timing: string  // 평가 시점 (과정/결과 등)
+  high: string    // 상
+  mid: string     // 중
+  low: string     // 하
+}
+
+export interface Ds11Structured {
+  _schema: 'Ds-1-1'
+  rubric: Ds11RubricRow[]
+  /** 수동 공동 편집 워크스페이스 스냅샷 */
+  manualWorkspace?: import('@/types').EvaluationPlanWorkspace
+}
+
+export function buildDs11Structured(
+  sections: Record<string, string>,
+  chatMessages: Array<{ role: string; content: string }>,
+): Ds11Structured {
+  const result: Ds11Structured = { _schema: 'Ds-1-1', rubric: [] }
+  const raw = (sections['평가 계획'] ?? sections['평가계획'] ?? '').trim()
+  if (raw) result.rubric = parseDs11Rubric(raw)
+  if (result.rubric.length === 0) result.rubric = extractDs11RubricFromChat(chatMessages)
+  return result
+}
+
+function parseDs11Rubric(raw: string): Ds11RubricRow[] {
+  const rows: Ds11RubricRow[] = []
+  const lines = raw.split('\n').filter(l => l.trim().startsWith('|'))
+  if (lines.length < 3) return rows
+  // 헤더 + 구분선 제거 후 데이터 행
+  const dataLines = lines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1)
+  for (const line of dataLines) {
+    const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
+    if (cells.length >= 1 && cells[0]) {
+      rows.push({
+        item: cells[0] ?? '',
+        method: cells[1] ?? '',
+        timing: cells[2] ?? '',
+        high: cells[3] ?? '',
+        mid: cells[4] ?? '',
+        low: cells[5] ?? '',
+      })
+    }
+  }
+  return rows
+}
+
+function extractDs11RubricFromChat(
+  messages: Array<{ role: string; content: string }>,
+): Ds11RubricRow[] {
+  const assistantMsgs = [...messages.filter(m => m.role === 'assistant')].reverse()
+  for (const msg of assistantMsgs) {
+    const tableLines = msg.content.split('\n').filter(l => l.trim().startsWith('|'))
+    if (tableLines.length >= 3) {
+      const parsed = parseDs11Rubric(tableLines.join('\n'))
+      if (parsed.length > 0) return parsed
+    }
+  }
+  return []
+}
+
+// ─── Ds-1-2 문제상황 개발 ─────────────────────────────────────────────────
+
+export interface Ds12Structured {
+  _schema: 'Ds-1-2'
+  scenario: {
+    title: string          // 제목
+    authenticity: string   // 행1 실제성
+    contentProduct: string // 행2 학습 내용+산출물
+    audienceAction: string // 행3 청중+행위
+  }
+  drivingQuestion: string  // 핵심 질문
+  manualWorkspace?: import('@/types').ProblemSituationWorkspace
+}
+
+export function buildDs12Structured(
+  sections: Record<string, string>,
+  chatMessages: Array<{ role: string; content: string }>,
+): Ds12Structured {
+  const result: Ds12Structured = {
+    _schema: 'Ds-1-2',
+    scenario: { title: '', authenticity: '', contentProduct: '', audienceAction: '' },
+    drivingQuestion: '',
+  }
+  const raw = (sections['문제상황'] ?? '').trim()
+  if (raw) {
+    const titleM = raw.match(/\*\*제목\*\*\s*[:：]?\s*(.+?)(?:\n|$)/)
+    const r1 = raw.match(/\*\*행1[^*]*\*\*\s*[:：]?\s*([\s\S]*?)(?=\*\*행2|\*\*행3|$)/)
+    const r2 = raw.match(/\*\*행2[^*]*\*\*\s*[:：]?\s*([\s\S]*?)(?=\*\*행3|$)/)
+    const r3 = raw.match(/\*\*행3[^*]*\*\*\s*[:：]?\s*([\s\S]*?)$/)
+    result.scenario.title = (titleM?.[1] ?? '').trim()
+    result.scenario.authenticity = (r1?.[1] ?? '').trim()
+    result.scenario.contentProduct = (r2?.[1] ?? '').trim()
+    result.scenario.audienceAction = (r3?.[1] ?? '').trim()
+    // 마커가 없으면 raw 전체를 실제성에 보존 (정보 손실 방지)
+    if (!result.scenario.title && !result.scenario.authenticity && !result.scenario.contentProduct && !result.scenario.audienceAction) {
+      result.scenario.authenticity = raw
+    }
+  }
+  result.drivingQuestion = (sections['핵심 질문'] ?? sections['핵심질문'] ?? '').trim()
+  // 채팅 fallback — 핵심 질문이 비면 마지막 assistant 메시지의 물음표 문장 추출
+  if (!result.drivingQuestion) {
+    for (const msg of [...chatMessages].reverse()) {
+      if (msg.role !== 'assistant') continue
+      const q = msg.content.match(/["「'']([^"「''\n]{6,}?\?)["」'']/)
+      if (q) { result.drivingQuestion = q[1].trim(); break }
+    }
+  }
+  return result
+}
+
 // ─── T-2-1 역할 배분 ─────────────────────────────────────────────────────
 
 export interface T21Role {
@@ -295,6 +412,8 @@ export interface T21Role {
 export interface T21Structured {
   _schema: 'T-2-1'
   roles: T21Role[]
+  /** 수동 공동 편집 워크스페이스 스냅샷 — T-2-1 모달에서 작성한 표·블록을 그대로 보존 */
+  manualWorkspace?: import('@/types').RoleDistributionWorkspace
 }
 
 export function buildT21Structured(
@@ -335,6 +454,8 @@ export interface T22Rule {
 export interface T22Structured {
   _schema: 'T-2-2'
   rules: T22Rule[]
+  /** 수동 공동 편집 워크스페이스 스냅샷 — T-2-2 모달에서 작성한 표·블록을 그대로 보존 */
+  manualWorkspace?: import('@/types').TeamRulesWorkspace
 }
 
 export function buildT22Structured(
@@ -435,13 +556,16 @@ function parseRules(raw: string): T22Rule[] {
 export interface T23ScheduleItem {
   period: string
   activity: string
-  deliverable: string
+  /** 활동의 구체 내용 — 어떻게 진행하는지, 주의사항/제약(예: 특정 일자 대체) 포함 */
+  content: string
   assignee: string
 }
 
 export interface T23Structured {
   _schema: 'T-2-3'
   schedule: T23ScheduleItem[]
+  /** 수동 공동 편집 워크스페이스 스냅샷 — T-2-3 모달에서 작성한 표·블록을 그대로 보존 */
+  manualWorkspace?: import('@/types').TeamScheduleWorkspace
 }
 
 export function buildT23Structured(
@@ -451,17 +575,227 @@ export function buildT23Structured(
   const result: T23Structured = { _schema: 'T-2-3', schedule: [] }
   const raw = (sections['팀 일정'] ?? '').trim()
   if (raw) result.schedule = parseTableRows(raw, 4).map(cells => ({
-    period: cells[0] || '', activity: cells[1] || '', deliverable: cells[2] || '', assignee: cells[3] || '',
+    period: cells[0] || '', activity: cells[1] || '', content: cells[2] || '', assignee: cells[3] || '',
   }))
   if (result.schedule.length === 0) {
     for (const msg of [...chatMessages.filter(m => m.role === 'assistant')].reverse()) {
       const rows = parseTableRows(msg.content, 4)
       if (rows.length > 0) {
         result.schedule = rows.map(cells => ({
-          period: cells[0] || '', activity: cells[1] || '', deliverable: cells[2] || '', assignee: cells[3] || '',
+          period: cells[0] || '', activity: cells[1] || '', content: cells[2] || '', assignee: cells[3] || '',
         }))
         break
       }
+    }
+  }
+  return result
+}
+
+// ─── Ds-1-3 학습활동 설계 ────────────────────────────────────────────────
+// 이미지 4단계 흐름 반영:
+//  ① (개인+AI) 학습활동 아이디어 시각화 — 동사 중심 활동 나열 (외현화)
+//  ② (교사팀) 논리적 흐름 재조정 — 문제이해→정보탐색→분석→의사결정→산출물제작→공유및수정 (조정)
+//  ③ (개인교사) 목표 적합성 검토 — 핵심 활동 / 부가 활동 구분, 불필요 삭제 (판단)
+//  ④ (교사팀+AI) 차시 운영안 정리 — 차시·예상시간·교사지원·필요자료·평가시점 (조정)
+
+export interface Ds13Activity {
+  order: string         // 순서 ("1", "2" …)
+  phase: string         // 흐름 단계 (문제 이해 / 정보 탐색 / 분석 / 의사결정 / 산출물 제작 / 공유 및 수정)
+  name: string          // 활동명 — 동사 중심 ("~하기")
+  description: string   // 활동 설명 — 학생 수행 관점 2~3문장
+  coreType: string      // "핵심" / "부가"
+  subject: string       // 담당 교과 (주/보)
+  session: string       // 누적 차시 (예: "1차시", "3~4차시")
+  operation: string     // 차시 운영 메모 — 예상 시간·교사 지원·필요 자료·평가 시점
+}
+
+export interface Ds13Structured {
+  _schema: 'Ds-1-3'
+  activities: Ds13Activity[]
+  /** AI 점검 — 목표·평가 정합성, 흐름·실행 적절성 단락 서술 */
+  review: string
+  /** 수동 공동 편집 워크스페이스 스냅샷 */
+  manualWorkspace?: import('@/types').LearningActivityWorkspace
+}
+
+const DS13_COLS = 8
+
+function rowsToDs13Activities(rows: string[][]): Ds13Activity[] {
+  return rows.map(cells => ({
+    order: cells[0] || '',
+    phase: cells[1] || '',
+    name: cells[2] || '',
+    description: cells[3] || '',
+    coreType: cells[4] || '',
+    subject: cells[5] || '',
+    session: cells[6] || '',
+    operation: cells[7] || '',
+  }))
+}
+
+export function buildDs13Structured(
+  sections: Record<string, string>,
+  chatMessages: Array<{ role: string; content: string }>,
+): Ds13Structured {
+  const result: Ds13Structured = { _schema: 'Ds-1-3', activities: [], review: '' }
+  result.review = (sections['AI 점검'] ?? '').trim()
+
+  const raw = (sections['학습 활동'] ?? '').trim()
+  if (raw) result.activities = rowsToDs13Activities(parseTableRows(raw, DS13_COLS))
+
+  // 레거시(5열: 순서·활동명·설명·교과·차시) 산출물 호환 — 8열 매칭 실패 시 5열 시도
+  if (result.activities.length === 0 && raw) {
+    const legacy = parseTableRows(raw, 5)
+    if (legacy.length > 0) {
+      result.activities = legacy.map(cells => ({
+        order: cells[0] || '',
+        phase: '',
+        name: cells[1] || '',
+        description: cells[2] || '',
+        coreType: '',
+        subject: cells[3] || '',
+        session: cells[4] || '',
+        operation: '',
+      }))
+    }
+  }
+
+  if (result.activities.length === 0) {
+    for (const msg of [...chatMessages.filter(m => m.role === 'assistant')].reverse()) {
+      const rows = parseTableRows(msg.content, DS13_COLS)
+      if (rows.length > 0) { result.activities = rowsToDs13Activities(rows); break }
+      const legacy = parseTableRows(msg.content, 5)
+      if (legacy.length > 0) {
+        result.activities = legacy.map(cells => ({
+          order: cells[0] || '', phase: '', name: cells[1] || '', description: cells[2] || '',
+          coreType: '', subject: cells[3] || '', session: cells[4] || '', operation: '',
+        }))
+        break
+      }
+    }
+  }
+  return result
+}
+
+// ─── Ds-2-1 지원 도구(자료) 설계 ────────────────────────────────────────
+// 레퍼런스 4단계 흐름:
+//  ❶ (개인교사+AI) 활동별 필요 자료 나열 — 기능 중심(조정의 원리)
+//  ❷ (개인교사) 탐색 자료 / 개발 자료 구분 (인지 분산·조정)
+//  ❸ (교사팀) 공동 개발 / 개별 개발 구분 (상호 의존)
+//  ❹ (교사팀+AI) 자료 개발 일정·역할 분담 결정 → 활동-자료-운영 연결 구조
+
+export interface Ds21Material {
+  activity: string     // 대상 학습활동 (Ds-1-3 활동명 + 누적 차시)
+  name: string         // 자료/도구명 + 핵심 기능
+  purpose: string      // 활용 이유 — 학생의 어떤 수행을 지원하는지
+  sourceType: string   // "탐색" | "개발"
+  devScope: string     // (개발 자료) "공동" | "개별"
+  owner: string        // 담당 교사
+  schedule: string     // 일정 — 마감 / 중간 공유 / 최종 검토
+}
+
+export interface Ds21Structured {
+  _schema: 'Ds-2-1'
+  materials: Ds21Material[]
+  /** AI 점검 — 학생 수준·출처·저작권·개인정보·접근성·기술 안정성 */
+  envCheck: string
+  /** 수동 공동 편집 워크스페이스 스냅샷 */
+  manualWorkspace?: import('@/types').SupportToolWorkspace
+}
+
+const DS21_COLS = 7
+
+function rowsToDs21Materials(rows: string[][]): Ds21Material[] {
+  return rows.map(cells => ({
+    activity: cells[0] || '',
+    name: cells[1] || '',
+    purpose: cells[2] || '',
+    sourceType: cells[3] || '',
+    devScope: cells[4] || '',
+    owner: cells[5] || '',
+    schedule: cells[6] || '',
+  }))
+}
+
+export function buildDs21Structured(
+  sections: Record<string, string>,
+  chatMessages: Array<{ role: string; content: string }>,
+): Ds21Structured {
+  const result: Ds21Structured = { _schema: 'Ds-2-1', materials: [], envCheck: '' }
+  result.envCheck = (sections['AI 점검'] ?? '').trim()
+
+  const raw = (sections['활동별 자료 설계'] ?? sections['자료 설계'] ?? '').trim()
+  if (raw) result.materials = rowsToDs21Materials(parseTableRows(raw, DS21_COLS))
+
+  if (result.materials.length === 0) {
+    for (const msg of [...chatMessages.filter(m => m.role === 'assistant')].reverse()) {
+      const rows = parseTableRows(msg.content, DS21_COLS)
+      if (rows.length > 0) { result.materials = rowsToDs21Materials(rows); break }
+    }
+  }
+  return result
+}
+
+// ─── Ds-2-2 스캐폴딩 설계 ────────────────────────────────────────────────
+// 이미지 4단계 흐름 반영:
+//  ① (교사팀) 활동별 예상 어려움·지원 아이디어 공유 (인지 분산·외현화)
+//  ② (교사팀) 학습목표 근거 적절성 토론 — 발판 제공 우선 (조정·상호 의존)
+//  ③ (교사팀+AI) 탐색·개발 자료 보완 — 학생 수행 장면 상상 (조정)
+//  ④ (개인교사) 수정 자료 공유·재보완 — 반복 검토 (상호 의존·조정)
+
+export interface Ds22SupportPlan {
+  support: string         // 지원 방안 (자료명 + 간략 설명)
+  targetActivity: string  // 대상 활동 (Ds-1-3 활동명 + 누적 차시)
+}
+export interface Ds22Scaffold {
+  targetActivity: string  // 대상 활동 (Ds-1-3 활동명 + 누적 차시)
+  type: string            // 스캐폴딩 유형 (개념 안내형/예시 제시형/절차 안내형/언어 프레임/구조화 틀 등)
+  content: string         // 구체적 내용 — 제공 자료·진행 방식 2~3문장
+  level: string           // 대상 수준 (전체 / 학습 지원 / 다문화 등)
+  fadeOut: string         // 점진적 제거 계획 (GRR, Ds-1-3 누적 차시 기준)
+}
+export interface Ds22Structured {
+  _schema: 'Ds-2-2'
+  supportPlans: Ds22SupportPlan[]
+  scaffolds: Ds22Scaffold[]
+  /** AI 점검 — 적절성 검토 단락 (GRR 부합·개별화 충분성·제거 시점 명확성) */
+  review: string
+  /** 수동 공동 편집 워크스페이스 스냅샷 */
+  manualWorkspace?: import('@/types').ScaffoldingWorkspace
+}
+
+function rowsToDs22Scaffolds(rows: string[][]): Ds22Scaffold[] {
+  return rows.map(cells => ({
+    targetActivity: cells[0] || '',
+    type: cells[1] || '',
+    content: cells[2] || '',
+    level: cells[3] || '',
+    fadeOut: cells[4] || '',
+  }))
+}
+
+export function buildDs22Structured(
+  sections: Record<string, string>,
+  chatMessages: Array<{ role: string; content: string }>,
+): Ds22Structured {
+  const result: Ds22Structured = { _schema: 'Ds-2-2', supportPlans: [], scaffolds: [], review: '' }
+  result.review = (sections['AI 점검'] ?? '').trim()
+
+  const supRaw = (sections['지원 방안 정리'] ?? '').trim()
+  if (supRaw) {
+    result.supportPlans = parseTableRows(supRaw, 2).map(cells => ({
+      support: cells[0] || '',
+      targetActivity: cells[1] || '',
+    }))
+  }
+
+  const scRaw = (sections['스캐폴딩 계획'] ?? '').trim()
+  if (scRaw) result.scaffolds = rowsToDs22Scaffolds(parseTableRows(scRaw, 5))
+
+  if (result.scaffolds.length === 0) {
+    for (const msg of [...chatMessages.filter(m => m.role === 'assistant')].reverse()) {
+      const rows = parseTableRows(msg.content, 5)
+      if (rows.length > 0) { result.scaffolds = rowsToDs22Scaffolds(rows); break }
     }
   }
   return result
@@ -479,6 +813,8 @@ export interface A12Structured {
   selectedTopic: string
   topicType: string        // 내용요소형 / 기능요소형 / 혼합형
   rationale: string
+  /** 수동 공동 편집 워크스페이스 스냅샷 — A-1-2 모달에서 작성한 표·메타·블록을 그대로 보존 */
+  manualWorkspace?: import('@/types').TopicSelectionWorkspace
 }
 
 export function buildA12Structured(sections: Record<string, string>, chat: Array<{ role: string; content: string }>): A12Structured {
@@ -738,6 +1074,8 @@ export interface A22Structured {
   convergentKeywords: string[]
   /** 진술 방식 (선택) */
   method?: A22Method
+  /** 수동 공동 편집 워크스페이스 (자유 형식 보존용 — 산출물로 보낼 때 원형 유지) */
+  manualWorkspace?: IntegratedGoalWorkspace
 }
 
 const A22_TAG_KNOWLEDGE = /\(\s*지식[·⋅]\s*이해(?:\s*[:：]\s*([^)]*))?\)/
@@ -834,6 +1172,57 @@ export function buildA22Structured(sections: Record<string, string>, chat: Array
   return r
 }
 
+/**
+ * 통합 수업목표 워크스페이스(수동 공동 편집)를 A-2-2 구조화 산출물로 변환.
+ * 자유 형식이라도 가능한 필드를 best-effort로 추출하고, 워크스페이스 원본은 manualWorkspace로 보존한다.
+ * 컬럼 id가 디폴트(subject/goal/knowledge/process/attitude)와 다르면 라벨 매칭으로 fallback.
+ */
+export function workspaceToA22Structured(workspace: IntegratedGoalWorkspace): A22Structured {
+  // 디폴트 컬럼 id 우선, 없으면 라벨로 fallback (자유 형식 호환)
+  const findColumnId = (idCandidates: string[], labelCandidates: string[]): string | null => {
+    for (const id of idCandidates) {
+      if (workspace.columns.some(c => c.id === id)) return id
+    }
+    for (const label of labelCandidates) {
+      const match = workspace.columns.find(c => c.label.replace(/\s/g, '').includes(label.replace(/\s/g, '')))
+      if (match) return match.id
+    }
+    return null
+  }
+  const subjectCol = findColumnId(['subject'], ['교과', '과목'])
+  const goalCol = findColumnId(['goal'], ['수업목표', '목표'])
+  const knowledgeCol = findColumnId(['knowledge'], ['지식·이해', '지식', '이해'])
+  const processCol = findColumnId(['process'], ['과정·기능', '과정', '기능'])
+  const attitudeCol = findColumnId(['attitude'], ['가치·태도', '가치', '태도'])
+
+  const subjectGoals: A22SubjectGoal[] = workspace.rows
+    .map(row => {
+      const subject = subjectCol ? (row.cells[subjectCol] ?? '').trim() : ''
+      const goal = goalCol ? (row.cells[goalCol] ?? '').trim() : ''
+      const knowledge = knowledgeCol ? (row.cells[knowledgeCol] ?? '').trim() : ''
+      const process = processCol ? (row.cells[processCol] ?? '').trim() : ''
+      const attitude = attitudeCol ? (row.cells[attitudeCol] ?? '').trim() : ''
+      // goal 본문에 인라인 태그가 있으면 추출도 시도
+      const result: A22SubjectGoal = { subject, goal }
+      result.knowledge = knowledge || extractA22Tag(goal, A22_TAG_KNOWLEDGE)
+      result.process = process || extractA22Tag(goal, A22_TAG_PROCESS)
+      result.attitude = attitude || extractA22Tag(goal, A22_TAG_ATTITUDE)
+      return result
+    })
+    .filter(item => item.subject || item.goal)
+
+  const structured: A22Structured = {
+    _schema: 'A-2-2',
+    commonCoreIdea: workspace.commonCoreIdea.trim(),
+    integratedGoal: workspace.integratedGoal.trim(),
+    subjectGoals,
+    convergentKeywords: workspace.convergentKeywords.map(k => k.trim()).filter(Boolean).slice(0, 8),
+    manualWorkspace: workspace,
+  }
+  if (workspace.method) structured.method = workspace.method
+  return structured
+}
+
 // ─── A-2-3 학습자·맥락 분석 ──────────────────────────────────────────────
 
 export interface A23ProfileItem { item: string; content: string }
@@ -924,6 +1313,14 @@ export function detectMissingFields(data: Record<string, unknown>): MissingField
   } else if (schema === 'T-2-3') {
     const d = data as unknown as T23Structured
     if (!d.schedule?.length) missing.push({ label: '팀 일정', hint: '단계별 일정과 마감을 정해주세요' })
+  } else if (schema === 'Ds-1-3') {
+    const d = data as unknown as Ds13Structured
+    if (!d.activities?.length) missing.push({ label: '학습 활동', hint: '학생이 수행할 활동을 흐름 단계별로 나열해주세요' })
+    if (!d.review) missing.push({ label: 'AI 점검', hint: '목표·평가 정합성과 실행 적절성을 점검해주세요' })
+  } else if (schema === 'Ds-2-2') {
+    const d = data as unknown as Ds22Structured
+    if (!d.scaffolds?.length) missing.push({ label: '스캐폴딩 계획', hint: '활동별 스캐폴딩 유형·내용·점진적 제거 계획을 정해주세요' })
+    if (!d.review) missing.push({ label: 'AI 점검', hint: '점진적 책임 이양·개별화 지원 적절성을 점검해주세요' })
   } else if (schema === 'A-1-2') {
     const d = data as unknown as A12Structured
     if (!d.criteria?.length) missing.push({ label: '주제 선정 기준', hint: '주제를 고르는 기준 3가지를 정해주세요' })

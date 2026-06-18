@@ -11,7 +11,7 @@ export function T21Renderer({ data }: { data: T21Structured }) {
       </div>
       {roles.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm border-collapse">
+          <table className="w-full min-w-[480px] text-sm border-collapse [word-break:keep-all]">
             <thead className="bg-[#1A73E8]">
               <tr>
                 {['교사명', '담당 교과', '강점·전문성', '팀 내 역할', '담당 업무'].map(h => (

@@ -1,9 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
-import { returnToActivity, advanceActivity, logStageTransition } from '@/lib/firebase/projects'
+import {
+  returnToActivity,
+  advanceActivity,
+  logStageTransition,
+  ensureProjectMemberUid,
+} from '@/lib/firebase/projects'
 import { auth } from '@/lib/firebase/config'
 import { cn } from '@/lib/utils'
 import { ArrowRight, X, Warning, ChartBar } from '@phosphor-icons/react'
@@ -47,9 +52,13 @@ export function StageMoveModal() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [showAnalysis, setShowAnalysis] = useState(false)
+  const submittingRef = useRef(false)
 
-  const isHost = project?.hostUid === auth.currentUser?.uid
-  if (!project || !pendingStageMove || !isHost) return null
+  const currentUid = auth.currentUser?.uid ?? userProfile?.uid
+  const isHost = project?.hostUid === currentUid || project?.createdBy === currentUid
+  const isSameStageMove = !!project && !!pendingStageMove && project.currentStage === pendingStageMove
+
+  if (!project || !pendingStageMove || !isHost || isSameStageMove) return null
 
   const fromStage = project.currentStage
   const toStage = pendingStageMove
@@ -59,7 +68,7 @@ export function StageMoveModal() {
   const isCycle = fromStage === 'E' && toStage === 'T'
 
   async function handleConfirm() {
-    if (!project) return
+    if (!project || submittingRef.current) return
 
     const trimmedReason = reason.trim()
     // spec(07.절차프롬프트_v2 "이동 사유 기록 필수") — 모든 방향에서 사유 필수화
@@ -86,6 +95,7 @@ export function StageMoveModal() {
       return
     }
 
+    submittingRef.current = true
     setSubmitting(true)
 
     // 안전망: Firestore 호출이 무기한 hang 되면(HMR 중 click 등) 자동 reset.
@@ -100,29 +110,31 @@ export function StageMoveModal() {
       })
     }
 
+    const transitionLogPayload = {
+      fromStage,
+      toStage,
+      direction,
+      cycleNumber,
+      reason: trimmedReason,
+      ...(incompleteActivities.length > 0 && !isBackward
+        ? { missingItemsIgnored: incompleteActivities }
+        : {}),
+      initiatedBy,
+    }
+
     try {
-      console.time('[StageMoveModal] logStageTransition')
-      // 이력을 먼저 기록 (실패 시 이동 중단 — 감사 추적이 spec 명시 사항이므로 데이터 정합성 우선)
-      await withTimeout(logStageTransition(project.id, {
-        fromStage,
-        toStage,
-        direction,
-        cycleNumber,
-        reason: trimmedReason,
-        ...(incompleteActivities.length > 0 && !isBackward
-          ? { missingItemsIgnored: incompleteActivities }
-          : {}),
-        initiatedBy,
-      }), 'logStageTransition')
-      console.timeEnd('[StageMoveModal] logStageTransition')
+      if (!(project.memberUids ?? []).includes(initiatedBy)) {
+        await withTimeout(ensureProjectMemberUid(project.id, initiatedBy, userProfile ? {
+          displayName: userProfile.displayName,
+          color: userProfile.color ?? '#A0BCE8',
+          emoji: userProfile.emoji ?? '👤',
+        } : undefined), 'ensureProjectMemberUid', 8000)
+      }
 
       if (isBackward || isCycle) {
-        console.time('[StageMoveModal] returnToActivity')
         // 이전 단계로 이동: returnToActivity + currentStage 업데이트
         await withTimeout(returnToActivity(project.id, firstActivity, toStage), 'returnToActivity')
-        console.timeEnd('[StageMoveModal] returnToActivity')
       } else {
-        console.time('[StageMoveModal] advanceActivity')
         // 다음 단계로 이동: 현재 스테이지 activities + 다음 스테이지 activities 합쳐서 advance
         const currentStageInfo = STAGES.find(s => s.code === fromStage)!
         const combinedActivities = [
@@ -137,7 +149,6 @@ export function StageMoveModal() {
           firstActivity,
           toStage
         ), 'advanceActivity')
-        console.timeEnd('[StageMoveModal] advanceActivity')
       }
     } catch (err) {
       console.error('[StageMoveModal] handleConfirm failed:', err)
@@ -145,8 +156,9 @@ export function StageMoveModal() {
       setSubmitError(
         msg.includes('timeout')
           ? '저장 응답이 30초 이상 지연됩니다. 개발 서버 HMR 재컴파일이 길어진 경우가 많습니다 — 브라우저를 하드 새로고침(⌘+Shift+R)한 뒤 다시 시도해 주세요.'
-          : `이동 이력 저장에 실패했습니다 (${msg.slice(0, 80)}). 잠시 후 다시 시도해 주세요.`
+          : `단계 이동 저장에 실패했습니다 (${msg.slice(0, 80)}). 잠시 후 다시 시도해 주세요.`
       )
+      submittingRef.current = false
       setSubmitting(false)
       return
     }
@@ -156,10 +168,17 @@ export function StageMoveModal() {
     setMessages([])
     setPendingStageMove(null)
     setReason('')
+    submittingRef.current = false
     setSubmitting(false)
+
+    // 전환 이력은 감사 추적용이다. 저장 지연/권한 문제가 실제 단계 이동 UI를 붙잡지 않도록 성공한 이동 뒤에 비동기로 남긴다.
+    void logStageTransition(project.id, transitionLogPayload).catch(err => {
+      console.warn('[StageMoveModal] stage transition log skipped:', err)
+    })
   }
 
   function handleCancel() {
+    if (submittingRef.current) return
     setPendingStageMove(null)
     setReason('')
     setReasonError(null)
