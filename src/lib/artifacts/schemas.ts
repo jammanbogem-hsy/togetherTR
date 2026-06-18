@@ -4,6 +4,64 @@
 
 import type { TeamVisionWorkspace, IntegratedGoalWorkspace } from '@/types'
 
+// ─── 비콘텐츠(대화·절차 맥락) 판별 ──────────────────────────────────────────
+// 채팅에서 산출물을 추출할 때, AI의 A안/B안 확정 선택지·"저장/수정/진행하겠습니다"
+// 같은 절차 문구가 산출물 콘텐츠로 새어드는 것을 차단한다.
+// system.ts 규칙(A안/B안 = **볼드** 확정 선택지, 항상 단독 라인)과 짝을 이룬다.
+// 질문 프롬프트는 라인 단위 strip에서는 제거하지 않고(예: Ds-1-2 탐구질문 추출 보존),
+// 원칙·규칙처럼 "질문이 콘텐츠가 될 수 없는" 항목 판별(isNonContentLabel)에서만 배제한다.
+
+/** A안/B안/C안 선택지 라벨로 시작하는 라인/항목 (볼드·불릿 유무 무관) */
+const CHOICE_LABEL_RE = /^\s*[-•*]?\s*\*{0,2}\s*[ABCDＡ-Ｄ]\s*안\s*[:：]/
+/** "…저장/수정/진행하겠습니다" 류로 끝나는 절차·확정 문구 */
+const PROCESS_END_RE = /(?:저장|수정|보완|진행|확정|기록|반영|논의|넘어가|정리)(?:하겠습니다|하겠어요|할게요|할까요|합시다|하시죠|해\s*주세요)\s*["'」』”’]*[.。!?？]*\s*$/
+/** "이제 저장…", "다음 단계로…", "더 논의…", "저장하겠…"로 시작하는 절차 안내 문구.
+ *  ("저장된 데이터…"처럼 process 동사가 콘텐츠 어두로 쓰인 경우는 제외) */
+const PROCESS_START_RE = /^["'「『“‘]?\s*(?:이제\s+(?:저장|수정|보완|확정|기록|반영|정리|진행)|(?:이대로|그대로)\s*(?:저장|수정|확정|진행)|[ABCDＡ-Ｄ]\s*안으로\s*(?:저장|진행|확정)|다음\s*단계|더\s*논의|(?:저장|수정|보완|확정|기록|반영|진행)(?:하겠|할까|합니다|하시|해\s*주))/
+/** 저장·진행·동의 확인/유도 질문으로 끝나는 라인 (항목 판별용) */
+const CONFIRM_QUESTION_RE = /(?:할까요|하실까요|하시겠어요|하시겠습니까|드릴까요|어떠세요|어떠신가요|어떨까요|괜찮(?:으세요|으신가요|을까요)|있으신가요|있나요|보실까요)\s*["'」』”’]*[?？]\s*$/
+
+/** 한 항목(원칙 제목·규칙명·표 셀 등)이 산출물 콘텐츠가 아니라 대화·절차 맥락인지 */
+export function isNonContentLabel(s: string): boolean {
+  const raw = s ?? ''
+  const t = raw.replace(/\*\*/g, '').replace(/^["'「『“‘]+|["'」』”’]+$/g, '').trim()
+  if (!t) return true
+  if (CHOICE_LABEL_RE.test(raw)) return true
+  if (/^[ABCDＡ-Ｄ]\s*안$/.test(t)) return true
+  if (PROCESS_END_RE.test(t)) return true
+  if (PROCESS_START_RE.test(t)) return true
+  if (CONFIRM_QUESTION_RE.test(t)) return true
+  return false
+}
+
+/** assistant 메시지 본문에서 A안/B안 선택지 라인과 절차·확정 단독 문장을 제거한다.
+ *  채팅→산출물 추출 ctx 정제용 — build*Structured 호출 전 한 번 적용하면
+ *  모든 chat-fallback 추출기가 동시에 보호된다. 질문 라인은 보존한다. */
+export function stripNonContentLines(text: string): string {
+  if (!text) return text
+  return text
+    .split('\n')
+    .filter(line => {
+      const t = line.replace(/\*\*/g, '').trim()
+      if (!t) return true // 빈 줄·구조는 보존
+      if (CHOICE_LABEL_RE.test(line)) return false
+      if (PROCESS_END_RE.test(t)) return false
+      if (PROCESS_START_RE.test(t) && t.length <= 40) return false // 짧은 절차 안내만
+      return true
+    })
+    .join('\n')
+    .trim()
+}
+
+/** assistant 메시지 배열 정제 (user 메시지는 원문 유지) */
+export function sanitizeChatForExtraction<T extends { role: string; content: string }>(
+  messages: T[],
+): T[] {
+  return messages.map(m =>
+    m.role === 'assistant' ? { ...m, content: stripNonContentLines(m.content) } : m,
+  )
+}
+
 // ─── T-1-1 팀 공통 비전 설정 ─────────────────────────────────────────────
 
 export interface T11PersonalVision {
@@ -71,7 +129,8 @@ export function buildT11Structured(
       const m = msg.content.match(/['"「"](.*?문제.*?교육.*?)['"」"]/)
         || msg.content.match(/['"「"](.*?학생.*?교육.*?)['"」"]/)
         || msg.content.match(/['"「"](.*?성장.*?수업.*?)['"」"]/)
-      if (m) { result.teamVision = m[1].trim(); break }
+      // "…교육으로 저장하겠습니다" 같은 절차 인용은 비전이 아님
+      if (m && !isNonContentLabel(m[1])) { result.teamVision = m[1].trim(); break }
     }
   }
 
@@ -238,7 +297,9 @@ function parseDesignPrinciples(raw: string): T12DesignPrinciple[] {
   const bulletPattern = /[-•]\s*\*?\*?(.+?)\*?\*?\s*[:：]\s*(.+)/g
   let m
   while ((m = bulletPattern.exec(raw)) !== null) {
-    entries.push({ principle: m[1].trim(), rationale: m[2].trim() })
+    const principle = m[1].trim()
+    if (!principle || isNonContentLabel(principle) || isNonContentLabel(m[2].trim())) continue
+    entries.push({ principle, rationale: m[2].trim() })
   }
 
   // 인라인 파이프 (줄바꿈 없이)
@@ -268,15 +329,19 @@ function extractDesignPrinciplesFromChat(
       const parsed = parseDesignPrinciples(tableLines.join('\n'))
       if (parsed.length > 0) return parsed
     }
-    // **A안:** / **원칙 N:** 패턴
+    // **원칙 N:** / 불릿+볼드 패턴 (A안/B안 확정 선택지는 의도적으로 제외 — 콘텐츠 아님)
     const patterns = [
-      /\*\*(?:A안|B안|원칙\s*\d+)\s*[:：]?\*\*\s*['"「"]?(.+?)['"」"]?\s*(?:\((.+?)\))?$/gm,
+      /\*\*(?:원칙\s*\d+)\s*[:：]?\*\*\s*['"「"]?(.+?)['"」"]?\s*(?:\((.+?)\))?$/gm,
       /[-•]\s*\*\*(.+?)\*\*\s*[:：]\s*(.+)/gm,
     ]
     for (const p of patterns) {
       let m
       while ((m = p.exec(msg.content)) !== null) {
-        entries.push({ principle: m[1].trim(), rationale: (m[2] || '').trim() })
+        const principle = m[1].trim()
+        const rationale = (m[2] || '').trim()
+        // 선택지 라벨·절차 문구가 불릿/볼드 형태로 섞여 들어오는 경우 차단
+        if (!principle || isNonContentLabel(principle) || isNonContentLabel(rationale)) continue
+        entries.push({ principle, rationale })
       }
     }
     if (entries.length >= 2) return entries
@@ -388,12 +453,21 @@ export function buildDs12Structured(
     }
   }
   result.drivingQuestion = (sections['핵심 질문'] ?? sections['핵심질문'] ?? '').trim()
-  // 채팅 fallback — 핵심 질문이 비면 마지막 assistant 메시지의 물음표 문장 추출
+  // 채팅 fallback — 핵심 질문이 비면 마지막 assistant 메시지의 물음표 문장 추출.
+  // 단, 저장·진행 확인이나 성찰·선택 유도 프롬프트는 탐구질문이 아니므로 배제한다.
   if (!result.drivingQuestion) {
+    const META_Q = /저장|진행|넘어가|다음\s*단계|다음\s*활동|수정하|논의|확정|동의하|골라|선택해|느낄까요|어떠(?:세요|신가요)|어떨까요|괜찮으/
     for (const msg of [...chatMessages].reverse()) {
       if (msg.role !== 'assistant') continue
-      const q = msg.content.match(/["「'']([^"「''\n]{6,}?\?)["」'']/)
-      if (q) { result.drivingQuestion = q[1].trim(); break }
+      const re = /["「'']([^"「''\n]{6,}?\?)["」'']/g
+      let qm: RegExpExecArray | null
+      while ((qm = re.exec(msg.content)) !== null) {
+        const cand = qm[1].trim()
+        if (META_Q.test(cand)) continue
+        result.drivingQuestion = cand
+        break
+      }
+      if (result.drivingQuestion) break
     }
   }
   return result
@@ -484,6 +558,11 @@ function parseRules(raw: string): T22Rule[] {
   let current = ''
   for (const line of lines) {
     const trimmed = line.trim()
+    // A안/B안 선택지·절차 확정 문구는 규칙이 아님 — 진행 중 블록을 마감하고 건너뜀
+    if (isNonContentLabel(trimmed)) {
+      if (current.trim()) { blocks.push(current.trim()); current = '' }
+      continue
+    }
     // 새 규칙 항목 시작 감지
     const isNewRule = /^\d+\.\s*/.test(trimmed) || /^\*\*\[/.test(trimmed) || /^\*\*[^*]/.test(trimmed) || /^[-•]\s*\[/.test(trimmed)
     // 위반 시 조치 하위 항목은 새 규칙이 아님
@@ -539,10 +618,10 @@ function parseRules(raw: string): T22Rule[] {
     if (colonIdx > 0 && colonIdx < 40) {
       const name = mainText.slice(0, colonIdx).replace(/\*\*/g, '').trim()
       const desc = mainText.slice(colonIdx).replace(/^[\s:：]+/, '').trim()
-      if (name && desc) {
+      if (name && desc && !isNonContentLabel(name) && !isNonContentLabel(desc)) {
         rules.push({ category, name, description: desc, violation })
       }
-    } else if (mainText.length > 5) {
+    } else if (mainText.length > 5 && !isNonContentLabel(mainText)) {
       // 콜론 없으면 전체를 이름+설명으로
       rules.push({ category, name: mainText.slice(0, 30).replace(/\*\*/g, ''), description: mainText, violation })
     }
@@ -1107,8 +1186,9 @@ export function buildA22Structured(sections: Record<string, string>, chat: Array
     const firstLine = integratedRaw
       .split('\n')
       .map(l => l.replace(/^[-•\d.]\s*/, '').trim())
-      .find(l => l.length > 0)
-    r.integratedGoal = firstLine ?? integratedRaw
+      .find(l => l.length > 0 && !isNonContentLabel(l))
+    // 모든 라인이 절차/선택지면 비워두고 아래 fallback(최근 메시지)에 위임
+    r.integratedGoal = firstLine ?? ''
   }
 
   // 3. 교과별 수업목표 표 (교과 | 목표)
@@ -1280,6 +1360,8 @@ function parseTableRows(raw: string, minCols: number): string[][] {
   return dataLines
     .map(line => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim()))
     .filter(cells => cells.length >= minCols && cells.some(c => c.length > 0))
+    // A안/B안·"저장할까요?" 같은 선택지·확정 안내 행은 산출물 콘텐츠가 아님
+    .filter(cells => !isNonContentLabel(cells[0] ?? ''))
 }
 
 // ─── 스키마 감지 유틸 ─────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ import { TopicSelectionWorkspaceModal } from '@/components/artifacts/TopicSelect
 import { LearningActivityWorkspaceModal } from '@/components/artifacts/LearningActivityWorkspaceModal'
 import { ScaffoldingWorkspaceModal } from '@/components/artifacts/ScaffoldingWorkspaceModal'
 import type { T11Structured, T12Structured, T21Structured, T22Structured, T23Structured, A12Structured, A22Structured, Ds11Structured, Ds12Structured, Ds13Structured, Ds21Structured, Ds22Structured } from '@/lib/artifacts/schemas'
+import { sanitizeChatForExtraction, stripNonContentLines } from '@/lib/artifacts/schemas'
 import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -1347,8 +1348,9 @@ export function ChatPanel() {
   // 구조화 산출물 fallback 자동 저장 — ARTIFACT_UPDATE 실패 시 채팅에서 직접 추출
   function tryStructuredFallbackSave(responseText: string, activity: ActivityCode) {
     if (!/저장/.test(responseText)) return
-    const ctx = [...messages, { role: 'assistant' as const, content: responseText }]
     const schemas = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
+    // A안/B안 선택지·"저장/진행하겠습니다" 절차 문구가 추출기로 새지 않도록 ctx 정제
+    const ctx = sanitizeChatForExtraction([...messages, { role: 'assistant' as const, content: responseText }])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let structured: any = null
 
@@ -1371,10 +1373,13 @@ export function ChatPanel() {
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
   // latestText: 현재 턴의 assistant 응답 원문 (Zustand에 아직 반영 안 됐을 수 있어 직접 전달)
   function applyArtifactUpdates(rawSections: Record<string, string>, actCode?: ActivityCode, latestText?: string) {
-    // AI가 요약 플레이스홀더를 넣은 경우 최근 채팅에서 실제 콘텐츠를 추출
-    const contextMsgs = latestText
-      ? [...messages, { role: 'assistant' as const, content: latestText }]
-      : messages
+    // AI가 요약 플레이스홀더를 넣은 경우 최근 채팅에서 실제 콘텐츠를 추출.
+    // A안/B안 선택지·절차 확정 문구는 추출 전에 제거 — 모든 build*Structured/enrich가 같은 ctx를 공유하므로 단일 차단점.
+    const contextMsgs = sanitizeChatForExtraction(
+      latestText
+        ? [...messages, { role: 'assistant' as const, content: latestText }]
+        : messages,
+    )
     let sections = enrichArtifactSections(rawSections, contextMsgs)
     if (Object.keys(sections).length === 0) return
 
@@ -3486,8 +3491,13 @@ ${discussionSummary}
       else await requestTeamDiscussion(proj.id, currentActivity, userProfile!.uid, userProfile!.displayName).catch(console.error)
     } else if (cmdId === 'artifact') {
       if (replyTo) {
-        // 답글 대상 메시지 내용을 산출물로 저장 제안
-        const content = replyTo.content.replace(/\[.*?\]/g, '').trim()
+        // 답글 대상 메시지 내용을 산출물로 저장 제안 (선택지·절차 문구는 제외)
+        const content = stripNonContentLines(replyTo.content.replace(/\[.*?\]/g, ''))
+        if (!content) {
+          setChatError('선택지·안내 문구는 산출물로 저장할 수 없습니다. 실제 내용이 담긴 메시지를 선택해주세요.')
+          setReplyTo(null)
+          return
+        }
         applyArtifactUpdates({ [activityMeta.label]: content })
         setReplyTo(null)
       } else {
@@ -4893,11 +4903,13 @@ ${discussionSummary}
             navigator.clipboard.writeText(ctxMenu.message.content).catch(() => {})
           }}
           onSendToArtifact={isHost && ctxMenu ? () => {
-            const content = ctxMenu.message.content
+            const content = stripNonContentLines(ctxMenu.message.content
               .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|STANDARD_SEARCH)[^\]]*\]/g, '')
-              .replace(/\[ARTIFACT_UPDATE\]/g, '')
-              .trim()
-            if (!content) return
+              .replace(/\[ARTIFACT_UPDATE\]/g, ''))
+            if (!content) {
+              setChatError('선택지·안내 문구는 산출물로 저장할 수 없습니다. 실제 내용이 담긴 메시지를 선택해주세요.')
+              return
+            }
             const activityMeta = ACTIVITY_META[currentActivity]
             // 현재 활동의 산출물 키로 저장
             const sectionKey = activityMeta.recommendedSections?.[0]?.key
