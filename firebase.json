@@ -14,8 +14,7 @@
       "**/node_modules/**"
     ],
     "frameworksBackend": {
-      "region": "asia-northeast3",
-      "minInstances": 3
+      "region": "asia-northeast3"
     }
   }
 }
