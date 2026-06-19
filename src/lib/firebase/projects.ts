@@ -573,26 +573,68 @@ export async function setAnalysisReport(
 }
 
 // ─── 중요 노트 (포스트잇) ──────────────────────────────
-// arrayUnion으로 append, 삭제는 전체 배열 교체 (arrayRemove 는 객체 equality 요구로 까다로움)
+// projects/{pid}/keyNotes/{noteId} subcollection에 노트당 문서 1개로 저장.
+// (이전: 프로젝트 문서의 keyNotes 배열 필드 — 문서 1MiB 한도로 길이/개수 제약)
+// 노트당 문서 1개라 각 1MiB까지 → 긴 내용·다수 노트도 안전. 부모 문서 비대화도 해소.
+// 기존 배열 노트는 migrateKeyNotesToSubcollection으로 1회 이전하며, 그 전까지는
+// store에서 (배열 ∪ subcollection) union으로 합쳐 보여 데이터 손실이 없다.
 
-export async function addKeyNote(projectId: string, note: KeyNote): Promise<void> {
-  // Firestore는 arrayUnion 요소의 undefined 필드를 거부 — 전송 전 제거
-  const cleanNote = Object.fromEntries(
+function cleanKeyNote(note: KeyNote): KeyNote {
+  // Firestore는 undefined 필드를 거부 — 전송 전 제거
+  return Object.fromEntries(
     Object.entries(note).filter(([, v]) => v !== undefined),
   ) as KeyNote
-  await updateDoc(doc(db, 'projects', projectId), {
-    keyNotes: arrayUnion(cleanNote),
-    updatedAt: serverTimestamp(),
-  })
+}
+
+export async function addKeyNote(projectId: string, note: KeyNote): Promise<void> {
+  await setDoc(doc(db, 'projects', projectId, 'keyNotes', note.id), cleanKeyNote(note))
 }
 
 export async function removeKeyNote(projectId: string, noteId: string): Promise<void> {
+  // subcollection 문서 삭제
+  await deleteDoc(doc(db, 'projects', projectId, 'keyNotes', noteId))
+  // 아직 마이그레이션 전이라 레거시 배열에 남아 있을 수 있으니 거기서도 제거
+  try {
+    const snap = await getDoc(doc(db, 'projects', projectId))
+    if (!snap.exists()) return
+    const data = snap.data() as Project
+    const legacy = data.keyNotes ?? []
+    if (legacy.some(n => n.id === noteId)) {
+      await updateDoc(doc(db, 'projects', projectId), {
+        keyNotes: legacy.filter(n => n.id !== noteId),
+        updatedAt: serverTimestamp(),
+      })
+    }
+  } catch (err) {
+    console.warn('[removeKeyNote] legacy array cleanup skipped:', err)
+  }
+}
+
+// subcollection 노트 실시간 구독 (savedAt ASC 정렬 — 번호 규약과 일치)
+export function watchKeyNotes(
+  projectId: string,
+  onChange: (notes: KeyNote[]) => void,
+): Unsubscribe {
+  const ref = collection(db, 'projects', projectId, 'keyNotes')
+  return onSnapshot(ref, (snap) => {
+    const notes = snap.docs.map(d => d.data() as KeyNote)
+    notes.sort((a, b) => a.savedAt - b.savedAt)
+    onChange(notes)
+  })
+}
+
+// 레거시 배열 노트 → subcollection 1회 이전. 멱등(같은 id setDoc은 덮어쓰기) + 동시성 안전.
+// 이전 후 부모 문서의 keyNotes 배열을 비워 단일 출처(subcollection)로 통일.
+export async function migrateKeyNotesToSubcollection(projectId: string): Promise<void> {
   const snap = await getDoc(doc(db, 'projects', projectId))
   if (!snap.exists()) return
-  const data = snap.data() as Project
-  const filtered = (data.keyNotes ?? []).filter(n => n.id !== noteId)
+  const legacy = ((snap.data() as Project).keyNotes ?? [])
+  if (legacy.length === 0) return
+  await Promise.all(
+    legacy.map(n => setDoc(doc(db, 'projects', projectId, 'keyNotes', n.id), cleanKeyNote(n))),
+  )
   await updateDoc(doc(db, 'projects', projectId), {
-    keyNotes: filtered,
+    keyNotes: deleteField(),
     updatedAt: serverTimestamp(),
   })
 }

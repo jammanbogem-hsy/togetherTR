@@ -114,6 +114,12 @@ service cloud.firestore {
         allow read, write: if isMember(pid);
       }
 
+      // 중요 노트(포스트잇) — 프로젝트 문서 배열에서 subcollection으로 이전.
+      // 노트당 문서 1개(각 1MiB)라 길이/개수 사실상 무제한 + 부모 문서 1MiB 압박 해소.
+      match /keyNotes/{nid} {
+        allow read, write: if isMember(pid);
+      }
+
       // 09.md 3.5 spec 경로 — 코드에서 saveArtifact/watchArtifact 정의는 있으나
       // 현재 호출 0건. 향후 활성화 대비.
       match /stages/{stage}/activities/{act}/artifacts/{aid} {

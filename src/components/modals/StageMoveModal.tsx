@@ -66,13 +66,16 @@ export function StageMoveModal() {
   const isBackward = STAGES.findIndex(s => s.code === toStage) <
     STAGES.findIndex(s => s.code === fromStage)
   const isCycle = fromStage === 'E' && toStage === 'T'
+  // 단순 역방향(예: 분석→팀준비): 보완하러 잠깐 되돌아가는 흐름이라 이동 사유 입력을 생략한다(사용자 요청).
+  const isBackwardSimple = isBackward && !isCycle
 
   async function handleConfirm() {
     if (!project || submittingRef.current) return
 
     const trimmedReason = reason.trim()
-    // spec(07.절차프롬프트_v2 "이동 사유 기록 필수") — 모든 방향에서 사유 필수화
-    if (!trimmedReason) {
+    // spec(07.절차프롬프트_v2 "이동 사유 기록 필수") — 순방향·사이클은 사유 필수.
+    // 단순 역방향(분석→팀준비 등)은 잠깐 보완하러 되돌아가는 흐름이라 사유 입력을 생략한다(사용자 요청).
+    if (!isBackwardSimple && !trimmedReason) {
       setReasonError('이동 사유를 입력해주세요. (T-CID 모형: 단계 이동 사유 기록 필수)')
       return
     }
@@ -115,7 +118,7 @@ export function StageMoveModal() {
       toStage,
       direction,
       cycleNumber,
-      reason: trimmedReason,
+      reason: trimmedReason || (isBackwardSimple ? '이전 단계로 돌아가 보완' : ''),
       ...(incompleteActivities.length > 0 && !isBackward
         ? { missingItemsIgnored: incompleteActivities }
         : {}),
@@ -247,7 +250,15 @@ export function StageMoveModal() {
             </div>
           )}
 
-          {/* 이동 이유 입력 (T-CID 모형: 이동 사유 기록 필수) */}
+          {/* 단순 역방향: 사유 없이 간단 확인만 */}
+          {isBackwardSimple && (
+            <p className="text-sm text-[#5F6368] leading-relaxed">
+              이전 단계로 돌아가 산출물을 다시 보완할 수 있습니다. 진행할까요?
+            </p>
+          )}
+
+          {/* 이동 이유 입력 (순방향·사이클만 필수, 단순 역방향은 생략) */}
+          {!isBackwardSimple && (
           <div>
             <label className="block text-sm font-medium text-[#202124] mb-1.5">
               이동 이유 <span className="text-[#D93025] font-semibold">(필수)</span>
@@ -279,6 +290,7 @@ export function StageMoveModal() {
               <p className="mt-1.5 text-xs text-[#D93025]">{reasonError}</p>
             )}
           </div>
+          )}
 
           {/* 이력 저장 실패 등 제출 에러 (인라인 표시 — 모달은 닫지 않음) */}
           {submitError && (
@@ -364,7 +376,7 @@ export function StageMoveModal() {
             </button>
             <button
               onClick={handleConfirm}
-              disabled={submitting || reason.trim() === ''}
+              disabled={submitting || (!isBackwardSimple && reason.trim() === '')}
               className={cn(
                 'flex-1 py-2.5 rounded-full text-sm font-bold text-white transition-colors',
                 'disabled:opacity-50 disabled:cursor-not-allowed',

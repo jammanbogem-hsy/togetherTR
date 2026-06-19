@@ -106,13 +106,21 @@ export async function POST(request: Request) {
       const numbered = sorted.map((n, i) => ({ ...n, number: i + 1 }))
 
       // 최근 user 메시지들에서 `@노트#N` 패턴 추출 → 해당 번호는 전문 포함
-      const recentUserText = messages.filter(m => m.role === 'user').slice(-3).map(m => m.content).join('\n')
+      // buildApiMessages가 마지막 user 앞에 끼워넣는 합성 '[시스템 리마인더]' user 메시지는
+      // 참조 윈도우(slice -3) 한 칸을 잠식하므로 제외해 실효 lookback을 보존한다.
+      const recentUserText = messages
+        .filter(m => m.role === 'user' && !m.content.startsWith('[시스템 리마인더]'))
+        .slice(-3).map(m => m.content).join('\n')
       const referencedNumbers = new Set<number>()
       for (const m of recentUserText.matchAll(/@노트\s*#\s*(\d+)/g)) {
         referencedNumbers.add(parseInt(m[1], 10))
       }
 
-      const recent = numbered.slice(-25) // 최근 25개 풀
+      // 참조된 노트는 최근 25개 윈도우 밖(오래된 낮은 번호)이어도 항상 포함한다.
+      // (사용자가 @노트#N으로 명시 참조했는데 slice(-25)에 밀려 전문이 통째 누락되던 버그 차단)
+      const referenced = numbered.filter(n => referencedNumbers.has(n.number))
+      const recent = [...new Map([...referenced, ...numbered.slice(-25)].map(n => [n.number, n])).values()]
+        .sort((a, b) => a.number - b.number)
       const sections = recent.map(n => {
         const where = n.sourceActivityCode ? `[${n.sourceActivityCode}]` : '[메모]'
         const who = n.sourceRole === 'assistant' ? 'AI' : (n.sourceDisplayName || '팀원')

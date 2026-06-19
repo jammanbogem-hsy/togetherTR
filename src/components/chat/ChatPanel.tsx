@@ -1134,6 +1134,37 @@ const SLASH_COMMANDS = [
 
 type SlashCommandId = typeof SLASH_COMMANDS[number]['id']
 
+// ─── 공동 편집 버튼 (활동별 공통) ──────────────────────
+// 12개 활동의 "OOO 공동 편집" 버튼은 라벨/onClick만 다른 동일 패턴이라 하나로 통일.
+// showHint=true면 버튼 아래에 말풍선 안내(산출물이 방금 입력됨 → 함께 편집 가능)를 띄운다.
+function CoeditButton({ label, title, onClick, showHint }: {
+  label: string
+  title: string
+  onClick: () => void
+  showHint: boolean
+}) {
+  return (
+    <div className="relative flex items-center">
+      {showHint && (
+        <div className="pointer-events-none absolute top-full mt-2 right-0 z-[60] w-max max-w-[280px]
+          rounded-2xl border border-white/80 bg-[#1A73E8] px-3 py-2 text-center text-[12px]
+          font-bold leading-snug text-white shadow-[0_8px_24px_rgba(26,115,232,0.35)]">
+          AI가 산출물을 입력했어요. 여기서 팀원과 함께 공동 편집할 수 있어요.
+          <span className="absolute -top-1.5 right-8 h-3 w-3 rotate-45 border-l border-t border-white/80 bg-[#1A73E8]" />
+        </div>
+      )}
+      <button
+        onClick={onClick}
+        title={title}
+        className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+      >
+        <PencilSimple size={13} weight="bold" />
+        {label}
+      </button>
+    </div>
+  )
+}
+
 // ─── 메인 ChatPanel ───────────────────────────────────
 export function ChatPanel() {
   const chatFontScale = useChatFontScale()
@@ -1176,6 +1207,15 @@ export function ChatPanel() {
   const [showKeyNotes, setShowKeyNotes] = useState(false)
   const [showWorkspace, setShowWorkspace] = useState(false)
   const [showTeamVisionWorkspace, setShowTeamVisionWorkspace] = useState(false)
+  // AI 대화로 산출물이 방금 입력된 활동 코드 — 해당 활동 공동 편집 버튼에 안내 말풍선을 띄움
+  const [coeditHintActivity, setCoeditHintActivity] = useState<string | null>(null)
+  const coeditHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 산출물 입력 감지 시 호출: 안내 말풍선을 띄우고 일정 시간 후 자동 해제
+  function flashCoeditHint(activityCode: string) {
+    setCoeditHintActivity(activityCode)
+    if (coeditHintTimerRef.current) clearTimeout(coeditHintTimerRef.current)
+    coeditHintTimerRef.current = setTimeout(() => setCoeditHintActivity(null), 15000)
+  }
   const [showIntegratedGoalWorkspace, setShowIntegratedGoalWorkspace] = useState(false)
   const [showLessonDesignDirectionWorkspace, setShowLessonDesignDirectionWorkspace] = useState(false)
   const [showRoleDistributionWorkspace, setShowRoleDistributionWorkspace] = useState(false)
@@ -1343,6 +1383,8 @@ export function ChatPanel() {
     setIsIdle(false)
     setHelpCardMap({})
     setReplyTo(null)
+    setCoeditHintActivity(null)  // 활동 전환 시 이전 활동의 공동편집 안내 말풍선 해제
+    return () => { if (coeditHintTimerRef.current) clearTimeout(coeditHintTimerRef.current) }
   }, [currentActivity])
 
   // 구조화 산출물 fallback 자동 저장 — ARTIFACT_UPDATE 실패 시 채팅에서 직접 추출
@@ -1372,7 +1414,7 @@ export function ChatPanel() {
 
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
   // latestText: 현재 턴의 assistant 응답 원문 (Zustand에 아직 반영 안 됐을 수 있어 직접 전달)
-  function applyArtifactUpdates(rawSections: Record<string, string>, actCode?: ActivityCode, latestText?: string) {
+  function applyArtifactUpdates(rawSections: Record<string, string>, actCode?: ActivityCode, latestText?: string, origin: 'ai' | 'manual' = 'ai') {
     // AI가 요약 플레이스홀더를 넣은 경우 최근 채팅에서 실제 콘텐츠를 추출.
     // A안/B안 선택지·절차 확정 문구는 추출 전에 제거 — 모든 build*Structured/enrich가 같은 ctx를 공유하므로 단일 차단점.
     const contextMsgs = sanitizeChatForExtraction(
@@ -1385,6 +1427,9 @@ export function ChatPanel() {
 
     // T-1-1: 구조화된 산출물로 변환 — AI 자유 형식 대신 스키마가 구조를 강제
     const targetAct = actCode ?? currentActivity
+    // AI 대화로 산출물이 입력됨을 감지한 경우에만 안내 말풍선 표시.
+    // 사용자가 /산출물·우클릭으로 직접 저장한 manual 경로는 'AI가 입력' 안내가 부정확하므로 제외.
+    if (origin === 'ai') flashCoeditHint(targetAct)
     if (targetAct === 'T-1-1') {
       const { buildT11Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       const structured = buildT11Structured(sections, contextMsgs)
@@ -3498,7 +3543,7 @@ ${discussionSummary}
           setReplyTo(null)
           return
         }
-        applyArtifactUpdates({ [activityMeta.label]: content })
+        applyArtifactUpdates({ [activityMeta.label]: content }, undefined, undefined, 'manual')
         setReplyTo(null)
       } else {
         await sendMessageDirectly('지금까지 논의된 내용을 산출물로 정리해서 저장해주세요')
@@ -3643,124 +3688,64 @@ ${discussionSummary}
             )
           })()}
           {currentActivity === 'T-1-1' && (
-            <button
-              onClick={() => setShowTeamVisionWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="팀 공통 비전 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              비전 공동 편집
-            </button>
+            <CoeditButton label="비전 공동 편집" title="팀 공통 비전 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowTeamVisionWorkspace(true) }} />
           )}
           {currentActivity === 'T-1-2' && (
-            <button
-              onClick={() => setShowLessonDesignDirectionWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="수업설계 방향 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              설계 방향 공동 편집
-            </button>
+            <CoeditButton label="설계 방향 공동 편집" title="수업설계 방향 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowLessonDesignDirectionWorkspace(true) }} />
           )}
           {currentActivity === 'Ds-1-1' && (
-            <button
-              onClick={() => setShowEvaluationPlanWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="평가 계획 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              평가 계획 공동 편집
-            </button>
+            <CoeditButton label="평가 계획 공동 편집" title="평가 계획 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowEvaluationPlanWorkspace(true) }} />
           )}
           {currentActivity === 'Ds-1-2' && (
-            <button
-              onClick={() => setShowProblemSituationWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="문제상황 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              문제상황 공동 편집
-            </button>
+            <CoeditButton label="문제상황 공동 편집" title="문제상황 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowProblemSituationWorkspace(true) }} />
           )}
           {currentActivity === 'Ds-2-1' && (
-            <button
-              onClick={() => setShowSupportToolWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="지원 도구 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              지원 도구 공동 편집
-            </button>
+            <CoeditButton label="지원 도구 공동 편집" title="지원 도구 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowSupportToolWorkspace(true) }} />
           )}
           {currentActivity === 'T-2-1' && (
-            <button
-              onClick={() => setShowRoleDistributionWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="역할 배분 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              역할 배분 공동 편집
-            </button>
+            <CoeditButton label="역할 배분 공동 편집" title="역할 배분 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowRoleDistributionWorkspace(true) }} />
           )}
           {currentActivity === 'T-2-2' && (
-            <button
-              onClick={() => setShowTeamRulesWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="팀 규칙 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              팀 규칙 공동 편집
-            </button>
+            <CoeditButton label="팀 규칙 공동 편집" title="팀 규칙 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowTeamRulesWorkspace(true) }} />
           )}
           {currentActivity === 'T-2-3' && (
-            <button
-              onClick={() => setShowTeamScheduleWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="팀 일정 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              팀 일정 공동 편집
-            </button>
+            <CoeditButton label="팀 일정 공동 편집" title="팀 일정 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowTeamScheduleWorkspace(true) }} />
           )}
           {currentActivity === 'A-1-2' && (
-            <button
-              onClick={() => setShowTopicSelectionWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="주제 선정 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              주제 선정 공동 편집
-            </button>
+            <CoeditButton label="주제 선정 공동 편집" title="주제 선정 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowTopicSelectionWorkspace(true) }} />
           )}
           {currentActivity === 'Ds-1-3' && (
-            <button
-              onClick={() => setShowLearningActivityWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="학습활동 설계 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              학습활동 공동 편집
-            </button>
+            <CoeditButton label="학습활동 공동 편집" title="학습활동 설계 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowLearningActivityWorkspace(true) }} />
           )}
           {currentActivity === 'Ds-2-2' && (
-            <button
-              onClick={() => setShowScaffoldingWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="스캐폴딩 설계 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              스캐폴딩 공동 편집
-            </button>
+            <CoeditButton label="스캐폴딩 공동 편집" title="스캐폴딩 설계 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowScaffoldingWorkspace(true) }} />
           )}
           {currentActivity === 'A-2-2' && (
-            <button
-              onClick={() => setShowIntegratedGoalWorkspace(true)}
-              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
-              title="통합 수업목표 진술 공동 편집"
-            >
-              <PencilSimple size={13} weight="bold" />
-              수업목표 공동 편집
-            </button>
+            <CoeditButton label="수업목표 공동 편집" title="통합 수업목표 진술 공동 편집"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowIntegratedGoalWorkspace(true) }} />
           )}
           {/* 교육과정 분석 워크스페이스 버튼 (A단계 활동에서만 표시) */}
           {GRAPH_ACTIVITIES.includes(currentActivity) && (
@@ -3797,7 +3782,7 @@ ${discussionSummary}
           {/* 문제상황 개발 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
           {currentActivity === 'Ds-1-2' && (
             <div className="relative flex items-center">
-              {!showProblemSituationDesigner && (
+              {!showProblemSituationDesigner && coeditHintActivity !== 'Ds-1-2' && (
                 <div className="pointer-events-none absolute top-full mt-2 right-0 z-[60] min-w-[280px] rounded-2xl border border-white/80 bg-[#00897B] px-3 py-2 text-center text-[12px] font-bold leading-snug text-white shadow-[0_8px_24px_rgba(0,137,123,0.35)]">
                   <span className="absolute -top-1.5 right-8 h-3 w-3 rotate-45 border-l border-t border-white/80 bg-[#00897B]" />
                   문제상황 워크숍을 이용한 후 공동 편집을 하는 것도 좋습니다.
@@ -4885,7 +4870,7 @@ ${discussionSummary}
             const note: KeyNote = {
               id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
               // 충분한 길이 허용 — 표·다단 구조를 온전히 보존. Firestore 문서 1MB 한도에 여유.
-              content: cleaned.slice(0, 6000),
+              content: cleaned.slice(0, 200000), // subcollection 저장 — 문서당 1MiB 한도 내 사실상 무제한
               sourceActivityCode: (ctxMenu.message.activityCode as KeyNote['sourceActivityCode']) || undefined,
               sourceRole: ctxMenu.message.role,
               sourceDisplayName: ctxMenu.message.senderName,
@@ -4915,7 +4900,7 @@ ${discussionSummary}
             const sectionKey = activityMeta.recommendedSections?.[0]?.key
               ?? activityMeta.requiredSections?.[0]?.key
               ?? activityMeta.label
-            applyArtifactUpdates({ [sectionKey]: content }, currentActivity, content)
+            applyArtifactUpdates({ [sectionKey]: content }, currentActivity, content, 'manual')
           } : undefined}
         />
 
@@ -5345,7 +5330,7 @@ ${discussionSummary}
               {input.includes('@노트#') && (
                 <div
                   className="absolute inset-0 rounded-[18px] px-3 py-2 text-sm whitespace-pre-wrap break-words pointer-events-none overflow-visible z-[2]"
-                  style={{ color: 'transparent', lineHeight: '1.5' }}
+                  style={{ color: '#202124', lineHeight: '1.5' }}
                 >
                   {input.split(/(@노트#\d+)/).map((part, i) => {
                     const noteMatch = part.match(/^@노트#(\d+)$/)
@@ -5356,14 +5341,14 @@ ${discussionSummary}
                     return (
                       <span
                         key={i}
-                        className="pointer-events-auto cursor-default relative inline-block"
+                        className="pointer-events-auto cursor-default rounded-[3px] bg-[#FFE0B2] text-[#C2410C]"
                         onMouseEnter={e => {
                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                           setNoteTooltip({ num, preview, x: rect.left, y: rect.top - 8 })
                         }}
                         onMouseLeave={() => setNoteTooltip(null)}
                       >
-                        <span className="px-1 py-0.5 rounded bg-[#E65100] text-white font-bold text-xs">{part}</span>
+                        {part}
                       </span>
                     )
                   })}

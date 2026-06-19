@@ -1,9 +1,18 @@
 import { create } from 'zustand'
-import type { Project, StageCode, ActivityCode, Message, Artifact, StageStatus } from '@/types'
+import type { Project, StageCode, ActivityCode, Message, Artifact, StageStatus, KeyNote } from '@/types'
 import type { UserProfile } from '@/lib/auth'
 
 interface StageActivityState {
   [key: string]: StageStatus  // "T-1-1" → status
+}
+
+// 중요 노트 union: 레거시(프로젝트 문서 배열) + subcollection.
+// 같은 id면 subcollection이 권위(덮어씀). savedAt ASC 정렬 → 모달/백엔드 번호 규약과 일치.
+function mergeKeyNotes(legacy: KeyNote[], sub: KeyNote[]): KeyNote[] {
+  const map = new Map<string, KeyNote>()
+  for (const n of legacy) map.set(n.id, n)
+  for (const n of sub) map.set(n.id, n)
+  return [...map.values()].sort((a, b) => a.savedAt - b.savedAt)
 }
 
 interface ProjectStore {
@@ -14,6 +23,11 @@ interface ProjectStore {
   // 현재 프로젝트
   project: Project | null
   setProject: (p: Project | null) => void
+
+  // 중요 노트: 레거시 배열 + subcollection union을 project.keyNotes로 노출
+  keyNotesLegacy: KeyNote[]
+  keyNotesSub: KeyNote[]
+  setKeyNotes: (notes: KeyNote[]) => void
 
   // 단계·활동 상태
   activityStatus: StageActivityState
@@ -81,9 +95,20 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setUserProfile: (p) => set({ userProfile: p }),
 
   project: null,
-  setProject: (p) => set((state) => ({
-    project: p,
-    pendingStageMove: p?.currentStage === state.pendingStageMove ? null : state.pendingStageMove,
+  setProject: (p) => set((state) => {
+    const legacy = p?.keyNotes ?? []
+    return {
+      project: p ? { ...p, keyNotes: mergeKeyNotes(legacy, state.keyNotesSub) } : null,
+      keyNotesLegacy: legacy,
+      pendingStageMove: p?.currentStage === state.pendingStageMove ? null : state.pendingStageMove,
+    }
+  }),
+
+  keyNotesLegacy: [],
+  keyNotesSub: [],
+  setKeyNotes: (notes) => set((state) => ({
+    keyNotesSub: notes,
+    project: state.project ? { ...state.project, keyNotes: mergeKeyNotes(state.keyNotesLegacy, notes) } : null,
   })),
 
   activityStatus: {},
@@ -163,6 +188,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
 
   resetProjectState: () => set({
     project: null,
+    keyNotesLegacy: [],
+    keyNotesSub: [],
     activityStatus: {},
     currentActivity: 'T-1-1',
     viewingActivity: 'T-1-1',

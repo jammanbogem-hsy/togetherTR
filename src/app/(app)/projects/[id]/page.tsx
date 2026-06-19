@@ -9,7 +9,7 @@ import { useProjectStore } from '@/store/project'
 import {
   watchProject, watchMessages, startProject, transferHost,
   sendLobbyMessage, watchLobbyMessages, joinProject, setTeamDiscussion,
-  clearECompleted,
+  clearECompleted, watchKeyNotes, migrateKeyNotesToSubcollection,
   type LobbyMessage
 } from '@/lib/firebase/projects'
 import type { Project } from '@/types'
@@ -399,6 +399,7 @@ export default function ProjectPage() {
 
   const {
     project, setProject, setMessages, setMessagesLoaded,
+    setKeyNotes,
     pendingStageMove, setPendingStageMove, userProfile,
     setDiscussionMode, setTeamDiscussionStartIdx, messages,
     currentActivity, setCurrentActivity,
@@ -454,6 +455,26 @@ export default function ProjectPage() {
     return () => unsubProject()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  // 중요 노트(keyNotes) subcollection 실시간 구독 → store union 갱신
+  // (노트를 프로젝트 문서 배열에서 subcollection으로 이전 — 길이/개수 무제한)
+  useEffect(() => {
+    if (!projectId) return
+    const unsub = watchKeyNotes(projectId, setKeyNotes)
+    return () => unsub()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  // 레거시 keyNotes 배열 → subcollection 1회 마이그레이션 (호스트만, 멱등·동시성 안전)
+  const keyNotesMigratedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!project || !userProfile) return
+    const isHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
+    if (!isHost) return
+    if (keyNotesMigratedRef.current === projectId) return
+    keyNotesMigratedRef.current = projectId
+    migrateKeyNotesToSubcollection(projectId).catch(err => console.warn('[keyNotes] migration failed:', err))
+  }, [project, userProfile, projectId])
 
   // Firestore currentActivity → Zustand 동기화 (방장이 이동하면 모두 따라감)
   useEffect(() => {
