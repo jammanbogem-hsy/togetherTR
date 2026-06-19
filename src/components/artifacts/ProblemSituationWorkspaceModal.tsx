@@ -912,28 +912,28 @@ export function ProblemSituationWorkspaceModal({
       <div className="bg-white w-full max-w-[1480px] h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col">
         {/* 헤더 */}
         <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3 border-b border-[#DADCE0] bg-white">
-          <span className="inline-flex items-center gap-1 rounded-full border border-[#E8EAED] bg-white px-3 py-2 text-[12px] font-extrabold text-[#3C4043] shadow-sm">
-            <FileText size={15} weight="bold" />
+          <span className="inline-flex items-center gap-1 rounded-full border border-[#E8EAED] bg-white px-3 py-2 text-[14px] font-extrabold text-[#3C4043] shadow-sm">
+            <FileText size={17} weight="bold" />
             Ds-1-2
           </span>
-          <span className="hidden sm:inline-flex items-center justify-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[12px] font-extrabold text-[#1A73E8]">
+          <span className="hidden sm:inline-flex items-center justify-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[14px] font-extrabold text-[#1A73E8]">
             {editorModeLabel}
           </span>
-          <span className="hidden md:inline-flex items-center rounded-full bg-[#F8F9FA] px-3 py-2 text-[12px] font-bold text-[#5F6368]">
+          <span className="hidden md:inline-flex items-center rounded-full bg-[#F8F9FA] px-3 py-2 text-[14px] font-bold text-[#5F6368]">
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
           {freshEditors.length > 0 && (
             <div className="hidden lg:flex items-center gap-1.5 mr-1">
               {freshEditors.slice(0, 4).map(entry => (
-                <span key={entry.uid} className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
+                <span key={entry.uid} className="text-[13px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
                   {entry.displayName || '팀원'}
                 </span>
               ))}
             </div>
           )}
           <span className={cn(
-            'hidden md:inline-flex rounded-full px-3 py-2 text-[12px] font-bold',
+            'hidden md:inline-flex rounded-full px-3 py-2 text-[14px] font-bold',
             isHost ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'bg-[#F1F3F4] text-[#5F6368]',
           )}>
             {isHost ? '방장' : '팀원'}
@@ -943,9 +943,9 @@ export function ProblemSituationWorkspaceModal({
               type="button"
               onClick={loadFromArtifact}
               title="문제상황 워크숍에서 선정·저장한 내용을 표로 불러옵니다"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#AECBFA] bg-[#E8F0FE] text-[#1A73E8] text-[12px] font-bold shadow-sm transition-colors hover:bg-[#D2E3FC]"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#AECBFA] bg-[#E8F0FE] text-[#1A73E8] text-[14px] font-bold shadow-sm transition-colors hover:bg-[#D2E3FC]"
             >
-              <DownloadSimple size={15} weight="bold" />
+              <DownloadSimple size={17} weight="bold" />
               워크숍 내용 불러오기
             </button>
           )}
@@ -953,9 +953,9 @@ export function ProblemSituationWorkspaceModal({
             type="button"
             onClick={() => setShowExample(true)}
             title="최종 산출물 예시 보기"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#E8EAED] bg-white text-[#3C4043] text-[12px] font-bold shadow-sm transition-colors hover:bg-[#F1F3F4]"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#E8EAED] bg-white text-[#3C4043] text-[14px] font-bold shadow-sm transition-colors hover:bg-[#F1F3F4]"
           >
-            <Sparkle size={15} weight="fill" className="text-[#1A73E8]" />
+            <Sparkle size={17} weight="fill" className="text-[#1A73E8]" />
             예시
           </button>
           <button
@@ -963,24 +963,24 @@ export function ProblemSituationWorkspaceModal({
             onClick={sendArtifact}
             disabled={!isHost || sending}
             title={isHost ? '현재 워크스페이스를 Ds-1-2 산출물로 보냅니다' : '방장만 산출물로 보낼 수 있습니다'}
-            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[12px] font-bold transition-colors disabled:opacity-50 disabled:hover:bg-[#1A73E8]"
+            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[14px] font-bold transition-colors disabled:opacity-50 disabled:hover:bg-[#1A73E8]"
           >
-            <PaperPlaneRight size={15} weight="fill" />
+            <PaperPlaneRight size={17} weight="fill" />
             {sending ? '전송 중' : '산출물로 보내기'}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+            className="w-11 h-11 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
             aria-label="닫기"
           >
-            <X size={18} weight="bold" />
+            <X size={20} weight="bold" />
           </button>
         </div>
 
         {message && (
-          <div className="px-6 py-2.5 border-b border-[#DADCE0] bg-[#FEF7E0] text-[12px] font-semibold text-[#B06000] flex items-center gap-2">
-            <CheckCircle size={15} weight="fill" />
+          <div className="px-6 py-2.5 border-b border-[#DADCE0] bg-[#FEF7E0] text-[14px] font-semibold text-[#B06000] flex items-center gap-2">
+            <CheckCircle size={17} weight="fill" />
             {message}
           </div>
         )}
@@ -989,14 +989,14 @@ export function ProblemSituationWorkspaceModal({
           <div className="max-w-[1400px] mx-auto px-5 py-12 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[15px] font-black text-[#1A73E8]">Ds-1-2</span>
-                <span className="text-[18px] font-extrabold text-[#202124]">문제상황 개발</span>
-                <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[12px] font-bold text-[#5F6368]">
+                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[17px] font-black text-[#1A73E8]">Ds-1-2</span>
+                <span className="text-[20px] font-extrabold text-[#202124]">문제상황 개발</span>
+                <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
                 </span>
               </div>
 
-              <p className="text-[12px] font-semibold leading-relaxed text-[#5F6368]">
+              <p className="text-[14px] font-semibold leading-relaxed text-[#5F6368]">
                 {sourceMode === 'aiDraft'
                   ? 'AI가 만든 산출물 초안을 불러왔습니다. 직접 수정하거나 우측에서 AI 제안을 추가로 받을 수 있습니다.'
                   : sourceMode === 'workspace'
@@ -1008,13 +1008,13 @@ export function ProblemSituationWorkspaceModal({
               {workspace.rows.length > 0 ? (
               <section className="group relative space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[18px] font-extrabold text-[#202124]">문제상황 시나리오 (요소·내용)</p>
+                  <p className="text-[20px] font-extrabold text-[#202124]">문제상황 시나리오 (요소·내용)</p>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={addColumn} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
-                      <Plus size={13} weight="bold" /> 열
+                    <button type="button" onClick={addColumn} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
+                      <Plus size={15} weight="bold" /> 열
                     </button>
-                    <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
-                      <Plus size={13} weight="bold" /> 행
+                    <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
+                      <Plus size={15} weight="bold" /> 행
                     </button>
                   </div>
                 </div>
@@ -1022,7 +1022,7 @@ export function ProblemSituationWorkspaceModal({
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
                       <tr>
-                        <th className="w-12 border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2 text-left text-[12px] font-extrabold text-white">행</th>
+                        <th className="w-12 border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2 text-left text-[14px] font-extrabold text-white">행</th>
                         {workspace.columns.map(column => (
                           <th key={column.id} className="min-w-[220px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2">
                             <div className="flex items-center gap-1.5">
@@ -1034,10 +1034,10 @@ export function ProblemSituationWorkspaceModal({
                                   updateColumnLabel(column.id, event.target.value)
                                   blurField()
                                 }}
-                                className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[12px] font-extrabold text-white hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
+                                className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[14px] font-extrabold text-white hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
                               />
-                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-7 w-7 items-center justify-center rounded-md text-white/75 hover:bg-white/15 hover:text-white" aria-label="열 삭제">
-                                <Trash size={13} weight="bold" />
+                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-white/75 hover:bg-white/15 hover:text-white" aria-label="열 삭제">
+                                <Trash size={15} weight="bold" />
                               </button>
                             </div>
                           </th>
@@ -1055,9 +1055,9 @@ export function ProblemSituationWorkspaceModal({
                         <tr key={row.id}>
                           <td className="w-12 border-b border-r border-[#DADCE0] bg-[#F8F9FA] px-2 py-2 align-top">
                             <div className="flex items-center gap-1">
-                              <span className="text-[11px] font-bold text-[#1A73E8]">{rowIndex + 1}</span>
-                              <button type="button" onClick={() => deleteRow(row.id)} className="flex h-6 w-6 items-center justify-center rounded text-[#9AA0A6] hover:bg-[#FCE8E6] hover:text-[#C62828]" aria-label="행 삭제">
-                                <Trash size={11} weight="bold" />
+                              <span className="text-[13px] font-bold text-[#1A73E8]">{rowIndex + 1}</span>
+                              <button type="button" onClick={() => deleteRow(row.id)} className="flex h-7 w-7 items-center justify-center rounded text-[#9AA0A6] hover:bg-[#FCE8E6] hover:text-[#C62828]" aria-label="행 삭제">
+                                <Trash size={13} weight="bold" />
                               </button>
                             </div>
                           </td>
@@ -1068,7 +1068,7 @@ export function ProblemSituationWorkspaceModal({
                               <td key={column.id} className="border-b border-r border-[#DADCE0] bg-white p-2 align-top">
                                 <div className="relative">
                                   {editor && (
-                                    <span className="absolute -top-2.5 left-3 z-10 px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm" style={{ backgroundColor: editor.color }}>
+                                    <span className="absolute -top-2.5 left-3 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: editor.color }}>
                                       {editor.displayName}
                                     </span>
                                   )}
@@ -1081,7 +1081,7 @@ export function ProblemSituationWorkspaceModal({
                                       blurField()
                                     }}
                                     minRows={2}
-                                    className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[13px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                                    className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                                   />
                                 </div>
                               </td>
@@ -1097,9 +1097,9 @@ export function ProblemSituationWorkspaceModal({
                 <button
                   type="button"
                   onClick={addRow}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#DADCE0] bg-white px-4 py-2.5 text-[12px] font-bold text-[#5F6368] hover:border-[#1A73E8] hover:text-[#1A73E8] hover:bg-[#E8F0FE] transition-colors"
+                  className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#DADCE0] bg-white px-4 py-2.5 text-[14px] font-bold text-[#5F6368] hover:border-[#1A73E8] hover:text-[#1A73E8] hover:bg-[#E8F0FE] transition-colors"
                 >
-                  <Plus size={13} weight="bold" />
+                  <Plus size={15} weight="bold" />
                   문제상황 시나리오 표 추가 (요소·내용)
                 </button>
               )}
@@ -1121,18 +1121,18 @@ export function ProblemSituationWorkspaceModal({
                         type="button"
                         {...blockDnd.handleProps(blockIdx)}
                         title="드래그하여 순서 이동"
-                        className="absolute -left-9 top-10 flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#E8F0FE] hover:text-[#1A73E8] active:cursor-grabbing opacity-0 group-hover:opacity-100"
+                        className="absolute -left-9 top-10 flex h-9 w-9 cursor-grab items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#E8F0FE] hover:text-[#1A73E8] active:cursor-grabbing opacity-0 group-hover:opacity-100"
                         aria-label="블록 순서 이동"
                       >
-                        <DotsSixVertical size={15} weight="bold" />
+                        <DotsSixVertical size={17} weight="bold" />
                       </button>
                       <button
                         type="button"
                         onClick={() => deleteBlock(block.id)}
-                        className="absolute -left-9 top-3 flex h-7 w-7 items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#FCE8E6] hover:text-[#C62828]"
+                        className="absolute -left-9 top-3 flex h-9 w-9 items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#FCE8E6] hover:text-[#C62828]"
                         aria-label="블록 삭제"
                       >
-                        <Trash size={14} weight="bold" />
+                        <Trash size={16} weight="bold" />
                       </button>
                       <div className="px-0 pb-2">
                         {table ? (
@@ -1141,7 +1141,7 @@ export function ProblemSituationWorkspaceModal({
                               <thead>
                                 <tr>
                                   {table.columns.map(column => (
-                                    <th key={column.id} className="min-w-[180px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2 text-left text-[12px] font-extrabold text-white">
+                                    <th key={column.id} className="min-w-[180px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2 text-left text-[14px] font-extrabold text-white">
                                       {column.label}
                                     </th>
                                   ))}
@@ -1175,7 +1175,7 @@ export function ProblemSituationWorkspaceModal({
                                             blurField()
                                           }}
                                           minRows={2}
-                                          className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[13px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                                          className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                                         />
                                       </td>
                                     ))}
@@ -1195,12 +1195,12 @@ export function ProblemSituationWorkspaceModal({
                             return (
                               <div className="space-y-1.5 py-1">
                                 {items.length === 0 && (
-                                  <p className="text-[12px] text-[#9AA0A6]">체크리스트가 비어 있습니다.</p>
+                                  <p className="text-[14px] text-[#9AA0A6]">체크리스트가 비어 있습니다.</p>
                                 )}
                                 {items.map((it, idx) => (
                                   <div key={idx} className="group/item flex items-start gap-2">
-                                    <button type="button" onClick={() => toggle(idx)} className="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center text-[#1A73E8] hover:text-[#1557B0]" aria-label={it.checked ? '체크 해제' : '체크'}>
-                                      {it.checked ? <CheckSquare size={18} weight="fill" /> : <Square size={18} weight="regular" />}
+                                    <button type="button" onClick={() => toggle(idx)} className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center text-[#1A73E8] hover:text-[#1557B0]" aria-label={it.checked ? '체크 해제' : '체크'}>
+                                      {it.checked ? <CheckSquare size={20} weight="fill" /> : <Square size={20} weight="regular" />}
                                     </button>
                                     <input
                                       value={it.text}
@@ -1221,17 +1221,17 @@ export function ProblemSituationWorkspaceModal({
                                       }}
                                       placeholder="항목 내용"
                                       className={cn(
-                                        'flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[14px] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
+                                        'flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[16px] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
                                         it.checked && 'text-[#9AA0A6] line-through'
                                       )}
                                     />
-                                    <button type="button" onClick={() => remove(idx)} className="mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[#9AA0A6] opacity-0 transition-opacity hover:bg-[#FCE8E6] hover:text-[#C62828] group-hover/item:opacity-100" aria-label="항목 삭제">
-                                      <Trash size={13} weight="bold" />
+                                    <button type="button" onClick={() => remove(idx)} className="mt-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-[#9AA0A6] opacity-0 transition-opacity hover:bg-[#FCE8E6] hover:text-[#C62828] group-hover/item:opacity-100" aria-label="항목 삭제">
+                                      <Trash size={15} weight="bold" />
                                     </button>
                                   </div>
                                 ))}
-                                <button type="button" onClick={add} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE]">
-                                  <Plus size={12} weight="bold" /> 항목 추가
+                                <button type="button" onClick={add} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE]">
+                                  <Plus size={14} weight="bold" /> 항목 추가
                                 </button>
                               </div>
                             )
@@ -1253,9 +1253,9 @@ export function ProblemSituationWorkspaceModal({
                               : '내용을 입력하세요'
                             }
                             className={cn(
-                              'w-full rounded-xl border border-transparent bg-transparent px-1 py-1.5 text-[16px] leading-[1.6] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
-                              block.type === 'heading' && 'font-extrabold text-[28px] leading-tight',
-                              block.type === 'subheading' && 'font-bold text-[20px] leading-tight',
+                              'w-full rounded-xl border border-transparent bg-transparent px-1 py-1.5 text-[18px] leading-[1.6] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
+                              block.type === 'heading' && 'font-extrabold text-[32px] leading-tight',
+                              block.type === 'subheading' && 'font-bold text-[22px] leading-tight',
                               block.type === 'quote' && 'border-l-4 border-l-[#DADCE0] pl-4 italic text-[#5F6368]',
                             )}
                           />
@@ -1272,14 +1272,14 @@ export function ProblemSituationWorkspaceModal({
                       setShowInsertMenu(value => !value)
                       setTableDraft(prev => ({ ...prev, open: false }))
                     }}
-                    className="inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-[13px] font-bold text-[#5F6368] transition-colors hover:border-[#DADCE0] hover:bg-[#F8F9FA]"
+                    className="inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-[15px] font-bold text-[#5F6368] transition-colors hover:border-[#DADCE0] hover:bg-[#F8F9FA]"
                   >
-                    <Plus size={15} weight="bold" />
+                    <Plus size={17} weight="bold" />
                     삽입
                   </button>
                   {showInsertMenu && (
                     <div className="absolute left-0 top-10 z-20 w-72 rounded-xl border border-[#DADCE0] bg-white p-2 shadow-lg">
-                      <p className="px-2 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-[#9AA0A6]">편집 도구</p>
+                      <p className="px-2 pb-2 pt-1 text-[12px] font-bold uppercase tracking-wider text-[#9AA0A6]">편집 도구</p>
                       {INSERT_BLOCK_TYPES.map(item => {
                         const ItemIcon = item.icon
                         return (
@@ -1289,12 +1289,12 @@ export function ProblemSituationWorkspaceModal({
                             onClick={() => addBlock(item.type)}
                             className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[#F1F3F4]"
                           >
-                            <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border border-[#E8EAED] bg-white text-[#1A73E8]">
-                              <ItemIcon size={16} weight="bold" />
+                            <span className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-[#E8EAED] bg-white text-[#1A73E8]">
+                              <ItemIcon size={18} weight="bold" />
                             </span>
                             <span className="flex-1 min-w-0">
-                              <span className="block text-[13px] font-extrabold text-[#202124]">{item.label}</span>
-                              <span className="block text-[11px] text-[#5F6368]">{item.description}</span>
+                              <span className="block text-[15px] font-extrabold text-[#202124]">{item.label}</span>
+                              <span className="block text-[13px] text-[#5F6368]">{item.description}</span>
                             </span>
                           </button>
                         )
@@ -1303,22 +1303,22 @@ export function ProblemSituationWorkspaceModal({
                   )}
                   {tableDraft.open && (
                     <div className="absolute left-0 top-10 z-20 w-64 rounded-xl border border-[#DADCE0] bg-white p-3 shadow-lg">
-                      <p className="mb-3 text-[13px] font-extrabold text-[#202124]">표 크기</p>
+                      <p className="mb-3 text-[15px] font-extrabold text-[#202124]">표 크기</p>
                       <div className="grid grid-cols-2 gap-2">
-                        <label className="text-[12px] font-bold text-[#5F6368]">
+                        <label className="text-[14px] font-bold text-[#5F6368]">
                           행
-                          <input type="number" min={1} max={12} value={tableDraft.rows} onChange={event => setTableDraft(prev => ({ ...prev, rows: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[14px] text-[#202124] focus:border-[#1A73E8] focus:outline-none" />
+                          <input type="number" min={1} max={12} value={tableDraft.rows} onChange={event => setTableDraft(prev => ({ ...prev, rows: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[16px] text-[#202124] focus:border-[#1A73E8] focus:outline-none" />
                         </label>
-                        <label className="text-[12px] font-bold text-[#5F6368]">
+                        <label className="text-[14px] font-bold text-[#5F6368]">
                           열
-                          <input type="number" min={1} max={8} value={tableDraft.columns} onChange={event => setTableDraft(prev => ({ ...prev, columns: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[14px] text-[#202124] focus:border-[#1A73E8] focus:outline-none" />
+                          <input type="number" min={1} max={8} value={tableDraft.columns} onChange={event => setTableDraft(prev => ({ ...prev, columns: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[16px] text-[#202124] focus:border-[#1A73E8] focus:outline-none" />
                         </label>
                       </div>
                       <div className="mt-3 flex justify-end gap-2">
-                        <button type="button" onClick={() => setTableDraft(prev => ({ ...prev, open: false }))} className="rounded-lg px-3 py-2 text-[12px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]">
+                        <button type="button" onClick={() => setTableDraft(prev => ({ ...prev, open: false }))} className="rounded-lg px-3 py-2 text-[14px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]">
                           취소
                         </button>
-                        <button type="button" onClick={() => addTableBlock(tableDraft.rows, tableDraft.columns)} className="rounded-lg bg-[#1A73E8] px-3 py-2 text-[12px] font-bold text-white hover:bg-[#1557B0]">
+                        <button type="button" onClick={() => addTableBlock(tableDraft.rows, tableDraft.columns)} className="rounded-lg bg-[#1A73E8] px-3 py-2 text-[14px] font-bold text-white hover:bg-[#1557B0]">
                           삽입
                         </button>
                       </div>
@@ -1328,7 +1328,7 @@ export function ProblemSituationWorkspaceModal({
               </div>
 
               {!isHost && (
-                <div className="rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-[12px] text-[#5F6368] leading-relaxed">
+                <div className="rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-[14px] text-[#5F6368] leading-relaxed">
                   팀원은 공동 초안을 편집할 수 있고, 최종 산출물 전송은 방장이 실행합니다.
                 </div>
               )}
@@ -1338,12 +1338,12 @@ export function ProblemSituationWorkspaceModal({
             <aside className="space-y-4 lg:sticky lg:top-6 self-start">
               <section className="rounded-2xl border border-[#E8EAED] bg-[#FAFBFC] p-5 space-y-4">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#1A73E8] to-[#7B2FF7] text-white">
-                    <Sparkle size={18} weight="fill" />
+                  <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#1A73E8] to-[#7B2FF7] text-white">
+                    <Sparkle size={20} weight="fill" />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-extrabold text-[#202124]">추천 산출물 형식</p>
-                    <ul className="mt-2 space-y-1 text-[12px] leading-relaxed text-[#5F6368]">
+                    <p className="text-[16px] font-extrabold text-[#202124]">추천 산출물 형식</p>
+                    <ul className="mt-2 space-y-1 text-[14px] leading-relaxed text-[#5F6368]">
                       <li>· <b>실제성</b>: 학생이 실제로 마주할 법한 진짜 맥락·상황</li>
                       <li>· <b>학습 내용+산출물</b>: A-2-2 목표와 연결된 핵심 학습·결과물</li>
                       <li>· <b>청중+행위</b>: 누구에게, 무엇을 하는가 (실제 청중·역할)</li>
@@ -1353,54 +1353,54 @@ export function ProblemSituationWorkspaceModal({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-[13px] font-bold text-[#202124]">AI 에이전트의 제안 받기</label>
-                  <p className="text-[11px] leading-relaxed text-[#5F6368]">이전 단계(A-2-2) <b>통합 수업목표</b>·Ds-1-1 <b>평가 계획</b>과 학습자 맥락을 자동으로 읽어 <b>문제상황 시나리오 + 탐구 질문</b>을 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
+                  <label className="block text-[15px] font-bold text-[#202124]">AI 에이전트의 제안 받기</label>
+                  <p className="text-[13px] leading-relaxed text-[#5F6368]">이전 단계(A-2-2) <b>통합 수업목표</b>·Ds-1-1 <b>평가 계획</b>과 학습자 맥락을 자동으로 읽어 <b>문제상황 시나리오 + 탐구 질문</b>을 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
                   {suggestError && (
-                    <p className="text-[12px] font-semibold text-[#C5221F]">{suggestError}</p>
+                    <p className="text-[14px] font-semibold text-[#C5221F]">{suggestError}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => requestSuggestion()}
                       disabled={suggestLoading}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#1A73E8] to-[#7B2FF7] px-4 py-2 text-[12px] font-extrabold text-white shadow-sm transition-opacity disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#1A73E8] to-[#7B2FF7] px-4 py-2 text-[14px] font-extrabold text-white shadow-sm transition-opacity disabled:opacity-50"
                     >
-                      <Sparkle size={14} weight="fill" />
+                      <Sparkle size={16} weight="fill" />
                       {suggestLoading ? '제안 받는 중...' : 'AI 제안 받기'}
                     </button>
                     {suggestion && (
-                      <span className="text-[12px] font-semibold text-[#137333]">미리보기 준비 완료</span>
+                      <span className="text-[14px] font-semibold text-[#137333]">미리보기 준비 완료</span>
                     )}
                   </div>
                   {projectId && (collaborativeMembers?.length ?? 0) > 0 && (
                     <button
                       type="button"
                       onClick={() => setShowCollaborativePrompt(true)}
-                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-2 text-[12px] font-bold text-[#3C4043] hover:bg-[#F1F3F4] transition-colors"
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-2 text-[14px] font-bold text-[#3C4043] hover:bg-[#F1F3F4] transition-colors"
                     >
-                      <ChatCircleDots size={14} weight="bold" className="text-[#1A73E8]" />
+                      <ChatCircleDots size={16} weight="bold" className="text-[#1A73E8]" />
                       구체적으로 AI에게 요청하기
-                      <span className="ml-1 text-[10px] font-semibold text-[#5F6368]">(팀원 협업)</span>
+                      <span className="ml-1 text-[12px] font-semibold text-[#5F6368]">(팀원 협업)</span>
                     </button>
                   )}
                 </div>
 
                 {suggestion && (
                   <div className="space-y-3 rounded-xl border border-[#DADCE0] bg-white p-4">
-                    <p className="text-[11px] font-semibold text-[#5F6368]">아래 내용을 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;을 누르면 표가 교체됩니다.</p>
+                    <p className="text-[13px] font-semibold text-[#5F6368]">아래 내용을 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;을 누르면 표가 교체됩니다.</p>
                     {suggestion.basedOn && (
                       <div className="rounded-md border border-[#AECBFA] bg-[#E8F0FE] px-3 py-2 space-y-1.5">
-                        <p className="text-[11px] font-extrabold text-[#1967D2] inline-flex items-center gap-1">
-                          <Sparkle size={11} weight="fill" />
+                        <p className="text-[13px] font-extrabold text-[#1967D2] inline-flex items-center gap-1">
+                          <Sparkle size={13} weight="fill" />
                           {suggestion.basedOn.mode === 'artifact' ? '채팅 산출물 기반' : '팀 채팅 대화 기반'} · 제안 근거
                         </p>
                         {suggestion.basedOn.summary && (
-                          <p className="text-[12px] text-[#202124] leading-relaxed">{suggestion.basedOn.summary}</p>
+                          <p className="text-[14px] text-[#202124] leading-relaxed">{suggestion.basedOn.summary}</p>
                         )}
                         {suggestion.basedOn.references && suggestion.basedOn.references.length > 0 && (
                           <ul className="space-y-1 pt-1">
                             {suggestion.basedOn.references.map((ref, i) => (
-                              <li key={i} className="text-[11px] text-[#3C4043] leading-relaxed border-l-2 border-[#1A73E8] pl-2">
+                              <li key={i} className="text-[13px] text-[#3C4043] leading-relaxed border-l-2 border-[#1A73E8] pl-2">
                                 {ref.source && <span className="font-bold text-[#1967D2]">{ref.source}</span>}
                                 {ref.source && <span className="mx-1 text-[#5F6368]">·</span>}
                                 <span className="italic">&ldquo;{ref.text}&rdquo;</span>
@@ -1421,44 +1421,44 @@ export function ProblemSituationWorkspaceModal({
                         <div className="space-y-2">
                           <div className="rounded-md border border-[#E8EAED] bg-white p-2 space-y-1.5">
                             <div>
-                              <p className="text-[10px] font-extrabold text-[#5F6368] mb-0.5">시나리오 제목</p>
-                              <AutoGrowTextarea value={sc.title} onChange={e => patchScenario('title', e.target.value)} minRows={1} placeholder="문제상황 제목" className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[12px] font-bold text-[#202124] focus:bg-[#F8F9FA] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                              <p className="text-[12px] font-extrabold text-[#5F6368] mb-0.5">시나리오 제목</p>
+                              <AutoGrowTextarea value={sc.title} onChange={e => patchScenario('title', e.target.value)} minRows={1} placeholder="문제상황 제목" className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[14px] font-bold text-[#202124] focus:bg-[#F8F9FA] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
                             </div>
                             <div>
-                              <p className="text-[10px] font-extrabold text-[#5F6368] mb-0.5">행1 · 실제성</p>
-                              <AutoGrowTextarea value={sc.authenticity} onChange={e => patchScenario('authenticity', e.target.value)} minRows={2} placeholder="학생이 실제로 마주할 법한 진짜 맥락" className="w-full rounded border-0 bg-[#F8F9FA]/60 px-1.5 py-1 text-[11px] text-[#202124] focus:bg-[#F1F3F4] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                              <p className="text-[12px] font-extrabold text-[#5F6368] mb-0.5">행1 · 실제성</p>
+                              <AutoGrowTextarea value={sc.authenticity} onChange={e => patchScenario('authenticity', e.target.value)} minRows={2} placeholder="학생이 실제로 마주할 법한 진짜 맥락" className="w-full rounded border-0 bg-[#F8F9FA]/60 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#F1F3F4] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
                             </div>
                             <div>
-                              <p className="text-[10px] font-extrabold text-[#5F6368] mb-0.5">행2 · 학습 내용 + 산출물</p>
-                              <AutoGrowTextarea value={sc.contentProduct} onChange={e => patchScenario('contentProduct', e.target.value)} minRows={2} placeholder="핵심 학습 내용과 학생이 만들 결과물" className="w-full rounded border-0 bg-[#F8F9FA]/60 px-1.5 py-1 text-[11px] text-[#202124] focus:bg-[#F1F3F4] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                              <p className="text-[12px] font-extrabold text-[#5F6368] mb-0.5">행2 · 학습 내용 + 산출물</p>
+                              <AutoGrowTextarea value={sc.contentProduct} onChange={e => patchScenario('contentProduct', e.target.value)} minRows={2} placeholder="핵심 학습 내용과 학생이 만들 결과물" className="w-full rounded border-0 bg-[#F8F9FA]/60 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#F1F3F4] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
                             </div>
                             <div>
-                              <p className="text-[10px] font-extrabold text-[#5F6368] mb-0.5">행3 · 청중 + 행위</p>
-                              <AutoGrowTextarea value={sc.audienceAction} onChange={e => patchScenario('audienceAction', e.target.value)} minRows={2} placeholder="누구에게 · 무엇을 하는가 (실제 청중·역할)" className="w-full rounded border-0 bg-[#F8F9FA]/60 px-1.5 py-1 text-[11px] text-[#202124] focus:bg-[#F1F3F4] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                              <p className="text-[12px] font-extrabold text-[#5F6368] mb-0.5">행3 · 청중 + 행위</p>
+                              <AutoGrowTextarea value={sc.audienceAction} onChange={e => patchScenario('audienceAction', e.target.value)} minRows={2} placeholder="누구에게 · 무엇을 하는가 (실제 청중·역할)" className="w-full rounded border-0 bg-[#F8F9FA]/60 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#F1F3F4] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
                             </div>
                           </div>
                           <div className="rounded-md border border-[#AECBFA] bg-[#E8F0FE] p-2">
-                            <p className="text-[10px] font-extrabold text-[#1967D2] mb-0.5">탐구 질문 (Driving Question)</p>
-                            <AutoGrowTextarea value={suggestion.drivingQuestion ?? ''} onChange={e => patchDQ(e.target.value)} minRows={2} placeholder="단원을 관통하는 개방형 탐구 질문" className="w-full rounded border-0 bg-white/70 px-1.5 py-1 text-[12px] font-semibold text-[#202124] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                            <p className="text-[12px] font-extrabold text-[#1967D2] mb-0.5">탐구 질문 (Driving Question)</p>
+                            <AutoGrowTextarea value={suggestion.drivingQuestion ?? ''} onChange={e => patchDQ(e.target.value)} minRows={2} placeholder="단원을 관통하는 개방형 탐구 질문" className="w-full rounded border-0 bg-white/70 px-1.5 py-1 text-[14px] font-semibold text-[#202124] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
                           </div>
                         </div>
                       )
                     })()}
                     {suggestion.rationale && (
-                      <p className="text-[12px] italic text-[#5F6368]">{suggestion.rationale}</p>
+                      <p className="text-[14px] italic text-[#5F6368]">{suggestion.rationale}</p>
                     )}
                     <div className="flex justify-end gap-2 pt-1">
                       <button
                         type="button"
                         onClick={() => setSuggestion(null)}
-                        className="rounded-full border border-[#DADCE0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
+                        className="rounded-full border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
                       >
                         무시
                       </button>
                       <button
                         type="button"
                         onClick={applySuggestion}
-                        className="rounded-full bg-[#137333] px-3 py-1.5 text-[12px] font-bold text-white hover:bg-[#0D5C27]"
+                        className="rounded-full bg-[#137333] px-3 py-1.5 text-[14px] font-bold text-white hover:bg-[#0D5C27]"
                       >
                         워크스페이스에 적용
                       </button>
@@ -1472,21 +1472,21 @@ export function ProblemSituationWorkspaceModal({
 
         <div className="flex-shrink-0 border-t border-[#E8EAED] bg-white px-5 py-3">
           <div className="mx-auto flex max-w-[1400px] items-center gap-3">
-            <span className="hidden sm:inline-flex rounded-full bg-[#F8F9FA] px-3 py-2 text-[12px] font-bold text-[#5F6368]">
+            <span className="hidden sm:inline-flex rounded-full bg-[#F8F9FA] px-3 py-2 text-[14px] font-bold text-[#5F6368]">
               자유 형식으로 작성해도 산출물로 인정됩니다
             </span>
             <div className="ml-auto flex items-center gap-2">
-              <span className="hidden sm:inline-flex items-center gap-1 text-[12px] font-bold text-[#5F6368]">
-                <CheckCircle size={15} weight="fill" className="text-[#9AA0A6]" />
+              <span className="hidden sm:inline-flex items-center gap-1 text-[14px] font-bold text-[#5F6368]">
+                <CheckCircle size={17} weight="fill" className="text-[#9AA0A6]" />
                 {isHost ? '저장 가능' : '편집 중'}
               </span>
               <button
                 type="button"
                 onClick={handleSaveAll}
                 disabled={!isHost || saving}
-                className="inline-flex items-center gap-1.5 rounded-full bg-black text-white px-4 py-2 text-[12px] font-bold transition-colors hover:bg-[#202124] disabled:opacity-50 disabled:hover:bg-black"
+                className="inline-flex items-center gap-1.5 rounded-full bg-black text-white px-4 py-2 text-[14px] font-bold transition-colors hover:bg-[#202124] disabled:opacity-50 disabled:hover:bg-black"
               >
-                <FloppyDisk size={15} weight="fill" />
+                <FloppyDisk size={17} weight="fill" />
                 {saving ? '저장 중' : '저장하기'}
               </button>
             </div>
@@ -1502,26 +1502,26 @@ export function ProblemSituationWorkspaceModal({
           onClick={event => event.stopPropagation()}
         >
           <div className="px-6 py-4 border-b border-[#E8EAED] bg-white flex items-center gap-3 flex-shrink-0">
-            <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0FE] px-3 py-1.5 text-[12px] font-extrabold text-[#1A73E8]">
-              <Sparkle size={14} weight="fill" />
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0FE] px-3 py-1.5 text-[14px] font-extrabold text-[#1A73E8]">
+              <Sparkle size={16} weight="fill" />
               예시
             </span>
-            <span className="text-[15px] font-extrabold text-[#202124]">최종 산출물 예시</span>
+            <span className="text-[17px] font-extrabold text-[#202124]">최종 산출물 예시</span>
             <div className="flex-1" />
             <button
               type="button"
               onClick={() => setShowExample(false)}
-              className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+              className="w-11 h-11 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
               aria-label="예시 닫기"
             >
-              <X size={18} weight="bold" />
+              <X size={20} weight="bold" />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
-            <p className="text-[12px] font-bold text-[#5F6368]">문제상황(Ds-1-2) 확정안 — 시나리오 + 탐구 질문</p>
+            <p className="text-[14px] font-bold text-[#5F6368]">문제상황(Ds-1-2) 확정안 — 시나리오 + 탐구 질문</p>
             <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
-              <table className="min-w-full border-collapse text-[12px]">
+              <table className="min-w-full border-collapse text-[14px]">
                 <tbody>
                   <tr className="align-top">
                     <td className="border border-[#DADCE0] bg-[#F8F9FA] px-3 py-2 font-extrabold text-[#202124] whitespace-nowrap w-[140px]">제목</td>
@@ -1552,16 +1552,16 @@ export function ProblemSituationWorkspaceModal({
             <button
               type="button"
               onClick={() => setShowExample(false)}
-              className="rounded-full border border-[#DADCE0] bg-white px-4 py-2 text-[12px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
+              className="rounded-full border border-[#DADCE0] bg-white px-4 py-2 text-[14px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
             >
               닫기
             </button>
             <button
               type="button"
               onClick={applyExampleToWorkspace}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#1A73E8] px-4 py-2 text-[12px] font-extrabold text-white hover:bg-[#1557B0] transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#1A73E8] px-4 py-2 text-[14px] font-extrabold text-white hover:bg-[#1557B0] transition-colors"
             >
-              <Sparkle size={14} weight="fill" />
+              <Sparkle size={16} weight="fill" />
               워크스페이스에 채우기
             </button>
           </div>

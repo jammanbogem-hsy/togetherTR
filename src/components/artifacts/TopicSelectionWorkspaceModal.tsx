@@ -912,28 +912,28 @@ export function TopicSelectionWorkspaceModal({
         onClick={event => event.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-[#E8EAED] bg-white flex items-center gap-3 flex-shrink-0">
-          <span className="inline-flex items-center gap-1 rounded-full border border-[#E8EAED] bg-white px-3 py-2 text-[12px] font-extrabold text-[#3C4043] shadow-sm">
-            <FileText size={15} weight="bold" />
+          <span className="inline-flex items-center gap-1 rounded-full border border-[#E8EAED] bg-white px-3 py-2 text-[14px] font-extrabold text-[#3C4043] shadow-sm">
+            <FileText size={17} weight="bold" />
             A-1-2
           </span>
-          <span className="hidden sm:inline-flex items-center justify-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[12px] font-extrabold text-[#1A73E8]">
+          <span className="hidden sm:inline-flex items-center justify-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[14px] font-extrabold text-[#1A73E8]">
             {editorModeLabel}
           </span>
-          <span className="hidden md:inline-flex items-center rounded-full bg-[#F8F9FA] px-3 py-2 text-[12px] font-bold text-[#5F6368]">
+          <span className="hidden md:inline-flex items-center rounded-full bg-[#F8F9FA] px-3 py-2 text-[14px] font-bold text-[#5F6368]">
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
           {freshEditors.length > 0 && (
             <div className="hidden lg:flex items-center gap-1.5 mr-1">
               {freshEditors.slice(0, 4).map(entry => (
-                <span key={entry.uid} className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
+                <span key={entry.uid} className="text-[13px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
                   {entry.displayName || '팀원'}
                 </span>
               ))}
             </div>
           )}
           <span className={cn(
-            'hidden md:inline-flex rounded-full px-3 py-2 text-[12px] font-bold',
+            'hidden md:inline-flex rounded-full px-3 py-2 text-[14px] font-bold',
             isHost ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'bg-[#F1F3F4] text-[#5F6368]',
           )}>
             {isHost ? '방장' : '팀원'}
@@ -942,9 +942,9 @@ export function TopicSelectionWorkspaceModal({
             type="button"
             onClick={() => setShowExample(true)}
             title="최종 산출물 예시 보기"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#E8EAED] bg-white text-[#3C4043] text-[12px] font-bold shadow-sm transition-colors hover:bg-[#F1F3F4]"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#E8EAED] bg-white text-[#3C4043] text-[14px] font-bold shadow-sm transition-colors hover:bg-[#F1F3F4]"
           >
-            <Sparkle size={15} weight="fill" className="text-[#1A73E8]" />
+            <Sparkle size={17} weight="fill" className="text-[#1A73E8]" />
             예시
           </button>
           <button
@@ -952,24 +952,24 @@ export function TopicSelectionWorkspaceModal({
             onClick={sendArtifact}
             disabled={!isHost || sending}
             title={isHost ? '현재 워크스페이스를 A-1-2 산출물로 보냅니다' : '방장만 산출물로 보낼 수 있습니다'}
-            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[12px] font-bold transition-colors disabled:opacity-50 disabled:hover:bg-[#1A73E8]"
+            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[14px] font-bold transition-colors disabled:opacity-50 disabled:hover:bg-[#1A73E8]"
           >
-            <PaperPlaneRight size={15} weight="fill" />
+            <PaperPlaneRight size={17} weight="fill" />
             {sending ? '전송 중' : '산출물로 보내기'}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+            className="w-11 h-11 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
             aria-label="닫기"
           >
-            <X size={18} weight="bold" />
+            <X size={20} weight="bold" />
           </button>
         </div>
 
         {message && (
-          <div className="px-6 py-2.5 border-b border-[#DADCE0] bg-[#FEF7E0] text-[12px] font-semibold text-[#B06000] flex items-center gap-2">
-            <CheckCircle size={15} weight="fill" />
+          <div className="px-6 py-2.5 border-b border-[#DADCE0] bg-[#FEF7E0] text-[14px] font-semibold text-[#B06000] flex items-center gap-2">
+            <CheckCircle size={17} weight="fill" />
             {message}
           </div>
         )}
@@ -978,9 +978,9 @@ export function TopicSelectionWorkspaceModal({
           <div className="max-w-[1400px] mx-auto px-5 py-12 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[18px] font-black text-[#1A73E8]">A-1-2</span>
-                <span className="text-[18px] font-extrabold text-[#202124]">주제 선정</span>
-                <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[12px] font-bold text-[#5F6368]">
+                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-black text-[#1A73E8]">A-1-2</span>
+                <span className="text-[20px] font-extrabold text-[#202124]">주제 선정</span>
+                <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
                 </span>
               </div>
@@ -993,9 +993,9 @@ export function TopicSelectionWorkspaceModal({
                 return (
                   <div className="relative">
                     <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <label className="text-[13px] font-bold text-[#5F6368]">선정 주제</label>
+                      <label className="text-[15px] font-bold text-[#5F6368]">선정 주제</label>
                       {editors.map(ed => (
-                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
                           {ed.displayName} 편집 중
                         </span>
                       ))}
@@ -1018,12 +1018,12 @@ export function TopicSelectionWorkspaceModal({
                         minRows={2}
                         placeholder="예: 우리 동네 미세먼지 문제를 데이터로 탐구하고 시민으로서 해결 방안을 제안하기"
                         style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
-                        className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[16px] font-bold leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                        className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[18px] font-bold leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                       <CaretOverlay
                         text={workspace.selectedTopic}
                         editors={editors}
-                        className="rounded-xl border border-transparent px-4 py-3 text-[16px] font-bold leading-relaxed"
+                        className="rounded-xl border border-transparent px-4 py-3 text-[18px] font-bold leading-relaxed"
                       />
                     </div>
                   </div>
@@ -1038,10 +1038,10 @@ export function TopicSelectionWorkspaceModal({
                 return (
                   <div className="relative">
                     <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <label className="text-[13px] font-bold text-[#5F6368]">주제 유형</label>
-                      <span className="text-[11px] text-[#9AA0A6]">내용요소형 / 기능요소형 / 혼합형 중 택1</span>
+                      <label className="text-[15px] font-bold text-[#5F6368]">주제 유형</label>
+                      <span className="text-[13px] text-[#9AA0A6]">내용요소형 / 기능요소형 / 혼합형 중 택1</span>
                       {editors.map(ed => (
-                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
                           {ed.displayName} 편집 중
                         </span>
                       ))}
@@ -1064,12 +1064,12 @@ export function TopicSelectionWorkspaceModal({
                         minRows={1}
                         placeholder="예: 혼합형"
                         style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
-                        className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[15px] font-semibold leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                        className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[17px] font-semibold leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                       <CaretOverlay
                         text={workspace.topicType}
                         editors={editors}
-                        className="rounded-xl border border-transparent px-4 py-3 text-[15px] font-semibold leading-relaxed"
+                        className="rounded-xl border border-transparent px-4 py-3 text-[17px] font-semibold leading-relaxed"
                       />
                     </div>
                   </div>
@@ -1084,9 +1084,9 @@ export function TopicSelectionWorkspaceModal({
                 return (
                   <div className="relative">
                     <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <label className="text-[13px] font-bold text-[#5F6368]">선정 근거</label>
+                      <label className="text-[15px] font-bold text-[#5F6368]">선정 근거</label>
                       {editors.map(ed => (
-                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
                           {ed.displayName} 편집 중
                         </span>
                       ))}
@@ -1109,12 +1109,12 @@ export function TopicSelectionWorkspaceModal({
                         minRows={3}
                         placeholder="예: 팀 비전 '데이터로 세상을 읽고 실천하는 시민'과 직결되며, 과학·사회·국어를 자연스럽게 융합할 수 있다."
                         style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
-                        className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[16px] leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                        className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[18px] leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                       <CaretOverlay
                         text={workspace.rationale}
                         editors={editors}
-                        className="rounded-xl border border-transparent px-4 py-3 text-[16px] leading-relaxed"
+                        className="rounded-xl border border-transparent px-4 py-3 text-[18px] leading-relaxed"
                       />
                     </div>
                   </div>
@@ -1126,19 +1126,19 @@ export function TopicSelectionWorkspaceModal({
                 <button
                   type="button"
                   onClick={deleteCriteriaTable}
-                  className="absolute -left-9 top-10 flex h-7 w-7 items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#FCE8E6] hover:text-[#C62828]"
+                  className="absolute -left-9 top-10 flex h-9 w-9 items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#FCE8E6] hover:text-[#C62828]"
                   aria-label="선정 기준 표 삭제"
                 >
-                  <Trash size={14} weight="bold" />
+                  <Trash size={16} weight="bold" />
                 </button>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[18px] font-extrabold text-[#202124]">주제 선정 기준</p>
+                  <p className="text-[20px] font-extrabold text-[#202124]">주제 선정 기준</p>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={addColumn} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
-                      <Plus size={13} weight="bold" /> 열
+                    <button type="button" onClick={addColumn} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
+                      <Plus size={15} weight="bold" /> 열
                     </button>
-                    <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
-                      <Plus size={13} weight="bold" /> 행
+                    <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
+                      <Plus size={15} weight="bold" /> 행
                     </button>
                   </div>
                 </div>
@@ -1146,7 +1146,7 @@ export function TopicSelectionWorkspaceModal({
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
                       <tr>
-                        <th className="w-[76px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-3 py-3 text-left text-[12px] font-extrabold text-white">행</th>
+                        <th className="w-[76px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-3 py-3 text-left text-[14px] font-extrabold text-white">행</th>
                         {workspace.columns.map(column => (
                           <th key={column.id} className="min-w-[180px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2.5">
                             <div className="flex items-center gap-1.5">
@@ -1158,10 +1158,10 @@ export function TopicSelectionWorkspaceModal({
                                   blurField()
                                 }}
                                 onFocus={() => focusField(`column:${column.id}`)}
-                                className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[12px] font-extrabold text-white placeholder:text-white/70 hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
+                                className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[14px] font-extrabold text-white placeholder:text-white/70 hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
                               />
-                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-7 w-7 items-center justify-center rounded-md text-white/75 transition-colors hover:bg-white/15 hover:text-white">
-                                <Trash size={13} weight="bold" />
+                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-white/75 transition-colors hover:bg-white/15 hover:text-white">
+                                <Trash size={15} weight="bold" />
                               </button>
                             </div>
                           </th>
@@ -1173,9 +1173,9 @@ export function TopicSelectionWorkspaceModal({
                         <tr key={row.id} className="group/row">
                           <td className="border-b border-r border-[#DADCE0] bg-[#E8F0FE] px-3 py-3 align-top">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-[12px] font-extrabold text-[#1A73E8]">{rowIndex + 1}</span>
-                              <button type="button" onClick={() => deleteRow(row.id)} className="flex h-7 w-7 items-center justify-center rounded-md text-[#5F6368] opacity-60 transition-colors hover:bg-white hover:text-[#C62828] group-hover/row:opacity-100" aria-label={`${rowIndex + 1}행 삭제`}>
-                                <Trash size={13} weight="bold" />
+                              <span className="text-[14px] font-extrabold text-[#1A73E8]">{rowIndex + 1}</span>
+                              <button type="button" onClick={() => deleteRow(row.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-[#5F6368] opacity-60 transition-colors hover:bg-white hover:text-[#C62828] group-hover/row:opacity-100" aria-label={`${rowIndex + 1}행 삭제`}>
+                                <Trash size={15} weight="bold" />
                               </button>
                             </div>
                           </td>
@@ -1188,7 +1188,7 @@ export function TopicSelectionWorkspaceModal({
                                   {editors.map((ed, idx) => (
                                     <span
                                       key={ed.uid}
-                                      className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm"
+                                      className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
                                       style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
                                     >
                                       {ed.displayName}
@@ -1209,7 +1209,7 @@ export function TopicSelectionWorkspaceModal({
                                       blurField()
                                     }}
                                     minRows={3}
-                                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-[14px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-[16px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                                   />
                                 </div>
                               </td>
@@ -1225,9 +1225,9 @@ export function TopicSelectionWorkspaceModal({
 
               {workspace.rows.length === 0 && (
                 <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-[#DADCE0] bg-[#FAFBFC] px-4 py-3">
-                  <span className="text-[13px] font-semibold text-[#5F6368]">주제 선정 기준 표가 비어 있습니다.</span>
-                  <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
-                    <Plus size={13} weight="bold" /> 표 만들기 (첫 행 추가)
+                  <span className="text-[15px] font-semibold text-[#5F6368]">주제 선정 기준 표가 비어 있습니다.</span>
+                  <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
+                    <Plus size={15} weight="bold" /> 표 만들기 (첫 행 추가)
                   </button>
                 </div>
               )}
@@ -1249,28 +1249,28 @@ export function TopicSelectionWorkspaceModal({
                     type="button"
                     {...blockDnd.handleProps(blockIdx)}
                     title="드래그하여 순서 이동"
-                    className="absolute -left-9 top-10 flex h-7 w-7 cursor-grab items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#E8F0FE] hover:text-[#1A73E8] active:cursor-grabbing opacity-0 group-hover:opacity-100"
+                    className="absolute -left-9 top-10 flex h-9 w-9 cursor-grab items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#E8F0FE] hover:text-[#1A73E8] active:cursor-grabbing opacity-0 group-hover:opacity-100"
                     aria-label="블록 순서 이동"
                   >
-                    <DotsSixVertical size={15} weight="bold" />
+                    <DotsSixVertical size={17} weight="bold" />
                   </button>
                   <button
                     type="button"
                     onClick={() => deleteBlock(block.id)}
-                    className="absolute -left-9 top-3 flex h-7 w-7 items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#FCE8E6] hover:text-[#C62828]"
+                    className="absolute -left-9 top-3 flex h-9 w-9 items-center justify-center rounded-md text-[#9AA0A6] transition-colors hover:bg-[#FCE8E6] hover:text-[#C62828]"
                     aria-label="블록 삭제"
                   >
-                    <Trash size={14} weight="bold" />
+                    <Trash size={16} weight="bold" />
                   </button>
                   <div className="px-0 pb-2">
                     {table ? (
                       <div className="relative overflow-x-auto rounded-xl border border-[#DADCE0] bg-white">
                         <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <button type="button" onClick={() => addBlockTableColumn(block)} className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[11px] font-bold text-[#1A73E8] shadow-sm hover:bg-[#E8F0FE]">
-                            <Plus size={11} weight="bold" /> 열
+                          <button type="button" onClick={() => addBlockTableColumn(block)} className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[13px] font-bold text-[#1A73E8] shadow-sm hover:bg-[#E8F0FE]">
+                            <Plus size={13} weight="bold" /> 열
                           </button>
-                          <button type="button" onClick={() => addBlockTableRow(block)} className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[11px] font-bold text-[#1A73E8] shadow-sm hover:bg-[#E8F0FE]">
-                            <Plus size={11} weight="bold" /> 행
+                          <button type="button" onClick={() => addBlockTableRow(block)} className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[13px] font-bold text-[#1A73E8] shadow-sm hover:bg-[#E8F0FE]">
+                            <Plus size={13} weight="bold" /> 행
                           </button>
                         </div>
                         <table className="min-w-full border-collapse text-sm">
@@ -1297,10 +1297,10 @@ export function TopicSelectionWorkspaceModal({
                                         updateBlock({ ...block, table: nextTable, content: '' })
                                         blurField()
                                       }}
-                                      className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[12px] font-extrabold text-white hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
+                                      className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[14px] font-extrabold text-white hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
                                     />
-                                    <button type="button" onClick={() => deleteBlockTableColumn(block, column.id)} className="flex h-7 w-7 items-center justify-center rounded-md text-white/75 hover:bg-white/15 hover:text-white">
-                                      <Trash size={13} weight="bold" />
+                                    <button type="button" onClick={() => deleteBlockTableColumn(block, column.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-white/75 hover:bg-white/15 hover:text-white">
+                                      <Trash size={15} weight="bold" />
                                     </button>
                                   </div>
                                 </th>
@@ -1320,7 +1320,7 @@ export function TopicSelectionWorkspaceModal({
                                         {editors.map((ed, idx) => (
                                           <span
                                             key={ed.uid}
-                                            className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm"
+                                            className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
                                             style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
                                           >
                                             {ed.displayName}
@@ -1353,15 +1353,15 @@ export function TopicSelectionWorkspaceModal({
                                             blurField()
                                           }}
                                           minRows={2}
-                                          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[13px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                                          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                                         />
                                       </div>
                                     </td>
                                   )
                                 })}
                                 <td className="border-b border-[#DADCE0] p-2 align-top text-center">
-                                  <button type="button" onClick={() => deleteBlockTableRow(block, row.id)} className="inline-flex items-center gap-1 text-[11px] font-bold text-[#C62828] hover:underline">
-                                    <Trash size={12} weight="bold" />
+                                  <button type="button" onClick={() => deleteBlockTableRow(block, row.id)} className="inline-flex items-center gap-1 text-[13px] font-bold text-[#C62828] hover:underline">
+                                    <Trash size={14} weight="bold" />
                                     {rowIndex + 1}
                                   </button>
                                 </td>
@@ -1384,17 +1384,17 @@ export function TopicSelectionWorkspaceModal({
                         return (
                           <div className="space-y-1.5 py-1">
                             {items.length === 0 && (
-                              <p className="text-[12px] text-[#9AA0A6]">체크리스트가 비어 있습니다. 아래 &lsquo;항목 추가&rsquo;를 눌러 시작하세요.</p>
+                              <p className="text-[14px] text-[#9AA0A6]">체크리스트가 비어 있습니다. 아래 &lsquo;항목 추가&rsquo;를 눌러 시작하세요.</p>
                             )}
                             {items.map((it, idx) => (
                               <div key={idx} className="group/item flex items-start gap-2">
                                 <button
                                   type="button"
                                   onClick={() => toggle(idx)}
-                                  className="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center text-[#1A73E8] hover:text-[#1557B0]"
+                                  className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center text-[#1A73E8] hover:text-[#1557B0]"
                                   aria-label={it.checked ? '체크 해제' : '체크'}
                                 >
-                                  {it.checked ? <CheckSquare size={18} weight="fill" /> : <Square size={18} weight="regular" />}
+                                  {it.checked ? <CheckSquare size={20} weight="fill" /> : <Square size={20} weight="regular" />}
                                 </button>
                                 <input
                                   value={it.text}
@@ -1415,26 +1415,26 @@ export function TopicSelectionWorkspaceModal({
                                   }}
                                   placeholder="항목 내용"
                                   className={cn(
-                                    'flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[14px] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
+                                    'flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[16px] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
                                     it.checked && 'text-[#9AA0A6] line-through'
                                   )}
                                 />
                                 <button
                                   type="button"
                                   onClick={() => remove(idx)}
-                                  className="mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[#9AA0A6] opacity-0 transition-opacity hover:bg-[#FCE8E6] hover:text-[#C62828] group-hover/item:opacity-100"
+                                  className="mt-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-[#9AA0A6] opacity-0 transition-opacity hover:bg-[#FCE8E6] hover:text-[#C62828] group-hover/item:opacity-100"
                                   aria-label="항목 삭제"
                                 >
-                                  <Trash size={13} weight="bold" />
+                                  <Trash size={15} weight="bold" />
                                 </button>
                               </div>
                             ))}
                             <button
                               type="button"
                               onClick={add}
-                              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE]"
+                              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE]"
                             >
-                              <Plus size={12} weight="bold" /> 항목 추가
+                              <Plus size={14} weight="bold" /> 항목 추가
                             </button>
                           </div>
                         )
@@ -1456,9 +1456,9 @@ export function TopicSelectionWorkspaceModal({
                           : '내용을 입력하세요'
                         }
                         className={cn(
-                          'w-full rounded-xl border border-transparent bg-transparent px-1 py-1.5 text-[16px] leading-[1.6] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
-                          block.type === 'heading' && 'font-extrabold text-[28px] leading-tight',
-                          block.type === 'subheading' && 'font-bold text-[20px] leading-tight',
+                          'w-full rounded-xl border border-transparent bg-transparent px-1 py-1.5 text-[18px] leading-[1.6] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
+                          block.type === 'heading' && 'font-extrabold text-[32px] leading-tight',
+                          block.type === 'subheading' && 'font-bold text-[22px] leading-tight',
                           block.type === 'quote' && 'border-l-4 border-l-[#DADCE0] pl-4 italic text-[#5F6368]',
                         )}
                       />
@@ -1475,14 +1475,14 @@ export function TopicSelectionWorkspaceModal({
                     setShowInsertMenu(value => !value)
                     setTableDraft(prev => ({ ...prev, open: false }))
                   }}
-                  className="inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-[13px] font-bold text-[#5F6368] transition-colors hover:border-[#DADCE0] hover:bg-[#F8F9FA]"
+                  className="inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-[15px] font-bold text-[#5F6368] transition-colors hover:border-[#DADCE0] hover:bg-[#F8F9FA]"
                 >
-                  <Plus size={15} weight="bold" />
+                  <Plus size={17} weight="bold" />
                   삽입
                 </button>
                 {showInsertMenu && (
                   <div className="absolute left-0 top-10 z-20 w-72 rounded-xl border border-[#DADCE0] bg-white p-2 shadow-lg">
-                    <p className="px-2 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-[#9AA0A6]">편집 도구</p>
+                    <p className="px-2 pb-2 pt-1 text-[12px] font-bold uppercase tracking-wider text-[#9AA0A6]">편집 도구</p>
                     {INSERT_BLOCK_TYPES.map(item => {
                       const ItemIcon = item.icon
                       return (
@@ -1492,12 +1492,12 @@ export function TopicSelectionWorkspaceModal({
                           onClick={() => addBlock(item.type)}
                           className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[#F1F3F4]"
                         >
-                          <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border border-[#E8EAED] bg-white text-[#1A73E8]">
-                            <ItemIcon size={16} weight="bold" />
+                          <span className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-[#E8EAED] bg-white text-[#1A73E8]">
+                            <ItemIcon size={18} weight="bold" />
                           </span>
                           <span className="flex-1 min-w-0">
-                            <span className="block text-[13px] font-extrabold text-[#202124]">{item.label}</span>
-                            <span className="block text-[11px] text-[#5F6368]">{item.description}</span>
+                            <span className="block text-[15px] font-extrabold text-[#202124]">{item.label}</span>
+                            <span className="block text-[13px] text-[#5F6368]">{item.description}</span>
                           </span>
                         </button>
                       )
@@ -1506,9 +1506,9 @@ export function TopicSelectionWorkspaceModal({
                 )}
                 {tableDraft.open && (
                   <div className="absolute left-0 top-10 z-20 w-64 rounded-xl border border-[#DADCE0] bg-white p-3 shadow-lg">
-                    <p className="mb-3 text-[13px] font-extrabold text-[#202124]">표 크기</p>
+                    <p className="mb-3 text-[15px] font-extrabold text-[#202124]">표 크기</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <label className="text-[12px] font-bold text-[#5F6368]">
+                      <label className="text-[14px] font-bold text-[#5F6368]">
                         행
                         <input
                           type="number"
@@ -1516,10 +1516,10 @@ export function TopicSelectionWorkspaceModal({
                           max={12}
                           value={tableDraft.rows}
                           onChange={event => setTableDraft(prev => ({ ...prev, rows: Number(event.target.value) }))}
-                          className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[14px] text-[#202124] focus:border-[#1A73E8] focus:outline-none"
+                          className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[16px] text-[#202124] focus:border-[#1A73E8] focus:outline-none"
                         />
                       </label>
-                      <label className="text-[12px] font-bold text-[#5F6368]">
+                      <label className="text-[14px] font-bold text-[#5F6368]">
                         열
                         <input
                           type="number"
@@ -1527,7 +1527,7 @@ export function TopicSelectionWorkspaceModal({
                           max={8}
                           value={tableDraft.columns}
                           onChange={event => setTableDraft(prev => ({ ...prev, columns: Number(event.target.value) }))}
-                          className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[14px] text-[#202124] focus:border-[#1A73E8] focus:outline-none"
+                          className="mt-1 w-full rounded-lg border border-[#DADCE0] px-3 py-2 text-[16px] text-[#202124] focus:border-[#1A73E8] focus:outline-none"
                         />
                       </label>
                     </div>
@@ -1535,14 +1535,14 @@ export function TopicSelectionWorkspaceModal({
                       <button
                         type="button"
                         onClick={() => setTableDraft(prev => ({ ...prev, open: false }))}
-                        className="rounded-lg px-3 py-2 text-[12px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
+                        className="rounded-lg px-3 py-2 text-[14px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
                       >
                         취소
                       </button>
                       <button
                         type="button"
                         onClick={() => addTableBlock(tableDraft.rows, tableDraft.columns)}
-                        className="rounded-lg bg-[#1A73E8] px-3 py-2 text-[12px] font-bold text-white hover:bg-[#1557B0]"
+                        className="rounded-lg bg-[#1A73E8] px-3 py-2 text-[14px] font-bold text-white hover:bg-[#1557B0]"
                       >
                         삽입
                       </button>
@@ -1553,7 +1553,7 @@ export function TopicSelectionWorkspaceModal({
               </div>
 
             {!isHost && (
-              <div className="rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-[12px] text-[#5F6368] leading-relaxed">
+              <div className="rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-[14px] text-[#5F6368] leading-relaxed">
                 팀원은 공동 초안을 편집할 수 있고, 최종 산출물 전송은 방장이 실행합니다.
               </div>
             )}
@@ -1563,12 +1563,12 @@ export function TopicSelectionWorkspaceModal({
             <aside className="space-y-4 lg:sticky lg:top-6 self-start">
               <section className="rounded-2xl border border-[#E8EAED] bg-[#FAFBFC] p-5 space-y-4">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#1A73E8] to-[#7B2FF7] text-white">
-                    <Sparkle size={18} weight="fill" />
+                  <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#1A73E8] to-[#7B2FF7] text-white">
+                    <Sparkle size={20} weight="fill" />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-extrabold text-[#202124]">추천 산출물 형식</p>
-                    <ul className="mt-2 space-y-1 text-[12px] leading-relaxed text-[#5F6368]">
+                    <p className="text-[16px] font-extrabold text-[#202124]">추천 산출물 형식</p>
+                    <ul className="mt-2 space-y-1 text-[14px] leading-relaxed text-[#5F6368]">
                       <li>· <b>선정 주제</b>: 학생이 탐구할 주제 1문장</li>
                       <li>· <b>주제 유형</b>: <em>내용요소형 / 기능요소형 / 혼합형</em> 중 택1</li>
                       <li>· <b>선정 근거</b>: 비전·교과·학생 맥락과의 연결</li>
@@ -1578,43 +1578,43 @@ export function TopicSelectionWorkspaceModal({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-[13px] font-bold text-[#202124]">AI 에이전트의 제안 받기</label>
-                  <p className="text-[11px] leading-relaxed text-[#5F6368]"><b>직전 단계(T-1-1)의 팀 비전·핵심 키워드</b>와 <b>팀 채팅 대화</b>를 자동으로 읽어 <b>선정 기준 · 선정 주제 · 주제 유형 · 선정 근거</b>를 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
+                  <label className="block text-[15px] font-bold text-[#202124]">AI 에이전트의 제안 받기</label>
+                  <p className="text-[13px] leading-relaxed text-[#5F6368]"><b>직전 단계(T-1-1)의 팀 비전·핵심 키워드</b>와 <b>팀 채팅 대화</b>를 자동으로 읽어 <b>선정 기준 · 선정 주제 · 주제 유형 · 선정 근거</b>를 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
                   {suggestError && (
-                    <p className="text-[12px] font-semibold text-[#C5221F]">{suggestError}</p>
+                    <p className="text-[14px] font-semibold text-[#C5221F]">{suggestError}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => requestSuggestion()}
                       disabled={suggestLoading}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#1A73E8] to-[#7B2FF7] px-4 py-2 text-[12px] font-extrabold text-white shadow-sm transition-opacity disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#1A73E8] to-[#7B2FF7] px-4 py-2 text-[14px] font-extrabold text-white shadow-sm transition-opacity disabled:opacity-50"
                     >
-                      <Sparkle size={14} weight="fill" />
+                      <Sparkle size={16} weight="fill" />
                       {suggestLoading ? '제안 받는 중...' : 'AI 제안 받기'}
                     </button>
                     {suggestion && (
-                      <span className="text-[12px] font-semibold text-[#137333]">미리보기 준비 완료</span>
+                      <span className="text-[14px] font-semibold text-[#137333]">미리보기 준비 완료</span>
                     )}
                   </div>
                 </div>
 
                 {suggestion && (
                   <div className="space-y-3 rounded-xl border border-[#DADCE0] bg-white p-4">
-                    <p className="text-[11px] font-semibold text-[#5F6368]">아래 내용을 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;을 누르면 그대로 반영됩니다.</p>
+                    <p className="text-[13px] font-semibold text-[#5F6368]">아래 내용을 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;을 누르면 그대로 반영됩니다.</p>
                     {suggestion.basedOn && (
                       <div className="rounded-md border border-[#AECBFA] bg-[#E8F0FE] px-3 py-2 space-y-1.5">
-                        <p className="text-[11px] font-extrabold text-[#1967D2] inline-flex items-center gap-1">
-                          <Sparkle size={11} weight="fill" />
+                        <p className="text-[13px] font-extrabold text-[#1967D2] inline-flex items-center gap-1">
+                          <Sparkle size={13} weight="fill" />
                           {suggestion.basedOn.mode === 'artifact' ? '채팅 산출물 기반' : '팀 채팅 대화 기반'} · 제안 근거
                         </p>
                         {suggestion.basedOn.summary && (
-                          <p className="text-[12px] text-[#202124] leading-relaxed">{suggestion.basedOn.summary}</p>
+                          <p className="text-[14px] text-[#202124] leading-relaxed">{suggestion.basedOn.summary}</p>
                         )}
                         {suggestion.basedOn.references && suggestion.basedOn.references.length > 0 && (
                           <ul className="space-y-1 pt-1">
                             {suggestion.basedOn.references.map((ref, i) => (
-                              <li key={i} className="text-[11px] text-[#3C4043] leading-relaxed border-l-2 border-[#1A73E8] pl-2">
+                              <li key={i} className="text-[13px] text-[#3C4043] leading-relaxed border-l-2 border-[#1A73E8] pl-2">
                                 {ref.source && <span className="font-bold text-[#1967D2]">{ref.source}</span>}
                                 {ref.source && <span className="mx-1 text-[#5F6368]">·</span>}
                                 <span className="italic">&ldquo;{ref.text}&rdquo;</span>
@@ -1625,36 +1625,36 @@ export function TopicSelectionWorkspaceModal({
                       </div>
                     )}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#5F6368] mb-1">선정 주제</label>
+                      <label className="block text-[13px] font-bold text-[#5F6368] mb-1">선정 주제</label>
                       <AutoGrowTextarea
                         value={suggestion.selectedTopic}
                         onChange={event => setSuggestion(prev => prev ? { ...prev, selectedTopic: event.target.value } : prev)}
                         minRows={2}
-                        className="w-full rounded-md border border-[#E8EAED] bg-white px-3 py-2 text-[13px] font-semibold text-[#202124] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                        className="w-full rounded-md border border-[#E8EAED] bg-white px-3 py-2 text-[15px] font-semibold text-[#202124] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#5F6368] mb-1">주제 유형</label>
+                      <label className="block text-[13px] font-bold text-[#5F6368] mb-1">주제 유형</label>
                       <input
                         value={suggestion.topicType}
                         onChange={event => setSuggestion(prev => prev ? { ...prev, topicType: event.target.value } : prev)}
-                        className="w-full rounded-md border border-[#E8EAED] bg-white px-3 py-2 text-[13px] font-semibold text-[#202124] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                        className="w-full rounded-md border border-[#E8EAED] bg-white px-3 py-2 text-[15px] font-semibold text-[#202124] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#5F6368] mb-1">선정 근거</label>
+                      <label className="block text-[13px] font-bold text-[#5F6368] mb-1">선정 근거</label>
                       <AutoGrowTextarea
                         value={suggestion.rationale}
                         onChange={event => setSuggestion(prev => prev ? { ...prev, rationale: event.target.value } : prev)}
                         minRows={3}
-                        className="w-full rounded-md border border-[#E8EAED] bg-white px-3 py-2 text-[13px] text-[#202124] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                        className="w-full rounded-md border border-[#E8EAED] bg-white px-3 py-2 text-[15px] text-[#202124] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                     </div>
                     {suggestion.criteria?.length > 0 && (
                       <div>
-                        <label className="block text-[11px] font-bold text-[#5F6368] mb-1">선정 기준</label>
+                        <label className="block text-[13px] font-bold text-[#5F6368] mb-1">선정 기준</label>
                         <div className="overflow-x-auto">
-                          <table className="min-w-full border-collapse text-[12px]">
+                          <table className="min-w-full border-collapse text-[14px]">
                             <thead>
                               <tr className="bg-[#F1F3F4]">
                                 <th className="border border-[#DADCE0] px-2 py-1.5 text-left font-bold text-[#5F6368] w-[110px]">선정 기준</th>
@@ -1674,7 +1674,7 @@ export function TopicSelectionWorkspaceModal({
                                         next[idx] = { ...next[idx], criterion: event.target.value }
                                         return { ...prev, criteria: next }
                                       })}
-                                      className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[12px] font-semibold text-[#202124] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]"
+                                      className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[14px] font-semibold text-[#202124] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]"
                                     />
                                   </td>
                                   <td className="border border-[#DADCE0] p-1 align-top">
@@ -1687,7 +1687,7 @@ export function TopicSelectionWorkspaceModal({
                                         return { ...prev, criteria: next }
                                       })}
                                       minRows={2}
-                                      className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[12px] text-[#3C4043] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]"
+                                      className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[14px] text-[#3C4043] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]"
                                     />
                                   </td>
                                   <td className="border border-[#DADCE0] p-1 align-top">
@@ -1699,7 +1699,7 @@ export function TopicSelectionWorkspaceModal({
                                         next[idx] = { ...next[idx], priority: event.target.value }
                                         return { ...prev, criteria: next }
                                       })}
-                                      className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[12px] text-[#3C4043] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]"
+                                      className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[14px] text-[#3C4043] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#1A73E8]"
                                     />
                                   </td>
                                 </tr>
@@ -1710,7 +1710,7 @@ export function TopicSelectionWorkspaceModal({
                       </div>
                     )}
                     {suggestion.tips && suggestion.tips.length > 0 && (
-                      <ul className="space-y-1 text-[12px] italic text-[#5F6368]">
+                      <ul className="space-y-1 text-[14px] italic text-[#5F6368]">
                         {suggestion.tips.map((tip, i) => (
                           <li key={i}>· {tip}</li>
                         ))}
@@ -1720,14 +1720,14 @@ export function TopicSelectionWorkspaceModal({
                       <button
                         type="button"
                         onClick={() => setSuggestion(null)}
-                        className="rounded-full border border-[#DADCE0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
+                        className="rounded-full border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
                       >
                         무시
                       </button>
                       <button
                         type="button"
                         onClick={applySuggestion}
-                        className="rounded-full bg-[#137333] px-3 py-1.5 text-[12px] font-bold text-white hover:bg-[#0D5C27]"
+                        className="rounded-full bg-[#137333] px-3 py-1.5 text-[14px] font-bold text-white hover:bg-[#0D5C27]"
                       >
                         워크스페이스에 적용
                       </button>
@@ -1741,12 +1741,12 @@ export function TopicSelectionWorkspaceModal({
 
         <div className="flex-shrink-0 border-t border-[#E8EAED] bg-white px-5 py-3">
           <div className="mx-auto flex max-w-[980px] items-center gap-3">
-            <span className="hidden sm:inline-flex rounded-full bg-[#F8F9FA] px-3 py-2 text-[12px] font-bold text-[#5F6368]">
+            <span className="hidden sm:inline-flex rounded-full bg-[#F8F9FA] px-3 py-2 text-[14px] font-bold text-[#5F6368]">
               자유 형식으로 작성해도 산출물로 인정됩니다
             </span>
             <div className="ml-auto flex items-center gap-2">
-              <span className="hidden sm:inline-flex items-center gap-1 text-[12px] font-bold text-[#5F6368]">
-                <CheckCircle size={15} weight="fill" className="text-[#9AA0A6]" />
+              <span className="hidden sm:inline-flex items-center gap-1 text-[14px] font-bold text-[#5F6368]">
+                <CheckCircle size={17} weight="fill" className="text-[#9AA0A6]" />
                 {isHost ? '저장 가능' : '편집 중'}
               </span>
               <button
@@ -1754,9 +1754,9 @@ export function TopicSelectionWorkspaceModal({
                 onClick={handleSaveAll}
                 disabled={!isHost || saving}
                 title={isHost ? '현재 공동 초안을 저장합니다' : '초안 저장은 방장만 실행할 수 있습니다'}
-                className="flex items-center gap-1.5 rounded-full bg-[#111827] px-5 py-3 text-[13px] font-extrabold text-white shadow-lg transition-colors hover:bg-[#1F2937] disabled:opacity-45"
+                className="flex items-center gap-1.5 rounded-full bg-[#111827] px-5 py-3 text-[15px] font-extrabold text-white shadow-lg transition-colors hover:bg-[#1F2937] disabled:opacity-45"
               >
-                <FloppyDisk size={16} weight="bold" />
+                <FloppyDisk size={18} weight="bold" />
                 {saving ? '저장 중' : '저장하기'}
               </button>
             </div>
@@ -1771,43 +1771,43 @@ export function TopicSelectionWorkspaceModal({
           onClick={event => event.stopPropagation()}
         >
           <div className="px-6 py-4 border-b border-[#E8EAED] bg-white flex items-center gap-3 flex-shrink-0">
-            <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0FE] px-3 py-1.5 text-[12px] font-extrabold text-[#1A73E8]">
-              <Sparkle size={14} weight="fill" />
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0FE] px-3 py-1.5 text-[14px] font-extrabold text-[#1A73E8]">
+              <Sparkle size={16} weight="fill" />
               예시
             </span>
-            <span className="text-[15px] font-extrabold text-[#202124]">최종 산출물 예시</span>
+            <span className="text-[17px] font-extrabold text-[#202124]">최종 산출물 예시</span>
             <div className="flex-1" />
             <button
               type="button"
               onClick={() => setShowExample(false)}
-              className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+              className="w-11 h-11 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
               aria-label="예시 닫기"
             >
-              <X size={18} weight="bold" />
+              <X size={20} weight="bold" />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
             <div>
-              <p className="text-[12px] font-bold text-[#5F6368] mb-1.5">선정 주제</p>
-              <p className="text-[16px] font-extrabold leading-snug text-[#202124]">{EXAMPLE_WORKSPACE_DATA.selectedTopic}</p>
+              <p className="text-[14px] font-bold text-[#5F6368] mb-1.5">선정 주제</p>
+              <p className="text-[18px] font-extrabold leading-snug text-[#202124]">{EXAMPLE_WORKSPACE_DATA.selectedTopic}</p>
             </div>
             <div>
-              <p className="text-[12px] font-bold text-[#5F6368] mb-1.5">주제 유형</p>
-              <span className="rounded-full bg-[#E8F0FE] px-2.5 py-1 text-[12px] font-bold text-[#1A73E8]">{EXAMPLE_WORKSPACE_DATA.topicType}</span>
+              <p className="text-[14px] font-bold text-[#5F6368] mb-1.5">주제 유형</p>
+              <span className="rounded-full bg-[#E8F0FE] px-2.5 py-1 text-[14px] font-bold text-[#1A73E8]">{EXAMPLE_WORKSPACE_DATA.topicType}</span>
             </div>
             <div>
-              <p className="text-[12px] font-bold text-[#5F6368] mb-1.5">선정 근거</p>
-              <p className="text-[14px] leading-relaxed text-[#202124]">{EXAMPLE_WORKSPACE_DATA.rationale}</p>
+              <p className="text-[14px] font-bold text-[#5F6368] mb-1.5">선정 근거</p>
+              <p className="text-[16px] leading-relaxed text-[#202124]">{EXAMPLE_WORKSPACE_DATA.rationale}</p>
             </div>
             <div>
-              <p className="text-[12px] font-bold text-[#5F6368] mb-2">주제 선정 기준</p>
+              <p className="text-[14px] font-bold text-[#5F6368] mb-2">주제 선정 기준</p>
               <div className="overflow-x-auto rounded-xl border border-[#DADCE0]">
-                <table className="min-w-full border-collapse text-[13px]">
+                <table className="min-w-full border-collapse text-[15px]">
                   <thead>
                     <tr>
                       {DEFAULT_COLUMNS.map(column => (
-                        <th key={column.id} className="border-b border-r border-[#1557B0] bg-[#1A73E8] px-3 py-2 text-left text-[12px] font-extrabold text-white">
+                        <th key={column.id} className="border-b border-r border-[#1557B0] bg-[#1A73E8] px-3 py-2 text-left text-[14px] font-extrabold text-white">
                           {column.label}
                         </th>
                       ))}
@@ -1831,16 +1831,16 @@ export function TopicSelectionWorkspaceModal({
             <button
               type="button"
               onClick={() => setShowExample(false)}
-              className="rounded-full border border-[#DADCE0] bg-white px-4 py-2 text-[12px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
+              className="rounded-full border border-[#DADCE0] bg-white px-4 py-2 text-[14px] font-bold text-[#5F6368] hover:bg-[#F1F3F4]"
             >
               닫기
             </button>
             <button
               type="button"
               onClick={applyExampleToWorkspace}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#1A73E8] px-4 py-2 text-[12px] font-extrabold text-white hover:bg-[#1557B0] transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#1A73E8] px-4 py-2 text-[14px] font-extrabold text-white hover:bg-[#1557B0] transition-colors"
             >
-              <Sparkle size={14} weight="fill" />
+              <Sparkle size={16} weight="fill" />
               워크스페이스에 채우기
             </button>
           </div>
