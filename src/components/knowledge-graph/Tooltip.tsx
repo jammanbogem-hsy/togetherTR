@@ -34,20 +34,20 @@ export default function Tooltip({ nodeId, x, y, rawNodes }: TooltipProps) {
         style={{ background: 'white', borderColor: col + '70', minWidth: 200 }}
       >
         <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-          <span className="font-mono font-bold text-sm" style={{ color: col }}>
+          <span className="font-mono font-bold text-base" style={{ color: col }}>
             {tn.label}
           </span>
-          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: col + '18', color: col }}>
+          <span className="text-[12px] font-semibold px-1.5 py-0.5 rounded" style={{ background: col + '18', color: col }}>
             {subjectName(tn.subject_id)}
           </span>
           {simPct && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200">
+            <span className="text-[12px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200">
               {simPct}
             </span>
           )}
         </div>
         {textPreview && (
-          <p className="text-xs text-gray-600 leading-relaxed">{textPreview}</p>
+          <p className="text-sm text-gray-600 leading-relaxed">{textPreview}</p>
         )}
       </div>
       <div

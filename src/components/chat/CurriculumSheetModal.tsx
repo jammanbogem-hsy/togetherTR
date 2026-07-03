@@ -237,25 +237,25 @@ function CellPicker({ options, value, onSelect, onClose, anchorRect, placeholder
       <div className="p-3 border-b border-[#F1F3F4]">
         <div className="flex items-center gap-2">
           <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={placeholder ?? '검색...'} className="flex-1 px-3 py-2 text-sm rounded-xl border border-[#DADCE0] focus:outline-none focus:border-[#1A73E8]" />
+            placeholder={placeholder ?? '검색...'} className="flex-1 px-3 py-2 text-base rounded-xl border border-[#DADCE0] focus:outline-none focus:border-[#1A73E8]" />
           {multi && selected.size > 0 && (
-            <span className="text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0" style={{ color, backgroundColor: `${color}18` }}>{selected.size}개 선택</span>
+            <span className="text-sm font-bold px-2.5 py-1 rounded-full flex-shrink-0" style={{ color, backgroundColor: `${color}18` }}>{selected.size}개 선택</span>
           )}
-          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#9AA0A6] hover:text-[#5F6368] text-lg flex-shrink-0 transition">&times;</button>
+          <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#9AA0A6] hover:text-[#5F6368] text-lg flex-shrink-0 transition">&times;</button>
         </div>
       </div>
       {/* 선택된 항목 미리보기 */}
       {multi && selected.size > 0 && (
         <div className="shrink-0 px-3 py-3 border-b border-[#D8E7FF] flex flex-col gap-2 max-h-[230px] overflow-y-auto bg-[#F5FAFF]">
           <div className="flex items-center justify-between">
-            <div className="text-[12px] font-extrabold" style={{ color }}>현재 선택된 항목</div>
-            <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ color, backgroundColor: `${color}18` }}>{selected.size}개</span>
+            <div className="text-[14px] font-extrabold" style={{ color }}>현재 선택된 항목</div>
+            <span className="rounded-full px-2 py-0.5 text-[13px] font-bold" style={{ color, backgroundColor: `${color}18` }}>{selected.size}개</span>
           </div>
           {selectedDisplayValues.map(v => (
             <div key={v} className="flex items-start gap-2 rounded-xl border-2 bg-white px-3 py-2 shadow-sm" style={{ borderColor: `${color}35` }}>
-              <span className="mt-0.5 w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center border-2 text-sm font-bold"
+              <span className="mt-0.5 w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center border-2 text-base font-bold"
                 style={{ borderColor: color, backgroundColor: color, color: '#fff' }}>✓</span>
-              <span className="flex-1 text-sm leading-relaxed font-bold" style={{ color }}>{v}</span>
+              <span className="flex-1 text-base leading-relaxed font-bold" style={{ color }}>{v}</span>
               <button onClick={() => toggle(v)} className="w-6 h-6 rounded-full hover:bg-black/10 flex items-center justify-center text-lg flex-shrink-0 text-[#9AA0A6]">&times;</button>
             </div>
           ))}
@@ -263,13 +263,13 @@ function CellPicker({ options, value, onSelect, onClose, anchorRect, placeholder
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {flatFiltered.length === 0 ? (
-          <div className="py-8 text-center text-sm text-[#9AA0A6]">결과 없음</div>
+          <div className="py-8 text-center text-base text-[#9AA0A6]">결과 없음</div>
         ) : optionGroups ? (
           // 그룹별 표시 (영역 라벨 포함)
           (filtered as OptionGroup[]).map(group => (
               <div key={group.label}>
               <div className="sticky top-0 z-[1] px-4 py-2 bg-[#F8F9FA] border-b border-[#F1F3F4]">
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-wide" style={{ color }}>
+                <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-wide" style={{ color }}>
                   <span className="px-1.5 py-0.5 rounded-md bg-white border border-current/20">영역</span>
                   {group.label}
                 </span>
@@ -278,7 +278,7 @@ function CellPicker({ options, value, onSelect, onClose, anchorRect, placeholder
                 const isSel = isSelectedOption(opt)
                 return (
                   <button key={j} onClick={() => toggle(opt)}
-                    className={`w-full text-left px-4 py-3 text-sm transition flex items-start gap-3 ${isSel ? 'bg-[#F3E5F5]' : 'hover:bg-[#F8F9FA]'}`}>
+                    className={`w-full text-left px-4 py-3 text-base transition flex items-start gap-3 ${isSel ? 'bg-[#F3E5F5]' : 'hover:bg-[#F8F9FA]'}`}>
                     <span className="mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
                       style={{ borderColor: isSel ? color : '#DADCE0', backgroundColor: isSel ? color : 'transparent' }}>
                       {isSel && <span className="w-2 h-2 rounded-full bg-white" />}
@@ -293,9 +293,9 @@ function CellPicker({ options, value, onSelect, onClose, anchorRect, placeholder
           const isSel = isSelectedOption(opt)
           return (
             <button key={i} onClick={() => toggle(opt)}
-              className={`w-full text-left px-4 py-3 text-sm transition flex items-start gap-3 ${isSel ? 'bg-[#F8F9FA]' : 'hover:bg-[#F8F9FA]'}`}>
+              className={`w-full text-left px-4 py-3 text-base transition flex items-start gap-3 ${isSel ? 'bg-[#F8F9FA]' : 'hover:bg-[#F8F9FA]'}`}>
               {multi ? (
-                <span className="mt-0.5 w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 text-xs font-bold"
+                <span className="mt-0.5 w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 text-sm font-bold"
                   style={{ borderColor: isSel ? color : '#DADCE0', backgroundColor: isSel ? color : 'transparent', color: isSel ? '#fff' : 'transparent' }}>✓</span>
               ) : (
                 <span className="mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
@@ -309,7 +309,7 @@ function CellPicker({ options, value, onSelect, onClose, anchorRect, placeholder
         })}
       </div>
       <div className="p-3 border-t border-[#F1F3F4] flex justify-end">
-        <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-bold text-white transition" style={{ backgroundColor: color }}>
+        <button onClick={onClose} className="px-4 py-2 rounded-xl text-base font-bold text-white transition" style={{ backgroundColor: color }}>
           {multi ? '완료' : '닫기'}
         </button>
       </div>
@@ -335,13 +335,13 @@ function TagCell({ value, placeholder, color, onClickAdd, onRemove, otherEditor,
       {tags.map((tag, i) => (
         <div key={i} className="flex items-start gap-1 py-1 border-b last:border-b-0"
           style={{ borderColor: `${color}20` }}>
-          <span className="flex-1 text-xs leading-relaxed break-words" style={{ color }}>{tag}</span>
+          <span className="flex-1 text-sm leading-relaxed break-words" style={{ color }}>{tag}</span>
           <button onClick={e => { e.stopPropagation(); onRemove(tag) }}
-            className="w-5 h-5 rounded-full hover:bg-black/10 flex items-center justify-center text-sm flex-shrink-0 text-[#9AA0A6] hover:text-[#C5221F]">&times;</button>
+            className="w-5 h-5 rounded-full hover:bg-black/10 flex items-center justify-center text-base flex-shrink-0 text-[#9AA0A6] hover:text-[#C5221F]">&times;</button>
         </div>
       ))}
       <button onClick={onClickAdd}
-        className="inline-flex items-center gap-1 px-1 py-1 rounded-lg text-xs font-semibold hover:bg-[#F1F3F4] transition self-start"
+        className="inline-flex items-center gap-1 px-1 py-1 rounded-lg text-sm font-semibold hover:bg-[#F1F3F4] transition self-start"
         style={{ color: tags.length ? '#9AA0A6' : color }}>
         + {tags.length ? '추가' : placeholder}
       </button>
@@ -881,36 +881,36 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         <div className="px-6 py-4 border-b border-[#DADCE0] bg-[#FAFAFA] flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-bold text-[#202124]">교육과정 분석 시트</h2>
-            {dirty && <span className="text-xs text-[#F9AB00] font-semibold animate-pulse">자동 저장 중...</span>}
-            {!dirty && rows.some(r => r.subject) && <span className="text-xs text-[#137333] font-semibold">저장됨</span>}
+            {dirty && <span className="text-sm text-[#F9AB00] font-semibold animate-pulse">자동 저장 중...</span>}
+            {!dirty && rows.some(r => r.subject) && <span className="text-sm text-[#137333] font-semibold">저장됨</span>}
           </div>
           <div className="flex items-center gap-3">
             {/* 프레즌스 아바타 */}
             <div className="flex items-center -space-x-1.5">
               {currentUid && (
-                <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2 border-white relative z-10"
+                <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-white relative z-10"
                   style={{ backgroundColor: myColor }} title={`${currentUserName} (나)`}>{(currentUserName ?? '?').charAt(0)}</span>
               )}
               {allEditors.filter(p => p.uid !== currentUid).map(p => (
-                <span key={p.uid} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2 border-white"
+                <span key={p.uid} className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-white"
                   style={{ backgroundColor: p.color }} title={`${p.displayName} 편집 중`}>{p.displayName.charAt(0)}</span>
               ))}
             </div>
             <button onClick={handleManualSave}
-              className="px-4 py-2 rounded-xl text-sm font-bold bg-[#1A73E8] text-white hover:bg-[#1557B0] transition shadow-sm">저장</button>
-            <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#5F6368] text-xl transition">&times;</button>
+              className="px-4 py-2 rounded-xl text-base font-bold bg-[#1A73E8] text-white hover:bg-[#1557B0] transition shadow-sm">저장</button>
+            <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#5F6368] text-xl transition">&times;</button>
           </div>
         </div>
 
         {/* ── 지식 그래프 안내 ── */}
         {showGraphPrompt && onSwitchToGraph && (
           <div className="px-6 py-3 bg-[#F3E5F5] border-b border-[#CE93D8] flex items-center justify-between gap-4">
-            <p className="text-sm text-[#4A148C]"><span className="font-bold">저장 완료!</span> 중심 교과를 기준으로 지식 그래프와 수업 예시를 생성할 수 있습니다.</p>
+            <p className="text-base text-[#4A148C]"><span className="font-bold">저장 완료!</span> 중심 교과를 기준으로 지식 그래프와 수업 예시를 생성할 수 있습니다.</p>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button onClick={() => { setShowGraphPrompt(false); onSwitchToGraph?.(rows) }}
-                className="px-4 py-2 rounded-full text-sm font-bold bg-[#7B1FA2] text-white hover:bg-[#6A1B9A] transition shadow-sm">지식 그래프 확인</button>
+                className="px-4 py-2 rounded-full text-base font-bold bg-[#7B1FA2] text-white hover:bg-[#6A1B9A] transition shadow-sm">지식 그래프 확인</button>
               <button onClick={() => setShowGraphPrompt(false)}
-                className="px-3 py-2 rounded-full text-sm font-semibold text-[#7B1FA2] hover:bg-[#E1BEE7] transition">닫기</button>
+                className="px-3 py-2 rounded-full text-base font-semibold text-[#7B1FA2] hover:bg-[#E1BEE7] transition">닫기</button>
             </div>
           </div>
         )}
@@ -919,7 +919,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         {(autofillReview || autofillError) && (
           <div className="px-6 py-4 bg-[#F8F9FA] border-b border-[#DADCE0]">
             {autofillError && (
-              <div className="mb-3 rounded-xl border border-[#F28B82] bg-[#FCE8E6] px-4 py-3 text-sm font-semibold text-[#A50E0E]">
+              <div className="mb-3 rounded-xl border border-[#F28B82] bg-[#FCE8E6] px-4 py-3 text-base font-semibold text-[#A50E0E]">
                 {autofillError}
               </div>
             )}
@@ -927,13 +927,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
               <div className="rounded-2xl border border-[#DADCE0] bg-white shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-[#F1F3F4] flex items-start justify-between gap-4">
                   <div>
-                    <h3 className="text-sm font-bold text-[#202124]">핵심아이디어 확인</h3>
-                    <p className="mt-1 text-xs leading-relaxed text-[#5F6368]">
+                    <h3 className="text-base font-bold text-[#202124]">핵심아이디어 확인</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-[#5F6368]">
                       DB에서 찾은 핵심아이디어 후보입니다. 교과별 핵심 방향을 확인하면 같은 영역·학년군의 성취기준과 지식·이해/과정·기능을 자동으로 채웁니다.
                     </p>
                   </div>
                   <button onClick={() => setAutofillReview(null)}
-                    className="w-8 h-8 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#9AA0A6] hover:text-[#5F6368] text-lg flex-shrink-0">&times;</button>
+                    className="w-10 h-10 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#9AA0A6] hover:text-[#5F6368] text-lg flex-shrink-0">&times;</button>
                 </div>
                 <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
                   {autofillReview.proposals.map(proposal => {
@@ -943,11 +943,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       <div key={proposal.subject} className="rounded-xl border border-[#E8EAED] p-4">
                         <div className="flex items-center justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-[#202124]">{proposal.subject}</span>
-                            {proposal.isCenter && <span className="px-2 py-0.5 rounded-full bg-[#FEF7E0] text-[#E65100] text-[10px] font-bold">중심</span>}
+                            <span className="text-base font-bold text-[#202124]">{proposal.subject}</span>
+                            {proposal.isCenter && <span className="px-2 py-0.5 rounded-full bg-[#FEF7E0] text-[#E65100] text-[12px] font-bold">중심</span>}
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <span className="text-[11px] font-semibold text-[#7B1FA2]">{selectedOption?.area ?? '영역'}</span>
+                            <span className="text-[13px] font-semibold text-[#7B1FA2]">{selectedOption?.area ?? '영역'}</span>
                             <button
                               onClick={() => removeAutofillProposal(proposal.subject)}
                               title={`${proposal.subject} 제외`}
@@ -957,11 +957,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                             </button>
                           </div>
                         </div>
-                        {proposal.focus && <p className="mb-2 text-xs text-[#5F6368]">{proposal.focus}</p>}
+                        {proposal.focus && <p className="mb-2 text-sm text-[#5F6368]">{proposal.focus}</p>}
                         <select
                           value={selected}
                           onChange={e => setCoreIdeaSelections(prev => ({ ...prev, [proposal.subject]: e.target.value }))}
-                          className="w-full rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-xs leading-relaxed text-[#202124] focus:outline-none focus:border-[#7B1FA2]"
+                          className="w-full rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-sm leading-relaxed text-[#202124] focus:outline-none focus:border-[#7B1FA2]"
                         >
                           {proposal.options.map(option => (
                             <option key={`${option.coreIdeaId}:${option.idea}`} value={option.idea}>
@@ -971,12 +971,12 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         </select>
                         {selectedOption && (
                           <div className="mt-3 rounded-lg bg-[#F8F9FA] px-3 py-2">
-                            <p className="text-[11px] font-bold text-[#5F6368] mb-1">
+                            <p className="text-[13px] font-bold text-[#5F6368] mb-1">
                               연결 성취기준 후보 {selectedOption.standardsCount}개
                             </p>
                             <div className="space-y-1">
                               {selectedOption.sampleStandards.slice(0, 2).map(standard => (
-                                <p key={standard} className="text-[11px] leading-relaxed text-[#1A73E8]">{standard}</p>
+                                <p key={standard} className="text-[13px] leading-relaxed text-[#1A73E8]">{standard}</p>
                               ))}
                             </div>
                           </div>
@@ -987,9 +987,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                 </div>
                 <div className="px-5 py-4 border-t border-[#F1F3F4] flex items-center justify-end gap-2">
                   <button onClick={() => setAutofillReview(null)}
-                    className="px-4 py-2 rounded-xl text-sm font-bold text-[#5F6368] hover:bg-[#F1F3F4] transition">취소</button>
+                    className="px-4 py-2 rounded-xl text-base font-bold text-[#5F6368] hover:bg-[#F1F3F4] transition">취소</button>
                   <button onClick={applyAutofillReview} disabled={autofillLoading}
-                    className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm">
+                    className="px-4 py-2 rounded-xl text-base font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm">
                     {autofillLoading ? '분석표 생성 중...' : '성취기준 추천 및 분석표 생성'}
                   </button>
                 </div>
@@ -1019,13 +1019,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-[#F8F9FA] border-b-2 border-[#DADCE0]">
                     <th className="px-1 py-3 sticky left-0 z-20 bg-[#F8F9FA]" />
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#5F6368] whitespace-nowrap sticky left-[36px] z-20 bg-[#F8F9FA] border-r border-[#DADCE0]">과목</th>
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#7B1FA2] whitespace-nowrap">핵심아이디어</th>
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#1A73E8] whitespace-nowrap">성취기준</th>
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#0D47A1] whitespace-nowrap">지식·이해</th>
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#137333] whitespace-nowrap">과정·기능</th>
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#7B1FA2] whitespace-nowrap">Agent 추천 수업 예시</th>
-                    <th className="px-3 py-3 text-left text-sm font-bold text-[#5F6368] whitespace-nowrap">수업내용 설명</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap sticky left-[36px] z-20 bg-[#F8F9FA] border-r border-[#DADCE0]">과목</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#7B1FA2] whitespace-nowrap">핵심아이디어</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#1A73E8] whitespace-nowrap">성취기준</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#0D47A1] whitespace-nowrap">지식·이해</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#137333] whitespace-nowrap">과정·기능</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#7B1FA2] whitespace-nowrap">Agent 추천 수업 예시</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap">수업내용 설명</th>
                     <th className="px-2 py-3 sticky right-0 z-20 bg-[#F8F9FA] border-l border-[#DADCE0]" />
                   </tr>
                 </thead>
@@ -1045,13 +1045,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                   >
                     {/* 드래그 핸들 — 좌측 고정 */}
                     <td className="px-1 py-2 align-top text-center cursor-grab active:cursor-grabbing sticky left-0 z-[5] bg-white group-hover:bg-[#F8F9FA]">
-                      <span className="text-[#DADCE0] hover:text-[#9AA0A6] text-sm select-none">⠿</span>
+                      <span className="text-[#DADCE0] hover:text-[#9AA0A6] text-base select-none">⠿</span>
                     </td>
 
                     {/* 과목 + 중심교과 — 좌측 고정 */}
                     <td className="px-2 py-2 align-top sticky left-[36px] z-[5] bg-white group-hover:bg-[#F8F9FA] border-r border-[#E8EAED]">
                       <select value={row.subject} onChange={e => updateRow(row.id, 'subject', e.target.value)}
-                        className="w-full px-1.5 py-2 rounded-xl border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-sm font-semibold text-[#202124] cursor-pointer">
+                        className="w-full px-1.5 py-2 rounded-xl border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-base font-semibold text-[#202124] cursor-pointer">
                         <option value="">선택</option>
                         {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
@@ -1083,7 +1083,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                             }}
                             className="w-3.5 h-3.5 rounded accent-[#F9AB00] cursor-pointer"
                           />
-                          <span className={cn('text-[10px] font-bold', row.isCenter ? 'text-[#E65100]' : 'text-[#9AA0A6]')}>
+                          <span className={cn('text-[12px] font-bold', row.isCenter ? 'text-[#E65100]' : 'text-[#9AA0A6]')}>
                             {row.isCenter ? '★ 중심 교과' : '중심 교과'}
                           </span>
                         </label>
@@ -1099,17 +1099,17 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         const coreIdeaArea = getCoreIdeaArea(row)
                         return (<>
                           <button onClick={e => handleCellClick(row.id, 'coreIdea', e)}
-                            className="w-full text-left px-3 py-2 rounded-xl transition min-h-[44px] text-sm leading-relaxed"
+                            className="w-full text-left px-3 py-2 rounded-xl transition min-h-[44px] text-base leading-relaxed"
                             style={{ color: row.coreIdea ? '#202124' : '#9AA0A6', border: bdr }}>
                             {coreIdeaArea && (
-                              <span className="mb-1 inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[10px] font-bold text-[#7B1FA2]">
+                              <span className="mb-1 inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
                                 {coreIdeaArea}
                               </span>
                             )}
                             <span className="block">{row.coreIdea || '핵심아이디어 선택...'}</span>
                           </button>
-                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
-                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
+                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
+                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
                         </>)
                       })()}
                     </td>
@@ -1123,8 +1123,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                           <TagCell value={row[field]} placeholder={FL[field]} color={FC[field]}
                             onClickAdd={e => handleCellClick(row.id, field, e)} onRemove={tag => removeTag(row.id, field, tag)}
                             otherEditor={oe} myEditing={isMy} myColor={myColor} />
-                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
-                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
+                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
+                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
                         </td>
                       )
                     })}
@@ -1138,12 +1138,12 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         return (<>
                           <textarea value={row.agentLessonExample ?? ''} onChange={e => updateRow(row.id, 'agentLessonExample', e.target.value)}
                             onFocus={() => updatePresence(`${row.id}:agentLessonExample`)} placeholder="그래프 저장 후 자동 입력" rows={2}
-                            className="w-full px-3 py-2 rounded-xl focus:outline-none text-sm leading-relaxed resize-none focus:border-[#7B1FA2] bg-[#FCF8FF]"
+                            className="w-full px-3 py-2 rounded-xl focus:outline-none text-base leading-relaxed resize-none focus:border-[#7B1FA2] bg-[#FCF8FF]"
                             style={{ minHeight: 60, border: bdr }}
                             ref={el => { if (el && row.agentLessonExample) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                             onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }} />
-                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
-                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
+                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
+                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
                         </>)
                       })()}
                     </td>
@@ -1157,12 +1157,12 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         return (<>
                           <textarea value={row.description} onChange={e => updateRow(row.id, 'description', e.target.value)}
                             onFocus={() => updatePresence(`${row.id}:description`)} placeholder="수업 내용 입력..." rows={2}
-                            className="w-full px-3 py-2 rounded-xl focus:outline-none text-sm leading-relaxed resize-none focus:border-[#1A73E8]"
+                            className="w-full px-3 py-2 rounded-xl focus:outline-none text-base leading-relaxed resize-none focus:border-[#1A73E8]"
                             style={{ minHeight: 60, border: bdr }}
                             ref={el => { if (el && row.description) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                             onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }} />
-                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
-                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
+                          {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
+                          {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
                         </>)
                       })()}
                     </td>
@@ -1170,7 +1170,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     {/* 행 삭제 — 우측 고정 (가로 스크롤 없이 항상 보임) */}
                     <td className="px-2 py-2 align-top text-center sticky right-0 z-[5] bg-white group-hover:bg-[#F8F9FA] border-l border-[#E8EAED]">
                       <button onClick={() => removeRow(row.id)} title={`${rowIdx + 1}행 삭제`}
-                        className="w-8 h-8 rounded-full border border-[#F1F3F4] hover:bg-[#FCE8E6] hover:border-[#F28B82] text-[#C5221F] flex items-center justify-center transition text-base">
+                        className="w-10 h-10 rounded-full border border-[#F1F3F4] hover:bg-[#FCE8E6] hover:border-[#F28B82] text-[#C5221F] flex items-center justify-center transition text-base">
                         &times;
                       </button>
                     </td>
@@ -1185,11 +1185,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         {/* ── 하단 ── */}
         <div className="px-6 py-3 border-t border-[#DADCE0] bg-[#FAFAFA] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button onClick={addRow} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-[#1A73E8] hover:bg-[#E8F0FE] border border-[#C2D7F8] transition">
+            <button onClick={addRow} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-[#1A73E8] hover:bg-[#E8F0FE] border border-[#C2D7F8] transition">
               + 행 추가
             </button>
             <button onClick={handleAutofill} disabled={autofillLoading}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm"
               title={!a12Artifact?.selectedTopic && !graphSavedData ? 'A-1-2 주제 선정 또는 지식 그래프 데이터 필요' : '핵심아이디어 후보를 먼저 확인하고 DB 기반으로 자동 채우기'}>
               {autofillLoading ? (
                 <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> 후보 찾는 중...</>
@@ -1198,12 +1198,12 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             {onSwitchToGraph && hasGraphRows && (
               <button onClick={() => onSwitchToGraph(rows)} disabled={!hasCenterGraphRow}
                 title={hasCenterGraphRow ? '중심 교과를 중심 노드로 지식 그래프와 수업 예시를 생성합니다' : '먼저 중심 교과를 체크하고 성취기준을 선택하세요'}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-white bg-[#7B1FA2] hover:bg-[#6A1B9A] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#7B1FA2] transition shadow-sm">
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-white bg-[#7B1FA2] hover:bg-[#6A1B9A] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#7B1FA2] transition shadow-sm">
                 지식 그래프·수업 예시 생성 →
               </button>
             )}
           </div>
-          <div className="flex items-center gap-4 text-xs text-[#9AA0A6]">
+          <div className="flex items-center gap-4 text-sm text-[#9AA0A6]">
             {subjectsMissingStandard.length > 0 && (
               <span className="font-semibold text-[#C5221F]" title="지식 그래프 노드는 성취기준 기준으로 만들어집니다. 성취기준이 없는 교과는 그래프에 나타나지 않습니다.">
                 ⚠ {subjectsMissingStandard.join('·')} — 성취기준을 선택해야 지식 그래프에 표시됩니다

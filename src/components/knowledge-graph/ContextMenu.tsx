@@ -48,15 +48,15 @@ export default function ContextMenu({
         onClick={e => e.stopPropagation()}
       >
         <div className="px-3 py-1.5 border-b border-gray-100">
-          <span className="font-mono font-bold text-xs" style={{ color: subjectColor(ctxNode.subject_id) }}>
+          <span className="font-mono font-bold text-sm" style={{ color: subjectColor(ctxNode.subject_id) }}>
             {ctxNode.label}
           </span>
-          <span className="text-[10px] text-gray-400 ml-1">{subjectName(ctxNode.subject_id)}</span>
+          <span className="text-[12px] text-gray-400 ml-1">{subjectName(ctxNode.subject_id)}</span>
         </div>
 
         {isLeader && (
           <button
-            className={`w-full text-left px-3 py-2 text-xs hover:bg-amber-50 flex items-center gap-2 ${isAlreadyCenter ? 'text-amber-600 font-bold' : 'text-gray-700'}`}
+            className={`w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-2 ${isAlreadyCenter ? 'text-amber-600 font-bold' : 'text-gray-700'}`}
             onClick={() => {
               if (isAlreadyCenter) onUnsetCenter(nodeId)
               else onSetCenter(nodeId)
@@ -69,7 +69,7 @@ export default function ContextMenu({
 
         {!isLeader && (
           <button
-            className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 ${
+            className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 ${
               isRecommended
                 ? 'text-amber-500 bg-amber-50 font-bold cursor-default'
                 : 'hover:bg-amber-50 text-gray-700'
@@ -89,7 +89,7 @@ export default function ContextMenu({
         )}
 
         <button
-          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 text-blue-600 flex items-center gap-2"
+          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-blue-600 flex items-center gap-2"
           onClick={() => { onShowPopup(ctxNode); onClose() }}
         >
           <span>상세 보기</span>

@@ -47,10 +47,10 @@ export default function OnboardingOverlay({ svgRef, onDismiss }: OnboardingOverl
               <path d="M229.66,218.34l-50.07-50.07a88.21,88.21,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.31ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/>
             </svg>
           </span>
-          <span className="text-sm font-semibold text-[#7B1FA2]">중심 성취기준 설정 안내</span>
+          <span className="text-base font-semibold text-[#7B1FA2]">중심 성취기준 설정 안내</span>
         </div>
         <div className="bg-white px-5 py-4">
-          <p className="text-xs text-[#5F6368] leading-relaxed mb-3">
+          <p className="text-sm text-[#5F6368] leading-relaxed mb-3">
             그래프의 <span className="font-semibold text-[#7B1FA2] bg-[#F3E5F5] px-1.5 py-0.5 rounded">노드를 우클릭</span>하여 중심 성취기준을 설정하세요.<br/>
             중심 노드 기준으로 교과 간 연결이 자동 분류됩니다.
           </p>
@@ -62,7 +62,7 @@ export default function OnboardingOverlay({ svgRef, onDismiss }: OnboardingOverl
             ].map(({ label, color }) => (
               <span
                 key={label}
-                className="px-2 py-1 rounded-lg text-[10px] font-semibold text-white"
+                className="px-2 py-1 rounded-lg text-[12px] font-semibold text-white"
                 style={{ background: color }}
               >
                 {label}
@@ -71,7 +71,7 @@ export default function OnboardingOverlay({ svgRef, onDismiss }: OnboardingOverl
           </div>
           <button
             onClick={onDismiss}
-            className="w-full py-2 rounded-xl text-xs font-semibold text-white transition-colors"
+            className="w-full py-2 rounded-xl text-sm font-semibold text-white transition-colors"
             style={{ background: '#7B1FA2' }}
             onMouseEnter={e => { (e.target as HTMLElement).style.background = '#6A1B9A' }}
             onMouseLeave={e => { (e.target as HTMLElement).style.background = '#7B1FA2' }}

@@ -111,21 +111,21 @@ export default function GraphCanvas({
       {/* 상단 컨트롤: 검색 방식 + 관계 필터 */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 pointer-events-auto">
         <div className="flex items-center gap-1 bg-white/85 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200 p-1">
-          <span className="text-[10px] font-semibold text-gray-400 px-2">검색 방식</span>
+          <span className="text-[12px] font-semibold text-gray-400 px-2">검색 방식</span>
           {([
             { key: 'keyword', label: '키워드', desc: '키워드 기반 검색' },
             { key: 'semantic', label: '의미망', desc: '개념·맥락 기반 임베딩 검색' },
             { key: 'hybrid', label: '통합', desc: '의미망 + 키워드 통합' },
           ] as const).map(({ key, label, desc }) => (
             <button key={key} title={desc} onClick={() => onAlgoModeChange(key)}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${algoMode === key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
+              className={`px-2.5 py-1 rounded-lg text-[12px] font-semibold transition-all ${algoMode === key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
             >
               {label}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-1 bg-white/85 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200 p-1 flex-wrap">
-          <span className="text-[10px] font-semibold text-gray-400 px-2">관계</span>
+          <span className="text-[12px] font-semibold text-gray-400 px-2">관계</span>
           {([
             { key: 'all', label: '전체', color: '#111827' },
             { key: '의미연결', label: '의미', color: '#7C3AED' },
@@ -138,7 +138,7 @@ export default function GraphCanvas({
             { key: '원인-결과', label: '인과', color: '#F59E0B' },
           ] as { key: GraphRelationFilter; label: string; color: string }[]).map(({ key, label, color }) => (
             <button key={key} onClick={() => onRelFilterChange(key)}
-              className={`px-2 py-1 rounded-lg text-[9.5px] font-semibold transition-all ${relFilter === key ? 'text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+              className={`px-2 py-1 rounded-lg text-[11.5px] font-semibold transition-all ${relFilter === key ? 'text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
               style={relFilter === key ? { backgroundColor: color } : { color }}
             >{label}</button>
           ))}
@@ -223,7 +223,7 @@ export default function GraphCanvas({
               const labelX = 0.25 * x1 + 0.5 * cpX + 0.25 * x2
               const labelY = 0.25 * y1 + 0.5 * cpY + 0.25 * y2
               const labelText = edgeRelationLabel(edge)
-              const charW = 6.6
+              const charW = 7.9
 
               return (
                 <g key={edge.id}>
@@ -236,8 +236,8 @@ export default function GraphCanvas({
                   />
                   {isCenterEdge && labelText && (
                     <g transform={`translate(${labelX},${labelY})`}>
-                      <rect x={-labelText.length * charW / 2 - 6} y={-9} width={labelText.length * charW + 12} height={17} rx={8} fill="rgba(255,255,255,0.9)" stroke="rgba(226,232,240,0.9)" />
-                      <text textAnchor="middle" dy={4} fontSize={10} fontWeight="600" fill={color} style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'system-ui, sans-serif' }}>
+                      <rect x={-labelText.length * charW / 2 - 6} y={-10} width={labelText.length * charW + 12} height={20} rx={10} fill="rgba(255,255,255,0.9)" stroke="rgba(226,232,240,0.9)" />
+                      <text textAnchor="middle" dy={4} fontSize={12} fontWeight="600" fill={color} style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'system-ui, sans-serif' }}>
                         {labelText}
                       </text>
                     </g>
@@ -288,16 +288,16 @@ export default function GraphCanvas({
                   <circle r={isCenter ? r + 1 : r} fill={color} fillOpacity={isCenter ? 0.96 : 0.88} />
                   {(() => {
                     const label = node.label
-                    const baseFontSize = isCenter ? 13 : 11
-                    const fontSize = label.length > 10 ? Math.max(8, baseFontSize - (label.length - 10) * 0.6) : baseFontSize
-                    const yPos = isCenter ? -12 : -8
+                    const baseFontSize = isCenter ? 15 : 13
+                    const fontSize = label.length > 10 ? Math.max(10, baseFontSize - (label.length - 10) * 0.6) : baseFontSize
+                    const yPos = isCenter ? -13 : -9
                     return <text y={yPos} textAnchor="middle" fontSize={fontSize} fontWeight="700" fill="white" style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
                   })()}
-                  <text y={isCenter ? 5 : 6} textAnchor="middle" fontSize={isCenter ? 11 : 9} fontWeight="500" fill="rgba(255,255,255,0.85)" style={{ userSelect: 'none', pointerEvents: 'none' }}>({sName})</text>
+                  <text y={isCenter ? 6 : 7} textAnchor="middle" fontSize={isCenter ? 13 : 11} fontWeight="500" fill="rgba(255,255,255,0.85)" style={{ userSelect: 'none', pointerEvents: 'none' }}>({sName})</text>
                   {pin && (
                     <g transform={`translate(0, ${r + 10})`}>
-                      <rect x={-13} y={-6} width={26} height={12} rx={6} fill="white" stroke="#CBD5E1" />
-                      <text textAnchor="middle" dy={4} fontSize={8} fontWeight="600" fill="#64748B" style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                      <rect x={-16} y={-8} width={32} height={16} rx={8} fill="white" stroke="#CBD5E1" />
+                      <text textAnchor="middle" dy={4} fontSize={10} fontWeight="600" fill="#64748B" style={{ userSelect: 'none', pointerEvents: 'none' }}>
                         시트
                       </text>
                     </g>
@@ -307,11 +307,11 @@ export default function GraphCanvas({
                       {(() => {
                         const recommender = recommendedCenterIds.get(node.id) ?? '팀원'
                         const label = `${recommender.slice(0, 6)} 추천`
-                        const w = label.length * 5.5 + 10
+                        const w = label.length * 6.9 + 12
                         return (
                           <>
-                            <rect x={-w / 2} y={-8} width={w} height={16} rx={8} fill="#F59E0B" fillOpacity={0.95} />
-                            <text textAnchor="middle" dy={5} fontSize={8} fontWeight="700" fill="white" style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
+                            <rect x={-w / 2} y={-10} width={w} height={20} rx={10} fill="#F59E0B" fillOpacity={0.95} />
+                            <text textAnchor="middle" dy={4} fontSize={10} fontWeight="700" fill="white" style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
                           </>
                         )
                       })()}
@@ -328,15 +328,15 @@ export default function GraphCanvas({
       <div className="absolute bottom-16 right-4 z-20 flex flex-col items-center gap-1 pointer-events-auto">
         <button
           onClick={() => setViewTransform(vt => { const s = Math.min(4, vt.scale * 1.2); return { x: svgWidth / 2 - (svgWidth / 2 - vt.x) * s / vt.scale, y: svgHeight / 2 - (svgHeight / 2 - vt.y) * s / vt.scale, scale: s } })}
-          className="w-8 h-8 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="확대"
+          className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="확대"
         >+</button>
         <button
           onClick={() => setViewTransform({ x: 0, y: 0, scale: 1 })}
-          className="w-8 h-8 rounded-full bg-white border border-gray-200 shadow text-gray-500 hover:bg-gray-50 flex items-center justify-center text-[10px] font-bold leading-none" title="화면 맞춤"
+          className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-500 hover:bg-gray-50 flex items-center justify-center text-[12px] font-bold leading-none" title="화면 맞춤"
         >⊙</button>
         <button
           onClick={() => setViewTransform(vt => { const s = Math.max(0.25, vt.scale * 0.83); return { x: svgWidth / 2 - (svgWidth / 2 - vt.x) * s / vt.scale, y: svgHeight / 2 - (svgHeight / 2 - vt.y) * s / vt.scale, scale: s } })}
-          className="w-8 h-8 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="축소"
+          className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="축소"
         >−</button>
       </div>
     </>
@@ -428,26 +428,26 @@ function AgentHintPanel({
           className="w-full text-left bg-white/90 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-200 px-4 py-3 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold text-gray-700">연결 구조</span>
-            <span className="text-[10px] font-semibold text-gray-400">자세히 보기</span>
+            <span className="text-[13px] font-bold text-gray-700">연결 구조</span>
+            <span className="text-[12px] font-semibold text-gray-400">자세히 보기</span>
           </div>
           <div className="mt-2 grid grid-cols-3 gap-1.5">
             <div className="rounded-xl bg-gray-50 px-2 py-1.5">
-              <p className="text-[9px] text-gray-400">중심</p>
-              <p className="mt-0.5 font-mono text-[10px] font-bold truncate" style={{ color: subjectColor(centerNode.subject_id) }}>{centerNode.label}</p>
+              <p className="text-[11px] text-gray-400">중심</p>
+              <p className="mt-0.5 font-mono text-[12px] font-bold truncate" style={{ color: subjectColor(centerNode.subject_id) }}>{centerNode.label}</p>
             </div>
             <div className="rounded-xl bg-gray-50 px-2 py-1.5">
-              <p className="text-[9px] text-gray-400">연결</p>
-              <p className="mt-0.5 text-[11px] font-bold text-gray-700">{connectedStds.length}개</p>
+              <p className="text-[11px] text-gray-400">연결</p>
+              <p className="mt-0.5 text-[13px] font-bold text-gray-700">{connectedStds.length}개</p>
             </div>
             <div className="rounded-xl bg-gray-50 px-2 py-1.5">
-              <p className="text-[9px] text-gray-400">분석</p>
-              <p className="mt-0.5 text-[11px] font-bold text-gray-700">{analyzedConnectedCount}개</p>
+              <p className="text-[11px] text-gray-400">분석</p>
+              <p className="mt-0.5 text-[13px] font-bold text-gray-700">{analyzedConnectedCount}개</p>
             </div>
           </div>
           <div className="mt-2 flex items-center gap-1.5">
             {topRelLabel && <span className="h-2 w-2 rounded-full" style={{ background: topRelColor }} />}
-            <p className="min-w-0 flex-1 truncate text-[10px] text-gray-500">{topRelLabel || '관계'} 중심으로 수업 예시를 만들 수 있습니다.</p>
+            <p className="min-w-0 flex-1 truncate text-[12px] text-gray-500">{topRelLabel || '관계'} 중심으로 수업 예시를 만들 수 있습니다.</p>
           </div>
         </button>
       </div>
@@ -467,10 +467,10 @@ function AgentHintPanel({
             <div className="px-6 py-4 bg-gradient-to-r from-[#7B1FA2] to-[#9C27B0] flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-sm font-bold text-white">{analyzedConnectedCount > 0 ? 'Agent 추천 상세' : '연결 제안 상세'}</span>
-                  {topRelLabel && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">{topRelLabel}</span>}
+                  <span className="text-base font-bold text-white">{analyzedConnectedCount > 0 ? 'Agent 추천 상세' : '연결 제안 상세'}</span>
+                  {topRelLabel && <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">{topRelLabel}</span>}
                 </div>
-                <div className="flex items-center gap-1.5 text-white/70 text-xs">
+                <div className="flex items-center gap-1.5 text-white/70 text-sm">
                   <span>중심:</span>
                   <span className="font-mono font-bold text-white">{centerNode.label}</span>
                   <span>({subjectName(centerNode.subject_id)})</span>
@@ -484,30 +484,30 @@ function AgentHintPanel({
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
               {/* 전체 수업 제안 */}
               <div className="rounded-xl bg-[#F3E5F5]/60 border border-[#CE93D8]/50 px-4 py-3">
-                <p className="text-xs font-bold text-[#7B1FA2] mb-1.5">{bestClaudeNote?.source === 'claude' ? 'Agent 수업 제안' : '융합 수업 방향'}</p>
-                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{hint}</p>
+                <p className="text-sm font-bold text-[#7B1FA2] mb-1.5">{bestClaudeNote?.source === 'claude' ? 'Agent 수업 제안' : '융합 수업 방향'}</p>
+                <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{hint}</p>
               </div>
 
               {/* 개별 연결 카드 */}
               {stdDetails.map(({ node, cr, crColor, explanation, ideas, teachingNote, relationStatus }) => (
                 <div key={node.id} className="rounded-xl border p-4" style={{ borderColor: subjectColor(node.subject_id) + '40', background: subjectColor(node.subject_id) + '06' }}>
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <span className="font-mono font-bold text-sm" style={{ color: subjectColor(node.subject_id) }}>{node.label}</span>
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: subjectColor(node.subject_id) + '20', color: subjectColor(node.subject_id) }}>{subjectName(node.subject_id)}</span>
-                    {cr && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ color: crColor, background: (crColor ?? '#999') + '18' }}>{cr.relationType}</span>}
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${relationStatus.className}`}>{relationStatus.label}</span>
-                    {node.similarityScore !== undefined && <span className="text-[10px] text-gray-400 ml-auto">{Math.round(node.similarityScore * 100)}%</span>}
+                    <span className="font-mono font-bold text-base" style={{ color: subjectColor(node.subject_id) }}>{node.label}</span>
+                    <span className="text-[12px] font-semibold px-1.5 py-0.5 rounded" style={{ background: subjectColor(node.subject_id) + '20', color: subjectColor(node.subject_id) }}>{subjectName(node.subject_id)}</span>
+                    {cr && <span className="text-[12px] font-semibold px-1.5 py-0.5 rounded-full" style={{ color: crColor, background: (crColor ?? '#999') + '18' }}>{cr.relationType}</span>}
+                    <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded-full ${relationStatus.className}`}>{relationStatus.label}</span>
+                    {node.similarityScore !== undefined && <span className="text-[12px] text-gray-400 ml-auto">{Math.round(node.similarityScore * 100)}%</span>}
                   </div>
-                  <p className="text-xs text-gray-600 leading-relaxed mb-3">{node.text}</p>
+                  <p className="text-sm text-gray-600 leading-relaxed mb-3">{node.text}</p>
 
                   {/* 수업 아이디어 */}
                   {ideas && ideas.length > 0 && (
                     <div className="mb-3">
-                      <p className="text-[10px] font-semibold text-[#7B1FA2] mb-1.5 uppercase tracking-wide">수업 아이디어</p>
+                      <p className="text-[12px] font-semibold text-[#7B1FA2] mb-1.5 uppercase tracking-wide">수업 아이디어</p>
                       <ul className="space-y-1.5 list-none">
                         {ideas.map((idea, i) => (
-                          <li key={i} className="flex gap-2 text-sm">
-                            <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: i === 0 ? '#9E9E9E' : '#7B1FA2' }}>
+                          <li key={i} className="flex gap-2 text-base">
+                            <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[12px] font-bold text-white" style={{ background: i === 0 ? '#9E9E9E' : '#7B1FA2' }}>
                               {i === 0 ? '보' : '창'}
                             </span>
                             <span className="flex-1 text-gray-700 leading-relaxed">{idea}</span>
@@ -520,15 +520,15 @@ function AgentHintPanel({
                   {/* 수업 제안 */}
                   {teachingNote && (
                     <div className="border-t pt-2" style={{ borderColor: subjectColor(node.subject_id) + '30' }}>
-                      <p className="text-[10px] font-semibold text-[#7B1FA2] mb-1 uppercase tracking-wide">수업 제안 · 융합 구조</p>
-                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{teachingNote}</p>
+                      <p className="text-[12px] font-semibold text-[#7B1FA2] mb-1 uppercase tracking-wide">수업 제안 · 융합 구조</p>
+                      <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{teachingNote}</p>
                     </div>
                   )}
 
                   {/* 관계 근거 */}
                   {explanation && (
                     <div className="mt-2 pt-1.5 border-t border-gray-100">
-                      <p className="text-[9px] text-gray-400 leading-relaxed">{explanation}</p>
+                      <p className="text-[11px] text-gray-400 leading-relaxed">{explanation}</p>
                     </div>
                   )}
                 </div>

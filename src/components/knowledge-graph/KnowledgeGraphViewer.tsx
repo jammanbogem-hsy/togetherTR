@@ -565,7 +565,7 @@ export default function KnowledgeGraphViewer({
   // chatMentionedCodes, savedData, rawNodes 중 하나라도 있으면 그래프 표시
   const hasContent = chatMentionedCodes.length > 0 || !!savedData || rawNodes.length > 0 || keyword.trim().length > 0
   if (!hasContent) return (
-    <div className="flex items-center justify-center h-full text-xs text-gray-400">
+    <div className="flex items-center justify-center h-full text-sm text-gray-400">
       대화에서 주제 키워드가 감지되면 그래프가 표시됩니다
     </div>
   )
@@ -663,7 +663,7 @@ export default function KnowledgeGraphViewer({
             <SaveButtons onSaveGraph={onSaveGraph} buildData={buildSaveData} />
           )}
           {onClose && (
-            <button onClick={onClose} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 text-[12px] font-semibold shadow-md hover:bg-gray-50 transition-colors">나가기</button>
+            <button onClick={onClose} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 text-[14px] font-semibold shadow-md hover:bg-gray-50 transition-colors">나가기</button>
           )}
         </div>
 
@@ -671,9 +671,9 @@ export default function KnowledgeGraphViewer({
         {showAnalysisBanner && centerNodeId && !claudeLoading && isLeader && (
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
             <div className="flex items-center gap-2.5 bg-white/95 border border-gray-200 rounded-2xl shadow-lg px-4 py-2.5">
-              <span className="text-gray-700 font-semibold text-[12px] whitespace-nowrap">연결을 바탕으로 수업 예시를 만들까요?</span>
-              <button onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }} className="px-3 py-1 bg-gray-900 hover:bg-gray-800 text-white text-[11px] font-bold rounded-lg transition-colors whitespace-nowrap">생성</button>
-              <button onClick={() => setShowAnalysisBanner(false)} className="px-2 py-1 text-gray-400 hover:text-gray-600 text-[11px] font-medium transition-colors whitespace-nowrap">나중에</button>
+              <span className="text-gray-700 font-semibold text-[14px] whitespace-nowrap">연결을 바탕으로 수업 예시를 만들까요?</span>
+              <button onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }} className="px-3 py-1 bg-gray-900 hover:bg-gray-800 text-white text-[13px] font-bold rounded-lg transition-colors whitespace-nowrap">생성</button>
+              <button onClick={() => setShowAnalysisBanner(false)} className="px-2 py-1 text-gray-400 hover:text-gray-600 text-[13px] font-medium transition-colors whitespace-nowrap">나중에</button>
             </div>
           </div>
         )}
@@ -681,7 +681,7 @@ export default function KnowledgeGraphViewer({
         {/* 재분석 버튼 (노드 추가/삭제 후) — 팀장만 */}
         {nodesChangedAfterAnalysis && centerNodeId && !claudeLoading && !showAnalysisBanner && isLeader && (
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-            <button onClick={() => runAnalysis(centerNodeId)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-2xl shadow-lg text-gray-700 text-[11px] font-semibold hover:bg-gray-50 transition-colors whitespace-nowrap">
+            <button onClick={() => runAnalysis(centerNodeId)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-2xl shadow-lg text-gray-700 text-[13px] font-semibold hover:bg-gray-50 transition-colors whitespace-nowrap">
               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>
@@ -697,18 +697,18 @@ export default function KnowledgeGraphViewer({
             <div className="flex items-center gap-3 bg-white rounded-2xl shadow-xl border border-gray-200 px-6 py-4">
               <div className="w-8 h-8 rounded-full border-3 border-gray-200 border-t-gray-900 animate-spin shrink-0" />
               <div>
-                <p className="text-[12px] font-bold text-gray-800">관계 분석 중…</p>
-                <p className="text-[10px] text-gray-400">성취기준 간 교육적 관계를 분류하고 있습니다</p>
+                <p className="text-[14px] font-bold text-gray-800">관계 분석 중…</p>
+                <p className="text-[12px] text-gray-400">성취기준 간 교육적 관계를 분류하고 있습니다</p>
               </div>
             </div>
           </div>
         )}
 
         {/* 로딩/에러/빈 상태 */}
-        {loading && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">&ldquo;{keyword.slice(0, 20)}&rdquo; 검색 중…</span></div>}
-        {!loading && error && <div className="absolute inset-0 flex items-center justify-center text-xs text-red-400 px-3 text-center">{error}</div>}
-        {!loading && !error && rawNodes.length === 0 && <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-gray-400"><span>&ldquo;{keyword.slice(0, 24)}&rdquo;와 관련된 성취기준 없음</span></div>}
-        {!loading && !error && rawNodes.length > 0 && visibleNodes.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">표시할 노드가 없습니다</div>}
+        {loading && <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400"><span className="animate-pulse">&ldquo;{keyword.slice(0, 20)}&rdquo; 검색 중…</span></div>}
+        {!loading && error && <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400 px-3 text-center">{error}</div>}
+        {!loading && !error && rawNodes.length === 0 && <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm text-gray-400"><span>&ldquo;{keyword.slice(0, 24)}&rdquo;와 관련된 성취기준 없음</span></div>}
+        {!loading && !error && rawNodes.length > 0 && visibleNodes.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">표시할 노드가 없습니다</div>}
 
         {/* SVG 그래프 캔버스 */}
         <GraphCanvas
@@ -778,7 +778,7 @@ export default function KnowledgeGraphViewer({
 
         {/* 하단 안내 */}
         {!centerNodeId && !loading && visibleNodes.length > 0 && (
-          <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-100 px-3 py-1.5 text-[10px] text-gray-500 pointer-events-none">
+          <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-100 px-3 py-1.5 text-[12px] text-gray-500 pointer-events-none">
             노드 우클릭 → 중심 성취기준 설정
           </div>
         )}

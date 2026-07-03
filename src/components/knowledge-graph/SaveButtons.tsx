@@ -44,8 +44,8 @@ export default function SaveButtons({ onSaveGraph, buildData }: SaveButtonsProps
           <div className="flex items-start gap-2.5">
             <span className="mt-0.5 h-2.5 w-2.5 rounded-full bg-[#7B1FA2]" />
             <div className="min-w-0">
-              <p className="text-[12px] font-bold leading-snug">이 버튼을 누르면 산출물 저장을 할 수 있어요</p>
-              <p className="mt-1 text-[11px] leading-snug text-gray-500">그래프와 수업 예시가 분석시트에 반영됩니다.</p>
+              <p className="text-[14px] font-bold leading-snug">이 버튼을 누르면 산출물 저장을 할 수 있어요</p>
+              <p className="mt-1 text-[13px] leading-snug text-gray-500">그래프와 수업 예시가 분석시트에 반영됩니다.</p>
             </div>
           </div>
           <span className="absolute -bottom-2 right-9 h-4 w-4 rotate-45 border-b border-r border-gray-200 bg-white" />
@@ -53,7 +53,7 @@ export default function SaveButtons({ onSaveGraph, buildData }: SaveButtonsProps
         <button
           onClick={handleSave}
           disabled={saveState === 'saving'}
-          className={`relative flex items-center gap-2 px-5 py-3 rounded-2xl text-white text-[13px] font-bold transition-colors ${saveClass}`}
+          className={`relative flex items-center gap-2 px-5 py-3 rounded-2xl text-white text-[15px] font-bold transition-colors ${saveClass}`}
         >
           {saveState === 'saving' && (
             <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">

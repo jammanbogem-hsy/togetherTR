@@ -57,11 +57,11 @@ export default function NodePopup({
           <div>
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="font-mono font-bold text-xl text-white">{node.label}</span>
-              <span className="text-sm font-semibold text-white/80 bg-white/20 px-2 py-0.5 rounded-full">
+              <span className="text-base font-semibold text-white/80 bg-white/20 px-2 py-0.5 rounded-full">
                 {subjectName(node.subject_id)}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-white/70 text-xs">
+            <div className="flex items-center gap-2 text-white/70 text-sm">
               {node.grade_band && <span>{node.grade_band}학년군</span>}
               {node.area && <span>· {node.area}</span>}
             </div>
@@ -81,12 +81,12 @@ export default function NodePopup({
             if (cleaned.length === 0) return null
             return (
               <div className="mb-5">
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">핵심 키워드</div>
+                <div className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">핵심 키워드</div>
                 <div className="flex flex-wrap gap-1.5">
                   {cleaned.map(kw => (
                     <span
                       key={kw}
-                      className="px-2.5 py-1 rounded-full text-xs font-semibold"
+                      className="px-2.5 py-1 rounded-full text-sm font-semibold"
                       style={{
                         background: subjectColor(node.subject_id) + '20',
                         color: subjectColor(node.subject_id),
@@ -104,39 +104,39 @@ export default function NodePopup({
           {/* 교육과정 시트 맥락 */}
           {curriculumSheetContext && (curriculumSheetContext.coreIdea || curriculumSheetContext.knowledge || curriculumSheetContext.processFunction || curriculumSheetContext.agentLessonExample || curriculumSheetContext.description) && (
             <div className="mb-5 rounded-xl p-4" style={{ background: '#F3E5F5', border: '1px solid #CE93D8' }}>
-              <div className="text-xs font-semibold text-[#7B1FA2] uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                <span className="w-4 h-4 rounded-full bg-[#7B1FA2] text-white text-[8px] flex items-center justify-center font-bold">S</span>
+              <div className="text-sm font-semibold text-[#7B1FA2] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-[#7B1FA2] text-white text-[10px] flex items-center justify-center font-bold">S</span>
                 분석 시트 맥락
               </div>
               <div className="space-y-2.5">
                 {curriculumSheetContext.coreIdea && (
                   <div>
-                    <span className="text-[10px] font-bold text-[#7B1FA2] uppercase">핵심아이디어</span>
-                    <p className="text-sm text-[#4A148C] leading-relaxed mt-0.5">{curriculumSheetContext.coreIdea}</p>
+                    <span className="text-[12px] font-bold text-[#7B1FA2] uppercase">핵심아이디어</span>
+                    <p className="text-base text-[#4A148C] leading-relaxed mt-0.5">{curriculumSheetContext.coreIdea}</p>
                   </div>
                 )}
                 {curriculumSheetContext.knowledge && (
                   <div>
-                    <span className="text-[10px] font-bold text-[#0D47A1] uppercase">지식·이해</span>
-                    <p className="text-sm text-[#1A237E] leading-relaxed mt-0.5">{curriculumSheetContext.knowledge}</p>
+                    <span className="text-[12px] font-bold text-[#0D47A1] uppercase">지식·이해</span>
+                    <p className="text-base text-[#1A237E] leading-relaxed mt-0.5">{curriculumSheetContext.knowledge}</p>
                   </div>
                 )}
                 {curriculumSheetContext.processFunction && (
                   <div>
-                    <span className="text-[10px] font-bold text-[#137333] uppercase">과정·기능</span>
-                    <p className="text-sm text-[#1B5E20] leading-relaxed mt-0.5">{curriculumSheetContext.processFunction}</p>
+                    <span className="text-[12px] font-bold text-[#137333] uppercase">과정·기능</span>
+                    <p className="text-base text-[#1B5E20] leading-relaxed mt-0.5">{curriculumSheetContext.processFunction}</p>
                   </div>
                 )}
                 {curriculumSheetContext.agentLessonExample && (
                   <div>
-                    <span className="text-[10px] font-bold text-[#7B1FA2] uppercase">Agent 추천 수업 예시</span>
-                    <p className="text-sm text-[#4A148C] leading-relaxed mt-0.5 whitespace-pre-line">{curriculumSheetContext.agentLessonExample}</p>
+                    <span className="text-[12px] font-bold text-[#7B1FA2] uppercase">Agent 추천 수업 예시</span>
+                    <p className="text-base text-[#4A148C] leading-relaxed mt-0.5 whitespace-pre-line">{curriculumSheetContext.agentLessonExample}</p>
                   </div>
                 )}
                 {curriculumSheetContext.description && (
                   <div>
-                    <span className="text-[10px] font-bold text-[#5F6368] uppercase">수업내용 설명</span>
-                    <p className="text-sm text-[#202124] leading-relaxed mt-0.5">{curriculumSheetContext.description}</p>
+                    <span className="text-[12px] font-bold text-[#5F6368] uppercase">수업내용 설명</span>
+                    <p className="text-base text-[#202124] leading-relaxed mt-0.5">{curriculumSheetContext.description}</p>
                   </div>
                 )}
               </div>
@@ -149,7 +149,7 @@ export default function NodePopup({
             if (related.length === 0) return null
             return (
               <div className="mb-5">
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">교과 간 연결 성취기준</div>
+                <div className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">교과 간 연결 성취기준</div>
                 <div className="space-y-2">
                   {related.slice(0, 6).map(e => {
                     const otherId = e.source === node.id ? e.target : e.source
@@ -163,17 +163,17 @@ export default function NodePopup({
                         style={{ borderColor: subjectColor(other.subject_id) + '40', background: subjectColor(other.subject_id) + '08' }}
                       >
                         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                          <span className="font-mono font-bold text-sm" style={{ color: subjectColor(other.subject_id) }}>{other.label}</span>
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: subjectColor(other.subject_id) + '20', color: subjectColor(other.subject_id) }}>
+                          <span className="font-mono font-bold text-base" style={{ color: subjectColor(other.subject_id) }}>{other.label}</span>
+                          <span className="text-[12px] font-semibold px-1.5 py-0.5 rounded" style={{ background: subjectColor(other.subject_id) + '20', color: subjectColor(other.subject_id) }}>
                             {subjectName(other.subject_id)}
                           </span>
                           {label && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: edgeColor(e.method) + '20', color: edgeColor(e.method), border: `1px solid ${edgeColor(e.method)}50` }}>
+                            <span className="text-[12px] px-2 py-0.5 rounded-full font-semibold" style={{ background: edgeColor(e.method) + '20', color: edgeColor(e.method), border: `1px solid ${edgeColor(e.method)}50` }}>
                               {label}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-600 leading-relaxed">{other.text ?? ''}</p>
+                        <p className="text-sm text-gray-600 leading-relaxed">{other.text ?? ''}</p>
                       </div>
                     )
                   })}
@@ -205,17 +205,17 @@ export default function NodePopup({
             return (
               <div className="rounded-xl bg-[#F3E5F5]/60 border border-[#CE93D8]/50 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className="text-xs font-bold text-[#7B1FA2]">수업 아이디어</span>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${relationStatus.className}`}>{relationStatus.label}</span>
+                  <span className="text-sm font-bold text-[#7B1FA2]">수업 아이디어</span>
+                  <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full ${relationStatus.className}`}>{relationStatus.label}</span>
                   {relationType && (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: RELATION_COLORS[relationType] ?? '#7B1FA2', background: (RELATION_COLORS[relationType] ?? '#7B1FA2') + '18' }}>
+                    <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full" style={{ color: RELATION_COLORS[relationType] ?? '#7B1FA2', background: (RELATION_COLORS[relationType] ?? '#7B1FA2') + '18' }}>
                       {relationType}
                     </span>
                   )}
                   {onReanalyze && !loading && (
                     <button
                       onClick={() => onReanalyze(node.id, centerNodeId ?? node.id)}
-                      className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white text-[#7B1FA2] border border-[#CE93D8] hover:bg-[#F3E5F5] transition"
+                      className="ml-auto text-[12px] font-semibold px-2 py-0.5 rounded-full bg-white text-[#7B1FA2] border border-[#CE93D8] hover:bg-[#F3E5F5] transition"
                       title="Claude로 분석하기"
                     >
                       ↻ {centerNodeId ? '다시 분석' : 'AI 분석'}
@@ -223,7 +223,7 @@ export default function NodePopup({
                   )}
                 </div>
                 {loading ? (
-                  <div className="flex items-center gap-2 text-[12px] text-[#7B1FA2] animate-pulse">
+                  <div className="flex items-center gap-2 text-[14px] text-[#7B1FA2] animate-pulse">
                     <span className="w-3.5 h-3.5 rounded-full border-2 border-[#CE93D8] border-t-[#7B1FA2] animate-spin inline-block" />
                     AI가 두 성취기준의 교차점을 분석 중…
                   </div>
@@ -231,10 +231,10 @@ export default function NodePopup({
                   <>
                     {/* 수업 아이디어 — 콘텐츠 접근 (보편+창의) */}
                     {ideas ? (
-                      <ul className="text-sm text-gray-800 leading-relaxed mb-3 space-y-1.5 list-none">
+                      <ul className="text-base text-gray-800 leading-relaxed mb-3 space-y-1.5 list-none">
                         {ideas.map((idea, i) => (
                           <li key={i} className="flex gap-2">
-                            <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: i === 0 ? '#9E9E9E' : '#7B1FA2' }}>
+                            <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[12px] font-bold text-white" style={{ background: i === 0 ? '#9E9E9E' : '#7B1FA2' }}>
                               {i === 0 ? '보' : '창'}
                             </span>
                             <span className="flex-1">{idea}</span>
@@ -242,7 +242,7 @@ export default function NodePopup({
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-sm text-gray-500 italic mb-3">
+                      <p className="text-base text-gray-500 italic mb-3">
                         AI 분석이 아직 없어요. ↻ 다시 분석을 눌러 구체적인 아이디어를 받아보세요.
                       </p>
                     )}
@@ -250,16 +250,16 @@ export default function NodePopup({
                     {/* 수업 제안 — 융합 수업 구조 */}
                     {teachingNote && (
                       <div className="border-t border-[#CE93D8]/30 pt-2.5 mb-2">
-                        <p className="text-xs font-semibold text-[#7B1FA2] mb-1">수업 제안 <span className="font-normal text-gray-400">· 융합 구조</span></p>
-                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{teachingNote}</p>
+                        <p className="text-sm font-semibold text-[#7B1FA2] mb-1">수업 제안 <span className="font-normal text-gray-400">· 융합 구조</span></p>
+                        <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{teachingNote}</p>
                       </div>
                     )}
 
                     {/* 관계 근거 — 작게 */}
                     {relationRationale && (
                       <div className="border-t border-[#CE93D8]/30 pt-2">
-                        <p className="text-[10px] font-semibold text-gray-400 mb-0.5 uppercase tracking-wide">관계 근거</p>
-                        <p className="text-xs text-gray-500 leading-relaxed">{relationRationale}</p>
+                        <p className="text-[12px] font-semibold text-gray-400 mb-0.5 uppercase tracking-wide">관계 근거</p>
+                        <p className="text-sm text-gray-500 leading-relaxed">{relationRationale}</p>
                       </div>
                     )}
                   </>
