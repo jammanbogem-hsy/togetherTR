@@ -33,7 +33,7 @@ import { TopicSelectionWorkspaceModal } from '@/components/artifacts/TopicSelect
 import { LearningActivityWorkspaceModal } from '@/components/artifacts/LearningActivityWorkspaceModal'
 import { ScaffoldingWorkspaceModal } from '@/components/artifacts/ScaffoldingWorkspaceModal'
 import type { T11Structured, T12Structured, T21Structured, T22Structured, T23Structured, A12Structured, A22Structured, Ds11Structured, Ds12Structured, Ds13Structured, Ds21Structured, Ds22Structured } from '@/lib/artifacts/schemas'
-import { sanitizeChatForExtraction, stripNonContentLines } from '@/lib/artifacts/schemas'
+import { sanitizeChatForExtraction, stripNonContentLines, sanitizeArtifactSections, SANITIZE_EXEMPT_KEYS } from '@/lib/artifacts/schemas'
 import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -102,6 +102,9 @@ interface ParsedOption { label: string; content: string }
 interface ParsedOptions { pre: string; options: ParsedOption[]; post: string }
 
 function parseOptions(text: string): ParsedOptions | null {
+  // ⚠️ schemas.ts의 CHOICE_LABEL_RE(산출물 오염 필터)와 짝 규칙:
+  // 여기서 선택지 카드로 렌더링되는 라벨 패턴은 반드시 CHOICE_LABEL_RE가 걸러낼 수 있어야 한다.
+  // 라벨 문법을 넓힐 때는 CHOICE_LABEL_RE도 함께 넓힐 것.
   // **A안:** "..." 또는 A안: "..." 형식 감지 (볼드 유무 모두 지원)
   const regex = /(?:\*\*([A-Za-z0-9]+안):?\*\*|^([A-Za-z0-9]+안):)\s*:?\s*"([^"]+)"/gm
   const matches = [...text.matchAll(regex)]
@@ -752,6 +755,8 @@ function enrichArtifactSections(
 ): Record<string, string> {
   const enriched = { ...sections }
   for (const [key, value] of Object.entries(enriched)) {
+    // "다음 주기 선택" 등 짧은 값이 정상인 섹션은 placeholder 치환 대상이 아님
+    if (SANITIZE_EXEMPT_KEYS.includes(key.trim())) continue
     if (isPlaceholderValue(value, recentMessages)) {
       const realContent = extractSubstantiveContent(recentMessages)
       if (realContent) {
@@ -1422,7 +1427,10 @@ export function ChatPanel() {
         ? [...messages, { role: 'assistant' as const, content: latestText }]
         : messages,
     )
-    let sections = enrichArtifactSections(rawSections, contextMsgs)
+    // 신호 값 자체 정화 — builder가 없는 Ds/DI/E 활동은 이 값이 그대로 저장되므로
+    // 선택지·절차·상태 라인을 여기서 제거해야 한다 (전 경로 공통 단일 관문).
+    const cleanedSections = sanitizeArtifactSections(rawSections)
+    let sections = enrichArtifactSections(cleanedSections, contextMsgs)
     if (Object.keys(sections).length === 0) return
 
     // T-1-1: 구조화된 산출물로 변환 — AI 자유 형식 대신 스키마가 구조를 강제
@@ -2153,7 +2161,9 @@ export function ChatPanel() {
     let currentStatus = fsArtifact?.status ?? localArtifact?.status
 
     if (pendingForCurrent) {
-      sourceContent = { ...sourceContent, ...pendingForCurrent.sections }
+      // "확정 후 다음 단계로" 경로는 저장 카드 수락 없이 pending 섹션을 곧바로 confirmed까지
+      // 밀어넣으므로, 선택지·절차 문구 정화를 반드시 거친다 (verbatim 병합 금지).
+      sourceContent = { ...sourceContent, ...sanitizeArtifactSections(pendingForCurrent.sections) }
       sourceVersion = (fsArtifact?.version ?? localArtifact?.currentVersion ?? 0) + 1
       currentStatus = 'in_review'
 
@@ -2291,36 +2301,41 @@ export function ChatPanel() {
     const existing = currentArtifact?.activityCode === targetActivity ? currentArtifact : null
     const firestoreContent = (project?.artifacts?.[targetActivity]?.content ?? {}) as Record<string, unknown>
     const baseContent = existing?.aiDraft ?? firestoreContent
-    // 플레이스홀더 보강
-    let enrichedSections: Record<string, string> = enrichArtifactSections(pendingArtifactSave.sections, messages)
+    // 선택지·절차 문구 정화 → 플레이스홀더 보강 — 신호 경로(applyArtifactUpdates)와 동일한 보호.
+    // build*Structured의 chat-fallback 추출기도 정화된 ctx를 쓰도록 messages 원본 대신 ctxMsgs 전달.
+    const ctxMsgs = sanitizeChatForExtraction(messages)
+    let enrichedSections: Record<string, string> = enrichArtifactSections(
+      sanitizeArtifactSections(pendingArtifactSave.sections),
+      ctxMsgs,
+    )
     // 구조화된 산출물로 변환
     if (targetActivity === 'T-1-1') {
       const { buildT11Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildT11Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildT11Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-1-2') {
       const { buildT12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildT12Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildT12Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-2-1') {
       const { buildT21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildT21Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildT21Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-2-2') {
       const { buildT22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildT22Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildT22Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-2-3') {
       const { buildT23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildT23Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildT23Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-1-2') {
       const { buildA12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildA12Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildA12Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-2-1') {
       const { buildA21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildA21Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildA21Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-2-2') {
       const { buildA22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildA22Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildA22Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-2-3') {
       const { buildA23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
-      enrichedSections = buildA23Structured(enrichedSections, messages) as unknown as Record<string, string>
+      enrichedSections = buildA23Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     }
     const merged = { ...baseContent, ...enrichedSections }
     const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[targetActivity]?.version ?? 0)) + 1

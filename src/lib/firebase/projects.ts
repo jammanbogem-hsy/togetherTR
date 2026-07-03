@@ -10,6 +10,7 @@ import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/
 import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
 import { extractImprovementText, parseNextCycleChoice } from '@/lib/activity/completion'
+import { sanitizeArtifactSections } from '@/lib/artifacts/schemas'
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -423,9 +424,13 @@ export async function setProjectArtifact(
   const shouldAttachSchema =
     data._schemaVersion === undefined &&
     (ACTIVITY_META[activityCode]?.requiredSections?.length ?? 0) > 0
+  // 심층 방어 — 어떤 호출부가 정화를 누락해도 A안/B안 선택지·절차 문구가 저장되지 않도록
+  // 쓰기 직전 top-level string 값만 정화한다 (구조화 산출물의 배열·객체 필드는 통과).
+  // 정화 결과가 빈 값이어도 키는 유지해 구조화 스키마의 필드 형태를 보존한다.
+  const cleanedContent = sanitizeArtifactSections(data.content, { dropEmptied: false })
   const normalized = shouldAttachSchema
-    ? { ...data, _schemaVersion: 'v2-sections' as const }
-    : data
+    ? { ...data, content: cleanedContent, _schemaVersion: 'v2-sections' as const }
+    : { ...data, content: cleanedContent }
 
   // 이력 적재 — 새 content 덮어쓰기 전 현재 스냅샷을 versions에 push (최대 20개 유지).
   // race-safety는 lag fix 라운드에서 trade-off 수용. 트랜잭션 없이 read-then-write.
@@ -2929,8 +2934,11 @@ export async function proposeArtifactToHost(
   proposedBy: string,
   proposedByName: string
 ): Promise<void> {
+  // 제안 단계에서 선택지·절차 문구를 정화 — 전부 걸러지면(실질 내용 없음) 제안 자체를 생략
+  const cleaned = sanitizeArtifactSections(sections)
+  if (Object.keys(cleaned).length === 0) return
   await updateDoc(doc(db, 'projects', projectId), {
-    artifactProposal: { activityCode, sections, proposedBy, proposedByName, proposedAt: Date.now() },
+    artifactProposal: { activityCode, sections: cleaned, proposedBy, proposedByName, proposedAt: Date.now() },
     updatedAt: serverTimestamp(),
   })
 }

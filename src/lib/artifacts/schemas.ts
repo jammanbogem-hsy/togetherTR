@@ -11,8 +11,14 @@ import type { TeamVisionWorkspace, IntegratedGoalWorkspace } from '@/types'
 // 질문 프롬프트는 라인 단위 strip에서는 제거하지 않고(예: Ds-1-2 탐구질문 추출 보존),
 // 원칙·규칙처럼 "질문이 콘텐츠가 될 수 없는" 항목 판별(isNonContentLabel)에서만 배제한다.
 
-/** A안/B안/C안 선택지 라벨로 시작하는 라인/항목 (볼드·불릿 유무 무관) */
-const CHOICE_LABEL_RE = /^\s*[-•*]?\s*\*{0,2}\s*[ABCDＡ-Ｄ]\s*안\s*[:：]/
+/** A안/B안/C안 선택지 라벨로 시작하는 라인/항목 (볼드·불릿 유무 무관).
+ *  ChatPanel의 parseOptions(선택지 카드 렌더러)보다 넓게 잡는다 —
+ *  "카드로 렌더링되는 라인은 반드시 산출물에서 걸러진다"를 보장하기 위해
+ *  A~Z안 · 1안/２안 · 가안~마안 · 옵션 A · 선택지 1, 그리고 `**A안**:`처럼
+ *  닫는 볼드가 콜론 앞에 오는 변형과 대시(—) 구분자까지 커버한다. */
+const CHOICE_LABEL_RE = /^\s*[-•*]?\s*\*{0,2}\s*(?:[A-ZＡ-Ｚ]\s*안|[0-9０-９]{1,2}\s*안|[가나다라마]\s*안|옵션\s*[A-Z0-9]{1,2}|선택지\s*[0-9]{1,2})\s*\*{0,2}\s*[:：\-–—]/
+/** 라벨 단독 항목 ("A안", "1안" 등 — 표 셀·리스트 항목 판별용) */
+const CHOICE_BARE_RE = /^(?:[A-ZＡ-Ｚ]|[0-9０-９]{1,2}|[가나다라마])\s*안$/
 /** "…저장/수정/진행하겠습니다" 류로 끝나는 절차·확정 문구 */
 const PROCESS_END_RE = /(?:저장|수정|보완|진행|확정|기록|반영|논의|넘어가|정리)(?:하겠습니다|하겠어요|할게요|할까요|합시다|하시죠|해\s*주세요)\s*["'」』”’]*[.。!?？]*\s*$/
 /** "이제 저장…", "다음 단계로…", "더 논의…", "저장하겠…"로 시작하는 절차 안내 문구.
@@ -20,6 +26,8 @@ const PROCESS_END_RE = /(?:저장|수정|보완|진행|확정|기록|반영|논�
 const PROCESS_START_RE = /^["'「『“‘]?\s*(?:이제\s+(?:저장|수정|보완|확정|기록|반영|정리|진행)|(?:이대로|그대로)\s*(?:저장|수정|확정|진행)|[ABCDＡ-Ｄ]\s*안으로\s*(?:저장|진행|확정)|다음\s*단계|더\s*논의|(?:저장|수정|보완|확정|기록|반영|진행)(?:하겠|할까|합니다|하시|해\s*주))/
 /** 저장·진행·동의 확인/유도 질문으로 끝나는 라인 (항목 판별용) */
 const CONFIRM_QUESTION_RE = /(?:할까요|하실까요|하시겠어요|하시겠습니까|드릴까요|어떠세요|어떠신가요|어떨까요|괜찮(?:으세요|으신가요|을까요)|있으신가요|있나요|보실까요)\s*["'」』”’]*[?？]\s*$/
+/** "✅ 저장됐습니다" 류 상태 안내 라인 */
+const STATUS_LINE_RE = /^\s*[✅☑✔️✓]\s*.*(?:저장|확정|반영|기록|완료)(?:됐|되었|했|합니다|됩니다)/
 
 /** 한 항목(원칙 제목·규칙명·표 셀 등)이 산출물 콘텐츠가 아니라 대화·절차 맥락인지 */
 export function isNonContentLabel(s: string): boolean {
@@ -27,10 +35,11 @@ export function isNonContentLabel(s: string): boolean {
   const t = raw.replace(/\*\*/g, '').replace(/^["'「『“‘]+|["'」』”’]+$/g, '').trim()
   if (!t) return true
   if (CHOICE_LABEL_RE.test(raw)) return true
-  if (/^[ABCDＡ-Ｄ]\s*안$/.test(t)) return true
+  if (CHOICE_BARE_RE.test(t)) return true
   if (PROCESS_END_RE.test(t)) return true
   if (PROCESS_START_RE.test(t)) return true
   if (CONFIRM_QUESTION_RE.test(t)) return true
+  if (STATUS_LINE_RE.test(raw)) return true
   return false
 }
 
@@ -46,7 +55,8 @@ export function stripNonContentLines(text: string): string {
       if (!t) return true // 빈 줄·구조는 보존
       if (CHOICE_LABEL_RE.test(line)) return false
       if (PROCESS_END_RE.test(t)) return false
-      if (PROCESS_START_RE.test(t) && t.length <= 40) return false // 짧은 절차 안내만
+      if (PROCESS_START_RE.test(t) && t.length <= 80) return false // 절차 안내 문장 (혼합 라인 과차단 방지 상한)
+      if (STATUS_LINE_RE.test(line)) return false
       return true
     })
     .join('\n')
@@ -60,6 +70,57 @@ export function sanitizeChatForExtraction<T extends { role: string; content: str
   return messages.map(m =>
     m.role === 'assistant' ? { ...m, content: stripNonContentLines(m.content) } : m,
   )
+}
+
+/** [ARTIFACT_UPDATE: 키=값] 의 **값** 자체를 정화한다 — 신호 값이 Firestore에
+ *  verbatim으로 저장되는 활동(Ds/DI/E 등 builder 미보유)까지 보호하는 단일 관문.
+ *  - 잔여 신호 태그([ACTION_CARD] 등) 제거
+ *  - 선택지·절차·상태 라인 strip (stripNonContentLines)
+ *  - 표 행: 앞쪽 셀이 선택지/절차 라벨이면 그 행 전체 제거 */
+export function sanitizeArtifactValue(value: string): string {
+  if (!value) return value
+  const untagged = value
+    .replace(/\[ACTION_CARD:[^\]]*\]/g, '')
+    .replace(/\[TEAM_DISCUSSION_READY[^\]]*\]/g, '')
+    .replace(/\[ACTIVITY_(?:ADVANCE|RETURN)[^\]]*\]/g, '')
+  const lineFiltered = untagged
+    .split('\n')
+    .filter(line => {
+      const t = line.trim()
+      if (!t.startsWith('|')) return true
+      if (/^\|[\s\-:|]+\|$/.test(t)) return true // 구분선 보존
+      const cells = t.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
+      const firstFilled = cells.find(c => c.length > 0)
+      return !firstFilled || !isNonContentLabel(firstFilled)
+    })
+    .join('\n')
+  return stripNonContentLines(lineFiltered)
+}
+
+/** 값 자체가 A안/B안 선택 결과인 섹션 — 정화·플레이스홀더 보강 대상에서 제외.
+ *  E-2-1 "다음 주기 선택"은 parseNextCycleChoice(completion.ts)가 A/B를 판독하는
+ *  정당한 선택 값이므로 CHOICE_LABEL_RE로 지우면 E단계 완료가 불가능해지고,
+ *  짧은 값("A안 — …")이라 enrich의 placeholder 치환에도 걸리면 안 된다. */
+export const SANITIZE_EXEMPT_KEYS = ['다음 주기 선택']
+
+/** 섹션 레코드의 string 값들을 일괄 정화. dropEmptied=true면 정화 후 빈 값이 된
+ *  키를 제거한다 (병합 시 기존 콘텐츠를 빈 값으로 덮지 않도록). 구조화 산출물의
+ *  배열·객체 필드와 _schema 키는 그대로 통과시킨다. */
+export function sanitizeArtifactSections<T extends Record<string, unknown>>(
+  sections: T,
+  opts: { dropEmptied?: boolean } = {},
+): T {
+  const { dropEmptied = true } = opts
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(sections)) {
+    if (typeof v === 'string' && k !== '_schema' && !SANITIZE_EXEMPT_KEYS.includes(k.trim())) {
+      const cleaned = sanitizeArtifactValue(v)
+      if (cleaned || !dropEmptied) out[k] = cleaned
+    } else {
+      out[k] = v
+    }
+  }
+  return out as T
 }
 
 // ─── T-1-1 팀 공통 비전 설정 ─────────────────────────────────────────────
@@ -386,7 +447,8 @@ function parseDs11Rubric(raw: string): Ds11RubricRow[] {
   const dataLines = lines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1)
   for (const line of dataLines) {
     const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
-    if (cells.length >= 1 && cells[0]) {
+    // parseTableRows와 동일 가드 — 선택지·확정 안내 행은 루브릭 콘텐츠가 아님
+    if (cells.length >= 1 && cells[0] && !isNonContentLabel(cells[0])) {
       rows.push({
         item: cells[0] ?? '',
         method: cells[1] ?? '',
