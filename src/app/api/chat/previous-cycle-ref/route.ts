@@ -7,7 +7,7 @@
  *
  * 주의:
  *  - user 메시지는 클라이언트가 따로 보내지 않는다. 시스템 프롬프트 + 단일 trigger user 메시지만으로 응답 생성.
- *  - serverDb null → 500 ("firestore-not-configured")
+ *  - admin Firestore 자격증명 없음 → 500 ("firestore-not-configured")
  *  - project 없음 → 404 ("project-not-found")
  *  - previousCycleImprovements 없거나 cycleNumber < 1 → 404 ("no-previous-cycle")
  *  - e11Improvement/e21Improvement 둘 다 없음 → 404 ("no-improvement-content")
@@ -19,8 +19,7 @@
  */
 
 import OpenAI from 'openai'
-import { doc, getDoc } from 'firebase/firestore'
-import { serverDb } from '@/lib/firebase/server'
+import { getAdminDb } from '@/lib/firebase/admin'
 import { buildPreviousCycleRefPrompt, type PreviousCycleRefInput } from '@/lib/prompts/previousCycleRef'
 import type { ActivityCode, Project } from '@/types'
 
@@ -46,15 +45,16 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!serverDb) {
+    const adminDb = getAdminDb()
+    if (!adminDb) {
       return Response.json(
-        { error: 'firestore-not-configured', message: '서버 Firestore가 초기화되지 않았습니다.' },
+        { error: 'firestore-not-configured', message: '서버 Firestore 자격증명이 없습니다 (FIREBASE_SERVICE_ACCOUNT 또는 ADC 필요).' },
         { status: 500 }
       )
     }
 
-    const snap = await getDoc(doc(serverDb, 'projects', projectId))
-    if (!snap.exists()) {
+    const snap = await adminDb.collection('projects').doc(projectId).get()
+    if (!snap.exists) {
       return Response.json(
         { error: 'project-not-found', message: '프로젝트를 찾을 수 없습니다.' },
         { status: 404 }

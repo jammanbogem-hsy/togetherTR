@@ -1,6 +1,5 @@
 import OpenAI from 'openai'
-import { collection, getDocs } from 'firebase/firestore'
-import { serverDb } from '@/lib/firebase/server'
+import { getAdminDb, disableAdminDb, isCredentialError } from '@/lib/firebase/admin'
 import type { ActivityCode, MaterialChunk, MaterialSearchHit } from '@/types'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 
@@ -131,12 +130,24 @@ function trimForPrompt(text: string): string {
 export async function searchProjectMaterials(
   params: SearchProjectMaterialsParams
 ): Promise<MaterialSearchHit[]> {
-  if (!serverDb || !embeddingClient || !params.projectId) return []
+  const adminDb = getAdminDb()
+  if (!adminDb || !embeddingClient || !params.projectId) return []
 
   const queryText = buildQueryText(params)
   if (!queryText.trim()) return []
 
-  const chunkSnap = await getDocs(collection(serverDb, 'projects', params.projectId, 'materialChunks'))
+  let chunkSnap
+  try {
+    chunkSnap = await adminDb
+      .collection('projects').doc(params.projectId)
+      .collection('materialChunks').get()
+  } catch (e) {
+    // 자격증명 부재는 매 채팅 요청마다 반복되므로 한 번만 경고하고 기능을 끈다.
+    // 일시적 오류(네트워크 등)는 이번 요청만 빈 결과로 처리.
+    if (isCredentialError(e)) disableAdminDb(e)
+    else console.warn('[rag] materialChunks 읽기 실패 (이번 요청만 자료 검색 생략):', e instanceof Error ? e.message : e)
+    return []
+  }
   const chunks = chunkSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as MaterialChunk)
   if (chunks.length === 0) return []
 

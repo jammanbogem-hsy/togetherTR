@@ -1,16 +1,6 @@
 import OpenAI from 'openai'
-import {
-  collection,
-  deleteField,
-  doc,
-  getDocs,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-  writeBatch,
-} from 'firebase/firestore'
-import { serverDb } from '@/lib/firebase/server'
+import { FieldValue } from 'firebase-admin/firestore'
+import { getAdminDb } from '@/lib/firebase/admin'
 import { chunkPdfPages } from '@/lib/rag/chunking'
 import { extractPdfPagesFromBuffer } from '@/lib/rag/pdfExtract'
 
@@ -42,15 +32,16 @@ async function embedTexts(texts: string[]): Promise<number[][]> {
 }
 
 async function clearExistingChunks(projectId: string, materialId: string): Promise<void> {
-  if (!serverDb) return
-  const chunkQuery = query(
-    collection(serverDb, 'projects', projectId, 'materialChunks'),
-    where('materialId', '==', materialId)
-  )
-  const snap = await getDocs(chunkQuery)
+  const db = getAdminDb()
+  if (!db) return
+  const snap = await db
+    .collection('projects').doc(projectId)
+    .collection('materialChunks')
+    .where('materialId', '==', materialId)
+    .get()
   if (snap.empty) return
 
-  let batch = writeBatch(serverDb)
+  let batch = db.batch()
   let opCount = 0
 
   for (const chunkDoc of snap.docs) {
@@ -59,7 +50,7 @@ async function clearExistingChunks(projectId: string, materialId: string): Promi
 
     if (opCount === 400) {
       await batch.commit()
-      batch = writeBatch(serverDb)
+      batch = db.batch()
       opCount = 0
     }
   }
@@ -70,10 +61,13 @@ async function clearExistingChunks(projectId: string, materialId: string): Promi
 }
 
 export async function POST(request: Request) {
-  if (!serverDb) {
-    return Response.json({ error: 'Firebase server configuration is not available' }, { status: 500 })
+  const db = getAdminDb()
+  if (!db) {
+    return Response.json(
+      { error: '서버 Firestore 자격증명이 없습니다. FIREBASE_SERVICE_ACCOUNT env 또는 배포 환경 ADC가 필요합니다.' },
+      { status: 500 }
+    )
   }
-  const db = serverDb
   let parsedBody:
     | {
         projectId?: string
@@ -102,11 +96,11 @@ export async function POST(request: Request) {
       return Response.json({ error: 'projectId, materialId, downloadURL, fileName are required' }, { status: 400 })
     }
 
-    const materialRef = doc(db, 'projects', projectId, 'materials', materialId)
-    await updateDoc(materialRef, {
+    const materialRef = db.collection('projects').doc(projectId).collection('materials').doc(materialId)
+    await materialRef.update({
       status: 'processing',
-      error: deleteField(),
-      updatedAt: serverTimestamp(),
+      error: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
 
     const response = await fetch(downloadURL, { cache: 'no-store' })
@@ -121,11 +115,12 @@ export async function POST(request: Request) {
 
     await clearExistingChunks(projectId, materialId)
 
-    let batch = writeBatch(db)
+    const chunkCollection = db.collection('projects').doc(projectId).collection('materialChunks')
+    let batch = db.batch()
     let opCount = 0
 
     for (const [index, chunk] of chunked.chunks.entries()) {
-      const chunkRef = doc(collection(db, 'projects', projectId, 'materialChunks'))
+      const chunkRef = chunkCollection.doc()
       batch.set(chunkRef, {
         projectId,
         materialId,
@@ -140,12 +135,12 @@ export async function POST(request: Request) {
         keywords: chunk.keywords,
         embedding: embeddings[index],
         tokenCount: chunk.tokenCount,
-        createdAt: serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       })
       opCount += 1
       if (opCount === 400) {
         await batch.commit()
-        batch = writeBatch(db)
+        batch = db.batch()
         opCount = 0
       }
     }
@@ -154,7 +149,7 @@ export async function POST(request: Request) {
       await batch.commit()
     }
 
-    await updateDoc(materialRef, {
+    await materialRef.update({
       status: 'ready',
       pageCount: chunked.pageCount,
       chunkCount: chunked.chunks.length,
@@ -163,8 +158,8 @@ export async function POST(request: Request) {
       textExtractQuality: chunked.textExtractQuality,
       summary: chunked.summary,
       readyAt: Date.now(),
-      error: deleteField(),
-      updatedAt: serverTimestamp(),
+      error: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
 
     return Response.json({
@@ -178,12 +173,16 @@ export async function POST(request: Request) {
     const projectId = typeof parsedBody?.projectId === 'string' ? parsedBody.projectId : null
     const materialId = typeof parsedBody?.materialId === 'string' ? parsedBody.materialId : null
 
-    if (projectId && materialId && serverDb) {
-      await updateDoc(doc(serverDb, 'projects', projectId, 'materials', materialId), {
-        status: 'failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        updatedAt: serverTimestamp(),
-      }).catch(() => undefined)
+    if (projectId && materialId) {
+      await db
+        .collection('projects').doc(projectId)
+        .collection('materials').doc(materialId)
+        .update({
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          updatedAt: FieldValue.serverTimestamp(),
+        })
+        .catch(() => undefined)
     }
 
     const message = error instanceof Error ? error.message : 'Unknown error'
