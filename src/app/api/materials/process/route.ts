@@ -1,6 +1,5 @@
 import OpenAI from 'openai'
-import { FieldValue } from 'firebase-admin/firestore'
-import { getAdminDb } from '@/lib/firebase/admin'
+import { getAdminDb, getFieldValue } from '@/lib/firebase/admin'
 import { chunkPdfPages } from '@/lib/rag/chunking'
 import { extractPdfPagesFromBuffer } from '@/lib/rag/pdfExtract'
 
@@ -68,6 +67,7 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+  const FieldValue = getFieldValue()
   let parsedBody:
     | {
         projectId?: string
