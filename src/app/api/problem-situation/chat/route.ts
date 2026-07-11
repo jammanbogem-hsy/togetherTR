@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       targetGradeGroup: string
     }
 
-    const systemPrompt = `당신은 협력적 수업설계 AI 에이전트입니다. 현재 교사팀의 Ds-1-2 문제상황 개발을 돕고 있습니다.
+    const systemPrompt = `당신은 협력적 수업설계 AI 에이전트입니다. 현재 교사팀의 Ds-1-2 문제 상황 설정을 돕고 있습니다.
 
 프로젝트: ${projectTitle} (${targetGradeGroup})
 

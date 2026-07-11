@@ -865,7 +865,7 @@ export function TeamRulesWorkspaceModal({
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
                 <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-black text-[#1A73E8]">T-2-2</span>
-                <span className="text-[20px] font-extrabold text-[#202124]">팀 규칙 수립</span>
+                <span className="text-[20px] font-extrabold text-[#202124]">팀 규칙 결정</span>
                 <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
                 </span>

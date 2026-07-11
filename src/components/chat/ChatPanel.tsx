@@ -687,7 +687,7 @@ function extractA21TableForSave(text: string): { title: string; sections: Record
   const fullContent = parts.join('\n\n')
 
   return {
-    title: '핵심아이디어 및 성취기준 분석표',
+    title: '성취기준 재구조화 분석표',
     sections: { '성취기준분석표': fullContent },
   }
 }
@@ -2617,7 +2617,7 @@ ${discussionSummary}
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
       activityCode: 'T-2-2',
-      artifactType: '팀 규칙 수립',
+      artifactType: '팀 규칙 결정',
       title: '팀 규칙 산출물',
       status: 'in_review',
       currentVersion: version,
@@ -2664,7 +2664,7 @@ ${discussionSummary}
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
       activityCode: 'T-2-3',
-      artifactType: '팀 일정 협의',
+      artifactType: '팀 일정 결정',
       title: '팀 일정 산출물',
       status: 'in_review',
       currentVersion: version,
@@ -2906,7 +2906,7 @@ ${discussionSummary}
     const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
     await setProjectArtifact(project.id, 'Ds-1-1', {
       status: 'in_review',
-      title: '평가 계획 수립 산출물',
+      title: '평가 설계 산출물',
       content: content as unknown as Record<string, unknown>,
       version,
     })
@@ -2914,8 +2914,8 @@ ${discussionSummary}
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
       activityCode: 'Ds-1-1',
-      artifactType: '평가 계획 수립',
-      title: '평가 계획 수립 산출물',
+      artifactType: '평가 설계',
+      title: '평가 설계 산출물',
       status: 'in_review',
       currentVersion: version,
       aiDraft: content as unknown as Record<string, unknown>,
@@ -2953,7 +2953,7 @@ ${discussionSummary}
     const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
     await setProjectArtifact(project.id, 'Ds-1-2', {
       status: 'in_review',
-      title: '문제상황 개발 산출물',
+      title: '문제 상황 설정 산출물',
       content: content as unknown as Record<string, unknown>,
       version,
     })
@@ -2961,8 +2961,8 @@ ${discussionSummary}
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
       activityCode: 'Ds-1-2',
-      artifactType: '문제상황 개발',
-      title: '문제상황 개발 산출물',
+      artifactType: '문제 상황 설정',
+      title: '문제 상황 설정 산출물',
       status: 'in_review',
       currentVersion: version,
       aiDraft: content as unknown as Record<string, unknown>,
@@ -2999,7 +2999,7 @@ ${discussionSummary}
     const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
     await setProjectArtifact(project.id, 'Ds-2-1', {
       status: 'in_review',
-      title: '지원 도구 설계 산출물',
+      title: '자료와 도구 연결 산출물',
       content: content as unknown as Record<string, unknown>,
       version,
     })
@@ -3007,8 +3007,8 @@ ${discussionSummary}
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
       activityCode: 'Ds-2-1',
-      artifactType: '지원 도구 설계',
-      title: '지원 도구 설계 산출물',
+      artifactType: '자료와 도구 연결',
+      title: '자료와 도구 연결 산출물',
       status: 'in_review',
       currentVersion: version,
       aiDraft: content as unknown as Record<string, unknown>,
@@ -3030,7 +3030,7 @@ ${discussionSummary}
     const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
     await setProjectArtifact(project.id, 'T-1-1', {
       status: 'in_review',
-      title: '팀 공통 비전 설정 산출물',
+      title: '공동 비전 설정 산출물',
       content: content as unknown as Record<string, unknown>,
       version,
     })
@@ -3038,8 +3038,8 @@ ${discussionSummary}
     setCurrentArtifact({
       id: existing?.id ?? Date.now().toString(),
       activityCode: 'T-1-1',
-      artifactType: '팀 공통 비전 설정',
-      title: '팀 공통 비전 설정 산출물',
+      artifactType: '공동 비전 설정',
+      title: '공동 비전 설정 산출물',
       status: 'in_review',
       currentVersion: version,
       aiDraft: content as unknown as Record<string, unknown>,
@@ -3794,7 +3794,7 @@ ${discussionSummary}
               </button>
             </div>
           )}
-          {/* 문제상황 개발 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
+          {/* 문제 상황 설정 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
           {currentActivity === 'Ds-1-2' && (
             <div className="relative flex items-center">
               {!showProblemSituationDesigner && coeditHintActivity !== 'Ds-1-2' && (
@@ -3819,7 +3819,7 @@ ${discussionSummary}
                     ? 'bg-[#00897B] text-white border-[#00897B]'
                     : 'bg-white text-[#00897B] border-[#4DB6AC] hover:bg-[#E0F2F1]',
                 )}
-                title="문제상황 개발 워크숍 (이 단계 전용 특별 기능)"
+                title="문제 상황 설정 워크숍 (이 단계 전용 특별 기능)"
               >
                 <span className="relative z-10 flex items-center gap-1">
                   <PencilRuler size={13} weight={showProblemSituationDesigner ? 'fill' : 'regular'} />

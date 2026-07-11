@@ -19,11 +19,11 @@ export interface StageInfo {
 }
 
 export const STAGES: StageInfo[] = [
-  { code: 'T',  label: '팀준비',    description: '협력 조건 구축',     activities: ['T-1-1','T-1-2','T-2-1','T-2-2','T-2-3'] },
-  { code: 'A',  label: '분석',      description: '주제·학습자 분석',   activities: [/*'A-1-1',*/'A-1-2','A-2-1','A-2-2','A-2-3'] },
-  { code: 'Ds', label: '설계',      description: '수업 구조 설계',     activities: ['Ds-1-1','Ds-1-2','Ds-1-3','Ds-2-1','Ds-2-2'] },
-  { code: 'DI', label: '개발·실행', description: '자료 개발 및 수업',  activities: ['DI-1-1','DI-2-1'] },
-  { code: 'E',  label: '평가',      description: '성찰·개선·새 주기', activities: ['E-1-1','E-2-1'] },
+  { code: 'T',  label: '팀준비',    description: '협력의 밭을 일구는 시간',            activities: ['T-1-1','T-1-2','T-2-1','T-2-2','T-2-3'] },
+  { code: 'A',  label: '분석',      description: '우리 땅을 살피고 씨앗을 고르는 시간', activities: ['A-1-1','A-1-2','A-2-1','A-2-2','A-2-3'] },
+  { code: 'Ds', label: '설계',      description: '배움의 텃밭을 함께 그려가는 시간',    activities: ['Ds-1-1','Ds-1-2','Ds-1-3','Ds-2-1','Ds-2-2'] },
+  { code: 'DI', label: '개발·실행', description: '우리의 협력이 꽃피우는 시간',         activities: ['DI-1-1','DI-2-1'] },
+  { code: 'E',  label: '평가',      description: '우리의 열매를 거두는 시간',           activities: ['E-1-1','E-2-1'] },
 ]
 
 // ─── 활동 ───────────────────────────────────────────
@@ -69,7 +69,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   // 원칙: required='any', minChars 10~20, key는 ARTIFACT_UPDATE 키 원문과 문자 단위 일치.
   // `AI 분석`·`AI 점검` 섹션은 제외(AI 자동 생성 메타).
   'T-1-1': {
-    code: 'T-1-1', label: '팀 공통 비전 설정', stage: 'T',
+    code: 'T-1-1', label: '공동 비전 설정', stage: 'T',
     recommendedSections: [
       { key: '개인 비전',    label: '개인 비전 키워드·정교화 문장', minChars: 20, required: 'any' },
       { key: '팀 공통 비전', label: '팀 공통 비전 문장',          minChars: 10, required: 'any' },
@@ -89,20 +89,25 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'T-2-2': {
-    code: 'T-2-2', label: '팀 규칙 수립', stage: 'T',
+    code: 'T-2-2', label: '팀 규칙 결정', stage: 'T',
     recommendedSections: [
-      { key: '팀 규칙', label: '팀 규칙 (규칙명·설명·위반 시 조치)', minChars: 20, required: 'any' },
+      { key: '팀 규칙', label: '팀 규칙 (규칙명·필요 배경·실천 방법)', minChars: 20, required: 'any' },
     ],
   },
   'T-2-3': {
-    code: 'T-2-3', label: '팀 일정 협의', stage: 'T',
+    code: 'T-2-3', label: '팀 일정 결정', stage: 'T',
     recommendedSections: [
       { key: '팀 일정', label: '팀 일정 (기간·활동·내용·담당자)', minChars: 20, required: 'any' },
     ],
   },
-  'A-1-1': { code: 'A-1-1', label: '주제 선정 기준', stage: 'A' },
+  'A-1-1': {
+    code: 'A-1-1', label: '주제 선정 기준 논의·조정', stage: 'A',
+    recommendedSections: [
+      { key: '주제 선정 기준', label: '주제 선정 기준 (핵심 기준·참고 기준)', minChars: 10, required: 'any' },
+    ],
+  },
   'A-1-2': {
-    code: 'A-1-2', label: '주제 선정', stage: 'A',
+    code: 'A-1-2', label: '비전 기반 주제 선정', stage: 'A',
     // minChars: 주제명·기준명은 본질적으로 짧은 명사구라 낮게 조정.
     // "가중치" 표현은 AI가 자의적 숫자를 박아 교사 판단을 구속하는 부작용이 있어 라벨에서 제거 (우선순위 표현 자율).
     recommendedSections: [
@@ -113,7 +118,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'A-2-1': {
-    code: 'A-2-1', label: '핵심아이디어 및 성취기준 분석', stage: 'A',
+    code: 'A-2-1', label: '주제 상세 분석·성취기준 재구조화', stage: 'A',
     // ⚠️ key는 `성취기준분석표` (띄어쓰기 없음). ChatPanel.tsx:660 extractA21TableForSave 출력과 1:1 일치.
     // ARTIFACT_UPDATE 신호 경로를 쓰지 않는 유일한 활동이라 Task #10 프롬프트 힌트도 별도 포맷 필요.
     recommendedSections: [
@@ -136,13 +141,13 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'Ds-1-1': {
-    code: 'Ds-1-1', label: '평가 계획 수립', stage: 'Ds', isBackwardDesignFirst: true,
+    code: 'Ds-1-1', label: '평가 설계', stage: 'Ds', isBackwardDesignFirst: true,
     recommendedSections: [
       { key: '평가 계획', label: '평가 계획 (평가 항목·방법·시점·상중하 루브릭)', minChars: 20, required: 'any' },
     ],
   },
   'Ds-1-2': {
-    code: 'Ds-1-2', label: '문제상황 개발', stage: 'Ds', isGuardrailTarget: true,
+    code: 'Ds-1-2', label: '문제 상황 설정', stage: 'Ds', isGuardrailTarget: true,
     recommendedSections: [
       { key: '문제상황',  label: '문제상황 시나리오 (제목·실제성·학습내용+산출물·청중+행위)', minChars: 20, required: 'any' },
       { key: '핵심 질문', label: '탐구 질문 (Driving Question)',                          minChars: 10, required: 'any' },
@@ -156,7 +161,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'Ds-2-1': {
-    code: 'Ds-2-1', label: '지원 도구 설계', stage: 'Ds', isGuardrailTarget: true,
+    code: 'Ds-2-1', label: '자료와 도구 연결', stage: 'Ds', isGuardrailTarget: true,
     recommendedSections: [
       { key: '활동별 자료 설계', label: '활동별 자료 설계 (활동·자료·이유·탐색/개발·공동/개별·담당·일정)', minChars: 20, required: 'any' },
       { key: 'AI 점검',          label: 'AI 점검 (학생 수준·출처·저작권·개인정보·접근성)',              minChars: 20, required: 'any' },
@@ -177,14 +182,14 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'DI-2-1': {
-    code: 'DI-2-1', label: '수업 기록', stage: 'DI',
+    code: 'DI-2-1', label: '수업 실행·기록', stage: 'DI',
     recommendedSections: [
       { key: '주요 상황 기록', label: '주요 상황 기록 (시점·상황·학생 반응·시사점)', minChars: 20, required: 'any' },
       { key: '종합 시사점',    label: '종합 시사점 (성공·장애·예상외·포용)',          minChars: 20, required: 'any' },
     ],
   },
   'E-1-1':  {
-    code: 'E-1-1', label: '수업 성찰·평가', stage: 'E',
+    code: 'E-1-1', label: '수업 성찰과 공동 개선', stage: 'E',
     // P1-I: 사실/해석/수정안 중 최소 1개 섹션(각 20자 이상) 충족 시 완료 인정.
     // Lead 결정 — E에 갇혀 cycle 진입 못 하는 상황을 막기 위한 완화 옵션.
     requiredSections: [
@@ -194,7 +199,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'E-2-1':  {
-    code: 'E-2-1', label: '팀 활동 성찰·평가', stage: 'E',
+    code: 'E-2-1', label: '협력 과정 성찰', stage: 'E',
     // 다음 주기 결정(A안/B안)만 필수, 팀 개선안은 선택.
     requiredSections: [
       { key: '다음 주기 선택', label: '다음 주기 선택', minChars: 10, required: 'all' },

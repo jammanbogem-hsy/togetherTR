@@ -13,7 +13,7 @@ import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 // DI-1-1까지의 활동 목록
 const REPORT_ACTIVITIES: ActivityCode[] = [
   'T-1-1', 'T-1-2', 'T-2-1', 'T-2-2', 'T-2-3',
-  'A-1-2', 'A-2-1', 'A-2-2', 'A-2-3',
+  'A-1-1', 'A-1-2', 'A-2-1', 'A-2-2', 'A-2-3',
   'Ds-1-1', 'Ds-1-2', 'Ds-1-3', 'Ds-2-1', 'Ds-2-2',
   'DI-1-1',
 ]

@@ -875,7 +875,7 @@ export function SupportToolWorkspaceModal({
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
                 <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[17px] font-black text-[#1A73E8]">Ds-2-1</span>
-                <span className="text-[20px] font-extrabold text-[#202124]">지원 도구 설계</span>
+                <span className="text-[20px] font-extrabold text-[#202124]">자료와 도구 연결</span>
                 <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
                 </span>
@@ -1423,7 +1423,7 @@ export function SupportToolWorkspaceModal({
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
-            <p className="text-[14px] font-bold text-[#5F6368]">지원 도구 설계(Ds-2-1) 확정안 — 활동별 자료/도구 + AI 점검</p>
+            <p className="text-[14px] font-bold text-[#5F6368]">자료와 도구 연결(Ds-2-1) 확정안 — 활동별 자료/도구 + AI 점검</p>
             <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
               <table className="min-w-full border-collapse text-[13px]">
                 <thead>

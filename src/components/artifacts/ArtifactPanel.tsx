@@ -816,19 +816,19 @@ function StructuredArtifactRenderer({ content, onDelete, onDeleteField }: {
   const { ExpandableWrapper } = require('./structured/ExpandableWrapper') as { ExpandableWrapper: React.ComponentType<{ title: string; children: React.ReactNode; onDelete?: () => void }> }
 
   const SCHEMA_MAP: Record<string, { mod: string; label: string }> = {
-    'T-1-1': { mod: './structured/T11Renderer', label: '팀 공통 비전 설정' },
+    'T-1-1': { mod: './structured/T11Renderer', label: '공동 비전 설정' },
     'T-1-2': { mod: './structured/T12Renderer', label: '수업설계 방향 설정' },
     'T-2-1': { mod: './structured/T21Renderer', label: '역할 배분' },
-    'T-2-2': { mod: './structured/T22Renderer', label: '팀 규칙 수립' },
-    'T-2-3': { mod: './structured/T23Renderer', label: '팀 일정 협의' },
-    'A-1-2': { mod: './structured/A12Renderer', label: '주제 선정' },
-    'A-2-1': { mod: './structured/A21Renderer', label: '핵심아이디어 및 성취기준 분석' },
+    'T-2-2': { mod: './structured/T22Renderer', label: '팀 규칙 결정' },
+    'T-2-3': { mod: './structured/T23Renderer', label: '팀 일정 결정' },
+    'A-1-2': { mod: './structured/A12Renderer', label: '비전 기반 주제 선정' },
+    'A-2-1': { mod: './structured/A21Renderer', label: '주제 상세 분석·성취기준 재구조화' },
     'A-2-2': { mod: './structured/A22Renderer', label: '통합 수업목표 진술' },
     'A-2-3': { mod: './structured/A23Renderer', label: '학습자·맥락 분석' },
-    'Ds-1-1': { mod: './structured/Ds11Renderer', label: '평가 계획 수립' },
-    'Ds-1-2': { mod: './structured/Ds12Renderer', label: '문제상황 개발' },
+    'Ds-1-1': { mod: './structured/Ds11Renderer', label: '평가 설계' },
+    'Ds-1-2': { mod: './structured/Ds12Renderer', label: '문제 상황 설정' },
     'Ds-1-3': { mod: './structured/Ds13Renderer', label: '학습활동 설계' },
-    'Ds-2-1': { mod: './structured/Ds21Renderer', label: '지원 도구 설계' },
+    'Ds-2-1': { mod: './structured/Ds21Renderer', label: '자료와 도구 연결' },
     'Ds-2-2': { mod: './structured/Ds22Renderer', label: '스캐폴딩 설계' },
   }
 
