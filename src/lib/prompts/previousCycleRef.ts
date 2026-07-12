@@ -34,7 +34,7 @@ function contextHint(currentActivity: ActivityCode): string {
   const label = ACTIVITY_META[currentActivity]?.label ?? '이번 활동'
   switch (currentActivity) {
     case 'T-1-1':
-      return `이번 "팀 공통 비전 설정"에서 지난 주기의 경험을 비전 문장에 어떻게 녹여낼 수 있을지`
+      return `이번 "공동 비전 설정"에서 지난 주기의 경험을 비전 문장에 어떻게 녹여낼 수 있을지`
     case 'T-1-2':
       return `이번 "수업설계 방향 설정"에 어떻게 반영할 수 있을지`
     case 'T-2-1':
