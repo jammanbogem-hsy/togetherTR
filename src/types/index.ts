@@ -34,6 +34,27 @@ export type ActivityCode =
   | 'DI-1-1' | 'DI-2-1'
   | 'E-1-1' | 'E-2-1'
 
+// 화면·대화 표시용 활동 번호 (가이드 문서 260619 피드백판 체계).
+// 내부 코드(Firestore 경로·신호·산출물 키)는 데이터 호환을 위해 유지하고, 사용자에게 보이는 번호만 이 매핑을 쓴다.
+// A-2-3(학습자·맥락 분석)은 문서에 없는 앱 고유 활동이라 순서상 A-5로 표시.
+export const ACTIVITY_DISPLAY_CODE: Record<ActivityCode, string> = {
+  'T-1-1': 'T-1', 'T-1-2': 'T-2', 'T-2-1': 'T-3', 'T-2-2': 'T-4', 'T-2-3': 'T-5',
+  'A-1-1': 'A-1', 'A-1-2': 'A-2', 'A-2-1': 'A-3', 'A-2-2': 'A-4', 'A-2-3': 'A-5',
+  'Ds-1-1': 'Ds-1', 'Ds-1-2': 'Ds-2', 'Ds-1-3': 'Ds-3', 'Ds-2-1': 'Ds-4', 'Ds-2-2': 'Ds-5',
+  'DI-1-1': 'DI-1', 'DI-2-1': 'DI-2',
+  'E-1-1': 'E-1', 'E-2-1': 'E-2',
+}
+
+// 표시 번호 → 내부 코드 역매핑 (AI가 신호에 표시 번호를 쓴 경우의 정규화 방어용)
+export const DISPLAY_TO_ACTIVITY_CODE: Record<string, ActivityCode> = Object.fromEntries(
+  (Object.entries(ACTIVITY_DISPLAY_CODE) as [ActivityCode, string][]).map(([code, display]) => [display, code])
+) as Record<string, ActivityCode>
+
+/** 사용자에게 보여줄 활동 번호. 알 수 없는 코드는 원문 그대로 반환. */
+export function displayActivityCode(code: string): string {
+  return ACTIVITY_DISPLAY_CODE[code as ActivityCode] ?? code
+}
+
 export interface ActivityMeta {
   code: ActivityCode
   label: string

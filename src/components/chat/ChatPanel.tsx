@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
-import { ACTIVITY_META, STAGES, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
+import { ACTIVITY_META, STAGES, DISPLAY_TO_ACTIVITY_CODE, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch } from '@/lib/firebase/projects'
@@ -574,12 +574,18 @@ function parseDiscussionSignal(text: string): { topic: string; cleanText: string
   }
 }
 
+// 신호 대상 코드 정규화 — AI가 내부 코드 대신 표시 번호(T-1 등)를 방출한 경우 내부 코드로 복원 (방어적)
+function normalizeSignalActivityCode(raw: string): string {
+  const trimmed = raw.trim()
+  return DISPLAY_TO_ACTIVITY_CODE[trimmed] ?? trimmed
+}
+
 // ─── ACTIVITY_ADVANCE 파싱 ───────────────────────────
 function parseActivityAdvance(text: string): { nextActivity: string; cleanText: string } | null {
   const match = text.match(/\[ACTIVITY_ADVANCE:\s*([A-Za-z0-9-]+)\]/)
   if (!match) return null
   return {
-    nextActivity: match[1].trim(),
+    nextActivity: normalizeSignalActivityCode(match[1]),
     cleanText: text.replace(/\n*\[ACTIVITY_ADVANCE:[^\]]+\]/, '').trimEnd(),
   }
 }
@@ -589,7 +595,7 @@ function parseActivityReturn(text: string): { targetActivity: string; cleanText:
   const match = text.match(/\[ACTIVITY_RETURN:\s*([A-Za-z0-9-]+)\]/)
   if (!match) return null
   return {
-    targetActivity: match[1].trim(),
+    targetActivity: normalizeSignalActivityCode(match[1]),
     cleanText: text.replace(/\n*\[ACTIVITY_RETURN:[^\]]+\]/, '').trimEnd(),
   }
 }
@@ -3572,7 +3578,7 @@ ${discussionSummary}
     } else if (cmdId === 'coreidea') {
       setShowCoreIdeaBrowser(true)
     } else if (cmdId === 'reset-chat') {
-      if (!confirm(`현재 활동(${currentActivity})의 채팅을 모두 삭제하고 다시 시작하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`)) return
+      if (!confirm(`현재 활동(${displayActivityCode(currentActivity)})의 채팅을 모두 삭제하고 다시 시작하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다.`)) return
       // 현재 활동 메시지 Firestore에서 삭제
       if (project?.id) {
         import('@/lib/firebase/projects').then(async ({ deleteActivityMessages }) => {

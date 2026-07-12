@@ -86,7 +86,7 @@ setCurrentActivity: (code) => set({ currentActivity: code, currentArtifact: null
 가이드 문서 원문: `docs/feedback-260619-extract.txt` · 갱신 명세: `docs/update-spec-260619.md`
 
 ### 내부 코드 ↔ 가이드 문서 번호 매핑
-내부 활동 코드는 Firestore 데이터 호환을 위해 유지 (가이드 문서의 새 번호와 다름):
+내부 활동 코드는 Firestore 데이터 호환을 위해 유지하되, **화면·대화 표시는 문서 번호를 사용** — `types/index.ts`의 `ACTIVITY_DISPLAY_CODE`/`displayActivityCode()`가 담당하고, 신호(`[ACTIVITY_ADVANCE: ...]`)는 내부 코드 전용(파서가 표시 번호도 방어적으로 정규화: `DISPLAY_TO_ACTIVITY_CODE`). AI 대화의 표시 변환은 BASE_SYSTEM_PROMPT "활동 번호 표기 규칙"이 강제:
 
 | 내부 코드 | 문서 | 내부 코드 | 문서 | 내부 코드 | 문서 |
 |---|---|---|---|---|---|

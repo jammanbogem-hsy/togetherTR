@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
-import { ACTIVITY_META, STAGES } from '@/types'
+import { ACTIVITY_META, STAGES, displayActivityCode } from '@/types'
 import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
 import { setProjectArtifact, setActivityStatus, deleteProjectArtifact } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
@@ -1489,7 +1489,7 @@ export function ArtifactPanel() {
             </div>
             <div className="flex-1 min-w-0">
               <p className={cn('text-[10px] font-bold uppercase tracking-widest mb-0.5', stageColor.text)}>
-                산출물 · {viewingActivity}
+                산출물 · {displayActivityCode(viewingActivity)}
               </p>
               <p className="text-[13px] font-extrabold text-[#202124] leading-tight truncate">
                 {activityMeta.label}
@@ -1981,7 +1981,7 @@ export function CollapsedArtifactStrip({ onExpand }: { onExpand: () => void }) {
     <button
       type="button"
       onClick={onExpand}
-      aria-label={`산출물 패널 펼치기 — 현재 활동: ${viewingActivity}, 상태: ${statusLabel}${sectionCount > 0 ? `, 섹션 ${sectionCount}개` : ''}`}
+      aria-label={`산출물 패널 펼치기 — 현재 활동: ${displayActivityCode(viewingActivity)}, 상태: ${statusLabel}${sectionCount > 0 ? `, 섹션 ${sectionCount}개` : ''}`}
       title={`산출물 패널 펼치기 · ${statusLabel}${sectionCount > 0 ? ` · ${sectionCount}개 섹션` : ''}`}
       className="flex-1 flex flex-col items-center justify-start gap-2 pt-3 pb-3 bg-white hover:bg-[#F8F9FA] transition-colors"
     >

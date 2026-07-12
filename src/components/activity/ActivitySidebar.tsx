@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useProjectStore } from '@/store/project'
-import { STAGES, ACTIVITY_META, type ActivityCode, type StageStatus } from '@/types'
+import { STAGES, ACTIVITY_META, type ActivityCode, type StageStatus, displayActivityCode } from '@/types'
 import { setProjectActivity, setAnalysisOpen } from '@/lib/firebase/projects'
 import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
 import { cn } from '@/lib/utils'
@@ -36,7 +36,7 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
     title: '🧭 수업설계 방향이란?',
     body: '비전을 실현하기 위해 어떤 교수학습 전략과 방향을 지향할 것인지에 대한 합의입니다.\n교과 범위·성취기준·도구 선정은 이후 단계(A, Ds)에서 다룹니다.',
     example: '예: "학생 주도 프로젝트 기반 학습, 과정 중심 평가 중심"',
-    whyNow: 'T-1-1 비전을 교수학습 언어로 구체화할 차례입니다. 방향이 있어야 이후 주제 선정(A-1-2)이 자의적으로 흐르지 않습니다.',
+    whyNow: 'T-1 비전을 교수학습 언어로 구체화할 차례입니다. 방향이 있어야 이후 주제 선정(A-2)이 자의적으로 흐르지 않습니다.',
     warningRecoveryHint: '방향이 비어 있으면 A 단계에서 "왜 이 주제?"의 답을 잃습니다. 짧게라도 방향 문장을 남겨야 복귀가 쉽습니다.',
   },
   'T-2-1': {
@@ -46,7 +46,7 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
   },
   'T-2-2': {
     title: '📋 팀 규칙이란?',
-    body: '안전하고 효율적인 논의를 위한 팀 그라운드 룰입니다.\n규칙마다 위반 시 조치 방법도 함께 정해두면 실제 갈등 상황에서 기준이 됩니다.',
+    body: '안전하고 효율적인 논의를 위한 팀 그라운드 룰입니다.\n의견이 부딪칠 때 어떻게 결정할지 같은 갈등 상황 규칙을 하나 넣고, 가장 바쁜 팀원도 지킬 수 있는 수준으로 5개 내외를 조율합니다.',
     example: '예: "발언 중 끼어들지 않기 / 마감 전날까지 공유"',
   },
   'T-2-3': {
@@ -60,15 +60,15 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
     title: '🧭 주제 선정 기준 논의·조정이란?',
     body: '주제를 곧바로 정하기 전에, "어떤 주제가 좋은 주제인가"에 대한 팀의 판단 기준을 먼저 합의하는 활동입니다.\n학년 연계·실생활 연결·비전 정합성 등 각자의 기준을 꺼내 비슷한 것끼리 묶고, 핵심 기준 3~5개로 정리합니다. 탈락한 기준도 버리지 않고 참고 기준으로 남겨둡니다.',
     example: '예: "학생 실생활과 연결", "여러 교과가 자연스럽게 만남", "우리 비전과 맞닿음"',
-    whyNow: 'T 단계 비전·방향을 주제 선택의 잣대로 번역할 차례입니다. 기준이 있어야 다음 A-1-2 주제 선정이 취향이 아닌 근거로 이뤄집니다.',
-    warningRecoveryHint: '이미 학교 차원에서 주제가 정해졌거나 범위가 좁혀졌다면 이 활동은 건너뛰고 A-1-2로 바로 갈 수 있습니다. 그렇지 않다면 기준부터 합의하세요.',
+    whyNow: 'T 단계 비전·방향을 주제 선택의 잣대로 번역할 차례입니다. 기준이 있어야 다음 주제 선정(A-2)이 취향이 아닌 근거로 이뤄집니다.',
+    warningRecoveryHint: '이미 학교 차원에서 주제가 정해졌거나 범위가 좁혀졌다면 이 활동은 건너뛰고 주제 선정(A-2)으로 바로 갈 수 있습니다. 그렇지 않다면 기준부터 합의하세요.',
   },
   'A-1-2': {
     title: '🎯 비전 기반 주제 선정이란?',
     body: '융합 수업의 출발점이 되는 핵심 주제를 팀이 함께 결정하는 활동입니다.\n좋은 주제는 두 가지 조건을 갖춥니다: ① 학생의 실생활과 연결되고, ② 여러 교과가 자연스럽게 만나는 맥락이 있어야 합니다.\n이 주제는 이후 성취기준 분석·문제상황 개발의 방향을 결정합니다.',
     example: '예: "우리 동네 환경 문제", "디지털 리터러시와 미디어 비판"',
-    whyNow: 'A-1-1에서 합의한 선정 기준으로 주제를 고를 차례입니다. 주제가 이후 A-2-1 성취기준 분석의 탐색 범위를 결정합니다.',
-    warningRecoveryHint: '주제 없이 성취기준 분석(A-2-1)을 먼저 하면 범위가 난사됩니다. 돌아와 주제부터 합의하세요.',
+    whyNow: 'A-1에서 합의한 선정 기준으로 주제를 고를 차례입니다. 주제가 이후 A-3 성취기준 재구조화의 탐색 범위를 결정합니다.',
+    warningRecoveryHint: '주제 없이 성취기준 분석(A-3)을 먼저 하면 범위가 난사됩니다. 돌아와 주제부터 합의하세요.',
   },
   'A-2-1': {
     title: '📐 주제 상세 분석·성취기준 재구조화란?',
@@ -85,7 +85,7 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
     body: '우리 학생들의 사전 지식, 흥미, 생활 맥락을 팀이 함께 분석하는 활동입니다.\n이 정보는 이후 문제상황을 실감 나게 만들고 스캐폴딩을 맞춤 설계하는 데 직접 활용됩니다.\n분석 결과는 설계 단계 내내 "가드레일"로 참조합니다.',
     example: '예: "우리 반 학생들은 환경 뉴스에 관심은 높지만 데이터 읽기에 어려움을 느낌"',
     whyNow: '이 산출물이 Ds 설계 단계 전반의 가드레일이 됩니다. A 단계를 벗어나기 전 반드시 마무리해야 설계 부채를 막습니다.',
-    warningRecoveryHint: 'A-2-3 없이 Ds에 진입하면 가드레일이 없는 상태입니다. 돌아와 학습자 프로필을 남기세요 — 이후 모든 설계의 근거입니다.',
+    warningRecoveryHint: '학습자·맥락 분석(A-5) 없이 Ds에 진입하면 가드레일이 없는 상태입니다. 돌아와 학습자 프로필을 남기세요 — 이후 모든 설계의 근거입니다.',
   },
 
   // ── 설계(Ds) 단계 ─────────────────────────────────────
@@ -93,12 +93,12 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
     title: '📊 평가 설계란?',
     body: 'T-CID는 백워드 설계(Backward Design)를 따릅니다. 즉, 활동을 먼저 정하지 않고 "어떻게 학생의 성취를 확인할 것인가"를 먼저 설계합니다.\n수행과제·평가기준(루브릭)·피드백 방법을 이 단계에서 결정하면, 이후 활동 설계가 평가와 자연스럽게 정렬됩니다.',
     example: '예: "환경 문제 해결 보고서 + 4단계 루브릭 (자료 수집·분석·제안·표현)"',
-    whyNow: 'A-2-3 학습자 프로필을 평가 기준에 반영할 차례입니다. 평가를 먼저 확정해야 이후 Ds-1-2/1-3 활동이 평가와 정렬됩니다.',
-    warningRecoveryHint: 'Ds-1-1 없이 활동 설계로 건너뛰면 활동-평가 불일치가 생깁니다. 돌아와 평가 기준부터 확정하세요.',
+    whyNow: '학습자 프로필(A-5)을 평가 기준에 반영할 차례입니다. 평가를 먼저 확정해야 이후 문제 상황(Ds-2)·학습활동(Ds-3) 설계가 평가와 정렬됩니다.',
+    warningRecoveryHint: '평가 설계(Ds-1) 없이 활동 설계로 건너뛰면 활동-평가 불일치가 생깁니다. 돌아와 평가 기준부터 확정하세요.',
   },
   'Ds-1-2': {
     title: '🌍 문제 상황 설정이란?',
-    body: '학생이 수업에 몰입할 수 있도록 실생활 맥락의 문제 시나리오를 개발하는 활동입니다.\n좋은 문제상황은 ① 학생의 삶과 연결되고, ② 정답이 하나가 아니며, ③ 여러 교과 지식이 필요한 구조여야 합니다.\n학습자·맥락 분석(A-2-3) 결과를 반드시 반영해야 합니다.',
+    body: '학생이 수업에 몰입할 수 있도록 실생활 맥락의 문제 시나리오를 개발하는 활동입니다.\n좋은 문제상황은 ① 학생의 삶과 연결되고, ② 정답이 하나가 아니며, ③ 여러 교과 지식이 필요한 구조여야 합니다.\n학습자·맥락 분석(A-5) 결과를 반드시 반영해야 합니다.',
     example: '예: "우리 마을 하천이 오염되고 있습니다. 원인을 조사하고 주민 설득 자료를 만들어보세요"',
   },
   'Ds-1-3': {
@@ -113,7 +113,7 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
   },
   'Ds-2-2': {
     title: '🪜 스캐폴딩 설계란?',
-    body: '학생들이 과제를 스스로 해결할 수 있도록 단계적으로 제공하는 지원 구조를 설계하는 활동입니다.\n학습자 분석(A-2-3)에서 파악한 어려움 지점을 중심으로, 누구에게·언제·어떤 도움을 줄지 계획합니다.\n너무 많은 지원은 학생 사고를 대신하게 되므로 "적절한 도전 수준" 유지가 핵심입니다.',
+    body: '학생들이 과제를 스스로 해결할 수 있도록 단계적으로 제공하는 지원 구조를 설계하는 활동입니다.\n학습자 분석(A-5)에서 파악한 어려움 지점을 중심으로, 누구에게·언제·어떤 도움을 줄지 계획합니다.\n너무 많은 지원은 학생 사고를 대신하게 되므로 "적절한 도전 수준" 유지가 핵심입니다.',
     example: '예: 어려움 예상 지점 → 힌트 카드 준비 / 모둠 역할 카드 / 단계별 안내 질문',
   },
 
@@ -132,7 +132,7 @@ const ACTIVITY_INFO: Partial<Record<string, { title: string; body: string; examp
   // ── 평가(E) 단계 ──────────────────────────────────────
   'E-1-1': {
     title: '🪞 수업 성찰과 공동 개선이란?',
-    body: '실행한 수업을 교사 팀이 함께 돌아보며 성찰하는 활동입니다.\n"무엇이 잘 됐는가", "무엇이 어려웠는가", "다음에 어떻게 바꿀 것인가"를 증거 기반으로 논의합니다.\n수업 기록(DI-2-1)을 함께 펼쳐놓고 에피소드 중심으로 이야기하면 더 깊은 성찰이 됩니다.',
+    body: '실행한 수업을 교사 팀이 함께 돌아보며 성찰하는 활동입니다.\n"무엇이 잘 됐는가", "무엇이 어려웠는가", "다음에 어떻게 바꿀 것인가"를 증거 기반으로 논의합니다.\n수업 기록(DI-2)을 함께 펼쳐놓고 에피소드 중심으로 이야기하면 더 깊은 성찰이 됩니다.',
     example: '예: "2차시 모둠 탐구에서 시간이 부족했음 → 다음에는 사전 자료 제공 필요"',
   },
   'E-2-1': {
@@ -329,13 +329,6 @@ function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtif
   )
 }
 
-// 활동 코드 → 서브그룹 번호 (예: 'T-1-2' → '1', 'Ds-2-1' → '2').
-// STAGES.activities가 flat 배열이라 단계 내부 서브그룹(T-1-x/T-2-x)은 여기서 파싱으로 얻음.
-function getActivityGroup(code: ActivityCode): string {
-  const parts = code.split('-')
-  return parts.length >= 3 ? parts[1] : '1'
-}
-
 function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
   const [show, setShow] = useState(false)
   return (
@@ -436,7 +429,7 @@ export function ActivitySidebar() {
         const merged = activityTasks
           ? [...activityTasks, ...baseTasks.filter(t => !activityTasks.includes(t))].slice(0, 3)
           : baseTasks
-        const sectionLabel = activityTasks ? `${viewingActivity} 활동에서 할 일` : '팀이 할 일'
+        const sectionLabel = activityTasks ? `${displayActivityCode(viewingActivity)} 활동에서 할 일` : '팀이 할 일'
         return (
           <div className={cn('mx-3 mt-3 rounded-2xl border px-3.5 py-3', color.light, color.border)}>
             <p className={cn('text-[11px] font-bold uppercase tracking-wider mb-2 opacity-60', color.text)}>{sectionLabel}</p>
@@ -471,23 +464,13 @@ export function ActivitySidebar() {
         <p className="text-[11px] font-semibold text-[#9AA0A6] uppercase tracking-widest px-2 mb-1.5">활동</p>
         <div className="space-y-0.5">
           {currentStageInfo.activities.map((code, idx) => {
-            const group = getActivityGroup(code)
+            // 표시 체계는 가이드 문서(260619)의 평면 번호(T-1~T-5 등)를 따름 — 내부 서브그룹(T-1-x/T-2-x) 헤더는 표시하지 않는다.
             const prevCode = idx > 0 ? currentStageInfo.activities[idx - 1] : null
-            const prevGroup = prevCode ? getActivityGroup(prevCode) : null
-            const showGroupHeader = group !== prevGroup && currentStageInfo.activities.some(c => getActivityGroup(c) !== group)
-            // v1.1 §7-2 #10: 직전 활동 → 현재 활동 관계 라벨 (같은 서브그룹 안일 때만 표시 — 그룹 경계에는 그룹 헤더가 대신함)
+            // v1.1 §7-2 #10: 직전 활동 → 현재 활동 관계 라벨 (산출물 흐름 시각화)
             const connectorKey = prevCode ? `${prevCode}→${code}` : ''
-            const connectorLabel = !showGroupHeader && prevCode && CONNECTOR_MAP[connectorKey]
+            const connectorLabel = prevCode && CONNECTOR_MAP[connectorKey]
             return (
               <div key={code}>
-                {showGroupHeader && (
-                  <div className={cn('flex items-center gap-2 px-2 pt-2 pb-1', idx > 0 && 'mt-1')}>
-                    <span className={cn('text-[10px] font-bold tabular-nums opacity-60', color.text)}>
-                      {currentStage}-{group}
-                    </span>
-                    <span className="flex-1 h-px bg-[#F1F3F4]" aria-hidden="true" />
-                  </div>
-                )}
                 {connectorLabel && (
                   // h-6 스트립 + 좌측 세로 단계색 라인 + 관계 라벨 (산출물 흐름 시각화)
                   <div className="flex items-center gap-2 h-6 px-4" aria-hidden="true">

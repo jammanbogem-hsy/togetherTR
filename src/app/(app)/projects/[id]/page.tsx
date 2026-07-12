@@ -13,7 +13,7 @@ import {
   type LobbyMessage
 } from '@/lib/firebase/projects'
 import type { Project } from '@/types'
-import { STAGES, ACTIVITY_META } from '@/types'
+import { STAGES, ACTIVITY_META, displayActivityCode } from '@/types'
 import type { UserProfile } from '@/lib/auth'
 import { StageBar } from '@/components/stage/StageBar'
 import { ActivitySidebar } from '@/components/activity/ActivitySidebar'
@@ -774,7 +774,7 @@ export default function ProjectPage() {
                     className="text-[12px] font-extrabold text-[#5F6368] tracking-widest"
                     style={{ writingMode: 'vertical-rl' }}
                   >
-                    {currentActivity}
+                    {displayActivityCode(currentActivity)}
                   </span>
                   {ACTIVITY_META[currentActivity]?.label && (
                     <span
@@ -929,7 +929,7 @@ export default function ProjectPage() {
                     <>
                       <span className="text-[#DADCE0] text-[11px]" aria-hidden="true">·</span>
                       <span className="text-[11px] font-semibold text-[#5F6368] truncate min-w-0">
-                        <span className="font-mono tabular-nums" style={{ color: color.hex }}>{currentActivity}</span>
+                        <span className="font-mono tabular-nums" style={{ color: color.hex }}>{displayActivityCode(currentActivity)}</span>
                       </span>
                     </>
                   )}
