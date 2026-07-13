@@ -403,7 +403,7 @@ body {
 .panel-scroll::-webkit-scrollbar-thumb:hover { background: #5F6368; background-clip: padding-box; border: 2px solid #F8F9FA; }
 
 /* ── /login 안내형 랜딩 (append-only, 기존 규칙 불변 — docs/login-guide-design-spec.md §9) ── */
-.font-display { font-family: var(--font-gowun), var(--font-noto), 'Nanum Myeongjo', serif; }
+.font-display { font-family: var(--font-noto), 'Google Sans', 'Roboto', sans-serif; letter-spacing: -0.02em; }
 .overline { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #1558D6; }
 .landing-section { scroll-margin-top: 80px; }
 .reveal { opacity: 0; transform: translateY(16px); }

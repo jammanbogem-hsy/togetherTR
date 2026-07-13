@@ -33,23 +33,8 @@ export function HeroSection() {
     <section
       id="login"
       aria-labelledby="hero-title"
-      className="landing-section relative overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, #EAF2FF 0%, #F8F9FA 50%, #F3E5F5 100%)' }}
+      className="landing-section relative overflow-hidden bg-[#F8FAFD]"
     >
-      {/* 배경 장식 원 (기존 로그인 페이지에서 이식 — 섹션 내부 한정) */}
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div style={{
-          position: 'absolute', top: '-10%', left: '-8%',
-          width: '420px', height: '420px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(26,115,232,0.10) 0%, transparent 70%)',
-        }} />
-        <div style={{
-          position: 'absolute', bottom: '-8%', right: '-6%',
-          width: '360px', height: '360px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(123,31,162,0.09) 0%, transparent 70%)',
-        }} />
-      </div>
-
       <div className={`${CONTAINER} relative pt-24 pb-16 md:pt-28 md:pb-24`}>
         <div className="flex flex-col gap-10 lg:grid lg:grid-cols-[1fr_minmax(360px,420px)] lg:gap-12 lg:items-center">
           {/* 좌: 카피 (모바일에선 헤드라인 → 카드 → 서브카피 순서) */}
@@ -67,7 +52,7 @@ export function HeroSection() {
               </p>
               <ul className="flex flex-wrap gap-2 mt-5" aria-label="핵심 특징">
                 {chips.map(chip => (
-                  <li key={chip.label} className="flex items-center gap-1.5 rounded-full bg-white/80 border border-[#E8EAED] px-3 py-1.5">
+                  <li key={chip.label} className="flex items-center gap-1.5 rounded-lg bg-white border border-[#C4C7C5] px-3 py-1.5">
                     <chip.icon className="w-4 h-4 text-[#1558D6]" aria-hidden="true" />
                     <span className="text-[13.5px] font-semibold text-[#3C4043]">{chip.label}</span>
                   </li>
@@ -144,8 +129,7 @@ export function WorkflowSection() {
     <section
       id="workflow"
       aria-labelledby="workflow-title"
-      className="landing-section"
-      style={{ background: 'linear-gradient(180deg, #FFFFFF 0%, #F8F9FA 100%)' }}
+      className="landing-section bg-[#F8FAFD]"
     >
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <SectionHeading
@@ -180,7 +164,7 @@ export function WorkflowSection() {
                   {stage.activities.map(act => (
                     <li
                       key={act.display}
-                      className="flex items-center gap-1.5 rounded-full bg-white/85 border border-[#E8EAED] px-3 py-1.5"
+                      className="flex items-center gap-1.5 rounded-lg bg-white/90 border border-[#C4C7C5] px-3 py-1.5"
                     >
                       <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: stage.color.hex }} />
                       <span className="text-[13.5px] font-semibold text-[#3C4043]">
@@ -262,7 +246,7 @@ export function AiFacilitatorSection() {
 // ── 5. 협력 UP 5원리 ─────────────────────────────────
 export function PrinciplesSection() {
   return (
-    <section id="principles" aria-labelledby="principles-title" className="landing-section bg-[#F8F9FA]">
+    <section id="principles" aria-labelledby="principles-title" className="landing-section bg-[#F8FAFD]">
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <SectionHeading
           id="principles-title"
@@ -275,7 +259,7 @@ export function PrinciplesSection() {
             <Reveal key={p.tag} delayMs={i * 80}>
               <div className="rounded-2xl border border-[#E8EAED] bg-white p-5 md-shadow-1 h-full">
                 <p className="text-[12.5px] font-bold text-[#9AA0A6] mb-2">{String(i + 1).padStart(2, '0')}</p>
-                <p className="inline-block rounded-full bg-[#E8F0FE] px-3.5 py-1.5 text-[14.5px] font-bold text-[#1558D6] mb-2.5">
+                <p className="inline-block rounded-lg bg-[#E8F0FE] px-3.5 py-1.5 text-[14.5px] font-bold text-[#1558D6] mb-2.5">
                   {p.tag}
                 </p>
                 <p className="text-[14.5px] leading-[1.7] text-[#5F6368]">{p.desc}</p>
@@ -327,7 +311,7 @@ export function CollaborationSection() {
 // ── 7. FAQ ────────────────────────────────────────────
 export function FaqSection() {
   return (
-    <section id="faq" aria-labelledby="faq-title" className="landing-section bg-[#F8F9FA]">
+    <section id="faq" aria-labelledby="faq-title" className="landing-section bg-[#F8FAFD]">
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <SectionHeading id="faq-title" overline="FAQ" title="자주 묻는 질문" />
         <div className="max-w-[720px] mx-auto">
@@ -352,8 +336,7 @@ export function FinalCtaSection() {
     <section
       id="cta"
       aria-labelledby="cta-title"
-      className="landing-section"
-      style={{ background: 'linear-gradient(135deg, #E8F0FE 0%, #F3E5F5 100%)' }}
+      className="landing-section bg-[#E8F0FE]"
     >
       <div className="max-w-[720px] mx-auto px-5 py-20 md:py-28 text-center">
         <h2 id="cta-title" className="font-display text-[32px] md:text-[42px] font-bold leading-[1.3] tracking-[-0.01em] text-[#202124]">
@@ -364,8 +347,7 @@ export function FinalCtaSection() {
         </p>
         <a
           href="#login"
-          className="morph-btn inline-flex items-center gap-2 px-8 py-4 bg-[#1A73E8] text-white font-bold text-[16.5px] focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-4"
-          style={{ filter: 'drop-shadow(0 4px 14px rgba(26,115,232,0.42))' }}
+          className="inline-flex items-center gap-2 rounded-full px-8 py-4 bg-[#1A73E8] text-white font-bold text-[16.5px] hover:bg-[#1558D6] transition-colors md-shadow-2 focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-4"
         >
           바로 로그인하기
           <ArrowUp className="w-4 h-4" aria-hidden="true" />

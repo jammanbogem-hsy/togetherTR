@@ -4,7 +4,6 @@
 export const dynamic = 'force-dynamic'
 
 import LandingNav from './landing/LandingNav'
-import { gowunBatang } from './landing/fonts'
 import {
   HeroSection,
   StartSection,
@@ -19,7 +18,7 @@ import {
 
 export default function LoginPage() {
   return (
-    <div className={`${gowunBatang.variable} relative min-h-screen bg-[#F8F9FA]`}>
+    <div className="relative min-h-screen bg-[#F8FAFD]">
       <LandingNav />
       {/* 고정 네비가 sticky이므로 Hero를 네비 뒤로 겹치게 올림 */}
       <main className="-mt-16">

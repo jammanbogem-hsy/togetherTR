@@ -162,7 +162,7 @@ export function CollabMockup() {
         </div>
         <div className="flex gap-1.5">
           {['HWPX', 'PDF', '공유 링크'].map(t => (
-            <span key={t} className="rounded-full bg-[#E8F0FE] text-[#1558D6] text-[11px] font-bold px-2.5 py-1">{t}</span>
+            <span key={t} className="rounded-lg bg-[#E8F0FE] text-[#1558D6] text-[11px] font-bold px-2.5 py-1">{t}</span>
           ))}
         </div>
       </div>
