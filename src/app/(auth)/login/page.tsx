@@ -22,7 +22,7 @@ export default function LoginPage() {
     <div className={`${gowunBatang.variable} relative min-h-screen bg-[#F8F9FA]`}>
       <LandingNav />
       {/* 고정 네비가 sticky이므로 Hero를 네비 뒤로 겹치게 올림 */}
-      <main className="-mt-14">
+      <main className="-mt-16">
         <HeroSection />
         <StartSection />
         <WorkflowSection />

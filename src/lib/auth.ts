@@ -57,6 +57,41 @@ function getEmojiForUid(uid: string): string {
 
 const LS_PROFILE_KEY = 'tcid_user_profile'
 
+// ─── 세션 만료 (보안) ─────────────────────────────────────────────────────────
+// 로그인 후 24시간이 지나면 다음 페이지 진입 시 자동 로그아웃 (절대 만료).
+// 멀티탭 사용(보고서 새 탭 등)을 위해 브라우저 세션 지속성 대신 타임스탬프 방식 사용.
+const LS_SESSION_KEY = 'tcid_session_started'
+const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+export function markSessionStarted() {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(LS_SESSION_KEY, String(Date.now()))
+}
+
+function clearSessionStarted() {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(LS_SESSION_KEY)
+}
+
+/** 세션 만료 여부 — 타임스탬프가 없으면(구버전 로그인) 만료로 간주해 1회 재로그인 유도. */
+export function isSessionExpired(): boolean {
+  if (typeof window === 'undefined') return false
+  const raw = localStorage.getItem(LS_SESSION_KEY)
+  if (!raw) return true
+  const started = Number(raw)
+  if (!Number.isFinite(started)) return true
+  return Date.now() - started > SESSION_MAX_AGE_MS
+}
+
+/** 만료 시 완전 로그아웃 처리 후 true 반환. */
+async function expireSessionIfNeeded(): Promise<boolean> {
+  if (!isSessionExpired()) return false
+  try { await firebaseSignOut(auth) } catch { /* 이미 로그아웃 상태 등 — 무시 */ }
+  clearLocalProfile()
+  clearSessionStarted()
+  return true
+}
+
 export function getLocalProfile(): UserProfile | null {
   if (typeof window === 'undefined') return null
   const raw = localStorage.getItem(LS_PROFILE_KEY)
@@ -120,6 +155,7 @@ export async function signInWithGoogle(): Promise<{
 }> {
   const result = await signInWithPopup(auth, googleProvider)
   const user = result.user
+  markSessionStarted() // 24시간 세션 시작 시점 기록
   const existingProfile = await loadFirestoreProfile(user.uid)
   return { firebaseUser: user, existingProfile }
 }
@@ -157,6 +193,7 @@ export async function completeProfile(
 export async function signOut(): Promise<void> {
   await firebaseSignOut(auth)
   clearLocalProfile()
+  clearSessionStarted()
 }
 
 // ─── 세션 복원 ────────────────────────────────────────────────────────────────
@@ -170,6 +207,11 @@ export function onProfileRestored(
   callback: (profile: UserProfile | null) => void
 ): () => void {
   return onAuthStateChanged(auth, async (user) => {
+    // 24시간 절대 만료 — 만료됐으면 로그아웃 처리 후 비로그인으로 응답
+    if (user && (await expireSessionIfNeeded())) {
+      callback(null)
+      return
+    }
     if (!user) {
       // 비로그인: localStorage 캐시도 제거
       clearLocalProfile()
@@ -204,6 +246,8 @@ const LEGACY_COLORS = new Set([
 export async function getOrRestoreProfile(): Promise<UserProfile | null> {
   const profile = getLocalProfile()
   if (!profile) return null
+  // 24시간 절대 만료 — 만료됐으면 로그아웃 처리 후 비로그인으로 응답 (루트 진입 가드)
+  if (await expireSessionIfNeeded()) return null
   // 구 팔레트 색상이거나 emoji 필드 누락이면 갱신 후 저장
   if (LEGACY_COLORS.has(profile.color) || !profile.emoji) {
     const updated = {

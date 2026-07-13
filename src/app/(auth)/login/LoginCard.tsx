@@ -81,7 +81,7 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
   }
 
   return (
-    <div className="w-full max-w-sm relative">
+    <div className="w-full max-w-md relative">
       {/* 로고 (showBrand=false 시 랜딩 Hero가 h1을 담당하므로 렌더하지 않음 — 중복 h1 방지) */}
       {showBrand && (
         <div className="text-center mb-8">
@@ -112,18 +112,18 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
         {step === 'google' ? (
           <>
             <div className="text-center mb-6">
-              <p className="text-[15px] font-bold text-[#202124]">시작하기</p>
-              <p className="text-[12px] text-[#9AA0A6] mt-1">Google 계정으로 로그인하세요</p>
+              <p className="text-[17px] font-bold text-[#202124]">시작하기</p>
+              <p className="text-[13.5px] text-[#9AA0A6] mt-1">Google 계정으로 로그인하세요</p>
             </div>
 
             {error && (
-              <p className="text-[12px] text-[#C62828] mb-4 bg-[#FFEBEE] rounded-xl px-3 py-2 text-center">{error}</p>
+              <p className="text-[13px] text-[#C62828] mb-4 bg-[#FFEBEE] rounded-xl px-3 py-2 text-center">{error}</p>
             )}
 
             <button
               onClick={handleGoogleLogin}
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl border border-[#E8EAED] bg-white text-[14px] font-semibold text-[#202124] hover:bg-[#F8F9FA] transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl border border-[#E8EAED] bg-white text-[15.5px] font-semibold text-[#202124] hover:bg-[#F8F9FA] transition-colors disabled:opacity-50"
               style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.10)' }}
             >
               {isLoading ? (
@@ -153,22 +153,22 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
                 </div>
               )}
               <div>
-                <p className="text-[14px] font-bold text-[#202124]">프로필을 완성해주세요</p>
-                <p className="text-[12px] text-[#9AA0A6]">{firebaseUser?.email}</p>
+                <p className="text-[15.5px] font-bold text-[#202124]">프로필을 완성해주세요</p>
+                <p className="text-[13px] text-[#9AA0A6]">{firebaseUser?.email}</p>
               </div>
             </div>
 
             <div className="space-y-3">
               {/* 이름 */}
               <div>
-                <label className="block text-[11px] font-semibold text-[#5F6368] mb-1">이름</label>
+                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">이름</label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={e => setDisplayName(e.target.value)}
                   placeholder="예) 김민준 선생님"
                   maxLength={20}
-                  className="w-full rounded-xl border border-[#E8EAED] bg-white px-3.5 py-2.5 text-[13px] text-[#202124] placeholder:text-[#BDC1C6] outline-none"
+                  className="w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[14.5px] text-[#202124] placeholder:text-[#BDC1C6] outline-none"
                   onFocus={e => e.currentTarget.style.borderColor = '#1A73E8'}
                   onBlur={e => e.currentTarget.style.borderColor = '#E8EAED'}
                 />
@@ -176,13 +176,13 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
 
               {/* 학교급 */}
               <div>
-                <label className="block text-[11px] font-semibold text-[#5F6368] mb-1">학교급</label>
+                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">학교급</label>
                 <div className="flex gap-2">
                   {SCHOOL_LEVELS.map(level => (
                     <button
                       key={level}
                       onClick={() => { setSchoolLevel(level); setGrade('전학년') }}
-                      className={`flex-1 py-2 rounded-xl text-[12px] font-semibold border transition-colors ${
+                      className={`flex-1 py-2.5 rounded-xl text-[13.5px] font-semibold border transition-colors ${
                         schoolLevel === level
                           ? 'bg-[#1A73E8] text-white border-[#1A73E8]'
                           : 'bg-white text-[#5F6368] border-[#E8EAED] hover:border-[#1A73E8]'
@@ -196,14 +196,14 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
 
               {/* 학교명 */}
               <div>
-                <label className="block text-[11px] font-semibold text-[#5F6368] mb-1">학교명</label>
+                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">학교명</label>
                 <input
                   type="text"
                   value={schoolName}
                   onChange={e => setSchoolName(e.target.value)}
                   placeholder="예) 한국초등학교"
                   maxLength={30}
-                  className="w-full rounded-xl border border-[#E8EAED] bg-white px-3.5 py-2.5 text-[13px] text-[#202124] placeholder:text-[#BDC1C6] outline-none"
+                  className="w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[14.5px] text-[#202124] placeholder:text-[#BDC1C6] outline-none"
                   onFocus={e => e.currentTarget.style.borderColor = '#1A73E8'}
                   onBlur={e => e.currentTarget.style.borderColor = '#E8EAED'}
                 />
@@ -211,12 +211,12 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
 
               {/* 담당 학년 */}
               <div>
-                <label className="block text-[11px] font-semibold text-[#5F6368] mb-1">담당 학년</label>
+                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">담당 학년</label>
                 <div className="relative">
                   <select
                     value={grade}
                     onChange={e => setGrade(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-[#E8EAED] bg-white px-3.5 py-2.5 text-[13px] text-[#202124] outline-none pr-8"
+                    className="w-full appearance-none rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[14.5px] text-[#202124] outline-none pr-8"
                   >
                     {(GRADE_OPTIONS[schoolLevel] ?? []).map(g => (
                       <option key={g} value={g}>{g}</option>
@@ -228,13 +228,13 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
             </div>
 
             {error && (
-              <p className="text-[12px] text-[#C62828] mt-3 bg-[#FFEBEE] rounded-xl px-3 py-2">{error}</p>
+              <p className="text-[13px] text-[#C62828] mt-3 bg-[#FFEBEE] rounded-xl px-3 py-2">{error}</p>
             )}
 
             <button
               onClick={handleCompleteProfile}
               disabled={!displayName.trim() || !schoolName.trim() || isLoading}
-              className="morph-btn w-full mt-4 py-3.5 bg-[#1A73E8] text-white font-bold text-[14px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+              className="morph-btn w-full mt-4 py-4 bg-[#1A73E8] text-white font-bold text-[15.5px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
               style={{ filter: displayName.trim() && schoolName.trim() && !isLoading ? 'drop-shadow(0 4px 14px rgba(26,115,232,0.42))' : 'none' }}
             >
               {isLoading ? (
@@ -247,7 +247,7 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
         )}
       </div>
 
-      <p className="text-center text-[12px] text-[#9AA0A6] mt-4">
+      <p className="text-center text-[13.5px] text-[#9AA0A6] mt-4">
         프로필은 대시보드에서 언제든지 수정할 수 있습니다
       </p>
     </div>

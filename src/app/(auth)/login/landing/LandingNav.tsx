@@ -32,19 +32,19 @@ export default function LandingNav() {
       <div ref={sentinelRef} aria-hidden="true" className="h-px w-px absolute top-0" />
       <nav
         aria-label="페이지 내비게이션"
-        className={`sticky top-0 z-50 h-14 flex items-center justify-between px-4 md:px-8 transition-all duration-200 ${
+        className={`sticky top-0 z-50 h-16 flex items-center justify-between px-4 md:px-8 transition-all duration-200 ${
           scrolled ? 'bg-white/85 backdrop-blur-md md-shadow-1' : 'bg-transparent'
         }`}
       >
         <a href="#login" className="flex items-center gap-2.5 focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-2 rounded-lg">
           <span
             aria-hidden="true"
-            className="inline-flex items-center justify-center w-8 h-8 bg-[#1A73E8]"
+            className="inline-flex items-center justify-center w-9 h-9 bg-[#1A73E8]"
             style={{ animation: 'morph-shape 8s ease-in-out infinite' }}
           >
-            <BookOpen className="w-4 h-4 text-white" strokeWidth={2.2} />
+            <BookOpen className="w-5 h-5 text-white" strokeWidth={2.2} />
           </span>
-          <span className="text-[15px] font-bold text-[#202124]">T-CID 협력 수업설계</span>
+          <span className="text-[16px] font-bold text-[#202124]">T-CID 협력 수업설계</span>
         </a>
 
         <div className="flex items-center gap-1 md:gap-5">
@@ -53,7 +53,7 @@ export default function LandingNav() {
               <a
                 key={a.href}
                 href={a.href}
-                className="text-[13px] font-semibold text-[#5F6368] hover:text-[#1A73E8] transition-colors focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-2 rounded"
+                className="text-[14px] font-semibold text-[#5F6368] hover:text-[#1A73E8] transition-colors focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-2 rounded"
               >
                 {a.label}
               </a>
@@ -61,7 +61,7 @@ export default function LandingNav() {
           </div>
           <a
             href="#login"
-            className="rounded-full px-4 py-2 text-[13px] font-bold bg-[#1A73E8] text-white hover:bg-[#1558D6] transition-colors focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-2"
+            className="rounded-full px-5 py-2.5 text-[14px] font-bold bg-[#1A73E8] text-white hover:bg-[#1558D6] transition-colors focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-2"
           >
             바로 로그인
           </a>
