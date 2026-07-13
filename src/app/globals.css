@@ -401,3 +401,24 @@ body {
 .panel-scroll::-webkit-scrollbar-track { background: #F8F9FA; border-radius: 5px; }
 .panel-scroll::-webkit-scrollbar-thumb { background: #9AA0A6; border-radius: 5px; border: 2px solid #F8F9FA; background-clip: padding-box; min-height: 30px; }
 .panel-scroll::-webkit-scrollbar-thumb:hover { background: #5F6368; background-clip: padding-box; border: 2px solid #F8F9FA; }
+
+/* ── /login 안내형 랜딩 (append-only, 기존 규칙 불변 — docs/login-guide-design-spec.md §9) ── */
+.font-display { font-family: var(--font-gowun), var(--font-noto), 'Nanum Myeongjo', serif; }
+.overline { font-size: 12px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #1558D6; }
+.landing-section { scroll-margin-top: 72px; }
+.reveal { opacity: 0; transform: translateY(16px); }
+.reveal-in {
+  opacity: 1; transform: none;
+  transition: opacity .6s cubic-bezier(.4,0,.2,1) var(--reveal-delay,0ms),
+              transform .6s cubic-bezier(.4,0,.2,1) var(--reveal-delay,0ms);
+}
+details.faq-item > summary { list-style: none; }
+details.faq-item > summary::-webkit-details-marker { display: none; }
+details.faq-item > summary svg { transition: transform .2s ease; }
+details.faq-item[open] > summary svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; }
+  .reveal-in { transition: none; }
+  html { scroll-behavior: auto; }
+}
