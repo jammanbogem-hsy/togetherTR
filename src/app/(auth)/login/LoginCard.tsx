@@ -1,14 +1,14 @@
 'use client'
 
 // 로그인 카드 — 기존 page.tsx의 로그인 로직·UI를 verbatim 이식 (기능 무변경).
-// 허용된 변경 3가지만 적용: ① 'use client'/import 이동 ② showBrand prop(브랜드 블록 조건부 렌더)
-// ③ 페이지 배경/장식은 랜딩 쪽(HeroSection)으로 분리.
+// 로그인 로직(핸들러·상태·조건·maxLength·Google svg)은 문자 단위로 동일.
+// Material Design 3 표현(클래스·정적 텍스트 크기·아이콘·필드 스타일)만 변경.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProjectStore } from '@/store/project'
 import { signInWithGoogle, completeProfile } from '@/lib/auth'
 import type { User } from 'firebase/auth'
-import { BookOpen, ArrowRight, Loader2, ChevronDown } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 type Step = 'google' | 'profile'
 
@@ -85,49 +85,37 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
       {/* 로고 (showBrand=false 시 랜딩 Hero가 h1을 담당하므로 렌더하지 않음 — 중복 h1 방지) */}
       {showBrand && (
         <div className="text-center mb-8">
-          <div
-            className="inline-flex items-center justify-center w-[72px] h-[72px] bg-[#1A73E8] mb-5 shadow-xl"
-            style={{
-              animation: 'morph-shape 8s ease-in-out infinite, stage-bounce 3s ease-in-out infinite',
-              boxShadow: '0 8px 28px rgba(26,115,232,0.42)',
-            }}
-          >
-            <BookOpen className="w-8 h-8 text-white" strokeWidth={2.2} />
+          <div className="inline-flex items-center justify-center w-[72px] h-[72px] rounded-[20px] bg-[var(--md-primary-container)] mb-5">
+            <span className="material-symbols-rounded text-[color:var(--md-on-primary-container)]" style={{ fontSize: 34 }} aria-hidden="true">menu_book</span>
           </div>
-          <h1 className="text-[26px] font-black text-[#202124] tracking-tight">T-CID 협력 수업설계</h1>
-          <p className="text-[13px] text-[#5F6368] mt-1.5">AI 퍼실리테이터와 함께하는 수업설계</p>
+          <h1 className="text-[26px] font-black text-[color:var(--md-on-surface)] tracking-tight">T-CID 협력 수업설계</h1>
+          <p className="text-[13px] text-[color:var(--md-on-surface-variant)] mt-1.5">AI 퍼실리테이터와 함께하는 수업설계</p>
         </div>
       )}
 
-      {/* 카드 */}
+      {/* 카드 (M3 surface-container-lowest · elevation-1) */}
       <div
-        className="project-card rounded-3xl p-6 shadow-2xl"
-        style={{
-          '--cc': 'rgba(26,115,232,0.12)',
-          '--cx1': '100%', '--cy1': '0%',
-          '--cx2': '0%',  '--cy2': '100%',
-          '--card-speed': '0.7s',
-        } as React.CSSProperties}
+        className="rounded-[28px] border border-[color:var(--md-outline-variant)] bg-[var(--md-surface-container-lowest)] p-6"
+        style={{ boxShadow: '0 1px 3px 1px rgb(0 0 0 / 0.1), 0 1px 2px rgb(0 0 0 / 0.15)' }}
       >
         {step === 'google' ? (
           <>
             <div className="text-center mb-6">
-              <p className="text-[17px] font-bold text-[#202124]">시작하기</p>
-              <p className="text-[13.5px] text-[#9AA0A6] mt-1">Google 계정으로 로그인하세요</p>
+              <p className="text-[22px] font-bold text-[color:var(--md-on-surface)]">시작하기</p>
+              <p className="text-[15px] text-[color:var(--md-on-surface-variant)] mt-1">Google 계정으로 로그인하세요</p>
             </div>
 
             {error && (
-              <p className="text-[13px] text-[#C62828] mb-4 bg-[#FFEBEE] rounded-xl px-3 py-2 text-center">{error}</p>
+              <p className="text-[14px] text-[color:var(--md-on-error-container)] mb-4 bg-[var(--md-error-container)] rounded-xl px-3 py-2 text-center">{error}</p>
             )}
 
             <button
               onClick={handleGoogleLogin}
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl border border-[#E8EAED] bg-white text-[15.5px] font-semibold text-[#202124] hover:bg-[#F8F9FA] transition-colors disabled:opacity-50"
-              style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.10)' }}
+              className="m3-state w-full flex items-center justify-center gap-3 h-14 rounded-full border border-[color:var(--md-outline)] bg-[var(--md-surface)] text-[16.5px] font-medium text-[color:var(--md-on-surface)] disabled:opacity-50"
             >
               {isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin text-[#1A73E8]" />
+                <Loader2 className="w-5 h-5 animate-spin text-[color:var(--md-primary)]" />
               ) : (
                 <svg width="20" height="20" viewBox="0 0 48 48">
                   <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -148,46 +136,47 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={firebaseUser.photoURL} alt="" className="w-10 h-10 rounded-full" referrerPolicy="no-referrer" />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-[#E8F0FE] flex items-center justify-center text-[#1A73E8] font-bold text-[14px]">
+                <div className="w-10 h-10 rounded-full bg-[var(--md-primary-container)] flex items-center justify-center text-[color:var(--md-on-primary-container)] font-bold text-[14px]">
                   {displayName[0] ?? '?'}
                 </div>
               )}
               <div>
-                <p className="text-[15.5px] font-bold text-[#202124]">프로필을 완성해주세요</p>
-                <p className="text-[13px] text-[#9AA0A6]">{firebaseUser?.email}</p>
+                <p className="text-[16px] font-bold text-[color:var(--md-on-surface)]">프로필을 완성해주세요</p>
+                <p className="text-[13px] text-[color:var(--md-on-surface-variant)]">{firebaseUser?.email}</p>
               </div>
             </div>
 
             <div className="space-y-3">
               {/* 이름 */}
               <div>
-                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">이름</label>
+                <label className="block text-[13.5px] font-medium text-[color:var(--md-on-surface-variant)] mb-1">이름</label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={e => setDisplayName(e.target.value)}
                   placeholder="예) 김민준 선생님"
                   maxLength={20}
-                  className="w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[14.5px] text-[#202124] placeholder:text-[#BDC1C6] outline-none"
-                  onFocus={e => e.currentTarget.style.borderColor = '#1A73E8'}
-                  onBlur={e => e.currentTarget.style.borderColor = '#E8EAED'}
+                  className="m3-field w-full px-4 py-3 text-[16px] text-[color:var(--md-on-surface)] placeholder:text-[color:var(--md-outline)]"
                 />
               </div>
 
-              {/* 학교급 */}
+              {/* 학교급 (M3 connected segmented) */}
               <div>
-                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">학교급</label>
-                <div className="flex gap-2">
-                  {SCHOOL_LEVELS.map(level => (
+                <label className="block text-[13.5px] font-medium text-[color:var(--md-on-surface-variant)] mb-1">학교급</label>
+                <div className="flex rounded-full border border-[color:var(--md-outline)] overflow-hidden">
+                  {SCHOOL_LEVELS.map((level, idx) => (
                     <button
                       key={level}
                       onClick={() => { setSchoolLevel(level); setGrade('전학년') }}
-                      className={`flex-1 py-2.5 rounded-xl text-[13.5px] font-semibold border transition-colors ${
+                      className={`m3-state flex-1 flex items-center justify-center gap-1 py-2.5 text-[14px] font-medium transition-colors ${idx > 0 ? 'border-l border-[color:var(--md-outline)]' : ''} ${
                         schoolLevel === level
-                          ? 'bg-[#1A73E8] text-white border-[#1A73E8]'
-                          : 'bg-white text-[#5F6368] border-[#E8EAED] hover:border-[#1A73E8]'
+                          ? 'bg-[var(--md-secondary-container)] text-[color:var(--md-on-secondary-container)]'
+                          : 'bg-transparent text-[color:var(--md-on-surface)]'
                       }`}
                     >
+                      {schoolLevel === level && (
+                        <span className="material-symbols-rounded" style={{ fontSize: 16 }} aria-hidden="true">check</span>
+                      )}
                       {level}
                     </button>
                   ))}
@@ -196,58 +185,55 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
 
               {/* 학교명 */}
               <div>
-                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">학교명</label>
+                <label className="block text-[13.5px] font-medium text-[color:var(--md-on-surface-variant)] mb-1">학교명</label>
                 <input
                   type="text"
                   value={schoolName}
                   onChange={e => setSchoolName(e.target.value)}
                   placeholder="예) 한국초등학교"
                   maxLength={30}
-                  className="w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[14.5px] text-[#202124] placeholder:text-[#BDC1C6] outline-none"
-                  onFocus={e => e.currentTarget.style.borderColor = '#1A73E8'}
-                  onBlur={e => e.currentTarget.style.borderColor = '#E8EAED'}
+                  className="m3-field w-full px-4 py-3 text-[16px] text-[color:var(--md-on-surface)] placeholder:text-[color:var(--md-outline)]"
                 />
               </div>
 
-              {/* 담당 학년 */}
+              {/* 담당 학년 (M3 filled field + expand_more) */}
               <div>
-                <label className="block text-[12.5px] font-semibold text-[#5F6368] mb-1">담당 학년</label>
+                <label className="block text-[13.5px] font-medium text-[color:var(--md-on-surface-variant)] mb-1">담당 학년</label>
                 <div className="relative">
                   <select
                     value={grade}
                     onChange={e => setGrade(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[14.5px] text-[#202124] outline-none pr-8"
+                    className="m3-field w-full appearance-none px-4 py-3 text-[16px] text-[color:var(--md-on-surface)] pr-9"
                   >
                     {(GRADE_OPTIONS[schoolLevel] ?? []).map(g => (
                       <option key={g} value={g}>{g}</option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9AA0A6] pointer-events-none" />
+                  <span className="material-symbols-rounded absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--md-on-surface-variant)] pointer-events-none" style={{ fontSize: 20 }} aria-hidden="true">expand_more</span>
                 </div>
               </div>
             </div>
 
             {error && (
-              <p className="text-[13px] text-[#C62828] mt-3 bg-[#FFEBEE] rounded-xl px-3 py-2">{error}</p>
+              <p className="text-[14px] text-[color:var(--md-on-error-container)] mt-3 bg-[var(--md-error-container)] rounded-xl px-3 py-2">{error}</p>
             )}
 
             <button
               onClick={handleCompleteProfile}
               disabled={!displayName.trim() || !schoolName.trim() || isLoading}
-              className="morph-btn w-full mt-4 py-4 bg-[#1A73E8] text-white font-bold text-[15.5px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-              style={{ filter: displayName.trim() && schoolName.trim() && !isLoading ? 'drop-shadow(0 4px 14px rgba(26,115,232,0.42))' : 'none' }}
+              className="m3-state w-full mt-5 h-14 rounded-full bg-[var(--md-primary)] text-[color:var(--md-on-primary)] font-medium text-[16.5px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <><Loader2 className="w-4 h-4 animate-spin" />저장 중...</>
               ) : (
-                <><span>수업설계 시작하기</span><ArrowRight className="w-4 h-4" /></>
+                <><span>수업설계 시작하기</span><span className="material-symbols-rounded" style={{ fontSize: 20 }} aria-hidden="true">arrow_forward</span></>
               )}
             </button>
           </>
         )}
       </div>
 
-      <p className="text-center text-[13.5px] text-[#9AA0A6] mt-4">
+      <p className="text-center text-[14px] text-[color:var(--md-on-surface-variant)] mt-4">
         프로필은 대시보드에서 언제든지 수정할 수 있습니다
       </p>
     </div>

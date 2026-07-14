@@ -51,12 +51,12 @@ export const START_STEPS = [
   },
 ] as const
 
-// AI가 하는 네 가지 일
+// AI가 하는 네 가지 일 (symbol: Material Symbols Rounded 리거처, emoji: 하위호환 유지)
 export const AI_ROLES = [
-  { emoji: '📌', title: '절차 안내', desc: '활동마다 무엇을 어떤 순서로 정하면 되는지 단계별로 안내합니다.' },
-  { emoji: '✍️', title: '초안 제안', desc: '비전·규칙·평가 등 산출물의 A안·B안 초안을 제안해 논의의 출발점을 만듭니다.' },
-  { emoji: '🔍', title: '정합성 점검', desc: '앞 단계에서 정한 비전·목표와 어긋나는 부분이나 빠진 항목을 짚어줍니다.' },
-  { emoji: '📝', title: '대화·기록', desc: '팀 토의를 제안하고, 이름을 부르며 개인별로 피드백해 논의를 기록으로 남깁니다.' },
+  { emoji: '📌', symbol: 'checklist', title: '절차 안내', desc: '활동마다 무엇을 어떤 순서로 정하면 되는지 단계별로 안내합니다.' },
+  { emoji: '✍️', symbol: 'edit_document', title: '초안 제안', desc: '비전·규칙·평가 등 산출물의 A안·B안 초안을 제안해 논의의 출발점을 만듭니다.' },
+  { emoji: '🔍', symbol: 'task_alt', title: '정합성 점검', desc: '앞 단계에서 정한 비전·목표와 어긋나는 부분이나 빠진 항목을 짚어줍니다.' },
+  { emoji: '📝', symbol: 'forum', title: '대화·기록', desc: '팀 토의를 제안하고, 이름을 부르며 개인별로 피드백해 논의를 기록으로 남깁니다.' },
 ] as const
 
 // 협력 UP 5원리

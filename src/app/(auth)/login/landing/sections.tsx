@@ -1,6 +1,6 @@
 // 랜딩 섹션 모음 — 명세서(docs/login-guide-design-spec.md) §3 순서 그대로.
+// Material Design 3 리스타일: 토큰(.m3-landing)·Material Symbols Rounded·큰 타입스케일.
 // 서버 컴포넌트(정적 마크업) + 클라이언트 섬(LoginCard·Reveal)만 삽입.
-import { LogIn, Users, FolderPlus, Sparkles, RefreshCw, Check, ChevronRight, ChevronDown, ArrowUp, BookOpen } from 'lucide-react'
 import LoginCard from '../LoginCard'
 import Reveal from './Reveal'
 import {
@@ -10,14 +10,33 @@ import { LoginMockup, InviteMockup, ProjectMockup, MiniChatMockup, ChatMockup, C
 
 const CONTAINER = 'max-w-[1120px] mx-auto px-5 md:px-8'
 
+// Material Symbols Rounded 아이콘 — 전부 장식용(aria-hidden).
+function Sym({ name, size = 24, fill = false, className = '', style }: {
+  name: string; size?: number; fill?: boolean; className?: string; style?: React.CSSProperties
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`material-symbols-rounded${fill ? ' m3-icon-fill' : ''} ${className}`}
+      style={{ fontSize: size, ...style }}
+    >
+      {name}
+    </span>
+  )
+}
+
 function SectionHeading({ overline, title, sub, id }: { overline: string; title: string; sub?: string; id: string }) {
   return (
-    <div className="text-center mb-10 md:mb-14">
-      <p className="overline mb-2">{overline}</p>
-      <h2 id={id} className="font-display text-[32px] md:text-[40px] font-bold leading-[1.25] tracking-[-0.01em] text-[#202124]">
+    <div className="text-center mb-12 md:mb-16">
+      <p className="m3-overline mb-3">{overline}</p>
+      <h2 id={id} className="text-[clamp(34px,5vw,48px)] font-bold leading-[1.18] tracking-[-0.02em] text-[color:var(--md-on-surface)]">
         {title}
       </h2>
-      {sub && <p className="text-[17px] md:text-[19px] leading-[1.75] text-[#5F6368] mt-3">{sub}</p>}
+      {sub && (
+        <p className="text-[19px] md:text-[21px] leading-[1.7] text-[color:var(--md-on-surface-variant)] mt-4 max-w-[640px] mx-auto">
+          {sub}
+        </p>
+      )}
     </div>
   )
 }
@@ -25,36 +44,36 @@ function SectionHeading({ overline, title, sub, id }: { overline: string; title:
 // ── 1. Hero + 로그인 카드 ─────────────────────────────
 export function HeroSection() {
   const chips = [
-    { icon: LogIn, label: 'Google 계정으로 바로 시작' },
-    { icon: Users, label: '초대 코드로 팀 참여' },
-    { icon: RefreshCw, label: '실시간 공동 편집' },
+    { icon: 'login', label: 'Google 계정으로 바로 시작' },
+    { icon: 'groups', label: '초대 코드로 팀 참여' },
+    { icon: 'sync', label: '실시간 공동 편집' },
   ]
   return (
     <section
       id="login"
       aria-labelledby="hero-title"
-      className="landing-section relative overflow-hidden bg-[#F8FAFD]"
+      className="landing-section relative overflow-hidden bg-[var(--md-surface-container-low)]"
     >
       <div className={`${CONTAINER} relative pt-24 pb-16 md:pt-28 md:pb-24`}>
         <div className="flex flex-col gap-10 lg:grid lg:grid-cols-[1fr_minmax(360px,420px)] lg:gap-12 lg:items-center">
           {/* 좌: 카피 (모바일에선 헤드라인 → 카드 → 서브카피 순서) */}
           <div className="contents lg:block">
             <div className="order-1">
-              <p className="overline mb-3">함께 만드는 수업 설계</p>
-              <h1 id="hero-title" className="font-display text-[clamp(34px,6.5vw,60px)] font-bold leading-[1.18] tracking-[-0.02em] text-[#202124]">
+              <p className="m3-overline mb-3">함께 만드는 수업 설계</p>
+              <h1 id="hero-title" className="text-[clamp(40px,6vw,60px)] font-bold leading-[1.12] tracking-[-0.02em] text-[color:var(--md-on-surface)]">
                 함께 밭을 일구듯,<br className="hidden md:block" /> 동료와 짓는 수업 설계
               </h1>
             </div>
-            <div className="order-3 lg:mt-5">
-              <p className="text-[17px] md:text-[19px] leading-[1.75] text-[#5F6368]">
+            <div className="order-3 lg:mt-6">
+              <p className="text-[19px] md:text-[21px] leading-[1.7] text-[color:var(--md-on-surface-variant)]">
                 T-CID 다섯 단계를 따라, 동료 교사들이 한 팀이 되어 한 학기 수업을 함께 설계합니다.
                 AI 퍼실리테이터가 활동마다 절차를 안내하고, 초안을 제안하고, 정합성을 점검합니다.
               </p>
-              <ul className="flex flex-wrap gap-2 mt-5" aria-label="핵심 특징">
+              <ul className="flex flex-wrap gap-2 mt-6" aria-label="핵심 특징">
                 {chips.map(chip => (
-                  <li key={chip.label} className="flex items-center gap-1.5 rounded-lg bg-white border border-[#C4C7C5] px-3 py-1.5">
-                    <chip.icon className="w-4 h-4 text-[#1558D6]" aria-hidden="true" />
-                    <span className="text-[13.5px] font-semibold text-[#3C4043]">{chip.label}</span>
+                  <li key={chip.label} className="m3-state inline-flex items-center gap-2 h-9 rounded-lg border border-[color:var(--md-outline-variant)] bg-[var(--md-surface)] px-3">
+                    <Sym name={chip.icon} size={18} className="text-[color:var(--md-primary)]" />
+                    <span className="text-[15px] font-medium text-[color:var(--md-on-surface)]">{chip.label}</span>
                   </li>
                 ))}
               </ul>
@@ -62,16 +81,23 @@ export function HeroSection() {
           </div>
 
           {/* 우: 로그인 카드 (로직 무변경 — showBrand=false로 중복 h1 방지) */}
-          <div className="order-2 lg:order-none flex justify-center">
-            <LoginCard showBrand={false} />
+          <div className="order-2 lg:order-none relative flex justify-center">
+            {/* 표현적 장식 도형 — fonts.google.com 스타일 (aria-hidden) */}
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="w-[360px] h-[360px] max-w-full rounded-[48px] rotate-[12deg] bg-[var(--md-primary-container)] opacity-50" />
+              <div className="absolute right-2 -top-2 w-24 h-24 rounded-[28px] rotate-[-10deg] bg-[var(--md-tertiary-container)] opacity-60" />
+            </div>
+            <div className="relative z-10 w-full flex justify-center">
+              <LoginCard showBrand={false} />
+            </div>
           </div>
         </div>
 
         {/* 스크롤 큐 (데스크톱) */}
         <div aria-hidden="true" className="hidden lg:flex justify-center mt-14">
-          <span className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[#9AA0A6]">
+          <span className="flex items-center gap-1.5 text-[15px] font-medium text-[color:var(--md-on-surface-variant)]">
             아래로 내려 살펴보기
-            <ChevronDown className="w-4 h-4" style={{ animation: 'chevron-flow 1.6s ease-in-out infinite' }} />
+            <Sym name="expand_more" size={20} style={{ animation: 'chevron-flow 1.6s ease-in-out infinite' }} />
           </span>
         </div>
       </div>
@@ -81,10 +107,10 @@ export function HeroSection() {
 
 // ── 2. 4단계 시작 ─────────────────────────────────────
 export function StartSection() {
-  const icons = [LogIn, Users, FolderPlus, Sparkles]
+  const icons = ['login', 'groups', 'add_circle', 'auto_awesome']
   const mockups = [LoginMockup, InviteMockup, ProjectMockup, MiniChatMockup]
   return (
-    <section id="start" aria-labelledby="start-title" className="landing-section bg-white">
+    <section id="start" aria-labelledby="start-title" className="landing-section bg-[var(--md-surface)]">
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <SectionHeading
           id="start-title"
@@ -94,21 +120,20 @@ export function StartSection() {
         />
         <div className="space-y-12 md:space-y-16">
           {START_STEPS.map((step, i) => {
-            const Icon = icons[i]
             const Mockup = mockups[i]
             const reversed = i % 2 === 1
             return (
               <Reveal key={step.no}>
                 <div className={`grid md:grid-cols-2 gap-6 md:gap-12 items-center ${reversed ? 'md:[direction:rtl]' : ''}`}>
                   <div className="md:[direction:ltr]">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="w-12 h-12 rounded-full bg-[#E8F0FE] flex items-center justify-center text-[16px] font-bold text-[#1558D6]">
+                    <div className="flex items-center gap-4 mb-4">
+                      <span className="w-14 h-14 rounded-full bg-[var(--md-primary-container)] flex items-center justify-center text-[18px] font-bold text-[color:var(--md-on-primary-container)]">
                         {step.no}
                       </span>
-                      <Icon className="w-6 h-6 text-[#1A73E8]" aria-hidden="true" />
+                      <Sym name={icons[i]} size={28} className="text-[color:var(--md-primary)]" />
                     </div>
-                    <h3 className="text-[22px] font-bold text-[#202124] mb-2">{step.title}</h3>
-                    <p className="text-[15.5px] leading-[1.75] text-[#5F6368]">{step.desc}</p>
+                    <h3 className="text-[24px] font-bold text-[color:var(--md-on-surface)] mb-2.5">{step.title}</h3>
+                    <p className="text-[16px] leading-[1.65] text-[color:var(--md-on-surface-variant)]">{step.desc}</p>
                   </div>
                   <div className="md:[direction:ltr] max-w-[380px] w-full mx-auto">
                     <Mockup />
@@ -129,7 +154,7 @@ export function WorkflowSection() {
     <section
       id="workflow"
       aria-labelledby="workflow-title"
-      className="landing-section bg-[#F8FAFD]"
+      className="landing-section bg-[var(--md-surface-container-low)]"
     >
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <SectionHeading
@@ -142,8 +167,8 @@ export function WorkflowSection() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
           {WORKFLOW_STAGES.map((stage, i) => (
             <Reveal key={stage.code} delayMs={i * 80}>
-              <div className={`rounded-2xl border p-6 h-full ${stage.color.light} ${stage.color.border}`}>
-                <div className="flex items-center justify-between mb-2">
+              <div className={`rounded-[24px] p-6 h-full ${stage.color.light}`}>
+                <div className="flex items-center justify-between mb-2.5">
                   <div className="flex items-center gap-2.5">
                     <span
                       className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-bold"
@@ -151,23 +176,23 @@ export function WorkflowSection() {
                     >
                       {stage.code}
                     </span>
-                    <h3 className={`text-[17px] font-bold ${stage.color.doneText}`}>{stage.label}</h3>
+                    <h3 className={`text-[20px] font-bold ${stage.color.doneText}`}>{stage.label}</h3>
                   </div>
-                  <span className="text-[13.5px] font-semibold" style={{ color: stage.color.hex }}>
+                  <span className="text-[15px] font-semibold" style={{ color: stage.color.hex }}>
                     {stage.activities.length}개 활동
                   </span>
                 </div>
-                <p className={`font-display text-[16.5px] leading-[1.5] mb-3.5 ${stage.color.doneText}`}>
+                <p className={`text-[16.5px] leading-[1.5] mb-4 ${stage.color.doneText}`}>
                   {stage.metaphor}
                 </p>
                 <ul className="flex flex-wrap gap-1.5">
                   {stage.activities.map(act => (
                     <li
                       key={act.display}
-                      className="flex items-center gap-1.5 rounded-lg bg-white/90 border border-[#C4C7C5] px-3 py-1.5"
+                      className="flex items-center gap-1.5 rounded-lg bg-white/90 border border-[color:var(--md-outline-variant)] px-3 py-1.5"
                     >
                       <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: stage.color.hex }} />
-                      <span className="text-[13.5px] font-semibold text-[#3C4043]">
+                      <span className="text-[14px] font-medium text-[color:var(--md-on-surface)]">
                         {act.display} · {act.label}
                       </span>
                     </li>
@@ -186,20 +211,20 @@ export function WorkflowSection() {
                 <span key={stage.code} className="flex items-center gap-2 md:gap-3">
                   <span className="flex items-center gap-1.5">
                     <span aria-hidden="true" className="w-3 h-3 rounded-full" style={{ backgroundColor: stage.color.hex }} />
-                    <span className={`text-[12.5px] font-bold ${stage.color.doneText}`}>{stage.code} {stage.label}</span>
+                    <span className={`text-[13px] font-bold ${stage.color.doneText}`}>{stage.code} {stage.label}</span>
                   </span>
                   {i < WORKFLOW_STAGES.length - 1 && (
-                    <ChevronRight className="w-3.5 h-3.5 text-[#9AA0A6]" aria-hidden="true" />
+                    <Sym name="chevron_right" size={18} className="text-[color:var(--md-on-surface-variant)]" />
                   )}
                 </span>
               ))}
             </div>
-            <div aria-hidden="true" className="flex items-center gap-1.5 mt-1">
+            <div aria-hidden="true" className="flex items-center gap-1.5 mt-1 text-[color:var(--md-outline)]">
               <svg width="120" height="22" viewBox="0 0 120 22" fill="none">
-                <path d="M116 4 C 116 18, 4 18, 6 6" stroke="#9AA0A6" strokeWidth="1.5" strokeDasharray="3 3" />
-                <path d="M2 10 L6 4 L10 9" stroke="#9AA0A6" strokeWidth="1.5" fill="none" />
+                <path d="M116 4 C 116 18, 4 18, 6 6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
+                <path d="M2 10 L6 4 L10 9" stroke="currentColor" strokeWidth="1.5" fill="none" />
               </svg>
-              <span className="text-[12.5px] font-semibold text-[#5F6368]">다음 주기</span>
+              <span className="text-[13px] font-medium text-[color:var(--md-on-surface-variant)]">다음 주기</span>
             </div>
           </div>
         </Reveal>
@@ -211,24 +236,26 @@ export function WorkflowSection() {
 // ── 4. AI 퍼실리테이터 ────────────────────────────────
 export function AiFacilitatorSection() {
   return (
-    <section id="ai" aria-labelledby="ai-title" className="landing-section bg-white">
+    <section id="ai" aria-labelledby="ai-title" className="landing-section bg-[var(--md-surface)]">
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <div className="grid lg:grid-cols-2 gap-10 items-center">
           <div>
-            <p className="overline mb-2">AI FACILITATOR</p>
-            <h2 id="ai-title" className="font-display text-[32px] md:text-[40px] font-bold leading-[1.25] tracking-[-0.01em] text-[#202124]">
+            <p className="m3-overline mb-3">AI FACILITATOR</p>
+            <h2 id="ai-title" className="text-[clamp(34px,5vw,48px)] font-bold leading-[1.18] tracking-[-0.02em] text-[color:var(--md-on-surface)]">
               곁에서 함께 설계하는<br />AI 퍼실리테이터
             </h2>
-            <p className="text-[17.5px] leading-[1.8] text-[#5F6368] mt-3 mb-7">
+            <p className="text-[19px] md:text-[21px] leading-[1.7] text-[color:var(--md-on-surface-variant)] mt-4 mb-8">
               AI는 정답을 대신 정해주지 않습니다. 팀이 스스로 결정하도록 절차를 안내하고, 초안을 제안하고, 놓친 부분을 짚어줍니다.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {AI_ROLES.map((role, i) => (
                 <Reveal key={role.title} delayMs={i * 80}>
-                  <div className="rounded-2xl border border-[#E8EAED] bg-white p-5 md-shadow-1 h-full">
-                    <p aria-hidden="true" className="text-[28px] leading-none mb-2">{role.emoji}</p>
-                    <h3 className="text-[16px] font-bold text-[#202124] mb-1">{role.title}</h3>
-                    <p className="text-[14.5px] leading-[1.65] text-[#5F6368]">{role.desc}</p>
+                  <div className="rounded-[20px] bg-[var(--md-surface-container-low)] p-5 h-full transition-colors duration-200 hover:bg-[var(--md-surface-container)]">
+                    <span aria-hidden="true" className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-[var(--md-primary-container)] mb-3">
+                      <Sym name={role.symbol} size={24} className="text-[color:var(--md-on-primary-container)]" />
+                    </span>
+                    <h3 className="text-[18px] font-bold text-[color:var(--md-on-surface)] mb-1.5">{role.title}</h3>
+                    <p className="text-[16px] leading-[1.65] text-[color:var(--md-on-surface-variant)]">{role.desc}</p>
                   </div>
                 </Reveal>
               ))}
@@ -246,7 +273,7 @@ export function AiFacilitatorSection() {
 // ── 5. 협력 UP 5원리 ─────────────────────────────────
 export function PrinciplesSection() {
   return (
-    <section id="principles" aria-labelledby="principles-title" className="landing-section bg-[#F8FAFD]">
+    <section id="principles" aria-labelledby="principles-title" className="landing-section bg-[var(--md-surface-container-low)]">
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <SectionHeading
           id="principles-title"
@@ -257,12 +284,12 @@ export function PrinciplesSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           {PRINCIPLES.map((p, i) => (
             <Reveal key={p.tag} delayMs={i * 80}>
-              <div className="rounded-2xl border border-[#E8EAED] bg-white p-5 md-shadow-1 h-full">
-                <p className="text-[12.5px] font-bold text-[#9AA0A6] mb-2">{String(i + 1).padStart(2, '0')}</p>
-                <p className="inline-block rounded-lg bg-[#E8F0FE] px-3.5 py-1.5 text-[14.5px] font-bold text-[#1558D6] mb-2.5">
+              <div className="rounded-[20px] bg-[var(--md-surface-container)] p-5 h-full">
+                <p className="text-[14px] font-bold text-[color:var(--md-on-surface-variant)] mb-2">{String(i + 1).padStart(2, '0')}</p>
+                <p className="inline-block rounded-lg bg-[var(--md-primary-container)] px-3.5 py-1.5 text-[15px] font-bold text-[color:var(--md-on-primary-container)] mb-2.5">
                   {p.tag}
                 </p>
-                <p className="text-[14.5px] leading-[1.7] text-[#5F6368]">{p.desc}</p>
+                <p className="text-[16px] leading-[1.65] text-[color:var(--md-on-surface-variant)]">{p.desc}</p>
               </div>
             </Reveal>
           ))}
@@ -275,25 +302,25 @@ export function PrinciplesSection() {
 // ── 6. 협업·산출물·보고서 ─────────────────────────────
 export function CollaborationSection() {
   return (
-    <section id="collab" aria-labelledby="collab-title" className="landing-section bg-white">
+    <section id="collab" aria-labelledby="collab-title" className="landing-section bg-[var(--md-surface)]">
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <div className="grid lg:grid-cols-2 gap-10 items-center">
           <div>
-            <p className="overline mb-2">COLLABORATION</p>
-            <h2 id="collab-title" className="font-display text-[32px] md:text-[40px] font-bold leading-[1.25] tracking-[-0.01em] text-[#202124]">
+            <p className="m3-overline mb-3">COLLABORATION</p>
+            <h2 id="collab-title" className="text-[clamp(34px,5vw,48px)] font-bold leading-[1.18] tracking-[-0.02em] text-[color:var(--md-on-surface)]">
               같은 화면에서,<br />함께 쌓는 산출물
             </h2>
-            <p className="text-[17.5px] leading-[1.8] text-[#5F6368] mt-3 mb-7">
+            <p className="text-[19px] md:text-[21px] leading-[1.7] text-[color:var(--md-on-surface-variant)] mt-4 mb-8">
               채팅·산출물·활동 상태가 실시간으로 동기화됩니다. 논의한 내용은 그대로 기록과 보고서로 남습니다.
             </p>
             <ul className="space-y-4">
               {COLLAB_FEATURES.map(f => (
                 <li key={f.title} className="flex gap-3">
-                  <span aria-hidden="true" className="mt-0.5 w-6 h-6 rounded-full bg-[#E6F4EA] flex items-center justify-center flex-shrink-0">
-                    <Check className="w-3.5 h-3.5 text-[#34A853]" />
+                  <span aria-hidden="true" className="mt-0.5 w-8 h-8 rounded-full bg-[var(--md-tertiary-container)] flex items-center justify-center flex-shrink-0">
+                    <Sym name="check_circle" size={22} fill className="text-[color:var(--md-on-tertiary-container)]" />
                   </span>
-                  <p className="text-[15.5px] leading-[1.7] text-[#3C4043]">
-                    <strong className="font-bold text-[#202124]">{f.title}</strong> — {f.desc}
+                  <p className="text-[17px] leading-[1.7] text-[color:var(--md-on-surface-variant)]">
+                    <strong className="font-bold text-[color:var(--md-on-surface)]">{f.title}</strong> — {f.desc}
                   </p>
                 </li>
               ))}
@@ -311,17 +338,17 @@ export function CollaborationSection() {
 // ── 7. FAQ ────────────────────────────────────────────
 export function FaqSection() {
   return (
-    <section id="faq" aria-labelledby="faq-title" className="landing-section bg-[#F8FAFD]">
+    <section id="faq" aria-labelledby="faq-title" className="landing-section bg-[var(--md-surface)]">
       <div className={`${CONTAINER} py-16 md:py-24`}>
         <SectionHeading id="faq-title" overline="FAQ" title="자주 묻는 질문" />
         <div className="max-w-[720px] mx-auto">
           {FAQ_ITEMS.map(item => (
-            <details key={item.q} className="faq-item border-b border-[#E8EAED]">
-              <summary className="text-[17px] font-bold text-[#202124] py-5 cursor-pointer flex justify-between items-center gap-3 focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-2 rounded">
+            <details key={item.q} className="faq-item rounded-[16px] bg-[var(--md-surface-container-low)] px-5 mb-3 open:bg-[var(--md-surface-container)]">
+              <summary className="m3-state rounded-[12px] text-[18px] font-medium text-[color:var(--md-on-surface)] py-5 cursor-pointer flex justify-between items-center gap-3">
                 {item.q}
-                <ChevronDown className="w-5 h-5 text-[#9AA0A6] flex-shrink-0" aria-hidden="true" />
+                <Sym name="expand_more" size={24} className="text-[color:var(--md-on-surface-variant)] flex-shrink-0" />
               </summary>
-              <p className="text-[15.5px] text-[#5F6368] leading-[1.75] pb-5">{item.a}</p>
+              <p className="text-[16.5px] text-[color:var(--md-on-surface-variant)] leading-[1.7] pb-5">{item.a}</p>
             </details>
           ))}
         </div>
@@ -336,21 +363,21 @@ export function FinalCtaSection() {
     <section
       id="cta"
       aria-labelledby="cta-title"
-      className="landing-section bg-[#E8F0FE]"
+      className="landing-section bg-[var(--md-secondary-container)]"
     >
       <div className="max-w-[720px] mx-auto px-5 py-20 md:py-28 text-center">
-        <h2 id="cta-title" className="font-display text-[32px] md:text-[42px] font-bold leading-[1.3] tracking-[-0.01em] text-[#202124]">
+        <h2 id="cta-title" className="text-[clamp(34px,5vw,48px)] font-bold leading-[1.2] tracking-[-0.02em] text-[color:var(--md-on-secondary-container)]">
           이제, 우리 팀의 밭을 일굴 차례입니다
         </h2>
-        <p className="text-[17.5px] leading-[1.8] text-[#5F6368] mt-3 mb-8">
+        <p className="text-[19px] md:text-[21px] leading-[1.7] text-[color:var(--md-on-secondary-container)] opacity-80 mt-4 mb-8">
           Google 계정만 있으면 바로 시작할 수 있습니다.
         </p>
         <a
           href="#login"
-          className="inline-flex items-center gap-2 rounded-full px-8 py-4 bg-[#1A73E8] text-white font-bold text-[16.5px] hover:bg-[#1558D6] transition-colors md-shadow-2 focus-visible:outline-2 focus-visible:outline-[#1A73E8] focus-visible:outline-offset-4"
+          className="m3-state inline-flex items-center gap-2 h-14 rounded-full px-10 bg-[var(--md-primary)] text-[color:var(--md-on-primary)] font-medium text-[17px]"
         >
           바로 로그인하기
-          <ArrowUp className="w-4 h-4" aria-hidden="true" />
+          <Sym name="arrow_upward" size={20} />
         </a>
       </div>
     </section>
@@ -360,15 +387,15 @@ export function FinalCtaSection() {
 // ── 9. 푸터 ──────────────────────────────────────────
 export function LandingFooter() {
   return (
-    <footer className="bg-[#F1F3F4] py-10 text-center">
+    <footer className="bg-[var(--md-surface-container-high)] py-10 text-center">
       <div className="flex items-center justify-center gap-2 mb-2">
-        <span aria-hidden="true" className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-[#1A73E8]">
-          <BookOpen className="w-3.5 h-3.5 text-white" strokeWidth={2.2} />
+        <span aria-hidden="true" className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--md-primary-container)]">
+          <Sym name="menu_book" size={18} className="text-[color:var(--md-on-primary-container)]" />
         </span>
-        <span className="text-[14.5px] font-bold text-[#3C4043]">T-CID 협력 수업설계</span>
+        <span className="text-[15px] font-bold text-[color:var(--md-on-surface)]">T-CID 협력 수업설계</span>
       </div>
-      <p className="text-[13.5px] text-[#5F6368]">AI 퍼실리테이터와 함께하는 협력적 수업 설계</p>
-      <p className="text-[13.5px] text-[#9AA0A6] mt-1.5">© 2026 T-CID</p>
+      <p className="text-[14px] text-[color:var(--md-on-surface-variant)]">AI 퍼실리테이터와 함께하는 협력적 수업 설계</p>
+      <p className="text-[14px] text-[color:var(--md-on-surface-variant)] mt-1.5">© 2026 T-CID</p>
     </footer>
   )
 }

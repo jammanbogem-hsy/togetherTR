@@ -422,3 +422,92 @@ details.faq-item[open] > summary svg { transform: rotate(180deg); }
   .reveal-in { transition: none; }
   html { scroll-behavior: auto; }
 }
+
+/* ── /login Material Design 3 restyle (append-only, additive) ─────────────── */
+/* Authentic Google M3 light tokens, scoped under .m3-landing so no other route
+   or shared class is affected. Applied to the /login root div only. */
+.m3-landing {
+  --md-primary: #0B57D0;
+  --md-on-primary: #FFFFFF;
+  --md-primary-container: #D3E3FD;
+  --md-on-primary-container: #041E49;
+  --md-secondary-container: #C2E7FF;
+  --md-on-secondary-container: #001D35;
+  --md-tertiary-container: #C4EED0;
+  --md-on-tertiary-container: #072711;
+  --md-surface: #FFFFFF;
+  --md-surface-container-lowest: #FFFFFF;
+  --md-surface-container-low: #F8FAFD;
+  --md-surface-container: #F0F4F9;
+  --md-surface-container-high: #E9EEF6;
+  --md-surface-container-highest: #DDE3EA;
+  --md-on-surface: #1F1F1F;
+  --md-on-surface-variant: #444746;
+  --md-outline: #747775;
+  --md-outline-variant: #C4C7C5;
+  --md-error: #B3261E;
+  --md-error-container: #F9DEDC;
+  --md-on-error-container: #410E0B;
+  /* Latin/digits render Roboto; Korean falls back to the global Noto Sans KR. */
+  font-family: var(--font-roboto), var(--font-noto), sans-serif;
+  /* 한글 단어 중간 줄바꿈 방지(설계 → 설/계) — CJK에만 작용, 라틴은 영향 없음 */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* M3 overline / eyebrow label */
+.m3-overline {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--md-primary);
+}
+
+/* Material Symbols Rounded — variation axes + inline alignment */
+.m3-landing .material-symbols-rounded {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+  user-select: none;
+}
+.m3-landing .m3-icon-fill {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* M3 state layer — hover/press tint using the element's currentColor */
+.m3-state { position: relative; }
+.m3-state::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+.m3-state:hover::after { opacity: 0.08; }
+.m3-state:active::after { opacity: 0.12; }
+
+/* M3 filled text field (input/select) */
+.m3-field {
+  background-color: var(--md-surface-container-highest);
+  border: 0;
+  border-bottom: 2px solid var(--md-outline);
+  border-radius: 8px 8px 0 0;
+  transition: border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+.m3-field:focus { outline: none; border-bottom-color: var(--md-primary); }
+
+/* FAQ expand icon rotate — Material Symbols span replaces the former svg */
+details.faq-item > summary .material-symbols-rounded { transition: transform .2s cubic-bezier(0.2, 0, 0, 1); }
+details.faq-item[open] > summary .material-symbols-rounded { transform: rotate(180deg); }
+
+/* Focus-visible ring, retoken to M3 primary (landing interactive elements) */
+.m3-landing a:focus-visible,
+.m3-landing button:focus-visible,
+.m3-landing summary:focus-visible {
+  outline: 2px solid var(--md-primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
