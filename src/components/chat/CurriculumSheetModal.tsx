@@ -605,6 +605,45 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     // 자동 해제 없음 — 다른 셀 클릭 또는 모달 닫기 시에만 해제
   }, [onPresenceUpdate, currentUid, currentUserName, currentUserColor])
 
+  // 그래프 등 외부 경로에서 온 행의 빈 지식·이해/과정·기능을 내용체계 원문으로 자동 보강 — 빈 셀만, 사용자가 편집 중인 셀 제외.
+  // 채워지면 재실행돼도 no-op이라 루프가 종료된다.
+  useEffect(() => {
+    if (!open || loading || contentItems.length === 0) return
+    const CAPS = { knowledge: 3, processFunction: 2 } as const
+    const changedCells: Array<{ rowId: string; field: 'knowledge' | 'processFunction'; value: string }> = []
+    const changedRowIds = new Set<string>()
+    const nextRows = rows.map(row => {
+      if (!(row.coreIdea ?? '').trim()) return row
+      let next = row
+      for (const field of ['knowledge', 'processFunction'] as const) {
+        if ((row[field] ?? '').trim()) continue
+        if (dirtyCellVersionsRef.current[`${row.id}:${field}`] !== undefined) continue
+        const matched = matchContentElementsForRow(row, field).slice(0, CAPS[field])
+        if (matched.length === 0) continue
+        const value = joinValues(matched)
+        next = { ...next, [field]: value }
+        changedCells.push({ rowId: row.id, field, value })
+        changedRowIds.add(row.id)
+      }
+      return next === row ? row : { ...next, updatedBy: currentUserName, updatedAt: Date.now() }
+    })
+    if (changedCells.length === 0) return
+    rowsRef.current = nextRows
+    setRows(nextRows)
+    setDirty(true)
+    if (onPatchSave) {
+      for (const { rowId, field, value } of changedCells) {
+        if (serverRowIdsRef.current.has(rowId)) scheduleCellPatch(rowId, field, value)
+      }
+      for (const rowId of changedRowIds) {
+        if (!serverRowIdsRef.current.has(rowId)) scheduleRowUpsert(rowId)
+      }
+    } else {
+      triggerSave(nextRows)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, loading, contentItems, standards, rows, targetGradeGroup])
+
   function updateRow(id: string, field: CurriculumSheetEditableField, value: string) {
     setRows(prev => {
       const n = prev.map(r => r.id === id ? { ...r, [field]: value, updatedBy: currentUserName, updatedAt: Date.now() } : r)
@@ -765,6 +804,29 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     })
   }
 
+  // 행의 핵심아이디어에 매칭되는 내용체계 원문(지식·이해/과정·기능)만 반환 — getPickerOptions coreIdea 분기와 동일 스코핑.
+  // STRICT: 핵심아이디어에 매칭되는 항목이 없으면 [] (자동 보강이 핵심아이디어와 무관한 값을 쓰지 않도록).
+  function matchContentElementsForRow(row: CurriculumSheetRow, field: 'knowledge' | 'processFunction'): string[] {
+    const subj = row.subject ?? ''; const ci = row.coreIdea ?? ''
+    if (!ci) return []
+    const si = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
+    const selectedAreas = unique(splitValues(row.standard)
+      .map(value => {
+        const code = normalizeStandardCode(value)
+        return standards.find(s => normalizeStandardCode(s.code) === code || normalizeStandardCode(s.label) === code)?.area ?? ''
+      })
+      .filter(Boolean))
+    const scopedItems = selectedAreas.length
+      ? si.filter(i => selectedAreas.some(area => curriculumTextMatches(i.area, area)))
+      : si
+    const areaScopedItems = scopedItems.length > 0 ? scopedItems : si
+    const matched = areaScopedItems.filter(i => i.coreIdeas.some(c => curriculumTextMatches(c, ci)))
+    if (matched.length === 0) return []
+    matched.sort((a, b) => a.coreIdeas.length - b.coreIdeas.length)
+    const raw = filterByTargetGrade(field === 'knowledge' ? matched[0].knowledge : matched[0].functions, targetGradeGroup)
+    return [...new Set(raw)]
+  }
+
   function getPickerOptions(rowId: string, field: PickerField): string[] {
     const row = rows.find(r => r.id === rowId); const subj = row?.subject ?? ''; const ci = row?.coreIdea ?? ''
     const si = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
@@ -786,13 +848,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     }
     if (field === 'knowledge' || field === 'processFunction') {
       // 내용체계 JSON 원문만 사용한다. 보조 매핑/AI 생성값은 선택창 후보에서 제외한다.
-      if (ci) {
-        const matched = areaScopedItems.filter(i => i.coreIdeas.some(c => curriculumTextMatches(c, ci)))
-        if (matched.length > 0) {
-          matched.sort((a, b) => a.coreIdeas.length - b.coreIdeas.length)
-          const raw = gradeFiltered(field === 'knowledge' ? matched[0].knowledge : matched[0].functions)
-          return [...new Set(raw)]
-        }
+      if (ci && row) {
+        const matched = matchContentElementsForRow(row, field)
+        if (matched.length > 0) return matched
       }
 
       // 폴백도 현재 교과/영역/학년군의 내용체계 원문으로만 제한
