@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useProjectStore } from '@/store/project'
-import { STAGES, ACTIVITY_META, type ActivityCode, type StageStatus, displayActivityCode } from '@/types'
+import { STAGES, ACTIVITY_META, SOLO_HIDDEN_ACTIVITIES, type ActivityCode, type StageStatus, displayActivityCode } from '@/types'
 import { setProjectActivity, setAnalysisOpen } from '@/lib/firebase/projects'
 import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
 import { cn } from '@/lib/utils'
@@ -358,13 +358,18 @@ export function ActivitySidebar() {
   const currentStageInfo = STAGES.find(s => s.code === currentStage)!
   const guide = STAGE_GUIDE[currentStage]
   const color = STAGE_COLOR[currentStage]
+  // solo는 협력 전용 활동을 사이드바에서 감춘다. 표시·진행률·단계전환 판정 모두 이 목록을 기준으로 한다.
+  const isSolo = project.mode === 'solo'
+  const visibleActivities = isSolo
+    ? currentStageInfo.activities.filter(a => !SOLO_HIDDEN_ACTIVITIES.includes(a))
+    : currentStageInfo.activities
   // 산출물이 있어야 완료로 간주 (status만으로는 완료 처리 안 함)
   // P1-I: 중앙화된 헬퍼로 위임 (E 단계 requiredSections 검증 포함).
   function isEffectivelyDone(code: ActivityCode) {
     return checkEffectivelyDone(code, activityStatus, project?.artifacts)
   }
-  const completedCount = currentStageInfo.activities.filter(a => isEffectivelyDone(a)).length
-  const totalCount = currentStageInfo.activities.length
+  const completedCount = visibleActivities.filter(a => isEffectivelyDone(a)).length
+  const totalCount = visibleActivities.length
   const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
 
   function handleActivityClick(code: ActivityCode) {
@@ -463,9 +468,9 @@ export function ActivitySidebar() {
       <div className="flex-1 min-h-0 overflow-y-scroll panel-scroll px-2 py-3">
         <p className="text-[11px] font-semibold text-[#9AA0A6] uppercase tracking-widest px-2 mb-1.5">활동</p>
         <div className="space-y-0.5">
-          {currentStageInfo.activities.map((code, idx) => {
+          {visibleActivities.map((code, idx) => {
             // 표시 체계는 가이드 문서(260619)의 평면 번호(T-1~T-5 등)를 따름 — 내부 서브그룹(T-1-x/T-2-x) 헤더는 표시하지 않는다.
-            const prevCode = idx > 0 ? currentStageInfo.activities[idx - 1] : null
+            const prevCode = idx > 0 ? visibleActivities[idx - 1] : null
             // v1.1 §7-2 #10: 직전 활동 → 현재 활동 관계 라벨 (산출물 흐름 시각화)
             const connectorKey = prevCode ? `${prevCode}→${code}` : ''
             const connectorLabel = prevCode && CONNECTOR_MAP[connectorKey]

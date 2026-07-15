@@ -26,6 +26,10 @@ export const STAGES: StageInfo[] = [
   { code: 'E',  label: '평가',      description: '우리의 열매를 거두는 시간',           activities: ['E-1-1','E-2-1'] },
 ]
 
+// 개인 설계(solo) 모드에서 화면·진행률 계산에서 제외하는 활동 6종 (협력 전용 성격이 강한 활동).
+// 협력 모드는 전 활동을 그대로 노출 — 이 목록은 solo 게이팅 전용이며, STAGES 순서를 따라 사이드바·단계 이동에서 재사용한다.
+export const SOLO_HIDDEN_ACTIVITIES: ActivityCode[] = ['T-1-2', 'T-2-1', 'T-2-2', 'A-1-1', 'Ds-2-1', 'Ds-2-2']
+
 // ─── 활동 ───────────────────────────────────────────
 export type ActivityCode =
   | 'T-1-1' | 'T-1-2' | 'T-2-1' | 'T-2-2' | 'T-2-3'

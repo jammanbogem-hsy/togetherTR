@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, DISPLAY_TO_ACTIVITY_CODE, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
-import { ACTIVITY_WELCOME } from '@/lib/prompts/system'
+import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
@@ -2283,7 +2283,9 @@ export function ChatPanel() {
   useEffect(() => {
     if (!project?.started) return
     if (!messagesLoaded) return
-    const welcome = ACTIVITY_WELCOME[currentActivity]
+    // 개인 설계는 축약 환영 메시지 우선, 없으면 팀판으로 폴백 (협력 모드는 기존 그대로)
+    const welcome = (project?.mode === 'solo' ? SOLO_ACTIVITY_WELCOME[currentActivity] : undefined)
+      ?? ACTIVITY_WELCOME[currentActivity]
     if (!welcome) return
     // 이미 AI 메시지가 있으면 전송 안 함
     const hasAIMessage = messages.some(m => m.role === 'assistant')
@@ -5178,7 +5180,9 @@ ${discussionSummary}
           ? { background: 'linear-gradient(90deg, #E0F2F1 0%, #F1F8F7 100%)', borderColor: '#80CBC4' }
           : { background: '#F8F9FA', borderColor: '#DADCE0' }}
       >
-        {/* 팀 채팅 컨트롤 바 */}
+        {/* 팀 채팅 컨트롤 바 — solo 모드에서는 팀 협업 컨트롤(방장/팀원·팀 채팅)이 불필요해 숨긴다.
+            (안 선택 대기 메시지는 solo에서도 필요하므로 isWaitingForChoice일 때는 유지) */}
+        {!(proj.mode === 'solo' && !isTeamMode && !isWaitingForChoice) && (
         <div className="flex items-center justify-between mb-2">
           {isTeamMode ? (
             <span className="text-[11px] text-[#00695C] font-medium">팀원끼리 자유롭게 대화하세요 · AI는 잠시 대기 중</span>
@@ -5217,6 +5221,7 @@ ${discussionSummary}
             </>
           )}
         </div>
+        )}
         {/* 채팅 에러 배너 */}
         {chatError && (
           <div className="flex items-center gap-2 mb-1.5 px-3 py-2 rounded-xl bg-[#FCE8E6] border border-[#F28B82]">

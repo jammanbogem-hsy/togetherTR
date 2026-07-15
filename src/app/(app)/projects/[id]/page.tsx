@@ -13,7 +13,7 @@ import {
   type LobbyMessage
 } from '@/lib/firebase/projects'
 import type { Project } from '@/types'
-import { STAGES, ACTIVITY_META, displayActivityCode } from '@/types'
+import { STAGES, ACTIVITY_META, SOLO_HIDDEN_ACTIVITIES, displayActivityCode } from '@/types'
 import type { UserProfile } from '@/lib/auth'
 import { StageBar } from '@/components/stage/StageBar'
 import { ActivitySidebar } from '@/components/activity/ActivitySidebar'
@@ -476,6 +476,19 @@ export default function ProjectPage() {
     migrateKeyNotesToSubcollection(projectId).catch(err => console.warn('[keyNotes] migration failed:', err))
   }, [project, userProfile, projectId])
 
+  // 개인 설계(solo)는 대기실이 없다. 아직 started가 아니면(구버전 데이터 등) 방장(=생성자)이 자동으로
+  // 시작 처리하여 바로 설계 화면으로 진입시킨다. 협력 프로젝트 경로는 건드리지 않는다 (WaitingRoom 유지).
+  const soloAutoStartRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!project || !userProfile) return
+    if (project.mode !== 'solo' || project.started) return
+    const isHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
+    if (!isHost) return
+    if (soloAutoStartRef.current === projectId) return
+    soloAutoStartRef.current = projectId
+    startProject(projectId).catch(err => console.error('[solo] auto-start failed:', err))
+  }, [project, userProfile, projectId])
+
   // Firestore currentActivity → Zustand 동기화 (방장이 이동하면 모두 따라감)
   useEffect(() => {
     if (!project?.currentActivity) return
@@ -644,6 +657,17 @@ export default function ProjectPage() {
 
   // 대기실
   if (!project.started) {
+    // 개인 설계: 대기실 대신 자동 시작(soloAutoStart effect)이 적용되는 동안 짧은 로딩만 노출.
+    if (project.mode === 'solo') {
+      return (
+        <div className="flex items-center justify-center h-screen bg-[#F8F9FA]">
+          <div className="flex flex-col items-center gap-4 text-[#5F6368]">
+            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={32} className="text-[#1A73E8]" /></span>
+            <p className="text-sm font-medium">설계 화면을 준비하는 중...</p>
+          </div>
+        </div>
+      )
+    }
     return (
       <WaitingRoom
         project={project}
@@ -741,7 +765,10 @@ export default function ProjectPage() {
           // Task #34 접힌 상태: 현재 단계 컬러 stripe + 세로 활동코드 + 미니 진행률(세로 fill).
           // 완료 판정은 ActivitySidebar와 동일한 헬퍼(`checkEffectivelyDone`) 재사용 — 판정 규약 통일.
           const stageInfo = STAGES.find(s => s.code === currentStage)
-          const activities = stageInfo?.activities ?? []
+          // solo는 숨김 활동을 진행률 계산에서 제외 (사이드바 표시와 동일 기준 유지)
+          const activities = (stageInfo?.activities ?? []).filter(
+            a => project.mode !== 'solo' || !SOLO_HIDDEN_ACTIVITIES.includes(a)
+          )
           const completedCount = activities.filter(a => checkEffectivelyDone(a, activityStatus, project?.artifacts)).length
           const totalCount = activities.length
           const pct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
@@ -1029,7 +1056,7 @@ export default function ProjectPage() {
               {project.publicStatus?.isPublic ? '공개 중' : '공개'}
             </button>
           )}
-          {project.inviteCode && (
+          {project.mode !== 'solo' && project.inviteCode && (
             <button
               type="button"
               onClick={() => { navigator.clipboard?.writeText(project.inviteCode!).catch(() => {}) }}
@@ -1091,7 +1118,7 @@ export default function ProjectPage() {
           >
             <div className="bg-white rounded-2xl overflow-hidden border border-[#E8EAED]">
               <div className="px-4 py-2.5 border-b border-[#F1F3F4]">
-                <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">참여 중인 팀원</p>
+                <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">{project.mode === 'solo' ? '참여자' : '참여 중인 팀원'}</p>
               </div>
               <div className="py-1.5">
                 {(project.memberUids ?? []).map((mUid: string) => {

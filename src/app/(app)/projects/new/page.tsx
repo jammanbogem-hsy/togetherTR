@@ -89,9 +89,16 @@ export default function NewProjectPage() {
         isA23Completed: false,
         cycleCount: 1,
         metadata: { semester },
+        // 개인 설계는 대기실이 없으므로 생성 시점에 시작 상태로 만든다 (방장 시작 버튼 동작 재현).
+        ...(mode === 'solo' ? { started: true } : {}),
       })
 
       addJoinedProjectId(projectId)
+      // 개인 설계: 초대코드 안내 화면을 건너뛰고 바로 설계 화면으로 이동.
+      if (mode === 'solo') {
+        router.push(`/projects/${projectId}`)
+        return
+      }
       setCreatedProjectId(projectId)
       setCreatedInviteCode(inviteCode)
     } catch (err) {

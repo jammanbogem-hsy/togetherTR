@@ -188,6 +188,10 @@ export async function joinProject(
   const isAlreadyMember = (data.memberUids ?? []).includes(uid)
   // 신규 가입자인 경우에만 inviteCode 일치를 강제한다.
   if (!isAlreadyMember) {
+    // 개인 설계 프로젝트는 초대 참여를 받지 않는다 (2원화 — 협력 프로젝트만 팀 참여 가능).
+    if (data.mode === 'solo') {
+      throw new Error('solo-project')
+    }
     if (!inviteCode || data.inviteCode !== inviteCode) {
       throw new Error('invalid-invite-code')
     }

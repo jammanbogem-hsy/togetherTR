@@ -46,6 +46,8 @@ export default function JoinProjectPage() {
         setError('동일한 초대코드가 중복되어 있어 입장할 수 없습니다. 새 초대코드를 다시 받아주세요.')
       } else if (message === 'invalid-invite-code') {
         setError('초대코드가 일치하지 않습니다. 다시 확인해주세요.')
+      } else if (message === 'solo-project') {
+        setError('이 프로젝트는 개인 설계 프로젝트라 팀 참여가 불가능합니다.')
       } else {
         setError('오류가 발생했습니다. 다시 시도해주세요.')
       }

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useProjectStore } from '@/store/project'
-import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
+import { STAGES, ACTIVITY_META, SOLO_HIDDEN_ACTIVITIES, type StageCode } from '@/types'
 import {
   returnToActivity,
   advanceActivity,
@@ -22,11 +22,14 @@ function getStageLabel(code: StageCode) {
 function getIncompleteActivities(
   fromStage: StageCode,
   activityStatus: Record<string, string>,
-  artifacts: Record<string, { status?: string }> | undefined
+  artifacts: Record<string, { status?: string }> | undefined,
+  isSolo: boolean
 ): string[] {
   const stageInfo = STAGES.find(s => s.code === fromStage)
   if (!stageInfo) return []
   return stageInfo.activities
+    // solo에서 숨긴 활동은 미완료 경고 목록에도 노출하지 않는다.
+    .filter(a => !(isSolo && SOLO_HIDDEN_ACTIVITIES.includes(a)))
     .filter(a => {
       // 산출물이 confirmed이거나 activityStatus가 completed/warning이면 완료로 간주 (ActivitySidebar와 동일 기준)
       const artifactConfirmed = artifacts?.[a]?.status === 'confirmed'
@@ -62,7 +65,8 @@ export function StageMoveModal() {
 
   const fromStage = project.currentStage
   const toStage = pendingStageMove
-  const incompleteActivities = getIncompleteActivities(fromStage, activityStatus, project.artifacts as Record<string, { status?: string }> | undefined)
+  const isSolo = project.mode === 'solo'
+  const incompleteActivities = getIncompleteActivities(fromStage, activityStatus, project.artifacts as Record<string, { status?: string }> | undefined, isSolo)
   const isBackward = STAGES.findIndex(s => s.code === toStage) <
     STAGES.findIndex(s => s.code === fromStage)
   const isCycle = fromStage === 'E' && toStage === 'T'
@@ -85,7 +89,10 @@ export function StageMoveModal() {
     const targetStage = STAGES.find(s => s.code === toStage)
     if (!targetStage) return
 
-    const firstActivity = targetStage.activities[0]
+    // solo는 대상 단계의 첫 "표시" 활동으로 진입한다 (예: A 단계는 숨김인 A-1-1 대신 A-1-2).
+    const firstActivity = isSolo
+      ? (targetStage.activities.find(a => !SOLO_HIDDEN_ACTIVITIES.includes(a)) ?? targetStage.activities[0])
+      : targetStage.activities[0]
     const direction: import('@/types').StageTransition['direction'] =
       isCycle ? 'cycle' : isBackward ? 'backward' : 'forward'
     const baseCycle = project.cycleCount ?? 1
