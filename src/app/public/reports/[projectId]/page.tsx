@@ -23,7 +23,7 @@ export default function PublicReportPage({ params }: { params: Promise<{ project
         setLoading(false)
         if (r) {
           // 탭 타이틀 — OG 공유는 추후 server metadata로 보강
-          document.title = `${r.projectTitle} — T-CID 협력적 수업설계`
+          document.title = `${r.projectTitle} — T-CID2.0 협력적 수업설계`
         }
       })
       .catch(err => {

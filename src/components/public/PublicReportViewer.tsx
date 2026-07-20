@@ -236,7 +236,7 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
       <header className="bg-gradient-to-br from-[#E8F0FE] via-white to-white border-b border-[#DADCE0]">
         <div className="max-w-4xl mx-auto px-6 py-10">
           <p className="text-[11px] font-bold text-[#1A73E8] uppercase tracking-widest mb-2">
-            T-CID 협력적 수업설계
+            T-CID2.0 협력적 수업설계
           </p>
           <h1 className="text-[28px] font-extrabold text-[#202124] leading-tight mb-4">
             {report.projectTitle}
@@ -358,7 +358,7 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
       {/* 푸터 */}
       <footer className="border-t border-[#DADCE0] bg-[#F8F9FA] py-8 text-center no-print">
         <p className="text-[12px] text-[#9AA0A6]">
-          T-CID 협력적 수업설계 AI 공동설계자로 제작된 보고서입니다.
+          T-CID2.0 협력적 수업설계 AI 공동설계자로 제작된 보고서입니다.
         </p>
         <p className="text-[10px] text-[#BDC1C6] mt-1">
           본 보고서는 팀에서 공개 설정한 내용만 포함하며, 원본 설계 과정·채팅·팀원 정보는 포함되지 않습니다.

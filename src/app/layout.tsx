@@ -9,7 +9,7 @@ const notoSansKR = Noto_Sans_KR({
 });
 
 export const metadata: Metadata = {
-  title: "T-CID 협력 수업설계",
+  title: "T-CID2.0 협력적 수업설계",
   description: "T-CID 모델 기반 협력 수업설계 AI 퍼실리테이터",
 };
 

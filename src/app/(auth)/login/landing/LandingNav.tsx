@@ -42,7 +42,7 @@ export default function LandingNav() {
           >
             <span className="material-symbols-rounded text-[color:var(--md-on-primary-container)]" style={{ fontSize: 22 }}>menu_book</span>
           </span>
-          <span className="text-[16px] font-bold text-[color:var(--md-on-surface)]">T-CID 협력 수업설계</span>
+          <span className="text-[16px] font-bold text-[color:var(--md-on-surface)]">T-CID2.0 협력적 수업설계</span>
         </a>
 
         <div className="flex items-center gap-1 md:gap-2">

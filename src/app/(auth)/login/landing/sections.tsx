@@ -392,7 +392,7 @@ export function LandingFooter() {
         <span aria-hidden="true" className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--md-primary-container)]">
           <Sym name="menu_book" size={18} className="text-[color:var(--md-on-primary-container)]" />
         </span>
-        <span className="text-[15px] font-bold text-[color:var(--md-on-surface)]">T-CID 협력 수업설계</span>
+        <span className="text-[15px] font-bold text-[color:var(--md-on-surface)]">T-CID2.0 협력적 수업설계</span>
       </div>
       <p className="text-[14px] text-[color:var(--md-on-surface-variant)]">AI 퍼실리테이터와 함께하는 협력적 수업 설계</p>
       <p className="text-[14px] text-[color:var(--md-on-surface-variant)] mt-1.5">© 2026 T-CID</p>

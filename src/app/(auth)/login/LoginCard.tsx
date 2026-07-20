@@ -88,7 +88,7 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
           <div className="inline-flex items-center justify-center w-[72px] h-[72px] rounded-[20px] bg-[var(--md-primary-container)] mb-5">
             <span className="material-symbols-rounded text-[color:var(--md-on-primary-container)]" style={{ fontSize: 34 }} aria-hidden="true">menu_book</span>
           </div>
-          <h1 className="text-[26px] font-black text-[color:var(--md-on-surface)] tracking-tight">T-CID 협력 수업설계</h1>
+          <h1 className="text-[26px] font-black text-[color:var(--md-on-surface)] tracking-tight">T-CID2.0 협력적 수업설계</h1>
           <p className="text-[13px] text-[color:var(--md-on-surface-variant)] mt-1.5">AI 퍼실리테이터와 함께하는 수업설계</p>
         </div>
       )}

@@ -329,7 +329,7 @@ export default function DashboardPage() {
               <BookOpen className="w-6 h-6" />
             </div>
             <div>
-              <span className="font-extrabold text-[#202124] text-[17px] leading-tight block">T-CID 협력 수업설계</span>
+              <span className="font-extrabold text-[#202124] text-[17px] leading-tight block">T-CID2.0 협력적 수업설계</span>
               <span className="text-[11px] text-[#9AA0A6] font-medium">AI 퍼실리테이터</span>
             </div>
           </div>
