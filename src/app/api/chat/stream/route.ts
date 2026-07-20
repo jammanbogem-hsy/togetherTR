@@ -158,15 +158,25 @@ ${sections.join('\n\n')}
         }, KEEP_ALIVE_INTERVAL)
 
         try {
-          const response = await client.chat.completions.create({
-            model: 'gpt-4o',
-            max_tokens: 8192,
+          // 채팅 모델은 env(OPENAI_CHAT_MODEL)로 토글 — 미설정 시 gpt-4o(기존 동작 유지).
+          // gpt-5 계열은 API가 달라 분기: max_tokens 미지원→max_completion_tokens,
+          // 기본 reasoning은 스트리밍 첫 토큰 지연↑·추론토큰 TPM 소모라 'minimal'로 고정. (temperature는 원래 미사용)
+          const chatModel = process.env.OPENAI_CHAT_MODEL || 'gpt-4o'
+          const isGpt5 = chatModel.startsWith('gpt-5')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const createParams: any = {
+            model: chatModel,
             messages: [
               { role: 'system', content: systemPrompt },
               ...messages,
             ],
             stream: true,
-          })
+            ...(isGpt5
+              ? { max_completion_tokens: 8192, reasoning_effort: 'minimal' }
+              : { max_tokens: 8192 }),
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const response: any = await client.chat.completions.create(createParams)
 
           for await (const chunk of response) {
             const text = chunk.choices[0]?.delta?.content ?? ''
