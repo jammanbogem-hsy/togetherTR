@@ -51,6 +51,39 @@ service cloud.firestore {
       return isProjectMemberData(res.data);
     }
 
+    function isHostOf(res) {
+      return isSignedIn()
+        && (
+          res.data.hostUid == request.auth.uid
+          || res.data.createdBy == request.auth.uid
+        );
+    }
+
+    // 팀원은 공동 워크스페이스·프로필 등은 갱신할 수 있지만, 산출물 확정과
+    // 활동/단계/주기 전환처럼 전체 팀 흐름을 바꾸는 필드는 호스트만 수정한다.
+    function isMemberSafeProjectUpdate() {
+      return isMemberOf(resource)
+        && !request.resource.data.diff(resource.data).changedKeys().hasAny([
+          'artifacts',
+          'activityStatuses',
+          'currentActivity',
+          'currentStage',
+          'currentCycle',
+          'cycleCount',
+          'isECompleted',
+          'isA23Completed',
+          'previousCycleImprovements',
+          'cycleStartT11Version',
+          'stageReports',
+          'cumulativeReport',
+          'hostUid',
+          'createdBy',
+          'memberUids',
+          'inviteCode',
+          'started'
+        ]);
+    }
+
     // self-join 전용 update: 본인 uid를 memberUids에 추가하고 memberInfo 등록만 허용
     function isSelfJoinUpdate() {
       return isSignedIn()
@@ -97,8 +130,8 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.memberUids.hasAll([request.auth.uid]);
 
-      // update: 멤버이거나, 비멤버인 경우 self-join 형태만
-      allow update: if isMemberOf(resource) || isSelfJoinUpdate();
+      // update: 호스트는 전체 필드, 팀원은 협업용 비제어 필드, 비멤버는 self-join만
+      allow update: if isHostOf(resource) || isMemberSafeProjectUpdate() || isSelfJoinUpdate();
 
       // delete: 생성자만
       allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;

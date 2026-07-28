@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
-import { ACTIVITY_META, STAGES, DISPLAY_TO_ACTIVITY_CODE, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
+import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch } from '@/lib/firebase/projects'
@@ -33,7 +33,25 @@ import { TopicSelectionWorkspaceModal } from '@/components/artifacts/TopicSelect
 import { LearningActivityWorkspaceModal } from '@/components/artifacts/LearningActivityWorkspaceModal'
 import { ScaffoldingWorkspaceModal } from '@/components/artifacts/ScaffoldingWorkspaceModal'
 import type { T11Structured, T12Structured, T21Structured, T22Structured, T23Structured, A12Structured, A22Structured, Ds11Structured, Ds12Structured, Ds13Structured, Ds21Structured, Ds22Structured } from '@/lib/artifacts/schemas'
-import { sanitizeChatForExtraction, stripNonContentLines, sanitizeArtifactSections, SANITIZE_EXEMPT_KEYS } from '@/lib/artifacts/schemas'
+import {
+  SANITIZE_EXEMPT_KEYS,
+  buildA12Structured,
+  buildA21Structured,
+  buildA22Structured,
+  buildA23Structured,
+  buildDs11Structured,
+  buildDs12Structured,
+  buildDs21Structured,
+  buildT11Structured,
+  buildT12Structured,
+  buildT21Structured,
+  buildT22Structured,
+  buildT23Structured,
+  detectMissingFields,
+  sanitizeArtifactSections,
+  sanitizeChatForExtraction,
+  stripNonContentLines,
+} from '@/lib/artifacts/schemas'
 import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -45,6 +63,15 @@ import {
   Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler, PencilSimple,
 } from '@phosphor-icons/react'
 import dynamic from 'next/dynamic'
+import {
+  parseActivityAdvance,
+  parseActivityReturn,
+  parseArtifactConfirm,
+  parseArtifactUpdates,
+} from '@/lib/chat/signals'
+import { applyArtifactSignalBatch } from '@/lib/chat/artifactSignalBatch'
+import { isStaleActivityResponse } from '@/lib/chat/responseContext'
+import { validateRequiredSections } from '@/lib/activity/completion'
 
 const KnowledgeGraphViewer = dynamic(
   () => import('@/components/knowledge-graph/KnowledgeGraphViewer'),
@@ -57,6 +84,21 @@ const ProblemSituationDesigner = dynamic(
 )
 
 const GRAPH_ACTIVITIES: ActivityCode[] = ['A-2-1']
+
+const artifactSchemas = {
+  buildA12Structured,
+  buildA21Structured,
+  buildA22Structured,
+  buildA23Structured,
+  buildDs11Structured,
+  buildDs12Structured,
+  buildDs21Structured,
+  buildT11Structured,
+  buildT12Structured,
+  buildT21Structured,
+  buildT22Structured,
+  buildT23Structured,
+}
 
 function buildGraphSelectionFromSavedData(savedData?: GraphSavedData | null): {
   pinnedStandards: GraphPinnedStandard[]
@@ -287,7 +329,7 @@ function OptionsMessage({
                 <span className={cn('flex-shrink-0 text-xs font-bold text-white px-2 py-0.5 rounded-full mt-0.5', c.badge)}>
                   {opt.label}
                 </span>
-                <p className="flex-1 text-sm text-gray-800 leading-relaxed">"{opt.content}"</p>
+                <p className="flex-1 text-sm text-gray-800 leading-relaxed">&ldquo;{opt.content}&rdquo;</p>
               </div>
 
               {/* 투표 현황: 이 안을 지지한 팀원들 */}
@@ -574,32 +616,6 @@ function parseDiscussionSignal(text: string): { topic: string; cleanText: string
   }
 }
 
-// 신호 대상 코드 정규화 — AI가 내부 코드 대신 표시 번호(T-1 등)를 방출한 경우 내부 코드로 복원 (방어적)
-function normalizeSignalActivityCode(raw: string): string {
-  const trimmed = raw.trim()
-  return DISPLAY_TO_ACTIVITY_CODE[trimmed] ?? trimmed
-}
-
-// ─── ACTIVITY_ADVANCE 파싱 ───────────────────────────
-function parseActivityAdvance(text: string): { nextActivity: string; cleanText: string } | null {
-  const match = text.match(/\[ACTIVITY_ADVANCE:\s*([A-Za-z0-9-]+)\]/)
-  if (!match) return null
-  return {
-    nextActivity: normalizeSignalActivityCode(match[1]),
-    cleanText: text.replace(/\n*\[ACTIVITY_ADVANCE:[^\]]+\]/, '').trimEnd(),
-  }
-}
-
-// ─── ACTIVITY_RETURN 파싱 ────────────────────────────
-function parseActivityReturn(text: string): { targetActivity: string; cleanText: string } | null {
-  const match = text.match(/\[ACTIVITY_RETURN:\s*([A-Za-z0-9-]+)\]/)
-  if (!match) return null
-  return {
-    targetActivity: normalizeSignalActivityCode(match[1]),
-    cleanText: text.replace(/\n*\[ACTIVITY_RETURN:[^\]]+\]/, '').trimEnd(),
-  }
-}
-
 // ─── HELP_CARD 신호 파싱 ──────────────────────────
 function parseHelpCard(text: string): { cleanText: string; helpMessage: string | null } {
   const match = text.match(/\[HELP_CARD:\s*([^\]]+)\]/)
@@ -771,123 +787,6 @@ function enrichArtifactSections(
     }
   }
   return enriched
-}
-
-// ─── ARTIFACT_CONFIRM 파싱 ───────────────────────────
-// [ARTIFACT_CONFIRM]        → 현재 활동 산출물 확정
-// [ARTIFACT_CONFIRM@T-2-2]  → 지정 활동 산출물 확정
-function parseArtifactConfirm(text: string): { codes: string[]; cleanText: string } {
-  const regex = /\[ARTIFACT_CONFIRM(?:@([A-Za-z0-9-]+))?\]/g
-  const codes: string[] = []
-  let match
-  while ((match = regex.exec(text)) !== null) {
-    codes.push(match[1] ?? '') // empty string = current activity
-  }
-  const cleanText = codes.length > 0
-    ? text.replace(/\n*\[ARTIFACT_CONFIRM(?:@[A-Za-z0-9-]+)?\]/g, '').trimEnd()
-    : text
-  return { codes, cleanText }
-}
-
-// ─── ARTIFACT_UPDATE 파싱 ────────────────────────────
-// [ARTIFACT_UPDATE: 섹션명=내용]          → 현재 활동에 저장
-// [ARTIFACT_UPDATE@T-2-2: 섹션명=내용]   → 지정 활동에 저장 (크로스 활동 수정)
-const ARTIFACT_BLOCKED_KEYS = [
-  '다음 행동', '다음 단계', 'next step',
-  '미결 사항', '미결', '보류 사항',
-  'ai 제안', '추천 사항', '참고 사항',
-  '합의 내용', '논의 내용', '토론 내용', '토의 내용', '확인 사항',
-  '진행 내용', '진행 사항', '현황', '요약',
-]
-
-interface ArtifactUpdateItem {
-  activityCode?: string   // undefined = 현재 활동
-  sections: Record<string, string>
-}
-
-function parseArtifactUpdates(text: string): { updates: ArtifactUpdateItem[]; cleanText: string } {
-  // actCode key → sections 버킷
-  const buckets: Record<string, Record<string, string>> = {}
-  // 신호 위치 목록 (cleanText에서 제거용)
-  const signalRanges: Array<[number, number]> = []
-
-  // 브라켓 카운팅 파서: 내부에 [성취기준코드] 등이 있어도 올바르게 파싱
-  // [ARTIFACT_UPDATE@CODE: key=value] — value 내부의 ] 는 depth > 0 이므로 통과
-  const PREFIX = '[ARTIFACT_UPDATE'
-  let i = 0
-
-  while (i < text.length) {
-    const start = text.indexOf(PREFIX, i)
-    if (start === -1) break
-
-    let j = start + PREFIX.length
-    let actKey = '__current__'
-
-    // 선택적 @코드
-    if (text[j] === '@') {
-      j++
-      const codeStart = j
-      while (j < text.length && text[j] !== ':' && text[j] !== ']') j++
-      if (text[j] === ':') actKey = text.slice(codeStart, j)
-    }
-
-    // ':' 필수
-    if (text[j] !== ':') { i = start + 1; continue }
-    j++ // skip ':'
-
-    // 공백 건너뜀
-    while (j < text.length && (text[j] === ' ' || text[j] === '\t')) j++
-
-    // 키 파싱 (= 이전까지)
-    const keyStart = j
-    while (j < text.length && text[j] !== '=' && text[j] !== ']' && text[j] !== '\n') j++
-    if (text[j] !== '=') { i = start + 1; continue }
-    const key = text.slice(keyStart, j).trim()
-    j++ // skip '='
-
-    // 값 파싱: 브라켓 depth=1에서 시작, depth=0이 되는 ] 에서 종료
-    const valueStart = j
-    let depth = 1
-    while (j < text.length) {
-      if (text[j] === '[') depth++
-      else if (text[j] === ']') {
-        depth--
-        if (depth === 0) break
-      }
-      j++
-    }
-    // depth > 0: 스트림이 ] 전에 끊긴 경우 — 텍스트 끝까지를 값으로 best-effort 파싱
-    const incomplete = depth !== 0
-    if (incomplete) j = text.length
-    const value = text.slice(valueStart, j).trim()
-    const end = incomplete ? text.length : j + 1  // closing ] 포함 (incomplete면 텍스트 끝)
-
-    const keyRaw = key.toLowerCase()
-    if (!ARTIFACT_BLOCKED_KEYS.some(k => keyRaw.includes(k)) && key && value) {
-      if (!buckets[actKey]) buckets[actKey] = {}
-      buckets[actKey][key] = value
-      signalRanges.push([start, end])
-    }
-
-    i = end
-  }
-
-  const updates: ArtifactUpdateItem[] = Object.entries(buckets).map(([code, sections]) => ({
-    activityCode: code === '__current__' ? undefined : code,
-    sections,
-  }))
-
-  let cleanText = text
-  if (signalRanges.length > 0) {
-    // 뒤에서부터 제거 (인덱스 보정 불필요)
-    const sorted = [...signalRanges].sort((a, b) => b[0] - a[0])
-    for (const [s, e] of sorted) {
-      cleanText = cleanText.slice(0, s).trimEnd() + cleanText.slice(e)
-    }
-    cleanText = cleanText.trimEnd()
-  }
-
-  return { updates, cleanText }
 }
 
 // ─── 활동유형 태그 ────────────────────────────────────
@@ -1178,9 +1077,15 @@ function CoeditButton({ label, title, onClick, showHint }: {
 
 // ─── 메인 ChatPanel ───────────────────────────────────
 export function ChatPanel() {
+  const project = useProjectStore(state => state.project)
+  if (!project) return null
+  return <ChatPanelContent />
+}
+
+function ChatPanelContent() {
   const chatFontScale = useChatFontScale()
   const {
-    project, messages, streamingText, messagesLoaded,
+    project: projectState, messages, streamingText, messagesLoaded,
     currentActivity, setCurrentActivity, appendStreamingText, clearStreamingText, addMessage, replaceMessage,
     discussionMode, setDiscussionMode,
     pendingTeamDiscussion, setPendingTeamDiscussion,
@@ -1192,6 +1097,7 @@ export function ChatPanel() {
     setPendingStageMove,
     chatInputRequest, setChatInputRequest,
   } = useProjectStore()
+  const project = projectState!
 
   const [input, setInput] = useState('')
 
@@ -1401,31 +1307,36 @@ export function ChatPanel() {
   // 구조화 산출물 fallback 자동 저장 — ARTIFACT_UPDATE 실패 시 채팅에서 직접 추출
   function tryStructuredFallbackSave(responseText: string, activity: ActivityCode) {
     if (!/저장/.test(responseText)) return
-    const schemas = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
     // A안/B안 선택지·"저장/진행하겠습니다" 절차 문구가 추출기로 새지 않도록 ctx 정제
     const ctx = sanitizeChatForExtraction([...messages, { role: 'assistant' as const, content: responseText }])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let structured: any = null
 
-    if (activity === 'T-1-1' && responseText.includes('|')) { const s = schemas.buildT11Structured({}, ctx); if (s.teamVision || s.personalVisions.length > 0) structured = s }
-    else if (activity === 'T-1-2' && (responseText.includes('|') || /원칙|방향/.test(responseText))) { const s = schemas.buildT12Structured({}, ctx); if (s.designPrinciples.length > 0) structured = s }
-    else if (activity === 'T-2-1' && responseText.includes('|')) { const s = schemas.buildT21Structured({}, ctx); if (s.roles.length > 0) structured = s }
-    else if (activity === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(responseText)) { const s = schemas.buildT22Structured({}, ctx); if (s.rules.length > 0) structured = s }
-    else if (activity === 'T-2-3' && responseText.includes('|')) { const s = schemas.buildT23Structured({}, ctx); if (s.schedule.length > 0) structured = s }
-    else if (activity === 'A-1-2' && /주제|선정/.test(responseText)) { const s = schemas.buildA12Structured({}, ctx); if (s.selectedTopic || s.criteria.length > 0) structured = s }
-    else if (activity === 'A-2-1' && (responseText.includes('|') || /핵심.*아이디어|지식.*이해/.test(responseText))) { const s = schemas.buildA21Structured({}, ctx); if (s.rows.length > 0) structured = s }
-    else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = schemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoal) structured = s }
-    else if (activity === 'A-2-3' && /학습자|프로필|선수/.test(responseText)) { const s = schemas.buildA23Structured({}, ctx); if (s.commonProfile.length > 0) structured = s }
-    else if (activity === 'Ds-1-1' && (responseText.includes('|') || /평가|루브릭|상.*중.*하/.test(responseText))) { const s = schemas.buildDs11Structured({}, ctx); if (s.rubric.length > 0) structured = s }
-    else if (activity === 'Ds-1-2' && /문제\s*상황|시나리오|실제성|핵심\s*질문/.test(responseText)) { const s = schemas.buildDs12Structured({}, ctx); if (s.scenario.title || s.scenario.authenticity || s.scenario.contentProduct || s.drivingQuestion) structured = s }
-    else if (activity === 'Ds-2-1' && /자료|도구|탐색|개발|담당|일정/.test(responseText)) { const s = schemas.buildDs21Structured({}, ctx); if (s.materials.length > 0) structured = s }
+    if (activity === 'T-1-1' && responseText.includes('|')) { const s = artifactSchemas.buildT11Structured({}, ctx); if (s.teamVision || s.personalVisions.length > 0) structured = s }
+    else if (activity === 'T-1-2' && (responseText.includes('|') || /원칙|방향/.test(responseText))) { const s = artifactSchemas.buildT12Structured({}, ctx); if (s.designPrinciples.length > 0) structured = s }
+    else if (activity === 'T-2-1' && responseText.includes('|')) { const s = artifactSchemas.buildT21Structured({}, ctx); if (s.roles.length > 0) structured = s }
+    else if (activity === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(responseText)) { const s = artifactSchemas.buildT22Structured({}, ctx); if (s.rules.length > 0) structured = s }
+    else if (activity === 'T-2-3' && responseText.includes('|')) { const s = artifactSchemas.buildT23Structured({}, ctx); if (s.schedule.length > 0) structured = s }
+    else if (activity === 'A-1-2' && /주제|선정/.test(responseText)) { const s = artifactSchemas.buildA12Structured({}, ctx); if (s.selectedTopic || s.criteria.length > 0) structured = s }
+    else if (activity === 'A-2-1' && (responseText.includes('|') || /핵심.*아이디어|지식.*이해/.test(responseText))) { const s = artifactSchemas.buildA21Structured({}, ctx); if (s.rows.length > 0) structured = s }
+    else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = artifactSchemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoal) structured = s }
+    else if (activity === 'A-2-3' && /학습자|프로필|선수/.test(responseText)) { const s = artifactSchemas.buildA23Structured({}, ctx); if (s.commonProfile.length > 0) structured = s }
+    else if (activity === 'Ds-1-1' && (responseText.includes('|') || /평가|루브릭|상.*중.*하/.test(responseText))) { const s = artifactSchemas.buildDs11Structured({}, ctx); if (s.rubric.length > 0) structured = s }
+    else if (activity === 'Ds-1-2' && /문제\s*상황|시나리오|실제성|핵심\s*질문/.test(responseText)) { const s = artifactSchemas.buildDs12Structured({}, ctx); if (s.scenario.title || s.scenario.authenticity || s.scenario.contentProduct || s.drivingQuestion) structured = s }
+    else if (activity === 'Ds-2-1' && /자료|도구|탐색|개발|담당|일정/.test(responseText)) { const s = artifactSchemas.buildDs21Structured({}, ctx); if (s.materials.length > 0) structured = s }
 
-    if (structured) applyArtifactUpdates(structured as Record<string, string>, activity)
+    if (structured) void applyArtifactUpdates(structured as Record<string, string>, activity)
   }
 
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
   // latestText: 현재 턴의 assistant 응답 원문 (Zustand에 아직 반영 안 됐을 수 있어 직접 전달)
-  function applyArtifactUpdates(rawSections: Record<string, string>, actCode?: ActivityCode, latestText?: string, origin: 'ai' | 'manual' = 'ai') {
+  async function applyArtifactUpdates(
+    rawSections: Record<string, string>,
+    actCode?: ActivityCode,
+    latestText?: string,
+    origin: 'ai' | 'manual' = 'ai',
+    confirmAfter = false,
+  ): Promise<void> {
     // AI가 요약 플레이스홀더를 넣은 경우 최근 채팅에서 실제 콘텐츠를 추출.
     // A안/B안 선택지·절차 확정 문구는 추출 전에 제거 — 모든 build*Structured/enrich가 같은 ctx를 공유하므로 단일 차단점.
     const contextMsgs = sanitizeChatForExtraction(
@@ -1445,44 +1356,35 @@ export function ChatPanel() {
     // 사용자가 /산출물·우클릭으로 직접 저장한 manual 경로는 'AI가 입력' 안내가 부정확하므로 제외.
     if (origin === 'ai') flashCoeditHint(targetAct)
     if (targetAct === 'T-1-1') {
-      const { buildT11Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       const structured = buildT11Structured(sections, contextMsgs)
       sections = structured as unknown as Record<string, string>
     } else if (targetAct === 'T-1-2') {
-      const { buildT12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildT12Structured(sections, contextMsgs) as unknown as Record<string, string>
     } else if (targetAct === 'T-2-1') {
-      const { buildT21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildT21Structured(sections, contextMsgs) as unknown as Record<string, string>
     } else if (targetAct === 'T-2-2') {
-      const { buildT22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildT22Structured(sections, contextMsgs) as unknown as Record<string, string>
     } else if (targetAct === 'T-2-3') {
-      const { buildT23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildT23Structured(sections, contextMsgs) as unknown as Record<string, string>
     } else if (targetAct === 'A-1-2') {
-      const { buildA12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildA12Structured(sections, contextMsgs) as unknown as Record<string, string>
     } else if (targetAct === 'A-2-1') {
-      const { buildA21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildA21Structured(sections, contextMsgs) as unknown as Record<string, string>
     } else if (targetAct === 'A-2-2') {
-      const { buildA22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildA22Structured(sections, contextMsgs) as unknown as Record<string, string>
     } else if (targetAct === 'A-2-3') {
-      const { buildA23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       sections = buildA23Structured(sections, contextMsgs) as unknown as Record<string, string>
     }
 
     // 협업 모드에서 팀원 → 방장에게 저장 제안으로 전달 (직접 저장 금지)
     if (project?.mode === 'collaborative' && !isHost) {
-      proposeArtifactToHost(
+      await proposeArtifactToHost(
         proj.id,
         actCode ?? currentActivity,
         sections,
         userProfile?.uid ?? '',
         userProfile?.displayName ?? '팀원'
-      ).catch(console.error)
+      )
       return
     }
 
@@ -1516,15 +1418,23 @@ export function ChatPanel() {
     } else {
       merged = { ...baseContent, ...sections }
     }
+    const canConfirm = !confirmAfter
+      || !targetMeta.requiredSections?.length
+      || validateRequiredSections(merged, targetMeta.requiredSections)
+    const finalStatus = confirmAfter && canConfirm ? 'confirmed' as const : 'in_review' as const
+    if (confirmAfter && !canConfirm) {
+      setChatError(`${displayActivityCode(targetActivity)} 산출물의 필수 항목을 모두 채운 뒤 확정해 주세요.`)
+    }
     const newVersion = (existing?.currentVersion ?? (firestoreArtifact?.version ?? 0)) + 1
     const newArtifact = {
       id: existing?.id ?? Date.now().toString(),
       activityCode: targetActivity,
       artifactType: targetMeta.label,
       title: targetMeta.label + ' 산출물',
-      status: 'in_review' as const,
+      status: finalStatus,
       currentVersion: newVersion,
       aiDraft: merged,
+      ...(finalStatus === 'confirmed' ? { confirmedContent: merged } : {}),
       createdBy: userProfile?.uid ?? 'ai',
       meta: {
         author: 'AI 자동 기록',
@@ -1536,19 +1446,22 @@ export function ChatPanel() {
     }
     setCurrentArtifact(newArtifact)
     // Firestore에도 즉시 저장 (팀원 공유 + 새로고침 대비)
-    if (project?.id) {
-      setProjectArtifact(project.id, targetActivity, {
-        status: 'in_review',
-        title: targetMeta.label + ' 산출물',
-        content: merged,
-        version: newVersion,
-      }).catch(console.error)
+    await setProjectArtifact(project.id, targetActivity, {
+      status: finalStatus,
+      title: targetMeta.label + ' 산출물',
+      content: merged,
+      version: newVersion,
+      ...(finalStatus === 'confirmed'
+        ? { confirmedBy: userProfile?.uid, confirmedAt: Date.now() }
+        : {}),
+    })
+    if (finalStatus === 'confirmed') {
+      await setActivityStatus(project.id, targetActivity, 'completed')
     }
 
     // 구조화 산출물 빈 필드 감지 → 격려 메시지 자동 삽입
     if (merged._schema) {
       try {
-        const { detectMissingFields } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
         const missing = detectMissingFields(merged as Record<string, unknown>)
         if (missing.length > 0) {
           const missingList = missing.map(m => `  - **${m.label}**: ${m.hint}`).join('\n')
@@ -1572,34 +1485,64 @@ export function ChatPanel() {
   }
 
   // ARTIFACT_CONFIRM 신호를 처리 — 현재 또는 지정 활동 산출물을 confirmed 상태로 저장
-  function applyArtifactConfirm(codes: string[]) {
-    if (!project?.id) return
-    for (const code of codes) {
-      const targetActivity = (code || currentActivity) as ActivityCode
-      const firestoreArtifact = project?.artifacts?.[targetActivity]
-      const local = currentArtifact?.activityCode === targetActivity ? currentArtifact : null
-      const content = (
-        firestoreArtifact?.content ??
-        local?.aiDraft ??
-        {}
-      ) as Record<string, unknown>
-      if (!Object.keys(content).length) continue
-      const title = firestoreArtifact?.title ?? ACTIVITY_META[targetActivity].label + ' 산출물'
-      const version = firestoreArtifact?.version ?? local?.currentVersion ?? 1
-      setProjectArtifact(project.id, targetActivity, {
-        status: 'confirmed',
-        title,
-        content,
-        version,
-        confirmedBy: userProfile?.uid ?? undefined,
-        confirmedAt: Date.now(),
-      }).catch(console.error)
-      // 산출물 확정 → activityStatuses도 completed로 업데이트 (StageMoveModal 미완료 체크 정합성)
-      setActivityStatus(project.id, targetActivity, 'completed').catch(console.error)
-      if (targetActivity === currentActivity && local) {
-        setCurrentArtifact({ ...local, status: 'confirmed', confirmedContent: content })
-      }
+  async function applyArtifactConfirm(targetActivity: ActivityCode): Promise<void> {
+    if (!isHost) return
+    const firestoreArtifact = project.artifacts?.[targetActivity]
+    const local = currentArtifact?.activityCode === targetActivity ? currentArtifact : null
+    const content = (
+      local?.aiDraft
+      ?? firestoreArtifact?.content
+      ?? {}
+    ) as Record<string, unknown>
+    if (!Object.keys(content).length) return
+    const targetMeta = ACTIVITY_META[targetActivity]
+    if (
+      targetMeta.requiredSections?.length
+      && !validateRequiredSections(content, targetMeta.requiredSections)
+    ) {
+      setChatError(`${displayActivityCode(targetActivity)} 산출물의 필수 항목을 모두 채운 뒤 확정해 주세요.`)
+      return
     }
+    const title = firestoreArtifact?.title ?? targetMeta.label + ' 산출물'
+    const version = local?.currentVersion ?? firestoreArtifact?.version ?? 1
+    await setProjectArtifact(project.id, targetActivity, {
+      status: 'confirmed',
+      title,
+      content,
+      version,
+      confirmedBy: userProfile?.uid,
+      confirmedAt: Date.now(),
+    })
+    await setActivityStatus(project.id, targetActivity, 'completed')
+    if (targetActivity === currentActivity && local) {
+      setCurrentArtifact({ ...local, status: 'confirmed', confirmedContent: content })
+    }
+  }
+
+  async function processArtifactSignals(
+    updates: Array<{ activityCode?: string; sections: Record<string, string> }>,
+    confirmCodes: string[],
+    latestText: string,
+  ): Promise<void> {
+    if (!isHost && project.mode === 'collaborative') {
+      for (const update of updates) {
+        await applyArtifactUpdates(
+          update.sections,
+          update.activityCode as ActivityCode | undefined,
+          latestText,
+        )
+      }
+      return
+    }
+    await applyArtifactSignalBatch({
+      currentActivity,
+      updates,
+      confirmCodes,
+      commitUpdate: (activityCode, sections, confirm) =>
+        applyArtifactUpdates(sections, activityCode as ActivityCode, latestText, 'ai', confirm),
+      confirmExisting: activityCode =>
+        applyArtifactConfirm(activityCode as ActivityCode),
+    })
   }
 
   useEffect(() => {
@@ -1922,7 +1865,6 @@ export function ChatPanel() {
     [projectMemberInfo, userProfile?.uid, userProfile?.color],
   )
 
-  if (!project) return null
   const proj = project  // non-null 확정 캡처
 
   const activityMeta = ACTIVITY_META[currentActivity]
@@ -1960,7 +1902,7 @@ export function ChatPanel() {
   async function streamFromAPI(
     msgs: Array<{ role: string; content: string; displayName?: string }>,
     onChunk: (text: string) => void,
-    onDone: (fullText: string) => void,
+    onDone: (fullText: string) => void | Promise<void>,
   ) {
     // 스마트 "청크 간 공백" 타임아웃 — 60초 동안 새 청크가 오지 않으면 abort.
     // 정상적으로 길게 생성되는 응답(여러 분)은 청크 도착마다 타이머 리셋 → 끊기지 않음.
@@ -2072,7 +2014,7 @@ export function ChatPanel() {
             continue  // 잘못된 SSE 라인 무시
           }
           if (data.type === 'text') { fullText += data.text ?? ''; onChunk(data.text ?? '') }
-          else if (data.type === 'done') { disarmTimer(); onDone(fullText); return }
+          else if (data.type === 'done') { disarmTimer(); await onDone(fullText); return }
           else if (data.type === 'error') {
             // 서버 측 OpenAI 호출 실패 등 — 부분 누적은 폐기하고 호출자에게 위임
             serverError = data.message ?? 'AI 응답 중 오류가 발생했습니다.'
@@ -2087,7 +2029,7 @@ export function ChatPanel() {
       if (controller.signal.aborted) {
         if (fullText.trim().length > 0) {
           // 부분 응답이 있으면 보존 — assistant 메시지로 커밋 + 꼬리표
-          onDone(fullText + '\n\n_[응답이 중간에 끊겼습니다 — 재시도 버튼으로 이어서 받아주세요]_')
+          await onDone(fullText + '\n\n_[응답이 중간에 끊겼습니다 — 재시도 버튼으로 이어서 받아주세요]_')
           return
         }
         throw new Error('AI 응답이 60초 이상 멈춰 연결을 종료했습니다. 재시도 버튼을 눌러주세요.')
@@ -2101,10 +2043,29 @@ export function ChatPanel() {
       // 빈 메시지가 Firestore에 저장되지 않도록 onDone 호출하지 않음
       throw new Error(serverError)
     }
-    if (fullText) onDone(fullText)
+    if (fullText) await onDone(fullText)
     // 스트림이 done/error/timeout 없이 빈 응답으로 끝난 경우 — 조용한 무응답("문의에 답 없음") 방지.
     // 호출부 catch가 chatError를 띄워 사용자가 재시도할 수 있게 한다.
     else throw new Error('AI 응답이 도착하지 않았습니다. 네트워크 상태를 확인하고 재시도 버튼을 눌러주세요.')
+  }
+
+  async function discardResponseAfterActivityChange(requestedActivity: ActivityCode): Promise<boolean> {
+    const activeState = useProjectStore.getState()
+    if (!isStaleActivityResponse(
+      requestedActivity,
+      activeState.currentActivity,
+      proj.currentCycle,
+      activeState.project?.currentCycle,
+    )) return false
+    if (streamingFlushRef.current) {
+      clearInterval(streamingFlushRef.current)
+      streamingFlushRef.current = null
+    }
+    clearStreamingText()
+    if (userProfile?.uid) {
+      await clearStreamingState(proj.id, requestedActivity, userProfile.uid).catch(() => {})
+    }
+    return true
   }
 
   // ─── 활동 전진 처리 (Firestore 동기화 포함, 크로스 스테이지 지원) ──
@@ -2137,12 +2098,24 @@ export function ChatPanel() {
 
   // ─── 활동 되돌아가기 처리 (Firestore 동기화 포함) ──────
   async function handleActivityReturn(targetCode: string) {
+    if (!isHost) return
     if (!(targetCode in ACTIVITY_META)) return
     const code = targetCode as ActivityCode
-    await returnToActivity(proj.id, code)
-      .catch((err) => { console.error(err); setChatError('이전 활동으로 돌아가지 못했습니다. 다시 시도해주세요.') })
-    await setActivityStatus(proj.id, code, 'active_return').catch(console.error)
+    const targetStage = ACTIVITY_META[code].stage
+    if (targetStage !== activityMeta.stage) {
+      setPendingStageMove(targetStage)
+      return
+    }
+    try {
+      await returnToActivity(proj.id, code, targetStage)
+      await setActivityStatus(proj.id, code, 'active_return')
+    } catch (err) {
+      console.error(err)
+      setChatError('이전 활동으로 돌아가지 못했습니다. 다시 시도해주세요.')
+      return
+    }
     setCurrentActivity(code)
+    setViewingActivity(code)
   }
 
   function getNextActivityCode(code: ActivityCode): ActivityCode | null {
@@ -2161,10 +2134,15 @@ export function ChatPanel() {
       ? pendingArtifactSave
       : null
 
-    let sourceContent = (fsArtifact?.content ?? localArtifact?.aiDraft ?? {}) as Record<string, unknown>
-    let sourceTitle = fsArtifact?.title ?? localArtifact?.title ?? (currentMeta.label + ' 산출물')
-    let sourceVersion = fsArtifact?.version ?? localArtifact?.currentVersion ?? 1
-    let currentStatus = fsArtifact?.status ?? localArtifact?.status
+    let sourceContent = (
+      localArtifact?.lastEditedContent
+      ?? localArtifact?.aiDraft
+      ?? fsArtifact?.content
+      ?? {}
+    ) as Record<string, unknown>
+    const sourceTitle = localArtifact?.title ?? fsArtifact?.title ?? (currentMeta.label + ' 산출물')
+    let sourceVersion = localArtifact?.currentVersion ?? fsArtifact?.version ?? 1
+    let currentStatus = localArtifact?.status ?? fsArtifact?.status
 
     if (pendingForCurrent) {
       // "확정 후 다음 단계로" 경로는 저장 카드 수락 없이 pending 섹션을 곧바로 confirmed까지
@@ -2209,6 +2187,13 @@ export function ChatPanel() {
 
     if (!Object.keys(sourceContent).length) {
       setChatError('현재 활동에 저장할 산출물이 없습니다. /산출물로 먼저 저장하거나 우측 패널에 직접 입력해주세요.')
+      return false
+    }
+    if (
+      currentMeta.requiredSections?.length
+      && !validateRequiredSections(sourceContent, currentMeta.requiredSections)
+    ) {
+      setChatError(`${displayActivityCode(currentActivity)} 산출물의 필수 항목을 모두 채운 뒤 이동해 주세요.`)
       return false
     }
 
@@ -2258,7 +2243,7 @@ export function ChatPanel() {
   // ─── 활동 시작 환영 메시지 (API 호출 없음, 정적) ────────
   function showWelcomeMessage(welcomeText: string) {
     // 고정 ID로 저장: Firestore 콜백이 재호출돼도 같은 ID로 dedup 됨
-    const msgId = 'welcome-' + currentActivity
+    const msgId = `welcome-${proj.currentCycle ?? 1}-${currentActivity}`
     const msg = {
       id: msgId,
       role: 'assistant' as const,
@@ -2266,6 +2251,7 @@ export function ChatPanel() {
       activityCode: currentActivity,
       activityType: '제시' as const,
       agentType: 'orchestrator' as const,
+      cycleNumber: proj.currentCycle ?? 1,
       createdAt: Timestamp.now(),
     }
     addMessage(msg)
@@ -2274,6 +2260,7 @@ export function ChatPanel() {
     saveMessage(proj.id, currentActivity, {
       role: 'assistant', content: welcomeText,
       activityCode: currentActivity, activityType: '제시', agentType: 'orchestrator',
+      cycleNumber: proj.currentCycle ?? 1,
     }, msgId).catch(console.error)
   }
 
@@ -2295,7 +2282,7 @@ export function ChatPanel() {
     if (!amHost) return
     // 로컬에 이미 같은 ID의 메시지가 있으면 중복 방지
     // (introSentRef 대신 실제 messages 상태를 사용해 stale 방지)
-    const welcomeId = 'welcome-' + currentActivity
+    const welcomeId = `welcome-${proj.currentCycle ?? 1}-${currentActivity}`
     if (messages.some(m => m.id === welcomeId)) return
     showWelcomeMessage(welcome)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2318,31 +2305,22 @@ export function ChatPanel() {
     )
     // 구조화된 산출물로 변환
     if (targetActivity === 'T-1-1') {
-      const { buildT11Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildT11Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-1-2') {
-      const { buildT12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildT12Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-2-1') {
-      const { buildT21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildT21Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-2-2') {
-      const { buildT22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildT22Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-2-3') {
-      const { buildT23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildT23Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-1-2') {
-      const { buildA12Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildA12Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-2-1') {
-      const { buildA21Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildA21Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-2-2') {
-      const { buildA22Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildA22Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'A-2-3') {
-      const { buildA23Structured } = require('@/lib/artifacts/schemas') as typeof import('@/lib/artifacts/schemas')
       enrichedSections = buildA23Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     }
     const merged = { ...baseContent, ...enrichedSections }
@@ -2496,9 +2474,10 @@ ${discussionSummary}
         [...messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
          { role: 'user', content: analysisPrompt }],
         (text) => appendStreamingText(text),
-        (fullText) => {
+        async (fullText) => {
+          if (await discardResponseAfterActivityChange(currentActivity)) return
           const signal = parseDiscussionSignal(fullText)
-          let text1 = signal ? signal.cleanText : fullText
+          const text1 = signal ? signal.cleanText : fullText
           // P0-phil1 (Task #27): 분석 응답은 ACTION_CARD 저장 제안 경로만 허용.
           // 모델이 규칙 0-2를 위반하고 ARTIFACT_UPDATE/CONFIRM을 방출해도 구조적으로 버림.
           const { codes: confirmCodes, cleanText: text1c } = parseArtifactConfirm(text1)
@@ -2528,6 +2507,7 @@ ${discussionSummary}
           saveMessage(proj.id, currentActivity, {
             role: 'assistant', content: displayText,
             activityCode: currentActivity, activityType: '성찰', agentType: 'orchestrator',
+            cycleNumber: proj.currentCycle ?? 1,
             ...(parsedActionCardAnalysis ? { actionCard: parsedActionCardAnalysis.card, actionCardState: 'pending' as const } : {}),
           }, newMsgIdAnalysis).catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
@@ -3145,6 +3125,7 @@ ${discussionSummary}
       activityCode: currentActivity,
       activityType: '생성',
       agentType: 'orchestrator',
+      cycleNumber: proj.currentCycle ?? 1,
       createdAt: Timestamp.now(),
     })
     saveMessage(proj.id, currentActivity, {
@@ -3153,6 +3134,7 @@ ${discussionSummary}
       activityCode: currentActivity,
       activityType: '생성',
       agentType: 'orchestrator',
+      cycleNumber: proj.currentCycle ?? 1,
     }, msgId).catch(console.error)
   }
 
@@ -3254,6 +3236,7 @@ ${discussionSummary}
       activityCode: currentActivity,
       userId: userProfile?.uid,
       displayName: senderDisplayName,
+      cycleNumber: proj.currentCycle ?? 1,
     }).catch(console.error)
 
     if (handleA21SheetArtifactRequest(text)) return
@@ -3270,7 +3253,8 @@ ${discussionSummary}
       await streamFromAPI(
         [...messages, tempUserMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
         (chunk) => { appendStreamingText(chunk); streamingAccumRef.current += chunk },
-        (fullText) => {
+        async (fullText) => {
+          if (await discardResponseAfterActivityChange(currentActivity)) return
           const signal = parseDiscussionSignal(fullText)
           let t1 = signal ? signal.cleanText : fullText
           const advance = parseActivityAdvance(t1)
@@ -3308,23 +3292,23 @@ ${discussionSummary}
           // 메시지 저장 완료 후 streaming 상태 삭제 → B 화면에서 공백 없이 메시지로 전환
           saveMessage(proj.id, currentActivity, {
             role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
+            cycleNumber: proj.currentCycle ?? 1,
             ...(parsedActionCardD ? { actionCard: parsedActionCardD.card, actionCardState: 'pending' as const } : {}),
           }, newMsgId)
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
-          upd.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, finalText))
+          await processArtifactSignals(upd, cCodes, finalText)
 
           // 구조화 산출물 자동 저장 fallback
           if (upd.length === 0) tryStructuredFallbackSave(finalText, currentActivity)
 
-          if (cCodes.length > 0) applyArtifactConfirm(cCodes)
           // P0-phil2 (Task #30): parseSaveIntent fallback 제거.
           // A안/B안 OptionsMessage가 이미 저장 결정을 묻는 중에 텍스트 패턴 매칭으로
           // "산출물 초안으로 저장할까요?" 카드를 또 띄우는 중복 UI 발생. 규칙 0-2/A안 게이트와 충돌.
           // 저장은 (a) A안/B안 명시 선택 또는 (b) ACTION_CARD primary 클릭 후 ARTIFACT_UPDATE 신호 경로만 허용.
-          if (advance) setPendingAdvance(advance.nextActivity)
-          else if (ret) handleActivityReturn(ret.targetActivity)
+          if (advance?.nextActivity) setPendingAdvance(advance.nextActivity)
+          else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
         }
       )
     } catch (err) {
@@ -3397,6 +3381,7 @@ ${discussionSummary}
       userId: userProfile?.uid,
       displayName: senderDisplayName,
       replyTo: replyTo ?? undefined,
+      cycleNumber: proj.currentCycle ?? 1,
       createdAt: Timestamp.now(),
     }
     addMessage(tempUserMsg)
@@ -3407,6 +3392,7 @@ ${discussionSummary}
       userId: userProfile?.uid,
       displayName: senderDisplayName,
       replyTo: replyTo ?? undefined,
+      cycleNumber: proj.currentCycle ?? 1,
     }, userMsgId).catch(console.error)
     setReplyTo(null)
 
@@ -3435,7 +3421,8 @@ ${discussionSummary}
           appendStreamingText(text)
           streamingAccumRef.current += text
         },
-        (fullText) => {
+        async (fullText) => {
+          if (await discardResponseAfterActivityChange(currentActivity)) return
           const signal = parseDiscussionSignal(fullText)
           let text1 = signal ? signal.cleanText : fullText
           const advance = parseActivityAdvance(text1)
@@ -3491,18 +3478,16 @@ ${discussionSummary}
           saveMessage(proj.id, currentActivity, {
             role: 'assistant', content: displayText,
             activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
+            cycleNumber: proj.currentCycle ?? 1,
             ...(parsedActionCard ? { actionCard: parsedActionCard.card, actionCardState: 'pending' as const } : {}),
           }, newMsgId)
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch((err) => { console.error(err); setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.') })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
-          const hasSavedInResponse = updates.some(u => Object.keys(u.sections).length > 0)
-          updates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, displayText))
+          await processArtifactSignals(updates, confirmCodes2, displayText)
 
           // 구조화 산출물 자동 저장 fallback (A안/B안 선택 후 AI 응답)
           if (updates.length === 0) tryStructuredFallbackSave(displayText, currentActivity)
-
-          if (confirmCodes2.length > 0) applyArtifactConfirm(confirmCodes2)
 
           // [ARTIFACT_UPDATE] 없이 저장 처리
           // P0-phil2 (Task #30): A-2-1 외 활동의 parseSaveIntent fallback 제거.
@@ -3511,11 +3496,11 @@ ${discussionSummary}
           // A-2-1: 구조화 스키마 전환 이후 extractA21TableForSave 특수 경로 비활성화.
           // 저장은 tryStructuredFallbackSave 또는 ARTIFACT_UPDATE 경로로 처리.
 
-          if (advance) {
+          if (advance?.nextActivity) {
             // 저장 여부와 무관하게 항상 pendingAdvance 배너로 막음
             // → 사용자가 산출물을 검토·확정한 후 직접 "다음 단계로" 버튼을 눌러야 이동
             setPendingAdvance(advance.nextActivity)
-          } else if (ret) handleActivityReturn(ret.targetActivity)
+          } else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
         }
       )
     } catch (err) {
@@ -3566,7 +3551,7 @@ ${discussionSummary}
           setReplyTo(null)
           return
         }
-        applyArtifactUpdates({ [activityMeta.label]: content }, undefined, undefined, 'manual')
+        void applyArtifactUpdates({ [activityMeta.label]: content }, undefined, undefined, 'manual')
         setReplyTo(null)
       } else {
         await sendMessageDirectly('지금까지 논의된 내용을 산출물로 정리해서 저장해주세요')
@@ -4006,7 +3991,7 @@ ${discussionSummary}
               ].join('\n')
               const newMsgId = generateMessageId(proj.id, 'Ds-1-2')
               addMessage({ id: newMsgId, role: 'assistant', content: chatContent, activityCode: 'Ds-1-2', activityType: '제시', agentType: 'orchestrator', createdAt: Timestamp.now() })
-              saveMessage(proj.id, 'Ds-1-2', { role: 'assistant', content: chatContent, activityCode: 'Ds-1-2', activityType: '제시', agentType: 'orchestrator' }, newMsgId).catch(console.error)
+              saveMessage(proj.id, 'Ds-1-2', { role: 'assistant', content: chatContent, activityCode: 'Ds-1-2', activityType: '제시', agentType: 'orchestrator', cycleNumber: proj.currentCycle ?? 1 }, newMsgId).catch(console.error)
             }}
             onClose={() => {
               setShowProblemSituationDesigner(false)
@@ -4111,6 +4096,7 @@ ${discussionSummary}
                       role: 'user', content: displayReply,
                       activityCode: currentActivity,
                       userId: userProfile?.uid,
+                      cycleNumber: proj.currentCycle ?? 1,
                     }).catch(console.error)
                     setIsLoading(true)
                     clearStreamingText()
@@ -4119,12 +4105,15 @@ ${discussionSummary}
                     streamFromAPI(
                       [...messages, apiMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
                       (text) => appendStreamingText(text),
-                      (fullText) => {
+                      async (fullText) => {
+                        if (await discardResponseAfterActivityChange(currentActivity)) return
                         const sig = parseDiscussionSignal(fullText)
                         const t1 = sig ? sig.cleanText : fullText
                         const adv = parseActivityAdvance(t1)
                         const t2 = adv ? adv.cleanText : t1
-                        const { codes: selConfirmCodes, cleanText: t2c } = parseArtifactConfirm(t2)
+                        const ret = parseActivityReturn(t2)
+                        const t3 = ret ? ret.cleanText : t2
+                        const { codes: selConfirmCodes, cleanText: t2c } = parseArtifactConfirm(t3)
                         const { updates: selUpdates, cleanText: t2d } = parseArtifactUpdates(t2c)
                         // Phase 1-b: 옵션 선택 응답에 ACTION_CARD는 의미 없음 — stray 블록 제거
                         const cleanText = t2d.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
@@ -4139,18 +4128,14 @@ ${discussionSummary}
                         saveMessage(proj.id, currentActivity, {
                           role: 'assistant', content: cleanText,
                           activityCode: currentActivity, activityType: '판단', agentType: 'orchestrator',
+                          cycleNumber: proj.currentCycle ?? 1,
                         }).catch(console.error)
                         if (sig) setPendingTeamDiscussion({ topic: sig.topic })
-                        const hasArtifactSave = selUpdates.some(u => Object.keys(u.sections).length > 0)
-                        selUpdates.forEach(u => applyArtifactUpdates(u.sections, u.activityCode as ActivityCode | undefined, cleanText))
+                        await processArtifactSignals(selUpdates, selConfirmCodes, cleanText)
                         // 구조화 산출물 자동 저장 fallback (선택지 응답 경로)
                         if (selUpdates.length === 0) tryStructuredFallbackSave(cleanText, currentActivity)
-                        // [ARTIFACT_UPDATE]가 있는 응답에서는 [ARTIFACT_CONFIRM]과 [ACTIVITY_ADVANCE]를 무시
-                        // → 팀장이 우측 패널에서 직접 확정해야 하고, 전진도 별도 메시지로만 가능
-                        if (!hasArtifactSave) {
-                          if (selConfirmCodes.length > 0) applyArtifactConfirm(selConfirmCodes)
-                          if (adv) handleActivityAdvance(adv.nextActivity)
-                        }
+                        if (adv?.nextActivity) setPendingAdvance(adv.nextActivity)
+                        else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
                       }
                     ).catch((err) => {
                       console.error('Option-select chat error:', err)
@@ -4923,7 +4908,7 @@ ${discussionSummary}
             const sectionKey = activityMeta.recommendedSections?.[0]?.key
               ?? activityMeta.requiredSections?.[0]?.key
               ?? activityMeta.label
-            applyArtifactUpdates({ [sectionKey]: content }, currentActivity, content, 'manual')
+            void applyArtifactUpdates({ [sectionKey]: content }, currentActivity, content, 'manual')
           } : undefined}
         />
 

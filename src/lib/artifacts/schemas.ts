@@ -137,6 +137,7 @@ export interface T11Structured {
   personalVisions: T11PersonalVision[]
   teamVision: string       // 팀 공통 비전 문장
   coreKeywords: string[]   // 핵심 키워드 3~5개
+  designPrinciples?: T12DesignPrinciple[] // solo 모드에서 T-1-2를 흡수한 설계 원칙
   manualWorkspace?: TeamVisionWorkspace
 }
 
@@ -153,6 +154,7 @@ export function buildT11Structured(
     personalVisions: [],
     teamVision: '',
     coreKeywords: [],
+    designPrinciples: [],
   }
 
   // 1. 팀 공통 비전 — 가장 간단
@@ -164,18 +166,31 @@ export function buildT11Structured(
     result.coreKeywords = kwRaw.split(/[,，·]/).map(s => s.trim()).filter(Boolean)
   }
 
-  // 3. 개인 비전 — AI 출력에서 추출 시도
+  // 3. 개인 설계 모드가 T-1-1에 함께 저장한 설계 원칙
+  const principlesRaw = (sections['설계 원칙'] ?? '').trim()
+  if (principlesRaw) {
+    result.designPrinciples = parseDesignPrinciples(principlesRaw)
+    if (result.designPrinciples.length === 0) {
+      result.designPrinciples = principlesRaw
+        .split(/\n|(?=\s*\d+[.)]\s*)/)
+        .map(line => line.replace(/^\s*\d+[.)]\s*/, '').trim())
+        .filter(Boolean)
+        .map(principle => ({ principle, rationale: '' }))
+    }
+  }
+
+  // 4. 개인 비전 — AI 출력에서 추출 시도
   const pvRaw = (sections['개인 비전'] ?? '').trim()
   if (pvRaw) {
     result.personalVisions = parsePersonalVisions(pvRaw)
   }
 
-  // 4. 개인 비전이 비어있으면 채팅 이력에서 자동 추출
+  // 5. 개인 비전이 비어있으면 채팅 이력에서 자동 추출
   if (result.personalVisions.length === 0) {
     result.personalVisions = extractPersonalVisionsFromChat(chatMessages)
   }
 
-  // 5. 핵심 키워드가 비어있으면 비전에서 자동 추출
+  // 6. 핵심 키워드가 비어있으면 비전에서 자동 추출
   if (result.coreKeywords.length === 0 && result.teamVision) {
     const nouns = result.teamVision.match(/[가-힣]{2,}(?:력|성|학습|교육|해결|활동|분석|역량|시민|탐구|설계)/g)
     if (nouns && nouns.length >= 2) {
@@ -183,7 +198,7 @@ export function buildT11Structured(
     }
   }
 
-  // 6. 팀 비전이 비어있으면 채팅에서 마지막 합의 문장 추출
+  // 7. 팀 비전이 비어있으면 채팅에서 마지막 합의 문장 추출
   if (!result.teamVision) {
     for (const msg of [...chatMessages].reverse()) {
       if (msg.role !== 'assistant') continue

@@ -28,7 +28,8 @@ import { ProjectMaterialsModal } from '@/components/materials/ProjectMaterialsMo
 import { setAnalysisOpen } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
 import { STAGE_COLOR, STAGE_LABELS } from '@/lib/ui/stageColors'
-import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
+import { isEffectivelyDone as checkEffectivelyDone, parseNextCycleChoice } from '@/lib/activity/completion'
+import { hasNewCycleT11Artifact, shouldOpenCycleTransition } from '@/lib/activity/cycle'
 import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight, FileText, Books, Sparkle, X as XIcon, ArrowRight, CaretRight, CaretDown, Globe, Graph as GraphIcon, House } from '@phosphor-icons/react'
 import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
@@ -129,7 +130,7 @@ function WaitingRoom({
                 </button>
               </div>
               <p className="text-[11px] text-[#9AA0A6] mt-3 leading-snug">
-                팀원에게 공유하면 대시보드 "방 참여하기"에서 입장할 수 있어요
+                팀원에게 공유하면 대시보드 &ldquo;방 참여하기&rdquo;에서 입장할 수 있어요
               </p>
             </div>
           )}
@@ -520,12 +521,13 @@ export default function ProjectPage() {
     if (sessionStorage.getItem(dismissKey)) return
 
     const eStage = STAGES.find(s => s.code === 'E')!
-    const eAllDone = eStage.activities.every(a => {
-      const status = project.activityStatuses?.[a]
-      const hasArtifact = !!project.artifacts?.[a]
-      return (status === 'completed' || status === 'warning') && hasArtifact
-    })
-    if (eAllDone) {
+    const eAllDone = eStage.activities.every(a =>
+      checkEffectivelyDone(a, project.activityStatuses ?? {}, project.artifacts),
+    )
+    const nextCycleChoice = parseNextCycleChoice(
+      project.artifacts?.['E-2-1']?.content?.['다음 주기 선택'] as string | undefined,
+    )
+    if (shouldOpenCycleTransition(eAllDone, nextCycleChoice)) {
       sessionStorage.setItem(dismissKey, '1')
       setPendingStageMove('T')
     }
@@ -537,14 +539,17 @@ export default function ProjectPage() {
   useEffect(() => {
     if (!project) return
     if (project.isECompleted !== true) return
-    if (!project.artifacts?.['T-1-1']) return
+    if (!hasNewCycleT11Artifact(
+      project.cycleStartT11Version,
+      project.artifacts?.['T-1-1']?.version,
+    )) return
     const isHost = project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid
     if (!isHost) return
     clearECompleted(projectId).catch(err => {
       console.warn('clearECompleted failed:', err)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.isECompleted, project?.artifacts?.['T-1-1'], projectId, userProfile?.uid])
+  }, [project?.isECompleted, project?.cycleStartT11Version, project?.artifacts?.['T-1-1']?.version, projectId, userProfile?.uid])
 
   // Firestore teamDiscussions[currentActivity] → Zustand 동기화
   useEffect(() => {
@@ -588,14 +593,15 @@ export default function ProjectPage() {
         didReceiveFirstSnapshot = true
         window.clearTimeout(loadingFallback)
         setMessagesLoaded(true)
-      }
+      },
+      project?.currentCycle ?? 1,
     )
     return () => {
       window.clearTimeout(loadingFallback)
       unsubMessages()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, currentActivity, projectLoadError])
+  }, [projectId, currentActivity, projectLoadError, project?.currentCycle])
 
   // 대기실 진입 시 멤버 정보 등록 (색상이 바뀐 경우 항상 업데이트)
   useEffect(() => {

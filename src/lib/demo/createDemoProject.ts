@@ -109,6 +109,7 @@ export async function createDemoProject(
           : undefined,
         userId: message.role === 'user' ? persona?.uid : undefined,
         displayName: message.role === 'user' ? persona?.displayName : undefined,
+        cycleNumber: 1,
       })
       await sleep(20)
     }

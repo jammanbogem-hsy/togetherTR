@@ -2,7 +2,7 @@
 
 import type { T11Structured } from '@/lib/artifacts/schemas'
 
-export type T11DeletableField = 'personalVisions' | 'teamVision' | 'coreKeywords' | 'blocks'
+export type T11DeletableField = 'personalVisions' | 'teamVision' | 'coreKeywords' | 'designPrinciples' | 'blocks'
 
 interface Props {
   data: T11Structured
@@ -30,6 +30,7 @@ export function T11Renderer({ data, onDeleteField }: Props) {
   const personalVisions = data?.personalVisions ?? []
   const teamVision = data?.teamVision ?? ''
   const coreKeywords = data?.coreKeywords ?? []
+  const designPrinciples = data?.designPrinciples ?? []
   const manualWorkspace = data?.manualWorkspace
   // manualWorkspace.blocks(자유 편집 블록)만 별도 섹션으로 렌더.
   // manualWorkspace.columns/rows(개인 비전 표)는 personalVisions와 동일 데이터의 두 번 출력이라 제거.
@@ -134,6 +135,24 @@ export function T11Renderer({ data, onDeleteField }: Props) {
           )}
         </div>
       </div>
+
+      {designPrinciples.length > 0 && (
+        <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
+          <div className="bg-[#F8F9FA] px-4 py-2.5 border-b border-[#DADCE0] flex items-center">
+            <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider">설계 원칙</span>
+            {onDeleteField && <SectionDeleteButton onClick={() => onDeleteField('designPrinciples')} label="설계 원칙" />}
+          </div>
+          <ol className="px-4 py-3 space-y-2">
+            {designPrinciples.map((item, index) => (
+              <li key={`${item.principle}-${index}`} className="text-sm text-[#202124] leading-relaxed">
+                <span className="font-bold text-[#1A73E8] mr-2">{index + 1}.</span>
+                {item.principle}
+                {item.rationale && <p className="ml-6 text-xs text-[#5F6368]">{item.rationale}</p>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       {includedBlocks.length > 0 && (
         <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">

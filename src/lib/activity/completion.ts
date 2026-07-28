@@ -11,7 +11,10 @@
  */
 
 import type { ActivityCode, Project, StageStatus } from '@/types'
-import { ACTIVITY_META, type RequiredSection } from '@/types'
+import { ACTIVITY_META } from '@/types'
+import { validateRequiredSections } from './requiredSections'
+
+export { validateRequiredSections } from './requiredSections'
 
 type ActivityStatusMap = Partial<Record<ActivityCode, StageStatus>> | Record<string, StageStatus>
 type ArtifactsMap = Project['artifacts']
@@ -54,49 +57,6 @@ export function isEffectivelyDone(
  * content 키는 AI의 [ARTIFACT_UPDATE: <섹션명>=<값>] 신호에서 유래하므로
  * RequiredSection.key와 자연스럽게 매칭됨(한글 라벨 그대로).
  */
-export function validateRequiredSections(
-  content: Record<string, unknown> | undefined | null,
-  sections: RequiredSection[]
-): boolean {
-  if (!content) return false
-
-  const allMode = sections.every(s => s.required === 'all')
-  const anyMode = sections.some(s => s.required === 'any')
-
-  // 'all' 규칙: required==='all' 인 섹션은 모두 충족해야 함
-  const allRequired = sections.filter(s => s.required === 'all')
-  for (const sec of allRequired) {
-    if (!sectionSatisfies(content, sec)) return false
-  }
-
-  // 'any' 규칙: required==='any' 인 섹션 중 최소 1개만 충족하면 됨
-  const anyRequired = sections.filter(s => s.required === 'any')
-  if (anyRequired.length > 0) {
-    const atLeastOne = anyRequired.some(sec => sectionSatisfies(content, sec))
-    if (!atLeastOne) return false
-  }
-
-  // allMode 모두 통과 + anyMode 하나 이상 통과 → 완료
-  // (allMode/anyMode 참조는 lint 경고 회피용. 실제 판정은 위 두 루프가 담당)
-  void allMode; void anyMode
-  return true
-}
-
-/**
- * content 맵에서 섹션 key 직접 접근 + 한국어 글자 수 검증.
- * key가 없거나 값이 비어있으면 false.
- */
-function sectionSatisfies(
-  content: Record<string, unknown>,
-  sec: RequiredSection
-): boolean {
-  const raw = content[sec.key]
-  if (typeof raw !== 'string') return false
-  // 공백 제거 후 글자 수 비교 (한국어 기준, 이모지/공백 nullity 방지)
-  const trimmed = raw.replace(/\s/g, '')
-  return trimmed.length >= sec.minChars
-}
-
 /**
  * E 산출물에서 "수정안"/"개선안"/"팀 개선안" 섹션을 안전하게 추출.
  * - v2-sections 스키마면 content[key] 직접 접근.

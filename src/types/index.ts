@@ -86,7 +86,7 @@ export interface RequiredSection {
   key: string           // content 맵의 키 (예: '사실', '해석', '수정안')
   label: string         // UI/프롬프트 표시용 (대부분 key와 동일)
   minChars: number      // 한국어 최소 글자 수 (기본 20자 — "ㅇㅇ" 등 nullity 차단)
-  required: 'all' | 'any' // 'all'=전부 필수 / 'any'=섹션 중 최소 1개 충족
+  required: 'all' | 'any' | 'optional' // optional은 UI 안내만 하고 완료 판정에서 제외
 }
 
 export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
@@ -203,24 +203,23 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'DI-1-1': {
     code: 'DI-1-1', label: '자료 탐색·개발', stage: 'DI',
     recommendedSections: [
-      { key: '개발 자료 목록', label: '개발 자료 목록 (유형·자료명·교과·구분·담당자·우선순위·마감일)', minChars: 20, required: 'any' },
+      { key: '개발 자료 목록', label: '개발 자료 목록 (자료명·사용 활동·완성 형태·사용 단위·협력 구조·담당·일정)', minChars: 20, required: 'any' },
     ],
   },
   'DI-2-1': {
     code: 'DI-2-1', label: '수업 실행·기록', stage: 'DI',
     recommendedSections: [
       { key: '주요 상황 기록', label: '주요 상황 기록 (시점·상황·학생 반응·시사점)', minChars: 20, required: 'any' },
-      { key: '종합 시사점',    label: '종합 시사점 (성공·장애·예상외·포용)',          minChars: 20, required: 'any' },
+      { key: '종합 시사점',    label: '종합 시사점 (E단계 확인 질문·추가 증거·해석 쟁점)', minChars: 20, required: 'any' },
     ],
   },
   'E-1-1':  {
     code: 'E-1-1', label: '수업 성찰과 공동 개선', stage: 'E',
-    // P1-I: 사실/해석/수정안 중 최소 1개 섹션(각 20자 이상) 충족 시 완료 인정.
-    // Lead 결정 — E에 갇혀 cycle 진입 못 하는 상황을 막기 위한 완화 옵션.
+    // 증거→원인→개선의 성찰 고리를 보존하기 위해 세 섹션을 모두 요구한다.
     requiredSections: [
-      { key: '사실',   label: '사실',   minChars: 20, required: 'any' },
-      { key: '해석',   label: '해석',   minChars: 20, required: 'any' },
-      { key: '수정안', label: '수정안', minChars: 20, required: 'any' },
+      { key: '사실',   label: '사실',   minChars: 20, required: 'all' },
+      { key: '해석',   label: '해석',   minChars: 20, required: 'all' },
+      { key: '수정안', label: '수정안', minChars: 20, required: 'all' },
     ],
   },
   'E-2-1':  {
@@ -228,7 +227,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     // 다음 주기 결정(A안/B안)만 필수, 팀 개선안은 선택.
     requiredSections: [
       { key: '다음 주기 선택', label: '다음 주기 선택', minChars: 10, required: 'all' },
-      { key: '팀 개선안',      label: '팀 개선안',      minChars: 20, required: 'any' },
+      { key: '팀 개선안',      label: '팀 개선안',      minChars: 20, required: 'optional' },
     ],
   },
 }
@@ -260,6 +259,7 @@ export interface Project {
   isECompleted: boolean      // E→T 순환 화살표 트리거
   isA23Completed: boolean    // 가드레일 뱃지 트리거
   cycleCount: number
+  cycleStartT11Version?: number // 새 주기 시작 시점의 T-1-1 버전 기준선
   createdAt: Timestamp
   updatedAt: Timestamp
   metadata: {
@@ -337,6 +337,13 @@ export interface Project {
     proposedBy: string
     proposedByName: string
     proposedAt: number
+  }
+  artifactRevisionRequest?: {
+    activityCode: ActivityCode
+    note: string
+    requestedBy: string
+    requestedByName: string
+    requestedAt: number
   }
   // 지식 그래프 저장 데이터
   graphSavedData?: GraphSavedData
@@ -920,6 +927,7 @@ export interface Message {
   actionCard?: ActionCard
   actionCardState?: 'pending' | 'selected' | 'skipped'
   actionCardSelection?: 'primary' | 'secondary' | 'skip'
+  cycleNumber?: number
   createdAt: Timestamp
 }
 

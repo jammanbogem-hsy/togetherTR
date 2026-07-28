@@ -11,6 +11,7 @@ import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/kno
 import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
 import { extractImprovementText, parseNextCycleChoice } from '@/lib/activity/completion'
 import { sanitizeArtifactSections } from '@/lib/artifacts/schemas'
+import { mergeMessagesForCycle } from '@/lib/chat/messageCycles'
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -2955,6 +2956,34 @@ export async function clearArtifactProposal(projectId: string): Promise<void> {
   })
 }
 
+export async function requestArtifactRevision(
+  projectId: string,
+  activityCode: ActivityCode,
+  note: string,
+  requestedBy: string,
+  requestedByName: string,
+): Promise<void> {
+  const cleanNote = note.trim().slice(0, 2000)
+  if (!cleanNote) return
+  await updateDoc(doc(db, 'projects', projectId), {
+    artifactRevisionRequest: {
+      activityCode,
+      note: cleanNote,
+      requestedBy,
+      requestedByName,
+      requestedAt: Date.now(),
+    },
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function clearArtifactRevisionRequest(projectId: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    artifactRevisionRequest: deleteField(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 // ─── 실시간 구독 ─────────────────────────────────────
 
 export function watchProject(
@@ -3073,22 +3102,52 @@ export function watchMessages(
   projectId: string,
   activityCode: ActivityCode,
   callback: (messages: Message[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  currentCycle = 1,
 ): Unsubscribe {
-  const q = query(
+  const activityQuery = query(
     collection(db, `projects/${projectId}/conversations/${activityCode}/messages`),
     orderBy('createdAt', 'asc')
   )
-  return onSnapshot(
-    q,
-    (snap) => {
-      callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message))
-    },
-    (error) => {
-      console.error('watchMessages failed:', error)
-      onError?.(error)
-    }
+  const stageCode = ACTIVITY_META[activityCode].stage
+  const legacyQuery = query(
+    collection(db, `projects/${projectId}/conversations/${stageCode}/messages`),
+    orderBy('createdAt', 'asc')
   )
+
+  let activityMessages: Message[] = []
+  let legacyMessages: Message[] = []
+  const emit = () => callback(
+    mergeMessagesForCycle([activityMessages, legacyMessages], currentCycle),
+  )
+  const handleError = (source: 'activity' | 'legacy') => (error: Error) => {
+    console.error(`watchMessages ${source} path failed:`, error)
+    onError?.(error)
+  }
+
+  const unsubscribeActivity = onSnapshot(
+    activityQuery,
+    (snap) => {
+      activityMessages = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message)
+      emit()
+    },
+    handleError('activity'),
+  )
+  const unsubscribeLegacy = onSnapshot(
+    legacyQuery,
+    (snap) => {
+      legacyMessages = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }) as Message)
+        .filter(message => message.activityCode === activityCode)
+      emit()
+    },
+    handleError('legacy'),
+  )
+
+  return () => {
+    unsubscribeActivity()
+    unsubscribeLegacy()
+  }
 }
 
 // ─── 단계 전환 이력 ──────────────────────────────────
@@ -3097,17 +3156,13 @@ export async function logStageTransition(
   projectId: string,
   data: Omit<StageTransition, 'id' | 'createdAt'>
 ): Promise<void> {
-  const cycleFinalize = data.direction === 'cycle'
-    ? finalizeCycleTransition(projectId, data.cycleNumber).catch(err => {
-      console.warn('finalizeCycleTransition failed:', err)
-    })
-    : Promise.resolve()
-
   await addDoc(collection(db, `projects/${projectId}/stage_transitions`), {
     ...data,
     createdAt: serverTimestamp(),
   })
-  await cycleFinalize
+  if (data.direction === 'cycle') {
+    await finalizeCycleTransition(projectId, data.cycleNumber)
+  }
 }
 
 /**
@@ -3128,6 +3183,7 @@ export async function finalizeCycleTransition(
     isECompleted: true,
     currentCycle: completedCycleNumber + 1,
     cycleCount: completedCycleNumber + 1,
+    cycleStartT11Version: 0,
     updatedAt: serverTimestamp(),
   }
 
@@ -3137,6 +3193,7 @@ export async function finalizeCycleTransition(
       const proj = snap.data() as Project
       const e11 = proj.artifacts?.['E-1-1']
       const e21 = proj.artifacts?.['E-2-1']
+      update.cycleStartT11Version = proj.artifacts?.['T-1-1']?.version ?? 0
 
       // E-1-1: '수정안' 섹션에서 개선 텍스트
       const e11Improvement = extractImprovementText(e11, ['수정안', '개선안', '다음 주기', '개선', '고칠 점', '다음엔'])

@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils'
 import { ArrowRight, X, Warning, ChartBar } from '@phosphor-icons/react'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
 import { setAnalysisOpen } from '@/lib/firebase/projects'
+import { isEffectivelyDone } from '@/lib/activity/completion'
+import { completedCycleNumberForTransition, nextCycleNumber } from '@/lib/activity/cycle'
 
 function getStageLabel(code: StageCode) {
   return STAGES.find(s => s.code === code)?.label ?? code
@@ -31,10 +33,11 @@ function getIncompleteActivities(
     // solo에서 숨긴 활동은 미완료 경고 목록에도 노출하지 않는다.
     .filter(a => !(isSolo && SOLO_HIDDEN_ACTIVITIES.includes(a)))
     .filter(a => {
-      // 산출물이 confirmed이거나 activityStatus가 completed/warning이면 완료로 간주 (ActivitySidebar와 동일 기준)
-      const artifactConfirmed = artifacts?.[a]?.status === 'confirmed'
-      const statusDone = activityStatus[a] === 'completed' || activityStatus[a] === 'warning'
-      return !artifactConfirmed && !statusDone
+      return !isEffectivelyDone(
+        a,
+        activityStatus as Parameters<typeof isEffectivelyDone>[1],
+        artifacts as Parameters<typeof isEffectivelyDone>[2],
+      )
     })
     .map(a => ACTIVITY_META[a].label)
 }
@@ -95,8 +98,8 @@ export function StageMoveModal() {
       : targetStage.activities[0]
     const direction: import('@/types').StageTransition['direction'] =
       isCycle ? 'cycle' : isBackward ? 'backward' : 'forward'
-    const baseCycle = project.cycleCount ?? 1
-    const cycleNumber = isCycle ? baseCycle + 1 : baseCycle
+    const completedCycle = completedCycleNumberForTransition(project)
+    const cycleNumber = completedCycle
     // initiatedBy: Firestore rules가 request.auth.uid와 일치 강제 (data-architect 협의)
     // userProfile.uid는 onAuthStateChanged 동기화 값이지만 race 안전을 위해 auth.currentUser 우선
     const initiatedBy = auth?.currentUser?.uid ?? userProfile?.uid
@@ -160,6 +163,7 @@ export function StageMoveModal() {
           toStage
         ), 'advanceActivity')
       }
+      await withTimeout(logStageTransition(project.id, transitionLogPayload), 'logStageTransition')
     } catch (err) {
       console.error('[StageMoveModal] handleConfirm failed:', err)
       const msg = err instanceof Error ? err.message : String(err)
@@ -181,10 +185,6 @@ export function StageMoveModal() {
     submittingRef.current = false
     setSubmitting(false)
 
-    // 전환 이력은 감사 추적용이다. 저장 지연/권한 문제가 실제 단계 이동 UI를 붙잡지 않도록 성공한 이동 뒤에 비동기로 남긴다.
-    void logStageTransition(project.id, transitionLogPayload).catch(err => {
-      console.warn('[StageMoveModal] stage transition log skipped:', err)
-    })
   }
 
   function handleCancel() {
@@ -251,7 +251,7 @@ export function StageMoveModal() {
           {isCycle && (
             <div className="bg-[#E6F4EA] border border-[#81C995] rounded-2xl p-3">
               <p className="text-sm text-[#1E4620]">
-                평가 단계 성찰을 바탕으로 <strong>주기 {(project.cycleCount ?? 1) + 1}</strong>를
+                평가 단계 성찰을 바탕으로 <strong>주기 {nextCycleNumber(completedCycleNumberForTransition(project))}</strong>를
                 시작합니다. T 단계부터 새로운 시각으로 설계를 개선해보세요.
               </p>
             </div>

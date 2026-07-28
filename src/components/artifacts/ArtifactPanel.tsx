@@ -6,7 +6,14 @@ import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, displayActivityCode } from '@/types'
 import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
-import { setProjectArtifact, setActivityStatus, deleteProjectArtifact } from '@/lib/firebase/projects'
+import {
+  clearArtifactRevisionRequest,
+  deleteProjectArtifact,
+  proposeArtifactToHost,
+  requestArtifactRevision,
+  setActivityStatus,
+  setProjectArtifact,
+} from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import { cn } from '@/lib/utils'
 import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, Trash, type Icon } from '@phosphor-icons/react'
@@ -15,7 +22,22 @@ import { CumulativeReportModal } from '@/components/modals/CumulativeReportModal
 // 스펙 §1-2 — 단계 컬러 단일 출처. 로컬 선언 제거하고 공통 모듈 참조.
 // 기존 corner 0.10 → 0.11 통일 (team-lead-2 결정, 시각 차이 미미).
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
-import { isEffectivelyDone } from '@/lib/activity/completion'
+import { isEffectivelyDone, validateRequiredSections } from '@/lib/activity/completion'
+import { ExpandableWrapper } from './structured/ExpandableWrapper'
+import { T11Renderer } from './structured/T11Renderer'
+import { T12Renderer } from './structured/T12Renderer'
+import { T21Renderer } from './structured/T21Renderer'
+import { T22Renderer } from './structured/T22Renderer'
+import { T23Renderer } from './structured/T23Renderer'
+import { A12Renderer } from './structured/A12Renderer'
+import { A21Renderer } from './structured/A21Renderer'
+import { A22Renderer } from './structured/A22Renderer'
+import { A23Renderer } from './structured/A23Renderer'
+import { Ds11Renderer } from './structured/Ds11Renderer'
+import { Ds12Renderer } from './structured/Ds12Renderer'
+import { Ds13Renderer } from './structured/Ds13Renderer'
+import { Ds21Renderer } from './structured/Ds21Renderer'
+import { Ds22Renderer } from './structured/Ds22Renderer'
 
 const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: Icon; className: string }> = {
   ai_draft:  { label: 'AI 초안', icon: Sparkle,      className: 'bg-[#E8F0FE] text-[#1A73E8]' },
@@ -813,7 +835,6 @@ function StructuredArtifactRenderer({ content, onDelete, onDeleteField }: {
   onDeleteField?: (key: string) => void
 }) {
   const schema = content._schema as string | undefined
-  const { ExpandableWrapper } = require('./structured/ExpandableWrapper') as { ExpandableWrapper: React.ComponentType<{ title: string; children: React.ReactNode; onDelete?: () => void }> }
 
   const SCHEMA_MAP: Record<string, { mod: string; label: string }> = {
     'T-1-1': { mod: './structured/T11Renderer', label: '공동 비전 설정' },
@@ -837,24 +858,24 @@ function StructuredArtifactRenderer({ content, onDelete, onDeleteField }: {
   const { label } = SCHEMA_MAP[schema]
   // T-1-1만 우선 필드별 부분 삭제 지원 — 다른 단계도 추후 동일 패턴으로 확장.
   const t11FieldDelete = onDeleteField
-    ? (field: 'personalVisions' | 'teamVision' | 'coreKeywords' | 'blocks') => onDeleteField(`__field:${field}__`)
+    ? (field: 'personalVisions' | 'teamVision' | 'coreKeywords' | 'designPrinciples' | 'blocks') => onDeleteField(`__field:${field}__`)
     : undefined
   let inner: React.ReactNode = null
   const renderers: Record<string, () => React.ReactNode> = {
-    'T-1-1': () => { const { T11Renderer } = require('./structured/T11Renderer'); return <T11Renderer data={content} onDeleteField={t11FieldDelete} /> },
-    'T-1-2': () => { const { T12Renderer } = require('./structured/T12Renderer'); return <T12Renderer data={content} /> },
-    'T-2-1': () => { const { T21Renderer } = require('./structured/T21Renderer'); return <T21Renderer data={content} /> },
-    'T-2-2': () => { const { T22Renderer } = require('./structured/T22Renderer'); return <T22Renderer data={content} /> },
-    'T-2-3': () => { const { T23Renderer } = require('./structured/T23Renderer'); return <T23Renderer data={content} /> },
-    'A-1-2': () => { const { A12Renderer } = require('./structured/A12Renderer'); return <A12Renderer data={content} /> },
-    'A-2-1': () => { const { A21Renderer } = require('./structured/A21Renderer'); return <A21Renderer data={content} /> },
-    'A-2-2': () => { const { A22Renderer } = require('./structured/A22Renderer'); return <A22Renderer data={content} /> },
-    'A-2-3': () => { const { A23Renderer } = require('./structured/A23Renderer'); return <A23Renderer data={content} /> },
-    'Ds-1-1': () => { const { Ds11Renderer } = require('./structured/Ds11Renderer'); return <Ds11Renderer data={content} /> },
-    'Ds-1-2': () => { const { Ds12Renderer } = require('./structured/Ds12Renderer'); return <Ds12Renderer data={content} /> },
-    'Ds-1-3': () => { const { Ds13Renderer } = require('./structured/Ds13Renderer'); return <Ds13Renderer data={content} /> },
-    'Ds-2-1': () => { const { Ds21Renderer } = require('./structured/Ds21Renderer'); return <Ds21Renderer data={content} /> },
-    'Ds-2-2': () => { const { Ds22Renderer } = require('./structured/Ds22Renderer'); return <Ds22Renderer data={content} /> },
+    'T-1-1': () => <T11Renderer data={content as never} onDeleteField={t11FieldDelete} />,
+    'T-1-2': () => <T12Renderer data={content as never} />,
+    'T-2-1': () => <T21Renderer data={content as never} />,
+    'T-2-2': () => <T22Renderer data={content as never} />,
+    'T-2-3': () => <T23Renderer data={content as never} />,
+    'A-1-2': () => <A12Renderer data={content as never} />,
+    'A-2-1': () => <A21Renderer data={content as never} />,
+    'A-2-2': () => <A22Renderer data={content as never} />,
+    'A-2-3': () => <A23Renderer data={content as never} />,
+    'Ds-1-1': () => <Ds11Renderer data={content as never} />,
+    'Ds-1-2': () => <Ds12Renderer data={content as never} />,
+    'Ds-1-3': () => <Ds13Renderer data={content as never} />,
+    'Ds-2-1': () => <Ds21Renderer data={content as never} />,
+    'Ds-2-2': () => <Ds22Renderer data={content as never} />,
   }
   if (schema && renderers[schema]) inner = renderers[schema]()
 
@@ -997,7 +1018,7 @@ function DsGuardrailCard({ a23Artifact }: { a23Artifact: { content: Record<strin
 }
 
 export function ArtifactPanel() {
-  const { currentArtifact, currentActivity, viewingActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
+  const { currentArtifact, viewingActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
   const activityMeta = ACTIVITY_META[viewingActivity]
   const [revisionNote, setRevisionNote] = useState('')
   const [showRevisionForm, setShowRevisionForm] = useState(false)
@@ -1006,6 +1027,7 @@ export function ArtifactPanel() {
   const [directInputText, setDirectInputText] = useState('')
   const [previewModal, setPreviewModal] = useState<ArtifactPreviewModalState | null>(null)
   const [showCumulativeReport, setShowCumulativeReport] = useState(false)
+  const [artifactError, setArtifactError] = useState<string | null>(null)
   // 버전 dropdown — 현재 v 라벨 클릭 시 토글, 항목 클릭 시 rollback confirm.
   const [showVersionMenu, setShowVersionMenu] = useState(false)
 
@@ -1014,10 +1036,15 @@ export function ArtifactPanel() {
 
   // Firestore 산출물 (팀 전체 소스)
   const firestoreArtifact = project?.artifacts?.[viewingActivity]
+  const sharedRevisionRequest =
+    project?.artifactRevisionRequest?.activityCode === viewingActivity
+      ? project.artifactRevisionRequest
+      : undefined
 
-  // useEffect 없이 렌더 시점에 직접 파생 — 타이밍 이슈 없음
-  // 로컬 currentArtifact가 없으면 Firestore 데이터로 임시 객체 생성
-  const displayArtifact = currentArtifact ?? (firestoreArtifact ? {
+  // currentArtifact는 현재 활동의 로컬 초안이다. 과거 활동을 열었을 때 섞이지 않도록
+  // viewingActivity와 코드가 같은 경우에만 우선한다.
+  const localArtifact = currentArtifact?.activityCode === viewingActivity ? currentArtifact : null
+  const displayArtifact = localArtifact ?? (firestoreArtifact ? {
     id: `${viewingActivity}-firestore`,
     activityCode: viewingActivity,
     artifactType: activityMeta.label,
@@ -1040,19 +1067,21 @@ export function ArtifactPanel() {
 
   // Firestore 상태가 바뀌면 로컬 Zustand도 동기화 (호스트 재입장 등)
   useEffect(() => {
-    if (!firestoreArtifact || !currentArtifact) return
-    if (firestoreArtifact.status !== currentArtifact.status) {
+    if (!firestoreArtifact || !localArtifact) return
+    if (firestoreArtifact.status !== localArtifact.status) {
       setCurrentArtifact({
-        ...currentArtifact,
+        ...localArtifact,
         status: firestoreArtifact.status as ArtifactStatus,
         confirmedContent: firestoreArtifact.status === 'confirmed'
           ? (firestoreArtifact.content as Record<string, unknown>)
-          : currentArtifact.confirmedContent,
+          : localArtifact.confirmedContent,
       })
     }
-  }, [firestoreArtifact?.status, viewingActivity])
+  }, [firestoreArtifact, viewingActivity, localArtifact, setCurrentArtifact])
 
-  const effectiveStatus: ArtifactStatus = firestoreArtifact?.status as ArtifactStatus ?? displayArtifact?.status ?? 'in_review'
+  const effectiveStatus: ArtifactStatus = localArtifact?.status
+    ?? firestoreArtifact?.status as ArtifactStatus
+    ?? 'in_review'
   const isConfirmed = effectiveStatus === 'confirmed'
 
   const orderedActivities = useMemo(
@@ -1152,19 +1181,27 @@ export function ArtifactPanel() {
   const showActiveReturnBanner = viewingActivityStatus === 'active_return'
 
   async function handleConfirm() {
-    if (!project) return
-    // Firestore snapshot 우선, 없으면 로컬 displayArtifact 사용
+    if (!project || !isHost) return
+    setArtifactError(null)
+    // 같은 활동의 로컬 편집본이 Firestore snapshot보다 최신일 수 있으므로 우선한다.
     const content = (
-      firestoreArtifact?.content ??
       displayArtifact?.lastEditedContent ??
       displayArtifact?.aiDraft ??
+      firestoreArtifact?.content ??
       {}
     ) as Record<string, unknown>
     const title = firestoreArtifact?.title ?? displayArtifact?.title ?? (activityMeta.label + ' 산출물')
     const version = firestoreArtifact?.version ?? displayArtifact?.currentVersion ?? 1
 
     if (!Object.keys(content).length) {
-      console.warn('확정할 내용이 없습니다')
+      setArtifactError('확정할 내용이 없습니다.')
+      return
+    }
+    if (
+      activityMeta.requiredSections?.length
+      && !validateRequiredSections(content, activityMeta.requiredSections)
+    ) {
+      setArtifactError('필수 항목을 모두 채운 뒤 산출물을 확정해 주세요.')
       return
     }
     setIsSaving(true)
@@ -1178,8 +1215,9 @@ export function ArtifactPanel() {
         confirmedAt: Date.now(),
       })
       // 산출물 확정 → activityStatuses도 completed 업데이트 (StageMoveModal 미완료 체크 정합성)
-      setActivityStatus(project.id, viewingActivity, 'completed').catch(console.error)
-      if (currentArtifact) setCurrentArtifact({ ...currentArtifact, status: 'confirmed', confirmedContent: content })
+      await setActivityStatus(project.id, viewingActivity, 'completed')
+      if (sharedRevisionRequest) await clearArtifactRevisionRequest(project.id)
+      if (localArtifact) setCurrentArtifact({ ...localArtifact, status: 'confirmed', confirmedContent: content })
     } catch (err) {
       console.error('산출물 확정 실패:', err)
     } finally {
@@ -1188,14 +1226,15 @@ export function ArtifactPanel() {
   }
 
   async function handleRedraft() {
-    if (!displayArtifact || !project) return
-    await setProjectArtifact(project.id, currentActivity, {
+    if (!displayArtifact || !project || !isHost) return
+    await setProjectArtifact(project.id, viewingActivity, {
       status: 'in_review',
       title: displayArtifact.title,
       content: (displayArtifact.aiDraft ?? {}) as Record<string, unknown>,
       version: displayArtifact.currentVersion,
     })
-    if (currentArtifact) setCurrentArtifact({ ...currentArtifact, status: 'in_review' })
+    await clearArtifactRevisionRequest(project.id)
+    if (localArtifact) setCurrentArtifact({ ...localArtifact, status: 'in_review' })
   }
 
   async function handleDeleteArtifact() {
@@ -1207,7 +1246,8 @@ export function ArtifactPanel() {
     setIsSaving(true)
     try {
       await deleteProjectArtifact(project.id, viewingActivity)
-      setCurrentArtifact(null)
+      if (sharedRevisionRequest) await clearArtifactRevisionRequest(project.id)
+      if (localArtifact) setCurrentArtifact(null)
     } catch (err) {
       console.error('산출물 삭제 실패:', err)
     } finally {
@@ -1217,7 +1257,19 @@ export function ArtifactPanel() {
 
   async function handleRevisionRequest() {
     if (!displayArtifact || !project) return
-    await setProjectArtifact(project.id, currentActivity, {
+    if (!isHost) {
+      await requestArtifactRevision(
+        project.id,
+        viewingActivity,
+        revisionNote,
+        userProfile?.uid ?? '',
+        userProfile?.displayName ?? '팀원',
+      )
+      setRevisionNote('')
+      setShowRevisionForm(false)
+      return
+    }
+    await setProjectArtifact(project.id, viewingActivity, {
       status: 'in_review',
       title: displayArtifact.title,
       content: (displayArtifact.confirmedContent ?? displayArtifact.aiDraft ?? {}) as Record<string, unknown>,
@@ -1226,7 +1278,7 @@ export function ArtifactPanel() {
       revisionRequestedBy: userProfile?.uid,
       revisionRequestedAt: Date.now(),
     })
-    if (currentArtifact) setCurrentArtifact({ ...currentArtifact, status: 'in_review' })
+    if (localArtifact) setCurrentArtifact({ ...localArtifact, status: 'in_review' })
     setRevisionNote('')
     setShowRevisionForm(false)
   }
@@ -1239,12 +1291,13 @@ export function ArtifactPanel() {
       newContent = {}
     } else if (key.startsWith('__field:') && key.endsWith('__')) {
       // 구조화 산출물 카드(필드) 단위 부분 삭제 — sentinel `__field:<name>__`.
-      // 현재 T-1-1 지원: personalVisions / teamVision / coreKeywords / blocks
+      // 현재 T-1-1 지원: personalVisions / teamVision / coreKeywords / designPrinciples / blocks
       const field = key.slice('__field:'.length, -2)
       newContent = { ...(firestoreArtifact.content as Record<string, unknown>) }
       if (field === 'personalVisions') newContent.personalVisions = []
       else if (field === 'teamVision') newContent.teamVision = ''
       else if (field === 'coreKeywords') newContent.coreKeywords = []
+      else if (field === 'designPrinciples') newContent.designPrinciples = []
       else if (field === 'blocks') {
         const ws = (newContent.manualWorkspace as Record<string, unknown> | undefined) ?? null
         if (ws) newContent.manualWorkspace = { ...ws, blocks: [] }
@@ -1266,9 +1319,9 @@ export function ArtifactPanel() {
       version: firestoreArtifact.version + 1,
     }).catch(console.error)
     // 로컬 currentArtifact도 즉시 반영 (displayArtifact가 로컬 우선이므로 필수)
-    if (currentArtifact) {
+    if (localArtifact) {
       setCurrentArtifact({
-        ...currentArtifact,
+        ...localArtifact,
         status: nextStatus,
         aiDraft: newContent,
         lastEditedContent: newContent,
@@ -1296,12 +1349,12 @@ export function ArtifactPanel() {
         content: target.content,
         version: firestoreArtifact.version + 1,
       })
-      if (currentArtifact) {
+      if (localArtifact) {
         setCurrentArtifact({
-          ...currentArtifact,
+          ...localArtifact,
           aiDraft: target.content,
           lastEditedContent: target.content,
-          confirmedContent: firestoreArtifact.status === 'confirmed' ? target.content : currentArtifact.confirmedContent,
+          confirmedContent: firestoreArtifact.status === 'confirmed' ? target.content : localArtifact.confirmedContent,
         })
       }
     } catch (err) {
@@ -1316,6 +1369,18 @@ export function ArtifactPanel() {
     setIsSaving(true)
     try {
       const content = { [activityMeta.label]: directInputText.trim() }
+      if (project.mode === 'collaborative' && !isHost) {
+        await proposeArtifactToHost(
+          project.id,
+          viewingActivity,
+          content,
+          userProfile?.uid ?? '',
+          userProfile?.displayName ?? '팀원',
+        )
+        setShowDirectInput(false)
+        setDirectInputText('')
+        return
+      }
       await setProjectArtifact(project.id, viewingActivity, {
         status: 'in_review',
         title: `${activityMeta.label} - 직접 입력`,
@@ -1714,24 +1779,26 @@ export function ArtifactPanel() {
             )}
 
             {/* 수정 요청 메모 배너 */}
-            {firestoreArtifact?.revisionNote && effectiveStatus === 'in_review' && (
+            {(sharedRevisionRequest || (firestoreArtifact?.revisionNote && effectiveStatus === 'in_review')) && (
               <div className="rounded-2xl border border-[#FBBC04] bg-[#FEF7E0] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Chat size={16} weight="fill" className="text-[#F9AB00]" />
                   <span className="text-xs font-bold text-[#B06000]">
                     수정 요청
-                    {firestoreArtifact.revisionRequestedBy && (
+                    {(sharedRevisionRequest?.requestedBy || firestoreArtifact?.revisionRequestedBy) && (
                       <span className="font-normal ml-1 opacity-80">
-                        · {project?.memberInfo?.[firestoreArtifact.revisionRequestedBy]?.displayName ?? '팀원'}
-                        {firestoreArtifact.revisionRequestedAt && (
-                          <> · {new Date(firestoreArtifact.revisionRequestedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+                        · {sharedRevisionRequest?.requestedByName
+                          ?? project?.memberInfo?.[firestoreArtifact?.revisionRequestedBy ?? '']?.displayName
+                          ?? '팀원'}
+                        {(sharedRevisionRequest?.requestedAt || firestoreArtifact?.revisionRequestedAt) && (
+                          <> · {new Date(sharedRevisionRequest?.requestedAt ?? firestoreArtifact!.revisionRequestedAt!).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
                         )}
                       </span>
                     )}
                   </span>
                 </div>
                 <p className="text-sm text-[#B06000] leading-relaxed whitespace-pre-wrap opacity-90">
-                  "{firestoreArtifact.revisionNote}"
+                  &ldquo;{sharedRevisionRequest?.note ?? firestoreArtifact?.revisionNote}&rdquo;
                 </p>
               </div>
             )}
@@ -1813,6 +1880,11 @@ export function ArtifactPanel() {
       {/* 액션 버튼 — 내용이 없으면 숨김 */}
       {displayArtifact && hasContent && (
         <div className="px-5 py-4 border-t border-[#DADCE0] bg-[#F8F9FA] space-y-2.5 flex-shrink-0">
+          {artifactError && (
+            <div role="alert" className="rounded-xl border border-[#F6AEA9] bg-[#FCE8E6] px-3 py-2 text-xs text-[#B3261E]">
+              {artifactError}
+            </div>
+          )}
           {isHost ? (
             isConfirmed ? (
               <>
@@ -1959,14 +2031,17 @@ export function CollapsedArtifactStrip({ onExpand }: { onExpand: () => void }) {
     if (previousActivityRef.current !== viewingActivity) {
       previousActivityRef.current = viewingActivity
       previousSerializedRef.current = serialized
-      setJustUpdated(false)
-      return
+      const resetTimer = setTimeout(() => setJustUpdated(false), 0)
+      return () => clearTimeout(resetTimer)
     }
     if (previousSerializedRef.current === serialized) return
     previousSerializedRef.current = serialized
-    setJustUpdated(true)
-    const t = setTimeout(() => setJustUpdated(false), 1800)
-    return () => clearTimeout(t)
+    const startTimer = setTimeout(() => setJustUpdated(true), 0)
+    const endTimer = setTimeout(() => setJustUpdated(false), 1800)
+    return () => {
+      clearTimeout(startTimer)
+      clearTimeout(endTimer)
+    }
   }, [firestoreArtifact?.content, viewingActivity])
 
   const statusDotColor = firestoreArtifact
