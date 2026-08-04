@@ -189,12 +189,21 @@ export function normCode(label: string): string {
   return label.replace(/[\[\]]/g, '').trim()
 }
 
+// Obsidian 스타일: 중심은 크고 뚜렷, 위성 노드는 작고 중요도(유사도)에 비례.
+// 반환값은 그래프 렌더링·충돌 반경·엣지 트리밍의 단일 기준(SSOT)으로 쓰인다.
 export function nodeRadius(type: GNode['type'], score?: number, isCenter?: boolean): number {
-  if (type === 'subject')   return 14
-  if (type === 'core_idea') return 10
-  if (isCenter) return 46
-  if (score !== undefined) return Math.round(28 + score * 12)
-  return 34
+  if (type === 'subject')   return 13
+  if (type === 'core_idea') return 9
+  if (isCenter) return 34
+  const s = score ?? 0.4
+  return Math.round(9 + s * 12) // 위성: 약 10–21px, 중요도에 따라 위성 크기 차등
+}
+
+// 라벨 정리·강조 우선순위에 쓰는 노드 중요도(0–1). 중심은 항상 1.
+export function nodeImportance(node: Pick<GNode, 'type' | 'similarityScore'>, isCenter?: boolean): number {
+  if (isCenter) return 1
+  if (node.type !== 'standard') return 0.5
+  return node.similarityScore ?? 0.35
 }
 
 export function normalizedEdgeWeight(weight?: number): number {

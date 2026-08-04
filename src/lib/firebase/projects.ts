@@ -509,6 +509,16 @@ export async function setOptionVote(
   })
 }
 
+export async function closeOptionChoice(
+  projectId: string,
+  messageId: string,
+): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    [`closedOptionMessages.${messageId}`]: true,
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export async function transferHost(projectId: string, newHostUid: string): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
     hostUid: newHostUid,

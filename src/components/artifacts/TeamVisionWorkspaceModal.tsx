@@ -56,8 +56,8 @@ interface Props {
   targetGradeGroup?: string
   targetSubjects?: string[]
   /**
-   * 현재 활동의 팀 채팅 메시지. mode='chat' 분기에서 chatContext로 전달.
-   * 호출 측에서 시간순 메시지 배열을 전달. (slice는 모달 내부에서 토큰 절약을 위해 수행)
+   * 현재 활동의 팀 채팅 메시지. chat/hybrid 모드에서 chatContext로 전달.
+   * 호출 측에서 시간순 메시지 배열 전체를 전달한다.
    */
   chatMessages?: Array<{ role: 'user' | 'assistant' | string; content: string; displayName?: string }>
   /** 협업 프롬프트 모달용 */
@@ -690,18 +690,19 @@ export function TeamVisionWorkspaceModal({
       !!artifactAsT11.teamVision?.trim() ||
       (artifactAsT11.coreKeywords && artifactAsT11.coreKeywords.length > 0)
     )
-    const isArtifactMode = artifactHasMeaningfulData
-    const mode: 'artifact' | 'chat' = isArtifactMode ? 'artifact' : 'chat'
-    const existingArtifact = isArtifactMode && artifactAsT11
+    const hasChatContext = !!chatMessages?.length
+    const mode: 'artifact' | 'chat' | 'hybrid' = artifactHasMeaningfulData
+      ? hasChatContext ? 'hybrid' : 'artifact'
+      : 'chat'
+    const existingArtifact = artifactHasMeaningfulData && artifactAsT11
       ? {
           personalVisions: artifactAsT11.personalVisions,
           teamVision: artifactAsT11.teamVision,
           coreKeywords: artifactAsT11.coreKeywords,
         }
       : undefined
-    // 채팅 메시지는 토큰 절약을 위해 최근 40개로 자름 (가장 최근 = 가장 관련성 높음).
-    const chatContext = mode === 'chat'
-      ? (chatMessages ?? []).slice(-40).map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))
+    const chatContext = mode === 'chat' || mode === 'hybrid'
+      ? (chatMessages ?? []).map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))
       : undefined
 
     if (
@@ -1474,7 +1475,11 @@ export function TeamVisionWorkspaceModal({
                       <div className="rounded-md border border-[#AECBFA] bg-[#E8F0FE] px-3 py-2 space-y-1.5">
                         <p className="text-[13px] font-extrabold text-[#1967D2] inline-flex items-center gap-1">
                           <Sparkle size={13} weight="fill" />
-                          {suggestion.basedOn.mode === 'artifact' ? '채팅 산출물 기반' : '팀 채팅 대화 기반'} · 제안 근거
+                          {suggestion.basedOn.mode === 'hybrid'
+                            ? '산출물 + 현재 대화 기반'
+                            : suggestion.basedOn.mode === 'artifact'
+                              ? '채팅 산출물 기반'
+                              : '팀 채팅 대화 기반'} · 제안 근거
                         </p>
                         {suggestion.basedOn.summary && (
                           <p className="text-[14px] text-[#202124] leading-relaxed">{suggestion.basedOn.summary}</p>

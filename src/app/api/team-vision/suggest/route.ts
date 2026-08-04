@@ -7,9 +7,11 @@ export const maxDuration = 60
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // 비전 단계(T-1-1) "팀 공통 비전" 산출물용 AI 제안 API.
-// RoleDistribution(T-2-1)와 동일한 2-mode 패턴:
-//  - artifact: 채팅에서 이미 만들어진 T-1-1 산출물(existingArtifact)을 출발점으로 정교화
-//  - chat:    빈 워크스페이스 — 팀 채팅 대화(chatContext)에서 비전 키워드를 읽고 초안 작성
+//  - artifact: 기존 T-1-1 산출물을 출발점으로 정교화
+//  - chat: 빈 워크스페이스에서 현재 활동 대화를 바탕으로 초안 작성
+//  - hybrid: 기존 산출물을 기준점으로 두고 현재 활동 대화의 명시적 변경·합의를 함께 반영
+
+export type TeamVisionSuggestMode = 'artifact' | 'chat' | 'hybrid'
 
 export interface TeamVisionSuggestRequest {
   /** 프로젝트 메타 (있으면 정합성 향상) */
@@ -29,11 +31,12 @@ export interface TeamVisionSuggestRequest {
   }
   /**
    * 제안 컨텍스트 모드:
-   * - 'artifact': 채팅에서 이미 만들어진 산출물(existingArtifact)을 기반으로 보강·정교화
-   * - 'chat':    빈 워크스페이스에서 시작 — 팀 채팅 대화(chatContext)를 바탕으로 초안 제안
-   * 누락 시 existingArtifact 존재 여부로 서버에서 자동 판정.
+   * - 'artifact': 기존 산출물(existingArtifact)을 기반으로 보강·정교화
+   * - 'chat': 빈 워크스페이스에서 시작해 현재 활동 대화(chatContext)로 초안 제안
+   * - 'hybrid': 기존 산출물을 기준점으로 삼고 현재 활동 대화의 최신 변경 맥락을 함께 반영
+   * 누락 시 existingArtifact와 chatContext 존재 여부로 서버에서 자동 판정.
    */
-  mode?: 'artifact' | 'chat'
+  mode?: TeamVisionSuggestMode
   /** mode='artifact' — 이미 생성된 T-1-1 산출물 (보강의 출발점) */
   existingArtifact?: {
     personalVisions?: Array<{
@@ -44,7 +47,7 @@ export interface TeamVisionSuggestRequest {
     teamVision?: string
     coreKeywords?: string[]
   }
-  /** mode='chat' — 현재 활동의 팀 채팅 메시지 (최근 N개 권장). 토큰 절약 위해 호출측에서 제한. */
+  /** mode='chat' 또는 'hybrid' — 현재 활동의 시간순 대화 전체. */
   chatContext?: Array<{
     role: 'user' | 'assistant' | string
     content: string
@@ -66,7 +69,7 @@ export interface TeamVisionSuggestResult {
    * mode와 함께 핵심 출처(요약) 및 구체 인용을 담는다.
    */
   basedOn?: {
-    mode: 'artifact' | 'chat'
+    mode: TeamVisionSuggestMode
     /** 한국어 2-3문장. 어떤 자료(산출물/채팅 흐름/개인 비전)에서 무엇을 읽어 반영했는지. */
     summary: string
     /** 구체 인용 — 예: 채팅 메시지의 짧은 발췌, 또는 산출물의 특정 행/문장 */
@@ -75,12 +78,14 @@ export interface TeamVisionSuggestResult {
 }
 
 const SYSTEM_PROMPT = `당신은 초·중등 협력적 수업설계 과정의 공동 비전 설정 코치입니다.
-T-1-1 활동 "팀 공통 비전" 산출물의 추천 형식에 맞춰, 두 가지 모드 중 하나로 제안합니다.
+T-1-1 활동 "팀 공통 비전" 산출물의 추천 형식에 맞춰, 세 가지 모드 중 하나로 제안합니다.
 협력이 먼저, AI는 뒤입니다. 팀이 각자의 교육 비전 키워드(3~5개)를 충분히 꺼내 놓은 뒤, 그 키워드를 비슷한 의미끼리 묶어 공동 비전 문장으로 모으는 것이 이 활동의 핵심입니다. AI가 내놓는 비전 문장은 결론이 아니라 후보·초안이며, 최종 선택과 명문화는 교사팀의 몫입니다.
 
 [mode='artifact'] — 채팅에서 이미 만들어진 산출물(existingArtifact)이 출발점입니다. 산출물의 개인 비전, 팀 비전, 핵심 키워드를 존중하되, 추상도·문장 흐름·키워드 응집도를 정교화합니다. 임의로 새 가치를 만들지 말고, 산출물의 의미를 가장 잘 응축하는 표현을 찾습니다.
 
 [mode='chat'] — 빈 워크스페이스에서 시작합니다. 팀이 그동안 채팅으로 나눈 대화(chatContext) — 누가 어떤 비전 키워드, 학생관, 교육관, 가치 지향을 언급했는지 — 를 면밀히 읽고, 그 키워드 3~5개를 조합해 팀 공통 비전 1문장과 핵심 키워드를 도출합니다. 채팅에 명시적으로 등장한 표현을 우선 활용합니다.
+
+[mode='hybrid'] — 기존 산출물(existingArtifact)을 합의된 기준점으로 삼고, 현재 워크스페이스 초안과 현재 활동 대화(chatContext)를 최신 변경 맥락으로 함께 읽습니다. 대화는 시간순이며 뒤에 있는 메시지가 더 최신입니다. 단순 질문·탐색·AI 제안·선택되지 않은 후보는 기존 산출물을 덮어쓸 근거가 아닙니다. 교사가 명시적으로 수정·거절·합의한 내용만 최신 변경사항으로 반영합니다. 현재 워크스페이스에서 사용자가 직접 편집한 내용은 기존 산출물보다 우선합니다. basedOn에는 유지한 산출물 근거와 새로 반영한 대화 근거를 각각 구분해 인용합니다.
 
 반드시 아래 JSON 형식으로만 응답하세요. JSON 이외의 텍스트는 절대 포함하지 마세요.
 
@@ -89,8 +94,8 @@ T-1-1 활동 "팀 공통 비전" 산출물의 추천 형식에 맞춰, 두 가�
   "coreKeywords": ["키워드1", "키워드2", "키워드3"],
   "rationale": "각 핵심 키워드가 비전 문장에 어떻게 녹아 있는지 근거 1-2문장 (선택)",
   "basedOn": {
-    "mode": "artifact 또는 chat (입력 모드와 동일)",
-    "summary": "이 제안이 무엇에 근거했는지 2-3문장으로 설명. 채팅 모드면 '~팀원이 ~을 강조한 흐름을 반영했습니다' 식으로, 산출물 모드면 '기존 산출물의 ~를 정교화했습니다' 식으로.",
+    "mode": "artifact, chat 또는 hybrid (입력 모드와 동일)",
+    "summary": "이 제안이 무엇에 근거했는지 2-3문장으로 설명. hybrid 모드면 유지한 산출물 내용과 최근 대화에서 새로 반영한 변경사항을 구분해 설명.",
     "references": [
       { "source": "채팅: 김나희 / 산출물: 개인비전(인주상) 등 출처 식별자", "text": "구체 인용 — 짧은 발췌 한두 줄" }
     ]
@@ -105,13 +110,16 @@ T-1-1 활동 "팀 공통 비전" 산출물의 추천 형식에 맞춰, 두 가�
 - 키워드가 서로 갈릴 때는 "지금 우리 학생들에게 가장 필요한 가치는 무엇인가"로 되돌아가 수렴점을 찾음
 - chat mode에서는 채팅에서 본인이 직접 말한 키워드·표현을 우선 활용
 - artifact mode에서는 기존 산출물 문장을 출발점으로 — 의미 있는 변경 사유가 없으면 표현을 보존
+- hybrid mode에서는 현재 워크스페이스 직접 편집 > 기존 산출물 > 현재 활동 대화의 명시적 변경·합의 > 프로젝트 메타 순으로 판단
+- hybrid mode에서 탐색 발언, 질문, AI 제안, 선택되지 않은 후보를 확정된 변경으로 승격하지 말 것
+- hybrid mode의 references에는 가능한 경우 "산출물" 출처와 "채팅: 교사명" 출처를 모두 포함
 - basedOn.summary는 사용자가 읽고 "납득"할 수 있도록 구체적 자료(채팅의 누구 발언, 산출물의 어떤 항목)를 짧게 인용
-- basedOn.references는 1~4개. 채팅 모드면 가급적 발화자 이름과 핵심 문구. 산출물 모드면 어떤 항목이 출발점이었는지.
+- basedOn.references는 1~4개. 채팅 모드면 가급적 발화자 이름과 핵심 문구, 산출물 모드면 출발점 항목, hybrid 모드면 두 출처를 모두 포함.
 - 본문에 마크다운, 코드 블록, 추가 설명을 절대 포함하지 말 것 (JSON만)
 - 존중하는 동료 교사 어조로 작성합니다
 `
 
-function resolveMode(body: TeamVisionSuggestRequest): 'artifact' | 'chat' {
+function resolveMode(body: TeamVisionSuggestRequest): TeamVisionSuggestMode {
   if (body.mode) return body.mode
   const ea = body.existingArtifact
   const hasArtifact = !!(
@@ -119,15 +127,21 @@ function resolveMode(body: TeamVisionSuggestRequest): 'artifact' | 'chat' {
     ea?.teamVision?.trim() ||
     (ea?.coreKeywords && ea.coreKeywords.length > 0)
   )
+  const hasChat = !!body.chatContext?.length
+  if (hasArtifact && hasChat) return 'hybrid'
   return hasArtifact ? 'artifact' : 'chat'
 }
 
-function buildUserPrompt(body: TeamVisionSuggestRequest, mode: 'artifact' | 'chat'): string {
+function buildUserPrompt(body: TeamVisionSuggestRequest, mode: TeamVisionSuggestMode): string {
   const lines: string[] = []
   lines.push(`### 모드: ${mode}`)
-  lines.push(mode === 'artifact'
-    ? '→ 기존 산출물을 출발점으로 보강·정교화합니다. basedOn에는 어느 항목을 어떻게 다듬었는지 인용하세요.'
-    : '→ 빈 워크스페이스 초안입니다. 팀 채팅 대화에서 누가 어떤 비전 키워드를 언급했는지 읽고 반영하세요. basedOn에는 채팅의 누구 발언을 어떻게 반영했는지 인용하세요.')
+  if (mode === 'hybrid') {
+    lines.push('→ 기존 산출물을 기준점으로 유지하면서 현재 워크스페이스와 현재 활동 대화의 명시적 변경·합의를 함께 반영하세요. basedOn에는 유지한 산출물 근거와 새로 반영한 대화 근거를 구분해 인용하세요.')
+  } else if (mode === 'artifact') {
+    lines.push('→ 기존 산출물을 출발점으로 보강·정교화합니다. basedOn에는 어느 항목을 어떻게 다듬었는지 인용하세요.')
+  } else {
+    lines.push('→ 빈 워크스페이스 초안입니다. 팀 채팅 대화에서 누가 어떤 비전 키워드를 언급했는지 읽고 반영하세요. basedOn에는 채팅의 누구 발언을 어떻게 반영했는지 인용하세요.')
+  }
   lines.push('')
 
   if (body.projectTitle || body.targetGradeGroup || (body.targetSubjects && body.targetSubjects.length)) {
@@ -149,7 +163,7 @@ function buildUserPrompt(body: TeamVisionSuggestRequest, mode: 'artifact' | 'cha
     lines.push('')
   }
 
-  if (mode === 'artifact' && body.existingArtifact) {
+  if ((mode === 'artifact' || mode === 'hybrid') && body.existingArtifact) {
     const ea = body.existingArtifact
     lines.push('### 채팅에서 만들어진 기존 산출물 (출발점 — 이 내용을 정교화)')
     if (ea.teamVision?.trim()) lines.push(`- 팀 공통 비전: ${ea.teamVision.trim()}`)
@@ -167,14 +181,15 @@ function buildUserPrompt(body: TeamVisionSuggestRequest, mode: 'artifact' | 'cha
     lines.push('')
   }
 
-  if (mode === 'chat' && body.chatContext && body.chatContext.length > 0) {
-    lines.push('### 팀 채팅 대화 (시간순 — 발화자·AI 메시지를 읽고 반영)')
+  if ((mode === 'chat' || mode === 'hybrid') && body.chatContext && body.chatContext.length > 0) {
+    lines.push(mode === 'hybrid'
+      ? '### 현재 활동 대화 전체 (시간순 — 기존 산출물 이후의 변경·거절·합의 맥락 확인)'
+      : '### 팀 채팅 대화 (시간순 — 발화자·AI 메시지를 읽고 반영)')
     for (const msg of body.chatContext) {
       const speaker = msg.role === 'assistant'
         ? 'AI'
         : (msg.displayName?.trim() || '팀원')
-      // 길이 제한 — LLM 입력 절약. 한 줄당 500자 컷.
-      const text = (msg.content ?? '').trim().slice(0, 500)
+      const text = (msg.content ?? '').trim()
       if (text) lines.push(`- [${speaker}] ${text}`)
     }
     lines.push('')

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
@@ -143,6 +143,12 @@ const STAGE_BUBBLE: Record<string, { bg: string; border: string; text: string }>
 interface ParsedOption { label: string; content: string }
 interface ParsedOptions { pre: string; options: ParsedOption[]; post: string }
 
+const INTERNAL_ACTIVITY_CODE_RE = /\b(?:T|A|Ds|DI|E)-[12]-[123]\b/g
+
+function displayActivityCodesInText(text: string): string {
+  return text.replace(INTERNAL_ACTIVITY_CODE_RE, code => displayActivityCode(code))
+}
+
 function parseOptions(text: string): ParsedOptions | null {
   // ⚠️ schemas.ts의 CHOICE_LABEL_RE(산출물 오염 필터)와 짝 규칙:
   // 여기서 선택지 카드로 렌더링되는 라벨 패턴은 반드시 CHOICE_LABEL_RE가 걸러낼 수 있어야 한다.
@@ -185,6 +191,9 @@ function parseOptions(text: string): ParsedOptions | null {
 }
 
 // ─── 안 선택 카드 렌더러 ─────────────────────────────
+// @MX:NOTE: Keep team option voting dormant until the shared choice flow is reintroduced.
+const TEAM_OPTION_VOTING_ENABLED = false
+
 const OPTION_COLORS = [
   { bg: 'bg-[#E8F0FE]', border: 'border-[#AECBFA]', badge: 'bg-[#1A73E8]', btn: 'bg-[#1A73E8] hover:bg-[#1557b0]' },
   { bg: 'bg-[#F3E5F5]', border: 'border-[#CE93D8]', badge: 'bg-[#7B1FA2]', btn: 'bg-[#7B1FA2] hover:bg-[#6a1790]' },
@@ -271,15 +280,17 @@ function VoteOverlayBar({
 }
 
 function OptionsMessage({
-  messageId, pre, options, post, onSelect,
-  votes, memberInfo, currentUid, isHost,
+  messageId, pre, options, post, onSelect, onDiscuss,
+  votes, memberInfo, currentUid, isHost, isClosed,
 }: ParsedOptions & {
   messageId: string
   onSelect: (label: string, content: string) => void
+  onDiscuss: () => Promise<void>
   votes: Record<string, string>
   memberInfo: MemberInfoMap
   currentUid: string
   isHost: boolean
+  isClosed: boolean
 }) {
   const [selected, setSelected] = useState<string | null>(null)
   const myVote = votes[currentUid] ?? null
@@ -288,6 +299,12 @@ function OptionsMessage({
     if (selected) return
     setSelected(label)
     onSelect(label, content)
+  }
+
+  function handleDiscuss() {
+    if (selected) return
+    setSelected('재논의')
+    void onDiscuss().catch(() => setSelected(null))
   }
 
   return (
@@ -306,7 +323,7 @@ function OptionsMessage({
         {options.map((opt, i) => {
           const c = OPTION_COLORS[i % OPTION_COLORS.length]
           const isChosen = selected === opt.label
-          const isDimmed = selected && !isChosen
+          const isDimmed = isClosed || (!!selected && !isChosen)
           // all voters for this option (including self)
           const voters = Object.entries(votes)
             .filter(([, v]) => v === opt.label)
@@ -329,11 +346,11 @@ function OptionsMessage({
                 <span className={cn('flex-shrink-0 text-xs font-bold text-white px-2 py-0.5 rounded-full mt-0.5', c.badge)}>
                   {opt.label}
                 </span>
-                <p className="flex-1 text-sm text-gray-800 leading-relaxed">&ldquo;{opt.content}&rdquo;</p>
+                <p className="flex-1 text-sm text-gray-800 leading-relaxed">&ldquo;{displayActivityCodesInText(opt.content)}&rdquo;</p>
               </div>
 
               {/* 투표 현황: 이 안을 지지한 팀원들 */}
-              {voters.length > 0 && (
+              {TEAM_OPTION_VOTING_ENABLED && voters.length > 0 && (
                 <div className="mt-2.5 flex items-center gap-2 flex-wrap">
                   {voters.map(v => (
                     <span
@@ -359,7 +376,7 @@ function OptionsMessage({
               )}
 
               {/* 호스트만: 최종 결정 버튼 */}
-              {isHost && (
+              {isHost && !isClosed && (
                 <div className="mt-2.5 flex justify-end">
                   {isChosen ? (
                     <span className="flex items-center gap-1 text-xs font-bold text-[#34A853]">
@@ -381,7 +398,7 @@ function OptionsMessage({
               )}
 
               {/* 팀원: 내가 지지한 안 표시 (투표는 오버레이에서) */}
-              {!isHost && myVote === opt.label && (
+              {TEAM_OPTION_VOTING_ENABLED && !isHost && myVote === opt.label && (
                 <div className="mt-2.5 flex justify-end">
                   <span className="flex items-center gap-1 text-xs font-semibold text-[#5F6368]">
                     <CheckCircle size={16} weight="fill" className="text-[#34A853]" /> 내가 지지
@@ -392,14 +409,19 @@ function OptionsMessage({
           )
         })}
 
-        {/* 이 중에는 없다 — 재논의 버튼 (호스트만, 선택 전) */}
-        {isHost && !selected && (
+        {/* 이 중에는 없다 — 선택 대기를 종료하고 기본 AI 대화로 복귀 */}
+        {isHost && !selected && !isClosed && (
           <button
-            onClick={() => handleFinalSelect('재논의', '이 중에 마음에 드는 안이 없어요. 다시 논의하고 싶습니다.')}
+            onClick={handleDiscuss}
             className="self-start text-[11px] text-[#5F6368] hover:text-[#C62828] underline underline-offset-2 transition-colors"
           >
             이 중에는 없다 — 다시 논의하기
           </button>
+        )}
+        {isClosed && (
+          <p className="self-start rounded-full bg-[#F1F3F4] px-3 py-1.5 text-[11px] font-semibold text-[#5F6368]">
+            기존 안 선택 종료 · 기본 대화로 전환됨
+          </p>
         )}
 
         {post && (
@@ -477,6 +499,7 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
     .replace(/\[ARTIFACT_UPDATE\]/g, '')
     .replace(/(\|[^|\n]*)<br\s*\/?>/gi, '$1, ')
     .replace(/<br\s*\/?>/gi, '\n')
+    .replace(INTERNAL_ACTIVITY_CODE_RE, code => displayActivityCode(code))
     .replace(/^(\s*\[[^\]\n]{1,20}\]\s*){1,4}\n/u, '')
     // CommonMark 한계: **'text'**한국어 패턴에서 ' 뒤 ** 가 닫힘 기호로 인식 안 됨
     // → **'text'** 를 **text** 로 정규화
@@ -558,6 +581,16 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
           <code className={cn('px-1.5 py-0.5 rounded text-xs font-mono', dark ? 'bg-white/20' : 'bg-gray-200 text-gray-800')}>
             {children}
           </code>
+        ),
+        blockquote: ({ children }) => (
+          <blockquote className={cn(
+            'my-3 rounded-xl border-l-4 px-4 py-3 shadow-sm [&>p:last-child]:mb-0',
+            dark
+              ? 'border-white/70 bg-white/15 text-white'
+              : 'border-[#1A73E8] bg-white/75 text-[#1A2E5A]',
+          )}>
+            {children}
+          </blockquote>
         ),
         // 테이블 렌더링 — 내부 셀은 자연스럽게 wrap, 정말 넓을 때만 overflow-x 스크롤 (말풍선 밖으로 흐르지 않도록)
         table: ({ children }) => (
@@ -2360,6 +2393,42 @@ function ChatPanelContent() {
     setPendingArtifactSave(null)
   }
 
+  // ─── 선택지 재논의 → 선택·지지 대기를 종료하고 기본 AI 대화로 복귀 ─
+  async function handleRestartOptionDiscussion(messageId: string) {
+    try {
+      await closeOptionChoice(proj.id, messageId)
+    } catch (error) {
+      setChatError('선택 대기를 종료하지 못했습니다. 다시 시도해 주세요.')
+      throw error
+    }
+
+    setDiscussionMode('ai_facilitated')
+    const noticeContent = '기존 안 선택과 팀원별 지지 요청을 종료하고, 기본 대화에서 다시 논의하겠습니다.'
+    const noticeId = generateMessageId(proj.id, currentActivity)
+    const noticeMessage = {
+      id: noticeId,
+      role: 'user' as const,
+      content: noticeContent,
+      activityCode: currentActivity,
+      userId: userProfile?.uid,
+      displayName: userProfile?.displayName,
+      createdAt: Timestamp.now(),
+    }
+    addMessage(noticeMessage)
+    saveMessage(proj.id, currentActivity, {
+      role: 'user',
+      content: noticeContent,
+      activityCode: currentActivity,
+      userId: userProfile?.uid,
+      displayName: userProfile?.displayName,
+    }, noticeId).catch(() => {
+      setChatError('선택 대화 종료 기록을 저장하지 못했습니다.')
+    })
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('[data-chat-input]')?.focus()
+    })
+  }
+
   // ─── 팀 토의 승낙 (AI 제안 카드) ────────────────────
   async function handleAcceptDiscussion() {
     setPendingTeamDiscussion(null)
@@ -2371,14 +2440,17 @@ function ChatPanelContent() {
   // ─── 팀 토의 종료 → AI 분석 ──────────────────────────
   async function handleEndDiscussion() {
     setDiscussionMode('ai_facilitated')
-    setIsAnalyzing(true)
     clearStreamingText()
 
     const visibleMessages = messages.filter(m => m.role !== 'system')
     const discussionMessages = visibleMessages.slice(teamDiscussionStartIdx)
 
-    if (discussionMessages.length === 0) return
+    if (discussionMessages.length === 0) {
+      setIsAnalyzing(false)
+      return
+    }
 
+    setIsAnalyzing(true)
     const discussionSummary = discussionMessages
       .map(m => `${m.role === 'user' ? '교사' : 'AI'}: ${m.content}`)
       .join('\n\n')
@@ -3210,8 +3282,9 @@ ${discussionSummary}
   const isWaitingForChoice = useMemo(
     () => !isTeamMode && !!lastAIMsg
       && lastAIMsg.activityCode === currentActivity
+      && proj.closedOptionMessages?.[lastAIMsg.id] !== true
       && !!parseOptions(lastAIMsg.content),
-    [isTeamMode, lastAIMsg, currentActivity]
+    [isTeamMode, lastAIMsg, currentActivity, proj.closedOptionMessages]
   )
 
   // ─── 직접 메시지 전송 (HelpCard 등 버튼에서 호출) ──────
@@ -3618,9 +3691,17 @@ ${discussionSummary}
 
   // 팀 채팅 종료 → Firestore 업데이트 후 AI 분석
   async function handleEndDiscussionAndAnalyze() {
+    const isLegacyOptionRestart = proj.teamDiscussions?.[currentActivity]?.topic === '제안안을 다시 논의하기'
+    if (isLegacyOptionRestart && lastAIMsg && parseOptions(lastAIMsg.content)) {
+      await closeOptionChoice(proj.id, lastAIMsg.id).catch(() => {
+        setChatError('이전 선택 대기를 종료하지 못했습니다. 다시 시도해 주세요.')
+      })
+    }
+
     await setTeamDiscussion(proj.id, currentActivity, false).catch(console.error)
     setDiscussionMode('ai_facilitated')
-    handleEndDiscussion()   // 기존 AI 분석 로직 호출
+    if (isLegacyOptionRestart) return
+    void handleEndDiscussion()
   }
 
   const cornerColor = STAGE_CORNER[project?.currentStage ?? 'T']
@@ -4068,7 +4149,10 @@ ${discussionSummary}
                   }
                   currentUid={userProfile?.uid ?? ''}
                   isHost={isHost}
+                  isClosed={proj.closedOptionMessages?.[msg.id] === true}
+                  onDiscuss={() => handleRestartOptionDiscussion(msg.id)}
                   onSelect={(label, content) => {
+                    closeOptionChoice(proj.id, msg.id).catch(console.error)
                     // 이전 AI 메시지에서 현재 활동과 다른 활동 코드 언급을 추출 → 크로스 활동 힌트
                     const actCodeRegex = /\b(T-[12]-[123]|A-[12]-[123]|Ds-[12]-[123]|DI-[12]-1|E-[12]-1)\b/g
                     const mentionedCodes = [...(msg.content ?? '').matchAll(actCodeRegex)]
@@ -4374,7 +4458,9 @@ ${discussionSummary}
           projectTitle={proj.title}
           targetGradeGroup={proj.targetGradeGroup}
           targetSubjects={proj.targetSubjects}
-          chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
+          chatMessages={messages
+            .filter(m => m.role !== 'system')
+            .map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
         />
@@ -4793,24 +4879,24 @@ ${discussionSummary}
             const graphKeyword = stableGraphKeyword || graphKeywordForShare
             return (
               <>
-                {/* 그래프 헤더 */}
-                <div className="flex items-center justify-between px-5 py-3 bg-[#F3E5F5] border-b border-[#CE93D8] shrink-0">
-                  <span className="text-sm font-semibold text-[#7B1FA2] flex items-center gap-2 flex-1 min-w-0">
-                    <button onClick={onBackToSheet} className="shrink-0 px-2 py-1 text-xs font-bold text-[#7B1FA2] bg-white border border-[#CE93D8] rounded-lg hover:bg-[#F3E5F5] transition">
-                      ← 분석시트
-                    </button>
-                    <span className="shrink-0">교육과정 융합 지식 그래프</span>
-                    {isHost && <span className="text-[9px] text-[#9C27B0] bg-white/70 px-1.5 py-0.5 rounded-full shrink-0">팀 공유 중</span>}
-                    <div className="flex-1 min-w-0 flex items-center gap-1">
-                      <input id="graph-topic-input" type="text" defaultValue={graphKeyword.trim() || ''}
-                        placeholder="수업 주제를 입력하고 검색을 누르면 관련 성취기준을 찾습니다"
-                        onKeyDown={e => { if (e.key === 'Enter') { const val = (e.target as HTMLInputElement).value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } } }}
-                        className="flex-1 min-w-0 text-[12px] font-normal text-[#3D1C72] bg-white/80 border border-[#CE93D8] rounded-lg px-2.5 py-1 outline-none focus:border-[#7B1FA2] focus:ring-1 focus:ring-[#7B1FA2]/30 placeholder:text-[#CE93D8]/60"
-                      />
-                      <button onClick={() => { const input = document.getElementById('graph-topic-input') as HTMLInputElement | null; const val = input?.value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } }}
-                        className="shrink-0 px-2.5 py-1 bg-[#7B1FA2] hover:bg-[#6A1B9A] text-white text-[11px] font-bold rounded-lg transition-colors">검색</button>
-                    </div>
-                  </span>
+                {/* 그래프 헤더 (M3 calm top app bar) */}
+                <div className="m3-shell m3-top-app-bar flex items-center gap-2 px-4 py-2.5 shrink-0">
+                  <button type="button" onClick={onBackToSheet} aria-label="분석시트로 돌아가기" className="m3-btn-tonal m3-state m3-focus-ring shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs">
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+                    분석시트
+                  </button>
+                  <span className="shrink-0 text-sm font-semibold" style={{ color: 'var(--md-sys-on-surface)' }}>교육과정 융합 지식 그래프</span>
+                  {isHost && <span className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--md-sys-secondary-container)', color: 'var(--md-sys-on-secondary-container)' }}>팀 공유 중</span>}
+                  <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                    <input id="graph-topic-input" type="text" defaultValue={graphKeyword.trim() || ''}
+                      aria-label="수업 주제 검색"
+                      placeholder="수업 주제를 입력하고 검색을 누르면 관련 성취기준을 찾습니다"
+                      onKeyDown={e => { if (e.key === 'Enter') { const val = (e.target as HTMLInputElement).value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } } }}
+                      className="m3-search-field flex-1 min-w-0 text-[12px] px-3 py-1.5"
+                    />
+                    <button type="button" onClick={() => { const input = document.getElementById('graph-topic-input') as HTMLInputElement | null; const val = input?.value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } }}
+                      className="m3-btn-filled m3-state m3-focus-ring shrink-0 px-4 py-1.5 text-[12px]">검색</button>
+                  </div>
                 </div>
                 {/* 그래프 본문 */}
                 <div className="flex-1 min-h-0">
@@ -5096,7 +5182,7 @@ ${discussionSummary}
         )}
 
         {/* 팀원 투표 오버레이 바 (선택 대기 중 & 팀원) */}
-        {isWaitingForChoice && !isHost && lastAIMsg && (() => {
+        {TEAM_OPTION_VOTING_ENABLED && isWaitingForChoice && !isHost && lastAIMsg && (() => {
           const parsed = parseOptions(lastAIMsg.content)
           if (!parsed) return null
           return (
@@ -5174,7 +5260,9 @@ ${discussionSummary}
           ) : isWaitingForChoice ? (
             <span className="text-[11px] text-[#E65100] font-medium flex items-center gap-1">
               <Chat size={16} weight="regular" className="text-[#E65100]" />
-              안을 선택하거나 팀원과 의논해보세요 · AI는 선택 후 응답합니다
+              {isHost
+                ? '안을 선택하거나 다시 논의하기를 선택해 주세요 · AI는 선택 후 응답합니다'
+                : '방장이 안을 검토하고 있습니다 · 의견을 남길 수 있어요'}
             </span>
           ) : (
             <>
@@ -5327,7 +5415,11 @@ ${discussionSummary}
                   }
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder={isTeamMode ? '팀원에게 의견을 전달하세요...' : isWaitingForChoice ? '안을 선택 전 팀원과 의논해보세요...' : '메시지를 입력하세요... (/ 로 커맨드 · Shift+Enter: 줄바꿈)'}
+                placeholder={isTeamMode
+                  ? '팀원에게 의견을 전달하세요...'
+                  : isWaitingForChoice
+                    ? isHost ? '안을 선택하거나 다시 논의하기를 선택해 주세요...' : '방장에게 의견을 남겨 주세요...'
+                    : '메시지를 입력하세요... (/ 로 커맨드 · Shift+Enter: 줄바꿈)'}
                 rows={3}
                 disabled={isLoading && !isTeamMode && !isWaitingForChoice}
                 className={cn(

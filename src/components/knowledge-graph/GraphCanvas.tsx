@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { GNode, GEdge, GraphRelationAnalysis, GraphPinnedStandard, GraphRelationFilter } from './types'
 import {
-  RELATION_COLORS, subjectColor, subjectName, normCode, nodeRadius,
+  RELATION_COLORS, subjectColor, subjectName, normCode, nodeRadius, nodeImportance,
   edgeColor, edgeRelationLabel, hasCompletedRelationAnalysis,
   getRelationDisplayState, getRelationStatusMeta, buildFallbackRelationExplanation,
 } from './constants'
@@ -37,6 +37,21 @@ interface GraphCanvasProps {
   onDragEnd: () => void
 }
 
+const MIN_SCALE = 0.25
+const MAX_SCALE = 4
+const LABEL_ALL_SCALE = 1.05        // 이 배율 이상이면 모든 라벨 표시
+const LABEL_IMPORTANCE_MIN = 0.72   // 저배율에서 라벨을 남길 최소 중요도
+const FIT_PADDING = 90
+const FIT_DURATION = 460
+const CLICK_MOVE_THRESHOLD = 5      // 이 픽셀 이하 이동은 클릭으로 간주 (드래그와 구분)
+
+interface ViewTransform { x: number; y: number; scale: number }
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 export default function GraphCanvas({
   svgRef, nodesRef, svgWidth, svgHeight, height,
   visibleNodes, visibleEdges, centerNodeId, popup, hoveredNodeId: hoveredNodeIdProp,
@@ -45,11 +60,63 @@ export default function GraphCanvas({
   onAlgoModeChange, onRelFilterChange,
   onNodeClick, onRightClick, onSetHoveredNodeId, onSetTooltip, onDragStart, onDragEnd,
 }: GraphCanvasProps) {
-  const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, scale: 1 })
+  const [viewTransform, setViewTransform] = useState<ViewTransform>({ x: 0, y: 0, scale: 1 })
   const [dragging, setDragging] = useState<string | null>(null)
-  const panStartRef = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null)
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
 
-  // 마우스 휠 줌
+  // 이벤트 핸들러에서 최신 transform을 읽기 위한 ref (렌더 중 쓰지 않음 — 커밋 후 동기화)
+  const viewRef = useRef(viewTransform)
+  useEffect(() => { viewRef.current = viewTransform }, [viewTransform])
+
+  // 포인터/제스처 상태
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  // 노드 클릭/드래그 판별: pointerdown 위치를 기록하고, 임계값 초과 이동 시에만 드래그로 승격
+  const nodeGestureRef = useRef<{ nodeId: string; pointerId: number; startX: number; startY: number; moved: boolean } | null>(null)
+  // 드래그 종료 직후 뒤따르는 합성 click이 팝업을 여는 것을 차단 (중복/오작동 활성화 방지)
+  const suppressClickRef = useRef(false)
+  const panStartRef = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null)
+  const pinchRef = useRef<{ dist: number; scale: number; midX: number; midY: number; tx: number; ty: number } | null>(null)
+  const fitRafRef = useRef<number>(0)
+
+  useEffect(() => () => cancelAnimationFrame(fitRafRef.current), [])
+
+  // ── 사전 계산: id→노드 맵 + 1홉 인접 (매 렌더 .find 제거) ──────────────
+  const nodeById = useMemo(() => {
+    const m = new Map<string, GNode>()
+    for (const n of visibleNodes) m.set(n.id, n)
+    return m
+  }, [visibleNodes])
+
+  // 강조 대상: 마우스 hover(부모 제어) 또는 키보드 focus 노드의 1홉 이웃
+  const focusId = hoveredNodeIdProp ?? focusedNodeId
+  const emphasis = useMemo(() => {
+    if (!focusId) return null
+    const set = new Set<string>([focusId])
+    for (const e of visibleEdges) {
+      if (e.source === focusId) set.add(e.target)
+      if (e.target === focusId) set.add(e.source)
+    }
+    return set
+  }, [focusId, visibleEdges])
+
+  // ── 화면 좌표 변환 유틸 ────────────────────────────────────────────────
+  const toScreen = useCallback((gx: number, gy: number) => {
+    const vt = viewRef.current
+    const rect = svgRef.current?.getBoundingClientRect()
+    const left = rect?.left ?? 0
+    const top = rect?.top ?? 0
+    return { x: left + vt.x + gx * vt.scale, y: top + vt.y + gy * vt.scale }
+  }, [svgRef])
+
+  const toGraph = useCallback((clientX: number, clientY: number) => {
+    const vt = viewRef.current
+    const rect = svgRef.current?.getBoundingClientRect()
+    const left = rect?.left ?? 0
+    const top = rect?.top ?? 0
+    return { x: (clientX - left - vt.x) / vt.scale, y: (clientY - top - vt.y) / vt.scale }
+  }, [svgRef])
+
+  // ── 마우스 휠 줌 (커서 기준) ───────────────────────────────────────────
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
@@ -60,7 +127,7 @@ export default function GraphCanvas({
       const mouseY = e.clientY - rect.top
       const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89
       setViewTransform(vt => {
-        const newScale = Math.max(0.25, Math.min(4, vt.scale * zoomFactor))
+        const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, vt.scale * zoomFactor))
         const ratio = newScale / vt.scale
         return { x: mouseX - (mouseX - vt.x) * ratio, y: mouseY - (mouseY - vt.y) * ratio, scale: newScale }
       })
@@ -69,42 +136,178 @@ export default function GraphCanvas({
     return () => el.removeEventListener('wheel', onWheel)
   }, [svgRef])
 
-  const onMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
-    e.stopPropagation()
-    setDragging(nodeId)
-    const node = nodesRef.current.find(n => n.id === nodeId)
-    if (node) { node.fx = node.x; node.fy = node.y }
-    onDragStart(e, nodeId)
-  }, [nodesRef, onDragStart])
-
-  const onMouseMove = useCallback((e: React.MouseEvent) => {
-    if (dragging && svgRef.current) {
-      const rect = svgRef.current.getBoundingClientRect()
-      const node = nodesRef.current.find(n => n.id === dragging)
-      if (node) {
-        node.fx = (e.clientX - rect.left - viewTransform.x) / viewTransform.scale
-        node.fy = (e.clientY - rect.top - viewTransform.y) / viewTransform.scale
-        node.x = node.fx
-        node.y = node.fy
-      }
+  // ── 애니메이션 fit-to-view (reduced-motion이면 즉시 점프) ───────────────
+  const animateTransformTo = useCallback((target: ViewTransform) => {
+    cancelAnimationFrame(fitRafRef.current)
+    if (prefersReducedMotion()) { setViewTransform(target); return }
+    const start = { ...viewRef.current }
+    const t0 = performance.now()
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / FIT_DURATION)
+      const e = 1 - Math.pow(1 - p, 3) // easeOutCubic
+      setViewTransform({
+        x: start.x + (target.x - start.x) * e,
+        y: start.y + (target.y - start.y) * e,
+        scale: start.scale + (target.scale - start.scale) * e,
+      })
+      if (p < 1) fitRafRef.current = requestAnimationFrame(step)
     }
+    fitRafRef.current = requestAnimationFrame(step)
+  }, [])
+
+  const fitToView = useCallback(() => {
+    if (visibleNodes.length === 0) { animateTransformTo({ x: 0, y: 0, scale: 1 }); return }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const n of visibleNodes) {
+      const r = nodeRadius(n.type, n.similarityScore, n.id === centerNodeId)
+      minX = Math.min(minX, n.x - r); maxX = Math.max(maxX, n.x + r)
+      minY = Math.min(minY, n.y - r); maxY = Math.max(maxY, n.y + r)
+    }
+    const bw = Math.max(1, maxX - minX)
+    const bh = Math.max(1, maxY - minY)
+    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE,
+      Math.min((svgWidth - 2 * FIT_PADDING) / bw, (svgHeight - 2 * FIT_PADDING) / bh)))
+    const bcx = (minX + maxX) / 2
+    const bcy = (minY + maxY) / 2
+    animateTransformTo({ scale, x: svgWidth / 2 - bcx * scale, y: svgHeight / 2 - bcy * scale })
+  }, [visibleNodes, centerNodeId, svgWidth, svgHeight, animateTransformTo])
+
+  const zoomBy = useCallback((factor: number) => {
+    cancelAnimationFrame(fitRafRef.current)
+    setViewTransform(vt => {
+      const s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, vt.scale * factor))
+      const cx = svgWidth / 2, cy = svgHeight / 2
+      return { x: cx - (cx - vt.x) * s / vt.scale, y: cy - (cy - vt.y) * s / vt.scale, scale: s }
+    })
+  }, [svgWidth, svgHeight])
+
+  // ── 노드 포인터 다운 (클릭 후보로 시작 — 드래그 확정 전까지 캡처/고정 지연) ──
+  // 주의: 여기서 setPointerCapture를 즉시 호출하면 뒤따르는 click 이벤트가 SVG(캡처 대상)로
+  // 재타깃되어 노드 <g>의 onClick이 발화되지 않는다(팝업이 열리지 않는 회귀의 근본 원인).
+  // 따라서 이동이 임계값을 넘어 '드래그'로 확정될 때(onPointerMove)에만 캡처·고정·재가열한다.
+  const onNodePointerDown = useCallback((e: React.PointerEvent, nodeId: string) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    e.stopPropagation()
+    suppressClickRef.current = false
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    nodeGestureRef.current = { nodeId, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, moved: false }
+    setDragging(nodeId)
+    onDragStart(e as unknown as React.MouseEvent, nodeId)
+  }, [onDragStart])
+
+  // ── 배경 포인터 다운 (팬/핀치 시작) ────────────────────────────────────
+  const onBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    cancelAnimationFrame(fitRafRef.current)
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    svgRef.current?.setPointerCapture?.(e.pointerId)
+
+    if (pointersRef.current.size === 2) {
+      // 핀치 줌 시작
+      const pts = [...pointersRef.current.values()]
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1
+      const midX = (pts[0].x + pts[1].x) / 2
+      const midY = (pts[0].y + pts[1].y) / 2
+      const vt = viewRef.current
+      pinchRef.current = { dist, scale: vt.scale, midX, midY, tx: vt.x, ty: vt.y }
+      panStartRef.current = null
+    } else {
+      const vt = viewRef.current
+      panStartRef.current = { mx: e.clientX, my: e.clientY, vx: vt.x, vy: vt.y }
+    }
+  }, [svgRef])
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (pointersRef.current.has(e.pointerId)) {
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
+
+    // 노드 제스처: 임계값 초과 이동 시에만 드래그로 승격 (그 전에는 클릭 후보로 유지)
+    const gesture = nodeGestureRef.current
+    if (gesture) {
+      if (!gesture.moved) {
+        if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) <= CLICK_MOVE_THRESHOLD) {
+          return // 아직 클릭 후보 — 노드를 움직이지 않는다
+        }
+        gesture.moved = true
+        svgRef.current?.setPointerCapture?.(gesture.pointerId) // 드래그 확정 → 포인터 캡처(화면 밖 추적)
+        onDragEnd() // 드래그 시작 재가열 — 이웃이 실시간으로 반응
+      }
+      const node = nodesRef.current.find(n => n.id === gesture.nodeId)
+      if (node) {
+        const g = toGraph(e.clientX, e.clientY)
+        node.fx = g.x; node.fy = g.y; node.x = g.x; node.y = g.y
+      }
+      return
+    }
+
+    // 핀치 줌
+    const pinch = pinchRef.current
+    if (pinch && pointersRef.current.size >= 2) {
+      const pts = [...pointersRef.current.values()]
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1
+      const rect = svgRef.current?.getBoundingClientRect()
+      const left = rect?.left ?? 0
+      const top = rect?.top ?? 0
+      const anchorX = pinch.midX - left
+      const anchorY = pinch.midY - top
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, pinch.scale * (dist / pinch.dist)))
+      const ratio = newScale / pinch.scale
+      setViewTransform({
+        x: anchorX - (anchorX - pinch.tx) * ratio,
+        y: anchorY - (anchorY - pinch.ty) * ratio,
+        scale: newScale,
+      })
+      return
+    }
+
+    // 팬
     const panStart = panStartRef.current
-    if (!dragging && panStart) {
+    if (panStart) {
       const dx = e.clientX - panStart.mx
       const dy = e.clientY - panStart.my
       setViewTransform(vt => ({ ...vt, x: panStart.vx + dx, y: panStart.vy + dy }))
     }
-  }, [dragging, svgRef, nodesRef, viewTransform])
+  }, [nodesRef, svgRef, toGraph, onDragEnd])
 
-  const onMouseUp = useCallback(() => {
-    if (dragging) {
-      const node = nodesRef.current.find(n => n.id === dragging)
-      if (node) { node.fx = undefined; node.fy = undefined }
+  const endPointer = useCallback((e: React.PointerEvent) => {
+    pointersRef.current.delete(e.pointerId)
+    svgRef.current?.releasePointerCapture?.(e.pointerId)
+
+    const gesture = nodeGestureRef.current
+    if (gesture && gesture.pointerId === e.pointerId) {
+      if (gesture.moved) {
+        // 실제 드래그 종료 — 고정 해제 후 정착. 뒤따르는 합성 click은 팝업을 열지 않도록 억제.
+        const node = nodesRef.current.find(n => n.id === gesture.nodeId)
+        if (node) { node.fx = undefined; node.fy = undefined }
+        suppressClickRef.current = true
+        onDragEnd() // 놓은 뒤 안정 정착
+      }
+      // 임계값 이내면 드래그가 아니므로 노드 <g>의 native click이 그대로 팝업을 연다(캡처 미적용).
+      nodeGestureRef.current = null
       setDragging(null)
-      onDragEnd() // Force 시뮬레이션 재시작
     }
-    panStartRef.current = null
-  }, [dragging, nodesRef, onDragEnd])
+    if (pointersRef.current.size < 2) pinchRef.current = null
+    if (pointersRef.current.size === 0) panStartRef.current = null
+  }, [nodesRef, onDragEnd, svgRef])
+
+  // ── 노드 hover → 툴팁 (팬/줌 반영한 화면 좌표) ─────────────────────────
+  const showTooltip = useCallback((node: GNode) => {
+    onSetHoveredNodeId(node.id)
+    const r = nodeRadius(node.type, node.similarityScore, node.id === centerNodeId)
+    const s = toScreen(node.x, node.y)
+    onSetTooltip({ nodeId: node.id, x: s.x, y: s.y - r * viewRef.current.scale - 8 })
+  }, [onSetHoveredNodeId, onSetTooltip, centerNodeId, toScreen])
+
+  // 키보드 우클릭(컨텍스트 메뉴) 대체
+  const openContextViaKeyboard = useCallback((node: GNode) => {
+    const s = toScreen(node.x, node.y)
+    onRightClick({
+      preventDefault() {}, stopPropagation() {}, clientX: s.x, clientY: s.y,
+    } as unknown as React.MouseEvent, node.id)
+  }, [onRightClick, toScreen])
+
+  const scale = viewTransform.scale
 
   return (
     <>
@@ -118,6 +321,7 @@ export default function GraphCanvas({
             { key: 'hybrid', label: '통합', desc: '의미망 + 키워드 통합' },
           ] as const).map(({ key, label, desc }) => (
             <button key={key} title={desc} onClick={() => onAlgoModeChange(key)}
+              aria-pressed={algoMode === key}
               className={`px-2.5 py-1 rounded-lg text-[12px] font-semibold transition-all ${algoMode === key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
             >
               {label}
@@ -138,6 +342,7 @@ export default function GraphCanvas({
             { key: '원인-결과', label: '인과', color: '#F59E0B' },
           ] as { key: GraphRelationFilter; label: string; color: string }[]).map(({ key, label, color }) => (
             <button key={key} onClick={() => onRelFilterChange(key)}
+              aria-pressed={relFilter === key}
               className={`px-2 py-1 rounded-lg text-[11.5px] font-semibold transition-all ${relFilter === key ? 'text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
               style={relFilter === key ? { backgroundColor: color } : { color }}
             >{label}</button>
@@ -157,14 +362,13 @@ export default function GraphCanvas({
       <svg
         ref={svgRef}
         className="w-full h-full"
-        style={{ width: svgWidth, height: height ?? '100%', cursor: 'grab' }}
-        onMouseDown={e => {
-          if (e.button !== 0) return
-          panStartRef.current = { mx: e.clientX, my: e.clientY, vx: viewTransform.x, vy: viewTransform.y }
-        }}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        style={{ width: svgWidth, height: height ?? '100%', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+        role="application"
+        aria-label={`지식 그래프. 성취기준 ${visibleNodes.length}개, 관계 ${visibleEdges.length}개.${centerNodeId ? ' 중심 성취기준이 설정되어 있습니다.' : ' 노드를 우클릭하여 중심을 설정하세요.'}`}
+        onPointerDown={onBackgroundPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
       >
         <defs>
           {[
@@ -182,11 +386,11 @@ export default function GraphCanvas({
         </defs>
 
         <g transform={`translate(${viewTransform.x},${viewTransform.y}) scale(${viewTransform.scale})`}>
-          {/* 엣지 */}
+          {/* 엣지 (곡선 · 저투명도 · 가중치 반영 · 1홉 강조) */}
           <g>
             {visibleEdges.map(edge => {
-              const src = visibleNodes.find(n => n.id === edge.source)
-              const tgt = visibleNodes.find(n => n.id === edge.target)
+              const src = nodeById.get(edge.source)
+              const tgt = nodeById.get(edge.target)
               if (!src || !tgt) return null
 
               const isManual = edge.method === 'manual'
@@ -196,18 +400,31 @@ export default function GraphCanvas({
                 ? edge.relation === '도구-활용' ? '-red' : edge.relation === '현상-가치' ? '-orange' : edge.relation === '내용-표현' ? '-green' : '-purple'
                 : isCross ? '-purple' : edge.method === 'rule_based' ? '-blue' : ''
               const markerId = `arrow${markerSuffix}`
-              const strokeW = isManual
-                ? (edge.relation !== DEFAULT_GRAPH_RELATION_TYPE ? 2.2 : 1.2)
-                : isCross ? Math.max(1.2, edge.weight * 2.2) : 1
+
+              const srcIsCenter = src.id === centerNodeId
+              const tgtIsCenter = tgt.id === centerNodeId
+              const isCenterEdge = srcIsCenter || tgtIsCenter
+              const touchesFocus = focusId ? (edge.source === focusId || edge.target === focusId) : false
+              const dimmed = !!emphasis && !touchesFocus
+
+              // 강조/일반 상태별 투명도
+              const baseOpacity = isManual ? (isCenterEdge ? 0.5 : 0.3) : isCross ? 0.36 : 0.2
+              const opacity = dimmed ? 0.05 : touchesFocus ? 0.85 : baseOpacity
+
+              // 가중치 반영 두께
+              const w = Math.max(0, Math.min(1, edge.weight))
+              const strokeW = (isManual && edge.relation === DEFAULT_GRAPH_RELATION_TYPE)
+                ? 1
+                : Math.max(0.8, 0.8 + w * 2.4) + (touchesFocus ? 1 : 0)
+
+              const showArrow = touchesFocus || (!emphasis && isCenterEdge)
+              const showLabel = (touchesFocus || (!emphasis && isCenterEdge)) && scale > 0.55
 
               const dx = tgt.x - src.x
               const dy = tgt.y - src.y
               const dist = Math.sqrt(dx * dx + dy * dy) || 1
-              const srcIsCenter = src.id === centerNodeId
-              const tgtIsCenter = tgt.id === centerNodeId
-              const isCenterEdge = srcIsCenter || tgtIsCenter
               const srcR = nodeRadius(src.type, src.similarityScore, srcIsCenter) + 2
-              const tgtR = nodeRadius(tgt.type, tgt.similarityScore, tgtIsCenter) + 10
+              const tgtR = nodeRadius(tgt.type, tgt.similarityScore, tgtIsCenter) + (showArrow ? 9 : 3)
               const x1 = src.x + (dx / dist) * srcR
               const y1 = src.y + (dy / dist) * srcR
               const x2 = tgt.x - (dx / dist) * tgtR
@@ -215,7 +432,7 @@ export default function GraphCanvas({
 
               const mx = (x1 + x2) / 2
               const my = (y1 + y2) / 2
-              const curvature = isManual ? 0.25 : 0.20
+              const curvature = isManual ? 0.16 : 0.13
               const perpX = -dy / dist * dist * curvature
               const perpY = dx / dist * dist * curvature
               const cpX = mx + perpX
@@ -229,14 +446,14 @@ export default function GraphCanvas({
                 <g key={edge.id}>
                   <path
                     d={`M ${x1},${y1} Q ${cpX},${cpY} ${x2},${y2}`}
-                    fill="none" stroke={color} strokeWidth={strokeW}
-                    strokeOpacity={isCenterEdge ? 0.72 : isCross ? 0.45 : 0.28}
-                    markerEnd={`url(#${markerId})`}
-                    strokeDasharray={(!isManual && !isCross) ? '4,3' : undefined}
+                    fill="none" stroke={color} strokeWidth={strokeW} strokeLinecap="round"
+                    strokeOpacity={opacity}
+                    markerEnd={showArrow ? `url(#${markerId})` : undefined}
+                    strokeDasharray={(!isManual && !isCross) ? '4,4' : undefined}
                   />
-                  {isCenterEdge && labelText && (
+                  {showLabel && labelText && (
                     <g transform={`translate(${labelX},${labelY})`}>
-                      <rect x={-labelText.length * charW / 2 - 6} y={-10} width={labelText.length * charW + 12} height={20} rx={10} fill="rgba(255,255,255,0.9)" stroke="rgba(226,232,240,0.9)" />
+                      <rect x={-labelText.length * charW / 2 - 6} y={-10} width={labelText.length * charW + 12} height={20} rx={10} fill="rgba(255,255,255,0.92)" stroke="rgba(226,232,240,0.9)" />
                       <text textAnchor="middle" dy={4} fontSize={12} fontWeight="600" fill={color} style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'system-ui, sans-serif' }}>
                         {labelText}
                       </text>
@@ -247,7 +464,7 @@ export default function GraphCanvas({
             })}
           </g>
 
-          {/* 노드 */}
+          {/* 노드 (작은 위성 + 뚜렷한 중심 · 부드러운 halo · 라벨 정리) */}
           <g>
             {visibleNodes.map(node => {
               const isCenter = node.id === centerNodeId
@@ -256,61 +473,109 @@ export default function GraphCanvas({
               const sName = subjectName(node.subject_id)
               const isPopup = popup?.id === node.id
               const isHovered = node.id === hoveredNodeIdProp
+              const isFocused = node.id === focusedNodeId
+              const importance = nodeImportance(node, isCenter)
               const chatMatch = chatMentionedCodes.find(c => normCode(c.code) === normCode(node.label))
               const pin = pinnedStandards.find(p => p.stdId === node.id)
                 ?? (chatMatch ? { stdId: node.id, addedBy: chatMatch.addedBy, source: 'chat' as const } : undefined)
+
+              const dimmed = !!emphasis && !emphasis.has(node.id) && !isCenter
+              const nodeOpacity = dimmed ? 0.22 : 1
+              const showLabel = isCenter || isFocused || (emphasis?.has(node.id) ?? false)
+                || scale >= LABEL_ALL_SCALE || importance >= LABEL_IMPORTANCE_MIN
 
               return (
                 <g
                   key={node.id}
                   transform={`translate(${node.x},${node.y})`}
-                  style={{ cursor: 'pointer' }}
-                  onMouseDown={e => onMouseDown(e, node.id)}
-                  onMouseEnter={() => {
-                    onSetHoveredNodeId(node.id)
-                    const rect = svgRef.current?.getBoundingClientRect()
-                    if (rect) {
-                      const r2 = nodeRadius(node.type, node.similarityScore, node.id === centerNodeId)
-                      onSetTooltip({ nodeId: node.id, x: rect.left + node.x, y: rect.top + node.y - r2 - 8 })
-                    }
+                  style={{ cursor: 'pointer', opacity: nodeOpacity, transition: 'opacity 140ms ease', outline: 'none' }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${node.label}${sName ? ` (${sName})` : ''}${isCenter ? ', 중심 성취기준' : ''}`}
+                  onPointerDown={e => onNodePointerDown(e, node.id)}
+                  onPointerEnter={e => { if (e.pointerType !== 'touch') showTooltip(node) }}
+                  onPointerLeave={() => { onSetHoveredNodeId(null); onSetTooltip(null) }}
+                  onClick={() => {
+                    // 드래그 종료 직후의 합성 click은 무시 (중복/오작동 활성화 방지)
+                    if (suppressClickRef.current) { suppressClickRef.current = false; return }
+                    onSetTooltip(null); onNodeClick(node)
                   }}
-                  onMouseLeave={() => { onSetHoveredNodeId(null); onSetTooltip(null) }}
-                  onClick={() => { onSetTooltip(null); onNodeClick(node) }}
                   onContextMenu={e => onRightClick(e, node.id)}
+                  onFocus={() => { setFocusedNodeId(node.id); showTooltip(node) }}
+                  onBlur={() => { setFocusedNodeId(prev => (prev === node.id ? null : prev)); onSetTooltip(null) }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSetTooltip(null); onNodeClick(node) }
+                    else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); openContextViaKeyboard(node) }
+                  }}
                 >
-                  {isCenter
-                    ? <circle r={r + 6} fill="none" stroke="#D97706" strokeWidth={2.5} strokeOpacity={0.8} />
-                    : <circle r={r + 4} fill="white" stroke={color} strokeWidth={2} strokeOpacity={0.55} />
-                  }
-                  {isHovered && !isCenter && <circle r={r + 6} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.55} />}
+                  {/* 부드러운 halo */}
+                  {isCenter && <circle r={r + 20} fill={color} opacity={0.06} />}
+                  {isCenter && <circle r={r + 11} fill={color} opacity={0.1} />}
+                  {(isHovered || isFocused) && !isCenter && <circle r={r + 9} fill={color} opacity={0.12} />}
+
+                  {/* 상태 링 */}
+                  {isCenter && <circle r={r + 6} fill="none" stroke="#D97706" strokeWidth={2.5} strokeOpacity={0.85} />}
+                  {isCenter && <circle r={r + 4} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.5} />}
+                  {isFocused && <circle r={r + 7} fill="none" stroke="#111827" strokeWidth={2} strokeDasharray="3,3" strokeOpacity={0.7} />}
+                  {isHovered && !isCenter && !isFocused && <circle r={r + 6} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.55} />}
                   {isPopup && <circle r={r + 8} fill="none" stroke="#111827" strokeWidth={2} strokeOpacity={0.55} />}
-                  {pin && !isCenter && <circle r={r + 6} fill="none" stroke="#94A3B8" strokeWidth={1.5} strokeDasharray="4,3" strokeOpacity={0.7} />}
-                  <circle r={isCenter ? r + 1 : r} fill={color} fillOpacity={isCenter ? 0.96 : 0.88} />
-                  {(() => {
+                  {pin && !isCenter && <circle r={r + 5} fill="none" stroke="#94A3B8" strokeWidth={1.5} strokeDasharray="4,3" strokeOpacity={0.7} />}
+
+                  {/* 본체 */}
+                  <circle
+                    r={r}
+                    fill={color}
+                    fillOpacity={isCenter ? 0.97 : 0.9}
+                    stroke="#ffffff"
+                    strokeWidth={isCenter ? 2 : 1.5}
+                    strokeOpacity={0.92}
+                  />
+
+                  {/* 라벨 (노드 하단, 흰색 외곽선으로 가독성 확보) */}
+                  {showLabel && (() => {
                     const label = node.label
-                    const baseFontSize = isCenter ? 15 : 13
-                    const fontSize = label.length > 10 ? Math.max(10, baseFontSize - (label.length - 10) * 0.6) : baseFontSize
-                    const yPos = isCenter ? -13 : -9
-                    return <text y={yPos} textAnchor="middle" fontSize={fontSize} fontWeight="700" fill="white" style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
-                  })()}
-                  <text y={isCenter ? 6 : 7} textAnchor="middle" fontSize={isCenter ? 13 : 11} fontWeight="500" fill="rgba(255,255,255,0.85)" style={{ userSelect: 'none', pointerEvents: 'none' }}>({sName})</text>
-                  {pin && (
-                    <g transform={`translate(0, ${r + 10})`}>
-                      <rect x={-16} y={-8} width={32} height={16} rx={8} fill="white" stroke="#CBD5E1" />
-                      <text textAnchor="middle" dy={4} fontSize={10} fontWeight="600" fill="#64748B" style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                        시트
+                    const fontSize = isCenter ? 13 : 10.5
+                    return (
+                      <text
+                        y={r + (isCenter ? 15 : 12)}
+                        textAnchor="middle"
+                        fontSize={fontSize}
+                        fontWeight={isCenter ? 700 : 600}
+                        fill="#1F2937"
+                        stroke="#ffffff"
+                        strokeWidth={3}
+                        paintOrder="stroke"
+                        strokeLinejoin="round"
+                        style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'system-ui, sans-serif' }}
+                      >
+                        {label}
                       </text>
+                    )
+                  })()}
+                  {isCenter && sName && (
+                    <text y={r + 30} textAnchor="middle" fontSize={11} fontWeight="500" fill="#6B7280" stroke="#ffffff" strokeWidth={2.5} paintOrder="stroke" strokeLinejoin="round" style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                      ({sName})
+                    </text>
+                  )}
+
+                  {/* 시트 핀 배지 */}
+                  {pin && (
+                    <g transform={`translate(${r + 2}, ${-(r + 2)})`}>
+                      <circle r={7} fill="white" stroke="#CBD5E1" />
+                      <text textAnchor="middle" dy={3} fontSize={9} fontWeight="700" fill="#64748B" style={{ userSelect: 'none', pointerEvents: 'none' }}>시</text>
                     </g>
                   )}
+
+                  {/* 추천 배지 (중심 미설정 시) */}
                   {!centerNodeId && recommendedCenterIds.has(node.id) && (
                     <g transform={`translate(0, ${-(r + 14)})`}>
                       {(() => {
                         const recommender = recommendedCenterIds.get(node.id) ?? '팀원'
                         const label = `${recommender.slice(0, 6)} 추천`
-                        const w = label.length * 6.9 + 12
+                        const wBadge = label.length * 6.9 + 12
                         return (
                           <>
-                            <rect x={-w / 2} y={-10} width={w} height={20} rx={10} fill="#F59E0B" fillOpacity={0.95} />
+                            <rect x={-wBadge / 2} y={-10} width={wBadge} height={20} rx={10} fill="#F59E0B" fillOpacity={0.95} />
                             <text textAnchor="middle" dy={4} fontSize={10} fontWeight="700" fill="white" style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
                           </>
                         )
@@ -324,18 +589,21 @@ export default function GraphCanvas({
         </g>
       </svg>
 
-      {/* 줌 버튼 */}
-      <div className="absolute bottom-16 right-4 z-20 flex flex-col items-center gap-1 pointer-events-auto">
+      {/* 줌 컨트롤 */}
+      <div className="absolute bottom-16 right-4 z-20 flex flex-col items-center gap-1 pointer-events-auto" role="group" aria-label="그래프 확대·축소 컨트롤">
         <button
-          onClick={() => setViewTransform(vt => { const s = Math.min(4, vt.scale * 1.2); return { x: svgWidth / 2 - (svgWidth / 2 - vt.x) * s / vt.scale, y: svgHeight / 2 - (svgHeight / 2 - vt.y) * s / vt.scale, scale: s } })}
+          onClick={() => zoomBy(1.2)}
+          aria-label="확대"
           className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="확대"
         >+</button>
         <button
-          onClick={() => setViewTransform({ x: 0, y: 0, scale: 1 })}
+          onClick={fitToView}
+          aria-label="화면에 맞추기"
           className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-500 hover:bg-gray-50 flex items-center justify-center text-[12px] font-bold leading-none" title="화면 맞춤"
         >⊙</button>
         <button
-          onClick={() => setViewTransform(vt => { const s = Math.max(0.25, vt.scale * 0.83); return { x: svgWidth / 2 - (svgWidth / 2 - vt.x) * s / vt.scale, y: svgHeight / 2 - (svgHeight / 2 - vt.y) * s / vt.scale, scale: s } })}
+          onClick={() => zoomBy(0.83)}
+          aria-label="축소"
           className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="축소"
         >−</button>
       </div>

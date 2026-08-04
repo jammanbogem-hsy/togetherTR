@@ -1,26 +1,19 @@
 import { NextResponse } from 'next/server'
 import { isElementaryGradeGroup, loadContentSystems, loadElementaryContentSystems } from '@/lib/curriculum/contentSystemReader'
+import { filterContentItemsByGrade, gradeBandNeedle } from '@/lib/curriculum/curriculumFilters'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-function gradeNeedle(gradeGroup: string | null): string {
-  return (gradeGroup ?? '').replace(/^초/, '').replace(/~/g, '-').trim()
-}
-
 function recordMatchesGrade(gradeBands: string[], gradeGroup: string | null): boolean {
-  const needle = gradeNeedle(gradeGroup)
+  const needle = gradeBandNeedle(gradeGroup)
   if (!needle) return true
   if (gradeBands.length === 0) return true
   return gradeBands.some(gradeBand => gradeBand.includes(needle))
 }
 
 function filterValuesByGrade(items: string[], gradeGroup: string | null): string[] {
-  const needle = gradeNeedle(gradeGroup)
-  if (!needle) return items
-  const prefixed = items.filter(item => /^\d+-\d+학년군:/.test(item))
-  if (prefixed.length === 0) return items
-  return prefixed.filter(item => item.includes(needle))
+  return filterContentItemsByGrade(items, gradeGroup)
 }
 
 function isSelectionCurriculum(curriculum: string): boolean {

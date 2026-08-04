@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run sync:runtime-assets && next build && npm run verify:runtime-assets",
+    "sync:runtime-assets": "node scripts/sync-runtime-assets.mjs",
+    "verify:runtime-assets": "node scripts/verify-runtime-assets.mjs",
+    "test:runtime-assets": "node --experimental-strip-types --test scripts/contentSystemBundle.test.mjs",
     "start": "next start",
     "lint": "eslint",
     "eval:knowledge-graph": "node scripts/evaluate-knowledge-graph.mjs",

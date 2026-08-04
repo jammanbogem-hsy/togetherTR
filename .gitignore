@@ -52,3 +52,9 @@ next-env.d.ts
 /data/*
 !/data/curriculum-content-systems/
 !/data/curriculum-content-systems/**
+
+# generated runtime-asset copies (prebuild sync of data/ -> public/ for the
+# Firebase SSR bundle; source of truth stays under data/). See
+# scripts/sync-runtime-assets.mjs. Not committed to avoid stale duplication.
+/public/curriculum-content-systems/
+/public/core-idea-area-mapping.json

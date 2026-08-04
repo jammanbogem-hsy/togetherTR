@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useRouter } from 'next/navigation'
 import { useProjectStore } from '@/store/project'
@@ -384,6 +384,123 @@ function PrevCycleImprovementsCard({
   )
 }
 
+// ─── 초대코드 확대 모달 ───────────────────────────────
+function InviteCodeModal({
+  open,
+  inviteCode,
+  onClose,
+}: {
+  open: boolean
+  inviteCode: string
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState(false)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+
+    setCopied(false)
+    setCopyError(false)
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    closeButtonRef.current?.focus()
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [open, onClose])
+
+  useEffect(() => {
+    if (!copied) return
+    const timeout = window.setTimeout(() => setCopied(false), 1800)
+    return () => window.clearTimeout(timeout)
+  }, [copied])
+
+  async function handleCopy() {
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(inviteCode)
+      setCopied(true)
+      setCopyError(false)
+    } catch {
+      setCopyError(true)
+    }
+  }
+
+  if (!open || typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[260] flex items-center justify-center bg-[#202124]/55 p-4 backdrop-blur-[2px]"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invite-code-title"
+        aria-describedby="invite-code-description"
+        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-[#D2E3FC] bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 border-b border-[#DADCE0] bg-gradient-to-br from-[#E8F0FE] to-white px-6 py-5">
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-[#1A73E8] text-white">
+            <Key size={23} weight="fill" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A73E8]">팀 참여</p>
+            <h2 id="invite-code-title" className="text-lg font-extrabold text-[#202124]">이 방의 초대코드</h2>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={onClose}
+            aria-label="초대코드 닫기"
+            className="rounded-full p-2 text-[#5F6368] transition-colors hover:bg-white hover:text-[#202124] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
+          >
+            <XIcon size={20} weight="bold" />
+          </button>
+        </div>
+
+        <div className="px-6 py-8 text-center sm:px-10 sm:py-10">
+          <p
+            className="select-all break-all text-[clamp(2.25rem,10vw,4.5rem)] font-black leading-none tracking-[0.12em] text-[#1A73E8]"
+            aria-label={`초대코드 ${inviteCode}`}
+          >
+            {inviteCode}
+          </p>
+          <p id="invite-code-description" className="mt-5 text-sm leading-relaxed text-[#5F6368]">
+            팀원에게 이 코드를 공유하면 같은 설계 방에 참여할 수 있습니다.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="mt-7 inline-flex min-w-36 items-center justify-center gap-2 rounded-full bg-[#1A73E8] px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-[#1557B0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
+          >
+            {copied ? <Check size={18} weight="bold" /> : <Copy size={18} weight="bold" />}
+            {copied ? '복사됨!' : '초대코드 복사'}
+          </button>
+          {copyError && (
+            <p role="alert" className="mt-3 text-xs font-medium text-[#C5221F]">
+              복사하지 못했습니다. 코드를 직접 선택해 복사해 주세요.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ─── 메인 페이지 ─────────────────────────────────────
 const STAGE_PANEL_BORDER: Record<string, string> = {
   T:  'border-[2.5px] border-[#4285F4] shadow-[0_2px_12px_rgba(26,115,232,0.18)]',
@@ -416,6 +533,8 @@ export default function ProjectPage() {
   const [showMaterials, setShowMaterials] = useState(false)
   const [showPublish, setShowPublish] = useState(false)
   const [showOntology, setShowOntology] = useState(false)
+  const [showInviteCode, setShowInviteCode] = useState(false)
+  const closeInviteCode = useCallback(() => setShowInviteCode(false), [])
   // 팀원 팝오버 위치 (portal에서 fixed 좌표로 렌더 — 좌측 사이드바의 overflow-hidden을 벗어나기 위함)
   const membersBtnRef = useRef<HTMLButtonElement>(null)
   const [membersPopoverPos, setMembersPopoverPos] = useState<{ top: number; left: number } | null>(null)
@@ -1065,10 +1184,13 @@ export default function ProjectPage() {
           {project.mode !== 'solo' && project.inviteCode && (
             <button
               type="button"
-              onClick={() => { navigator.clipboard?.writeText(project.inviteCode!).catch(() => {}) }}
-              title="클릭해서 초대 코드 복사"
+              onClick={() => setShowInviteCode(true)}
+              title="초대코드 크게 보기"
+              aria-haspopup="dialog"
+              aria-expanded={showInviteCode}
               className="flex items-center gap-1 text-[11px] bg-[#E8F0FE] text-[#1A73E8]
-                px-2 py-1.5 rounded-full font-semibold hover:bg-[#D2E3FC] transition-colors flex-shrink-0 whitespace-nowrap"
+                px-2 py-1.5 rounded-full font-semibold hover:bg-[#D2E3FC] transition-colors flex-shrink-0 whitespace-nowrap
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
             >
               <Key size={13} weight="regular" />
               {project.inviteCode}
@@ -1091,6 +1213,14 @@ export default function ProjectPage() {
 
       {showReports && (
         <StageReportsModal onClose={() => setShowReports(false)} />
+      )}
+
+      {project.inviteCode && (
+        <InviteCodeModal
+          open={showInviteCode}
+          inviteCode={project.inviteCode}
+          onClose={closeInviteCode}
+        />
       )}
 
       <PublishModal

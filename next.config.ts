@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
     '/api/analyze/cumulative': ['./data/**'],
     '/api/analyze/stage': ['./data/**'],
     '/api/problem-situation/generate': ['./data/**'],
+    // 아래 두 라우트는 data/ (내용체계 JSON·지식그래프)를 fs로 읽는데 트레이싱에서 누락되어
+    // 번들 배포 시 내용체계가 전부 비어(=지식·이해/과정·기능 공란) 나올 수 있었다.
+    '/api/core-ideas': ['./data/**'],
+    '/api/curriculum-sheet/autofill': ['./data/**'],
   },
   experimental: {
     optimizePackageImports: ['@phosphor-icons/react', 'react-markdown'],

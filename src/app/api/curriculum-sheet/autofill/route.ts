@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
 import { isElementaryGradeGroup, loadContentSystems, loadElementaryContentSystems, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
+import { gradeBandNeedle, isUsableCoreIdea } from '@/lib/curriculum/curriculumFilters'
 import fs from 'fs'
 import path from 'path'
 
@@ -97,8 +98,17 @@ let mappingCache: AreaMapping[] | null = null
 
 function loadAreaMappings(): AreaMapping[] {
   if (mappingCache) return mappingCache
+  // prod bundles only public/ (Next 16 + Firebase frameworks drop data/ globs),
+  // so the prebuild sync mirrors this file there; data/ stays first for dev.
+  const candidates = [
+    path.join(process.cwd(), 'data/core-idea-area-mapping.json'),
+    path.join(process.cwd(), 'public/core-idea-area-mapping.json'),
+  ]
   try {
-    mappingCache = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data/core-idea-area-mapping.json'), 'utf-8')) as AreaMapping[]
+    const mappingPath = candidates.find(p => fs.existsSync(p))
+    mappingCache = mappingPath
+      ? (JSON.parse(fs.readFileSync(mappingPath, 'utf-8')) as AreaMapping[])
+      : []
   } catch {
     mappingCache = []
   }
@@ -149,7 +159,9 @@ function unique<T>(items: T[]): T[] {
 }
 
 function gradeNeedle(grade: string): string {
-  return grade.replace(/^초/, '').replace(/~/g, '-')
+  // 방어적 파싱: '초5-6'·'5~6'·'초등학교 5-6학년'·'5-6학년군' 모두 '5-6'로 정규화.
+  // 파싱 실패 시 ''를 반환해 학년 필터가 데이터를 통째로 비우지 않도록 한다.
+  return gradeBandNeedle(grade)
 }
 
 function formatGradeGroupLabel(grade: string): string {
@@ -178,7 +190,10 @@ function filterByGrade(items: string[], grade: string): string[] {
   const needle = gradeNeedle(grade)
   const withPrefix = items.filter(it => /^\d+-\d+학년군:/.test(it))
   if (withPrefix.length === 0) return items.map(item => withGradePrefix(item, grade))
-  return withPrefix.filter(it => it.includes(needle))
+  if (!needle) return withPrefix
+  const filtered = withPrefix.filter(it => it.includes(needle))
+  // 미스매치로 비면 학년군별 원문 전체로 복구 — 공란보다 원문이 낫다.
+  return filtered.length > 0 ? filtered : withPrefix
 }
 
 function formatCode(code: string): string {
@@ -350,6 +365,19 @@ function savedStandardsForSubject(graphSavedData: GraphSavedData | undefined, gr
   ].filter(std => subjectIds.has(std.subjectId)).map(std => std.id))
 }
 
+function optionResolvesToOfficial(
+  subject: string,
+  area: string,
+  idea: string,
+  contentSystems: ContentSystemRecord[],
+  areaMappings: AreaMapping[],
+): boolean {
+  const record = findOfficialContentRecord(contentSystems, subject, area, idea)
+  if (record && (record.knowledge.length > 0 || record.functions.length > 0)) return true
+  const mapping = findOfficialAreaMapping(areaMappings, subject, area, idea)
+  return Boolean(mapping && (mapping.knowledge.length > 0 || mapping.functions.length > 0))
+}
+
 async function buildCoreIdeaProposal(params: {
   graph: KnowledgeGraph
   subject: string
@@ -359,8 +387,10 @@ async function buildCoreIdeaProposal(params: {
   chatContext?: string
   graphSavedData?: GraphSavedData
   existingCoreIdea?: string
+  contentSystems: ContentSystemRecord[]
+  areaMappings: AreaMapping[]
 }): Promise<CoreIdeaProposal | null> {
-  const { graph, subject, focus, topic, gradeGroup, chatContext, graphSavedData, existingCoreIdea } = params
+  const { graph, subject, focus, topic, gradeGroup, chatContext, graphSavedData, existingCoreIdea, contentSystems, areaMappings } = params
   const standards = standardsForSubject(graph, subject, gradeGroup)
   const savedIds = savedStandardsForSubject(graphSavedData, graph, subject)
   const byCoreIdeaId = new Map<string, CurriculumStandard[]>()
@@ -371,13 +401,14 @@ async function buildCoreIdeaProposal(params: {
     byCoreIdeaId.get(std.core_idea_id)!.push(std)
   }
 
-  const options: CoreIdeaOption[] = []
+  const allOptions: CoreIdeaOption[] = []
   for (const [coreIdeaId, groupStandards] of byCoreIdeaId) {
     const coreIdea = graph.coreIdeas.find(item => item.id === coreIdeaId)
     if (!coreIdea) continue
     for (const idea of coreIdea.ideas) {
-      if (!idea || idea.length < 8) continue
-      options.push({
+      // 완전한 핵심아이디어 문장만 후보로. '[별표 …]'·어휘 목록 같은 그래프 잡음은 제외.
+      if (!isUsableCoreIdea(idea)) continue
+      allOptions.push({
         subject,
         coreIdeaId,
         area: coreIdea.area,
@@ -388,6 +419,13 @@ async function buildCoreIdeaProposal(params: {
       })
     }
   }
+
+  // 내용체계 원문(지식·이해/과정·기능)으로 해소되는 후보만 남긴다. 하나도 없으면
+  // 기능을 막지 않도록 전체 후보로 폴백한다.
+  const resolvable = allOptions.filter(option =>
+    optionResolvesToOfficial(option.subject, option.area, option.idea, contentSystems, areaMappings),
+  )
+  const options = resolvable.length > 0 ? resolvable : allOptions
 
   if (options.length === 0) return null
 
@@ -524,12 +562,15 @@ async function resolveKnowledgeAndFunctions(params: {
   if (knowledge.length === 0 && functions.length === 0) {
     const contentRecord = findOfficialContentRecord(contentSystems, subject, area, selectedIdea)
     if (contentRecord) {
-      knowledge = filterByGrade(contentRecord.knowledge, gradeGroup)
-      functions = filterByGrade(contentRecord.functions, gradeGroup)
+      const baseKnowledge = filterByGrade(contentRecord.knowledge, gradeGroup)
+      const baseFunctions = filterByGrade(contentRecord.functions, gradeGroup)
+      knowledge = baseKnowledge
+      functions = baseFunctions
       const aligned = alignElementsToStandard({ graph, subject, area, gradeGroup, selectedStandard, knowledge, functions })
       if (aligned) {
-        knowledge = aligned.knowledge
-        functions = aligned.functions
+        // 성취기준 인덱스 정렬 결과가 비면(정렬 불일치 등) 원문 전체로 복구한다.
+        knowledge = aligned.knowledge.length > 0 ? aligned.knowledge : baseKnowledge
+        functions = aligned.functions.length > 0 ? aligned.functions : baseFunctions
       }
     }
   }
@@ -612,7 +653,14 @@ function validateMappedRowsFromDb(params: {
 
     const checkValues = (label: string, value: string, allowed: string[]) => {
       const values = splitMappedValues(value)
-      if (values.length === 0) return
+      if (values.length === 0) {
+        // 원문 후보가 있는데 셀이 비었다면 조용한 매핑 누락 — 명시적으로 실패시킨다.
+        // (resolveKnowledgeAndFunctions의 원문 복구로 정상 흐름에서는 도달하지 않는다.)
+        if (allowed.length > 0) {
+          errors.push(`${row.subject}: ${label}이(가) 비었지만 DB 원문 후보(${allowed.length}건)가 있습니다. 매핑 누락.`)
+        }
+        return
+      }
       if (allowed.length === 0) {
         errors.push(`${row.subject}: ${label}에 대한 DB 원문 후보를 찾지 못했습니다. (영역=${lookupArea})`)
         return
@@ -794,6 +842,8 @@ export async function POST(request: NextRequest) {
       chatContext,
       graphSavedData,
       existingCoreIdea: explicitSelectedCoreIdea(selectedCoreIdeas, subject) || existingCoreIdeaForSubject(existingRows, subject),
+      contentSystems,
+      areaMappings,
     })))).filter((proposal): proposal is CoreIdeaProposal => Boolean(proposal))
 
     if (proposals.length === 0) {

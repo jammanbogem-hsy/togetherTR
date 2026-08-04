@@ -605,8 +605,8 @@ export default function KnowledgeGraphViewer({
 
   return (
     <div
-      className="flex w-full rounded-xl border border-gray-200 bg-white overflow-hidden"
-      style={height !== undefined ? { height } : { height: '100%' }}
+      className="m3-shell flex w-full rounded-xl overflow-hidden"
+      style={{ ...(height !== undefined ? { height } : { height: '100%' }), border: '1px solid var(--md-sys-outline-variant)' }}
     >
       {/* 좌측 패널 */}
       <LeftPanel
@@ -637,8 +637,8 @@ export default function KnowledgeGraphViewer({
         onShowStandardsBrowser={() => setShowStandardsBrowser(true)}
       />
 
-      {/* 우측 그래프 영역 */}
-      <div ref={graphAreaRef} className="flex-1 relative overflow-hidden bg-[#F8FAFC]">
+      {/* 우측 그래프 영역 — 측정 영역(graphAreaRef)의 flex/position/overflow는 불변, 배경색만 토큰화 */}
+      <div ref={graphAreaRef} className="flex-1 relative overflow-hidden" style={{ background: 'var(--md-sys-surface-container-low)' }}>
 
         {/* 전체 성취기준 브라우저 */}
         {showStandardsBrowser && (
@@ -657,58 +657,59 @@ export default function KnowledgeGraphViewer({
           />
         )}
 
-        {/* 저장/나가기 버튼 */}
-        <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2 pointer-events-auto">
-          {onSaveGraph && (
-            <SaveButtons onSaveGraph={onSaveGraph} buildData={buildSaveData} />
-          )}
-          {onClose && (
-            <button onClick={onClose} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 text-[14px] font-semibold shadow-md hover:bg-gray-50 transition-colors">나가기</button>
-          )}
-        </div>
-
-        {/* 분석 확인 배너 — 팀장만 분석 가능 */}
-        {showAnalysisBanner && centerNodeId && !claudeLoading && isLeader && (
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-            <div className="flex items-center gap-2.5 bg-white/95 border border-gray-200 rounded-2xl shadow-lg px-4 py-2.5">
-              <span className="text-gray-700 font-semibold text-[14px] whitespace-nowrap">연결을 바탕으로 수업 예시를 만들까요?</span>
-              <button onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }} className="px-3 py-1 bg-gray-900 hover:bg-gray-800 text-white text-[13px] font-bold rounded-lg transition-colors whitespace-nowrap">생성</button>
-              <button onClick={() => setShowAnalysisBanner(false)} className="px-2 py-1 text-gray-400 hover:text-gray-600 text-[13px] font-medium transition-colors whitespace-nowrap">나중에</button>
+        {/* 통합 컨텍스트 액션 영역 (M3) — 컨텍스트 배너/재분석을 지속 액션 바 위로 묶음 */}
+        <div className="absolute bottom-4 right-4 z-30 flex flex-col items-end gap-2 pointer-events-none">
+          {/* 분석 확인 배너 — 팀장만 분석 가능 */}
+          {showAnalysisBanner && centerNodeId && !claudeLoading && isLeader && (
+            <div className="m3-card md-shadow-2 pointer-events-auto flex items-center gap-2.5 px-4 py-2.5" style={{ borderRadius: 'var(--md-sys-radius-xl)', background: 'var(--md-sys-surface-container-high)' }} role="region" aria-label="수업 예시 생성 제안">
+              <span className="font-semibold text-[14px] whitespace-nowrap" style={{ color: 'var(--md-sys-on-surface)' }}>연결을 바탕으로 수업 예시를 만들까요?</span>
+              <button type="button" onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }} className="m3-btn-filled m3-state m3-focus-ring px-4 py-1.5 text-[13px] whitespace-nowrap">생성</button>
+              <button type="button" onClick={() => setShowAnalysisBanner(false)} className="m3-focus-ring px-2 py-1 text-[13px] font-medium whitespace-nowrap" style={{ color: 'var(--md-sys-on-surface-variant)' }}>나중에</button>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 재분석 버튼 (노드 추가/삭제 후) — 팀장만 */}
-        {nodesChangedAfterAnalysis && centerNodeId && !claudeLoading && !showAnalysisBanner && isLeader && (
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-            <button onClick={() => runAnalysis(centerNodeId)} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-2xl shadow-lg text-gray-700 text-[13px] font-semibold hover:bg-gray-50 transition-colors whitespace-nowrap">
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          {/* 재분석 버튼 (노드 추가/삭제 후) — 팀장만 */}
+          {nodesChangedAfterAnalysis && centerNodeId && !claudeLoading && !showAnalysisBanner && isLeader && (
+            <button type="button" onClick={() => runAnalysis(centerNodeId)} className="m3-btn-tonal md-shadow-1 m3-state m3-focus-ring pointer-events-auto flex items-center gap-1.5 px-4 py-2 text-[13px] whitespace-nowrap" style={{ borderRadius: 'var(--md-sys-radius-xl)' }}>
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>
               </svg>
               노드 변경됨 — 재분석
             </button>
-          </div>
-        )}
+          )}
+
+          {/* 지속 액션 바 — 저장 / 나가기 */}
+          {(onSaveGraph || onClose) && (
+            <div className="m3-card md-shadow-2 pointer-events-auto flex items-center gap-2 px-2 py-2" style={{ borderRadius: 'var(--md-sys-radius-xl)', background: 'var(--md-sys-surface-container-high)' }}>
+              {onSaveGraph && (
+                <SaveButtons onSaveGraph={onSaveGraph} buildData={buildSaveData} />
+              )}
+              {onClose && (
+                <button type="button" onClick={onClose} className="m3-btn-outlined m3-state m3-focus-ring px-4 py-2 text-[14px]">나가기</button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* 분석 중 오버레이 */}
         {claudeLoading && centerNodeId && (
-          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/70 backdrop-blur-sm pointer-events-none">
-            <div className="flex items-center gap-3 bg-white rounded-2xl shadow-xl border border-gray-200 px-6 py-4">
-              <div className="w-8 h-8 rounded-full border-3 border-gray-200 border-t-gray-900 animate-spin shrink-0" />
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center backdrop-blur-sm pointer-events-none" style={{ background: 'color-mix(in srgb, var(--md-sys-surface) 70%, transparent)' }} role="status" aria-live="polite">
+            <div className="m3-card md-shadow-3 flex items-center gap-3 px-6 py-4" style={{ borderRadius: 'var(--md-sys-radius-lg)', background: 'var(--md-sys-surface-container-high)' }}>
+              <div className="w-8 h-8 rounded-full animate-spin shrink-0" style={{ border: '3px solid var(--md-sys-primary-container)', borderTopColor: 'var(--md-sys-primary)' }} />
               <div>
-                <p className="text-[14px] font-bold text-gray-800">관계 분석 중…</p>
-                <p className="text-[12px] text-gray-400">성취기준 간 교육적 관계를 분류하고 있습니다</p>
+                <p className="text-[14px] font-bold" style={{ color: 'var(--md-sys-on-surface)' }}>관계 분석 중…</p>
+                <p className="text-[12px]" style={{ color: 'var(--md-sys-on-surface-variant)' }}>성취기준 간 교육적 관계를 분류하고 있습니다</p>
               </div>
             </div>
           </div>
         )}
 
         {/* 로딩/에러/빈 상태 */}
-        {loading && <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400"><span className="animate-pulse">&ldquo;{keyword.slice(0, 20)}&rdquo; 검색 중…</span></div>}
-        {!loading && error && <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400 px-3 text-center">{error}</div>}
-        {!loading && !error && rawNodes.length === 0 && <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm text-gray-400"><span>&ldquo;{keyword.slice(0, 24)}&rdquo;와 관련된 성취기준 없음</span></div>}
-        {!loading && !error && rawNodes.length > 0 && visibleNodes.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">표시할 노드가 없습니다</div>}
+        {loading && <div className="absolute inset-0 flex items-center justify-center text-sm" style={{ color: 'var(--md-sys-on-surface-variant)' }} role="status" aria-live="polite"><span className="animate-pulse">&ldquo;{keyword.slice(0, 20)}&rdquo; 검색 중…</span></div>}
+        {!loading && error && <div className="absolute inset-0 flex items-center justify-center text-sm px-3 text-center" style={{ color: 'var(--md-sys-error)' }} role="alert">{error}</div>}
+        {!loading && !error && rawNodes.length === 0 && <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm" style={{ color: 'var(--md-sys-on-surface-variant)' }}><span>&ldquo;{keyword.slice(0, 24)}&rdquo;와 관련된 성취기준 없음</span></div>}
+        {!loading && !error && rawNodes.length > 0 && visibleNodes.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-sm" style={{ color: 'var(--md-sys-on-surface-variant)' }}>표시할 노드가 없습니다</div>}
 
         {/* SVG 그래프 캔버스 */}
         <GraphCanvas
@@ -776,9 +777,9 @@ export default function KnowledgeGraphViewer({
           <OnboardingOverlay svgRef={svgRef} onDismiss={() => setOnboardingVisible(false)} />
         )}
 
-        {/* 하단 안내 */}
+        {/* 하단 안내 (M3 assist) */}
         {!centerNodeId && !loading && visibleNodes.length > 0 && (
-          <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-100 px-3 py-1.5 text-[12px] text-gray-500 pointer-events-none">
+          <div className="absolute bottom-3 left-3 backdrop-blur-sm rounded-lg md-shadow-1 px-3 py-1.5 text-[12px] pointer-events-none" style={{ background: 'color-mix(in srgb, var(--md-sys-surface) 92%, transparent)', color: 'var(--md-sys-on-surface-variant)', border: '1px solid var(--md-sys-outline-variant)' }}>
             노드 우클릭 → 중심 성취기준 설정
           </div>
         )}

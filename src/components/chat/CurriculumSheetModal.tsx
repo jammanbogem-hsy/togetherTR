@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import type { CurriculumSheetRow } from '@/types'
 import type { CurriculumSheetEditableField, CurriculumSheetPatch } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
+import { curriculumJsonAssetPath, filterContentItemsByGrade } from '@/lib/curriculum/curriculumFilters'
 
 // ─── 교육과정 데이터 타입 ─────────────────────────────────
 
@@ -85,14 +86,15 @@ function curriculumTextMatches(a: string, b: string): boolean {
 }
 function filterByTargetGrade(items: string[], gradeGroup?: string): string[] {
   if (!gradeGroup) return items
-  const needle = gradeGroup.replace(/^초/, '').replace(/~/g, '-').trim()
-  if (!needle) return items
   const gradePrefixed = items.filter(item => /^\d+-\d+학년군:/.test(item))
   if (gradePrefixed.length === 0) {
     const gradeLabel = formatGradeGroupLabel(gradeGroup)
     return gradeLabel ? items.map(item => withGradePrefix(item, gradeLabel)) : items
   }
-  return gradePrefixed.filter(item => item.includes(needle))
+  // Delegate the grade-prefixed filtering to the shared pure helper: a band
+  // that matches nothing recovers to the official prefixed set instead of
+  // wiping the cell, and an unparseable grade group skips filtering.
+  return filterContentItemsByGrade(items, gradeGroup)
 }
 function extractStandardCodes(text: string): string[] {
   return [...(text ?? '').matchAll(STANDARD_CODE_RE)].map(match => match[1]).filter(Boolean)
@@ -500,7 +502,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     const p2 = Promise.all(
       Object.entries(SUBJECT_FILE).map(async ([subj, file]) => {
         try {
-          const data: CurriculumFile = await (await fetch(`/curriculum_json/${file}`)).json()
+          const data: CurriculumFile = await (await fetch(curriculumJsonAssetPath(file))).json()
           const flat: FlatStandard[] = []
           for (const g of data.core_idea_groups) for (const s of g.standard_sets) {
             if (!ELEMENTARY_LEVELS.some(lv => s.school_level.includes(lv))) continue

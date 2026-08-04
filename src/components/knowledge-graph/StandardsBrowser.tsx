@@ -1,8 +1,24 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { GNode, GraphPinnedStandard } from './types'
 import { SUBJECT_NAMES, subjectColor, subjectName } from './constants'
+
+// MD3 tokens — scoped locally (rendered outside `.m3-landing`).
+const M3 = {
+  '--md-primary': '#0B57D0',
+  '--md-on-primary': '#FFFFFF',
+  '--md-primary-container': '#D3E3FD',
+  '--md-on-primary-container': '#041E49',
+  '--md-surface': '#FFFFFF',
+  '--md-surface-container': '#F0F4F9',
+  '--md-surface-container-high': '#E9EEF6',
+  '--md-surface-container-highest': '#DDE3EA',
+  '--md-on-surface': '#1F1F1F',
+  '--md-on-surface-variant': '#444746',
+  '--md-outline': '#747775',
+  '--md-outline-variant': '#C4C7C5',
+} as React.CSSProperties
 
 interface StandardsBrowserProps {
   onClose: () => void
@@ -30,6 +46,24 @@ export default function StandardsBrowser({
     area?: string; text: string; keywords?: string[]
   }>>([])
   const [loading, setLoading] = useState(false)
+
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Dialog behavior: initial focus on search; restore focus to the opener on unmount.
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null
+    searchRef.current?.focus()
+    return () => { prev?.focus?.() }
+  }, [])
+
+  // Escape closes the browser overlay.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.preventDefault(); onClose() }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [onClose])
 
   useEffect(() => {
     if (allStandards.length > 0) return
@@ -79,27 +113,53 @@ export default function StandardsBrowser({
   }
 
   return (
-    <div className="absolute inset-0 z-40 bg-white flex flex-col">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 shrink-0">
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none font-bold">←</button>
-        <span className="font-bold text-[16px] text-gray-800">전체 성취기준</span>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="kg-standards-title"
+      className="absolute inset-0 z-40 flex flex-col bg-[var(--md-surface)]"
+      style={M3}
+    >
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--md-outline-variant)] shrink-0">
+        <button
+          onClick={onClose}
+          aria-label="전체 성취기준 닫기"
+          className="m3-state rounded-full w-9 h-9 flex items-center justify-center text-xl leading-none font-bold"
+          style={{ color: 'var(--md-on-surface-variant)' }}
+        >
+          ←
+        </button>
+        <span id="kg-standards-title" className="font-bold text-[16px]" style={{ color: 'var(--md-on-surface)' }}>전체 성취기준</span>
         <input
+          ref={searchRef}
           type="text"
+          aria-label="성취기준 코드·키워드 검색"
           placeholder="코드·키워드 검색…"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          className="flex-1 text-[14px] border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-[#CE93D8]"
+          className="m3-field flex-1 text-[14px] px-3 py-2 outline-none"
+          style={{ color: 'var(--md-on-surface)' }}
         />
       </div>
 
-      <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2 flex-wrap shrink-0">
+      <div className="px-4 py-2 border-b border-[var(--md-outline-variant)] flex items-center gap-2 flex-wrap shrink-0">
         <div className="flex items-center gap-1 flex-wrap">
-          <button onClick={() => setSubjectFilter(null)} className={`px-2 py-0.5 rounded-full text-[12px] font-semibold border transition-colors ${!subjectFilter ? 'bg-[#7B1FA2] text-white border-[#7B1FA2]' : 'text-gray-500 border-gray-200'}`}>전체 교과</button>
+          <button
+            onClick={() => setSubjectFilter(null)}
+            aria-pressed={!subjectFilter}
+            className="m3-state px-3 py-1 rounded-full text-[13px] font-semibold border transition-colors"
+            style={!subjectFilter
+              ? { background: 'var(--md-primary)', color: 'var(--md-on-primary)', borderColor: 'var(--md-primary)' }
+              : { color: 'var(--md-on-surface-variant)', borderColor: 'var(--md-outline-variant)', background: 'transparent' }}
+          >
+            전체 교과
+          </button>
           {Object.entries(SUBJECT_NAMES).map(([id, name]) => {
             const col = subjectColor(id)
             return (
               <button key={id} onClick={() => setSubjectFilter(subjectFilter === id ? null : id)}
-                className="px-2 py-0.5 rounded-full text-[12px] font-semibold border transition-all"
+                aria-pressed={subjectFilter === id}
+                className="m3-state px-3 py-1 rounded-full text-[13px] font-semibold border transition-all"
                 style={subjectFilter === id ? { background: col, color: 'white', borderColor: col } : { color: col, borderColor: col + '60', background: col + '10' }}>
                 {name}
               </button>
@@ -109,44 +169,53 @@ export default function StandardsBrowser({
         <div className="flex items-center gap-1 ml-auto">
           {['초1-2', '초3-4', '초5-6'].map(g => (
             <button key={g} onClick={() => setGradeFilter(gradeFilter === g ? null : g)}
-              className={`px-2 py-0.5 rounded-full text-[12px] font-semibold border transition-colors ${gradeFilter === g ? 'bg-gray-700 text-white border-gray-700' : 'text-gray-500 border-gray-200'}`}>
+              aria-pressed={gradeFilter === g}
+              className="m3-state px-3 py-1 rounded-full text-[13px] font-semibold border transition-colors"
+              style={gradeFilter === g
+                ? { background: 'var(--md-on-surface)', color: 'var(--md-surface)', borderColor: 'var(--md-on-surface)' }
+                : { color: 'var(--md-on-surface-variant)', borderColor: 'var(--md-outline-variant)', background: 'transparent' }}>
               {g}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto px-4 py-3 panel-scroll">
         {loading ? (
-          <div className="flex items-center justify-center py-12 gap-2 text-[14px] text-gray-400">
-            <span className="w-4 h-4 rounded-full border-2 border-gray-200 border-t-[#7B1FA2] animate-spin" />
+          <div className="flex items-center justify-center py-12 gap-2 text-[14px]" style={{ color: 'var(--md-on-surface-variant)' }}>
+            <span className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--md-outline-variant)', borderTopColor: 'var(--md-primary)' }} />
             성취기준 불러오는 중…
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-[14px] text-gray-400 text-center py-8">성취기준 없음</p>
+          <p className="text-[14px] text-center py-8" style={{ color: 'var(--md-on-surface-variant)' }}>성취기준 없음</p>
         ) : (
           Object.entries(grouped).map(([subId, byArea]) => {
             const totalCount = Object.values(byArea).reduce((sum, arr) => sum + arr.length, 0)
             return (
             <div key={subId} className="mb-4">
-              <div className="text-[13px] font-bold mb-2 flex items-center gap-1.5" style={{ color: subjectColor(subId) }}>
+              <div className="text-[14px] font-bold mb-2 flex items-center gap-1.5" style={{ color: subjectColor(subId) }}>
                 <span className="w-2 h-2 rounded-full inline-block" style={{ background: subjectColor(subId) }} />
                 {subjectName(subId)} ({totalCount})
               </div>
               {Object.entries(byArea).map(([area, nodes]) => (
               <div key={area} className="mb-3 ml-1.5 pl-2 border-l-2" style={{ borderColor: subjectColor(subId) + '40' }}>
-                <div className="text-[12px] font-semibold text-gray-500 mb-1.5">{area} <span className="text-gray-400">({nodes.length})</span></div>
+                <div className="text-[13px] font-semibold mb-1.5" style={{ color: 'var(--md-on-surface-variant)' }}>{area} <span style={{ color: 'var(--md-outline)' }}>({nodes.length})</span></div>
                 <div className="space-y-1.5">
                   {nodes.map(n => {
                   const alreadyIn = checkedStandards.has(n.id) || rawNodes.some(rn => rn.id === n.id)
                   return (
-                    <div key={n.id} className={`flex items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors ${alreadyIn ? 'border-[#CE93D8]/50 bg-[#F3E5F5]/30' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
+                    <div
+                      key={n.id}
+                      className={alreadyIn
+                        ? 'flex items-start gap-3 rounded-xl border px-3 py-2.5 border-[var(--md-primary)] bg-[var(--md-primary-container)]'
+                        : 'flex items-start gap-3 rounded-xl border px-3 py-2.5 border-[var(--md-outline-variant)] bg-[var(--md-surface)] transition-colors hover:border-[var(--md-outline)]'}
+                    >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <span className="font-mono font-bold text-[14px]" style={{ color: subjectColor(subId) }}>{n.code}</span>
-                          {n.grade_band && <span className="text-[12px] text-gray-400">{n.grade_band}</span>}
+                          {n.grade_band && <span className="text-[12px]" style={{ color: 'var(--md-on-surface-variant)' }}>{n.grade_band}</span>}
                         </div>
-                        <p className="text-[13px] text-gray-600 leading-relaxed line-clamp-2">{n.text}</p>
+                        <p className="text-[14px] leading-relaxed line-clamp-2" style={{ color: 'var(--md-on-surface-variant)' }}>{n.text}</p>
                       </div>
                       <button
                         onClick={() => {
@@ -167,7 +236,11 @@ export default function StandardsBrowser({
                           onClose()
                         }}
                         disabled={alreadyIn}
-                        className={`shrink-0 text-[13px] font-semibold px-3 py-1.5 rounded-lg transition-colors ${alreadyIn ? 'bg-gray-100 text-gray-400 cursor-default' : 'bg-[#7B1FA2] text-white hover:bg-[#6A1B9A]'}`}
+                        aria-label={alreadyIn ? `${n.code} 이미 추가됨` : `${n.code} 그래프에 추가하기`}
+                        className={`m3-state shrink-0 text-[13px] font-semibold px-3 py-2 rounded-full ${alreadyIn ? 'cursor-default' : ''}`}
+                        style={alreadyIn
+                          ? { background: 'var(--md-surface-container-high)', color: 'var(--md-on-surface-variant)' }
+                          : { background: 'var(--md-primary)', color: 'var(--md-on-primary)' }}
                       >
                         {alreadyIn ? '추가됨' : '추가하기'}
                       </button>

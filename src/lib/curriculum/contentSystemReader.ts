@@ -73,7 +73,12 @@ export function isContentSystemContextEnabled(): boolean {
 
 function findContentSystemDir(): string | null {
   const candidates = [
+    // dev: edit source under data/ and see changes immediately.
     path.join(process.cwd(), 'data/curriculum-content-systems'),
+    // prod: Next 16 + Firebase frameworks only reliably bundle public/, so the
+    // prebuild sync (scripts/sync-runtime-assets.mjs) mirrors the data here.
+    // Matches graphReader/ontology readers, which already prefer public/.
+    path.join(process.cwd(), 'public/curriculum-content-systems'),
   ]
   return candidates.find(candidate => fs.existsSync(candidate)) ?? null
 }

@@ -23,6 +23,7 @@ import {
   CurriculumStandard,
 } from './graphReader'
 import { searchJsonStandards } from './curriculumJsonReader'
+import { filterContentItemsByGrade, isUsableCoreIdea } from './curriculumFilters'
 import {
   buildContentSystemContext,
   isElementaryGradeGroup,
@@ -43,12 +44,9 @@ function curriculumTextMatches(a: string, b: string): boolean {
 }
 
 function filterContentByGrade(items: string[], gradeGroup?: string): string[] {
-  if (!gradeGroup) return items
-  const needle = gradeGroup.replace(/^초/, '').replace(/~/g, '-').trim()
-  if (!needle) return items
-  const prefixed = items.filter(item => /^\d+-\d+학년군:/.test(item))
-  if (prefixed.length === 0) return items
-  return prefixed.filter(item => item.includes(needle))
+  // 학년군 파싱 실패나 미스매치로 지식·이해/과정·기능이 조용히 공란이 되지 않도록
+  // 방어적 needle + 원문 복구를 공용 헬퍼로 위임한다.
+  return filterContentItemsByGrade(items, gradeGroup)
 }
 
 function isSelectionCurriculum(curriculum: string): boolean {
@@ -423,7 +421,11 @@ function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): 
     // 핵심아이디어: core_idea_id로 그래프에서 조회
     const coreIdeaId = subjectStds[0].core_idea_id
     const coreIdeaObj = coreIdeaId ? graph.coreIdeas.find(ci => ci.id === coreIdeaId) : null
-    const coreIdeaTexts = coreIdeaObj?.ideas ?? []
+    // 그래프 ideas[]에는 '[별표 …]'·어휘 목록 같은 PDF 추출 잡음이 섞여 있어,
+    // 완전한 핵심아이디어 문장만 후보로 삼는다(잡음이 선택되면 내용체계 매칭 실패 → 공란).
+    const rawCoreIdeas = coreIdeaObj?.ideas ?? []
+    const usableCoreIdeas = rawCoreIdeas.filter(isUsableCoreIdea)
+    const coreIdeaTexts = usableCoreIdeas.length > 0 ? usableCoreIdeas : rawCoreIdeas
     const coreIdeaText = coreIdeaTexts[0] || '(핵심아이디어 미매핑 — 교사가 직접 선택 필요)'
 
     // 내용체계에서 지식이해/과정기능 원문 조회

@@ -320,6 +320,8 @@ export interface Project {
   }>
   // 안(案) 선택지 투표: msgId → uid → label ('A안' 등)
   optionVotes?: Record<string, Record<string, string>>
+  // 방장이 선택 대기를 종료한 AI 메시지: msgId → true
+  closedOptionMessages?: Record<string, boolean>
   // 방장이 지식 그래프를 공유 중인지 (팀원 자동 오픈)
   graphOpen?: boolean
   graphView?: 'sheet' | 'graph'
