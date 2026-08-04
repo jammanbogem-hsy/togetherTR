@@ -65,12 +65,11 @@ interface Props {
 }
 
 const DEFAULT_COLUMNS: EvaluationPlanWorkspaceColumn[] = [
-  { id: 'item',   label: '평가 항목', color: '#E8F0FE' },
-  { id: 'method', label: '평가 방법', color: '#E8F0FE' },
-  { id: 'timing', label: '평가 시점', color: '#E8F0FE' },
-  { id: 'high',   label: '상',        color: '#E6F4EA' },
-  { id: 'mid',    label: '중',        color: '#FEF7E0' },
-  { id: 'low',    label: '하',        color: '#FCE8E6' },
+  { id: 'checkpoint', label: '확인 지점', color: '#E8F0FE' },
+  { id: 'item',       label: '평가 요소', color: '#E8F0FE' },
+  { id: 'method',     label: '평가 방법', color: '#E8F0FE' },
+  { id: 'timing',     label: '평가 시점', color: '#E8F0FE' },
+  { id: 'actor',      label: '평가 주체', color: '#FEF7E0' },
 ]
 
 const INSERT_BLOCK_TYPES: Array<{
@@ -113,26 +112,17 @@ function emptyWorkspace(): EvaluationPlanWorkspace {
   }
 }
 
-// Ds-1-1 평가 계획(루브릭) 산출물 예시. 사용자가 "예시" 버튼으로 미리보기 → 워크스페이스 채우기.
+// 최신 Ds-1 기본 평가 계획 예시. 상세 루브릭은 팀이 필요할 때 자유 블록으로 추가한다.
 const EXAMPLE_EVP_DATA = {
   rows: [
     {
-      item: '데이터 기반 문제 해결 보고서(최종 산출물)', method: '교사평가 · 서논술형(보고서)', timing: '결과',
-      high: '실제 데이터를 정확히 해석하고 근거를 들어 해결 방안을 논리적으로 제안한다',
-      mid: '데이터를 대체로 해석하나 해결 방안의 근거가 일부 부족하다',
-      low: '데이터 해석 또는 해결 방안 제시에 추가 지원이 필요하다',
+      checkpoint: '최종 문제 해결 보고서', item: '실제 데이터를 해석하고 근거를 들어 해결 방안을 제안한다', method: '보고서 검토', timing: '발표 차시 전', actor: '교사',
     },
     {
-      item: '협력적 탐구 과정(과정 평가)', method: '자기평가 + 교사평가 · 프로젝트(수행 과정)', timing: '과정',
-      high: '역할을 수행하고 진행 상황을 공유하며 동료 의견에 근거 있게 반응한다',
-      mid: '역할을 수행하나 진행 공유·상호작용이 간헐적이다',
-      low: '역할 수행과 협력 참여에 교사의 안내가 필요하다',
+      checkpoint: '모둠 탐구 중간 점검', item: '맡은 역할의 진행 상황과 근거를 팀에 공유한다', method: '체크리스트·관찰 기록', timing: '탐구 중간 차시', actor: '자기·동료',
     },
     {
-      item: '발표·표현(과정 평가)', method: '동료평가 + 교사평가 · 구술발표', timing: '과정',
-      high: '핵심 메시지를 청중에 맞게 구조화하여 명확히 전달한다',
-      mid: '내용은 전달되나 구조·전달 방식에 보완이 필요하다',
-      low: '핵심 전달에 추가 연습·지원이 필요하다',
+      checkpoint: '해결안 발표', item: '핵심 메시지를 청중에 맞게 구조화해 전달한다', method: '발표 관찰·피드백지', timing: '발표 차시', actor: '동료·교사',
     },
   ],
 } as const
@@ -142,7 +132,7 @@ function buildExampleWorkspace(): EvaluationPlanWorkspace {
     columns: DEFAULT_COLUMNS,
     rows: EXAMPLE_EVP_DATA.rows.map((row, idx) => ({
       id: `evp_row_example_${idx}`,
-      cells: { item: row.item, method: row.method, timing: row.timing, high: row.high, mid: row.mid, low: row.low },
+      cells: { checkpoint: row.checkpoint, item: row.item, method: row.method, timing: row.timing, actor: row.actor },
       color: '#FFFFFF',
     })),
     blocks: [],
@@ -151,9 +141,18 @@ function buildExampleWorkspace(): EvaluationPlanWorkspace {
 
 function normalizeWorkspace(saved?: EvaluationPlanWorkspace, artifactContent?: Record<string, unknown>): EvaluationPlanWorkspace {
   if (saved && saved.columns && saved.columns.length > 0) {
+    const hasLatestColumns = saved.columns.some(column => column.id === 'checkpoint' || column.id === 'actor')
+    const rows = (saved.rows ?? []).map(row => hasLatestColumns ? row : ({
+      ...row,
+      cells: {
+        ...row.cells,
+        checkpoint: row.cells.timing ?? '',
+        actor: inferActor(row.cells.method ?? ''),
+      },
+    }))
     return {
-      columns: saved.columns,
-      rows: saved.rows ?? [],
+      columns: hasLatestColumns ? saved.columns : DEFAULT_COLUMNS,
+      rows,
       blocks: saved.blocks ?? [],
       updatedBy: saved.updatedBy,
       updatedAt: saved.updatedAt,
@@ -166,7 +165,7 @@ function normalizeWorkspace(saved?: EvaluationPlanWorkspace, artifactContent?: R
     // ⚠️ row.id는 stable해야 한다 (useEffect 재실행 시 preserveEditingValue가 row를 찾도록).
     const rows: EvaluationPlanWorkspaceRow[] = (structured.rubric ?? []).map((r, idx) => ({
       id: `evp_row_seed_${idx}`,
-      cells: { item: r.item ?? '', method: r.method ?? '', timing: r.timing ?? '', high: r.high ?? '', mid: r.mid ?? '', low: r.low ?? '' },
+      cells: { checkpoint: r.checkpoint ?? r.timing ?? '', item: r.item ?? '', method: r.method ?? '', timing: r.timing ?? '', actor: r.actor ?? inferActor(r.method ?? ''), high: r.high ?? '', mid: r.mid ?? '', low: r.low ?? '' },
       color: '#FFFFFF',
     }))
     return { columns: DEFAULT_COLUMNS, rows, blocks: [] }
@@ -176,6 +175,10 @@ function normalizeWorkspace(saved?: EvaluationPlanWorkspace, artifactContent?: R
 
 function getCell(row: EvaluationPlanWorkspaceRow, columnId: string): string {
   return (row.cells?.[columnId] ?? '') as string
+}
+
+function inferActor(method: string): string {
+  return ['교사', '동료', '자기'].filter(actor => method.includes(actor)).join('·')
 }
 
 function defaultBlockTable(rowCount = 2, columnCount = 2): EvaluationPlanWorkspaceTableData {
@@ -215,14 +218,16 @@ function makeDocumentBlock(
 function workspaceToArtifact(workspace: EvaluationPlanWorkspace): Ds11Structured {
   const rubric: Ds11RubricRow[] = workspace.rows
     .map(row => ({
+      checkpoint: getCell(row, 'checkpoint').trim(),
       item: getCell(row, 'item').trim(),
       method: getCell(row, 'method').trim(),
       timing: getCell(row, 'timing').trim(),
+      actor: getCell(row, 'actor').trim(),
       high: getCell(row, 'high').trim(),
       mid: getCell(row, 'mid').trim(),
       low: getCell(row, 'low').trim(),
     }))
-    .filter(r => r.item || r.method || r.high || r.mid || r.low)
+    .filter(r => r.checkpoint || r.item || r.method || r.timing || r.actor || r.high || r.mid || r.low)
   return {
     _schema: 'Ds-1-1',
     rubric,
@@ -577,13 +582,15 @@ export function EvaluationPlanWorkspaceModal({
         learnerProfile,
         currentDraft: {
           rubric: workspace.rows.map(row => ({
+            checkpoint: getCell(row, 'checkpoint'),
             item: getCell(row, 'item'),
             method: getCell(row, 'method'),
             timing: getCell(row, 'timing'),
+            actor: getCell(row, 'actor'),
             high: getCell(row, 'high'),
             mid: getCell(row, 'mid'),
             low: getCell(row, 'low'),
-          })).filter(r => r.item || r.method || r.high || r.mid || r.low),
+          })).filter(r => r.checkpoint || r.item || r.method || r.timing || r.actor || r.high || r.mid || r.low),
         },
         mode,
         existingArtifact,
@@ -611,10 +618,10 @@ export function EvaluationPlanWorkspaceModal({
 
   async function applySuggestion() {
     if (!suggestion) return
-    // 사용자가 컬럼 구조를 수정했어도 산출물 형식(DEFAULT_COLUMNS — 6열 루브릭)으로 재구조화한다.
+    // 사용자가 컬럼 구조를 수정했어도 최신 기본 산출물 형식(DEFAULT_COLUMNS — 5열)으로 재구조화한다.
     const newRows: EvaluationPlanWorkspaceRow[] = (suggestion.rubric ?? []).map((r, idx) => ({
       id: `evp_row_applied_${idx}`,
-      cells: { item: r.item ?? '', method: r.method ?? '', timing: r.timing ?? '', high: r.high ?? '', mid: r.mid ?? '', low: r.low ?? '' },
+      cells: { checkpoint: r.checkpoint ?? '', item: r.item ?? '', method: r.method ?? '', timing: r.timing ?? '', actor: r.actor ?? '', high: r.high ?? '', mid: r.mid ?? '', low: r.low ?? '' },
       color: '#FFFFFF',
     }))
     const nextWorkspace: EvaluationPlanWorkspace = {
@@ -1168,14 +1175,20 @@ export function EvaluationPlanWorkspaceModal({
                       })
                       return (
                         <div key={idx} className="rounded-md border border-[#E8EAED] bg-white p-2 space-y-1">
-                          <AutoGrowTextarea value={r.item} onChange={e => patch('item', e.target.value)} minRows={1} placeholder="평가 항목 (수업목표 연결)" className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[14px] font-bold text-[#202124] focus:bg-[#F8F9FA] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                          <AutoGrowTextarea value={r.checkpoint} onChange={e => patch('checkpoint', e.target.value)} minRows={1} placeholder="확인 지점 (학습 장면·산출물)" className="w-full rounded border-0 bg-[#E8F0FE]/50 px-1.5 py-1 text-[14px] font-bold text-[#174EA6] focus:bg-[#E8F0FE] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                          <AutoGrowTextarea value={r.item} onChange={e => patch('item', e.target.value)} minRows={1} placeholder="평가 요소 (관찰 가능한 행동)" className="w-full rounded border-0 bg-transparent px-1.5 py-1 text-[14px] font-bold text-[#202124] focus:bg-[#F8F9FA] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
                           <div className="flex gap-1">
                             <AutoGrowTextarea value={r.method} onChange={e => patch('method', e.target.value)} minRows={1} placeholder="평가 방법" className="flex-1 rounded border-0 bg-transparent px-1.5 py-1 text-[13px] text-[#3C4043] focus:bg-[#F8F9FA] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
                             <AutoGrowTextarea value={r.timing} onChange={e => patch('timing', e.target.value)} minRows={1} placeholder="시점" className="w-20 rounded border-0 bg-transparent px-1.5 py-1 text-[13px] text-[#3C4043] focus:bg-[#F8F9FA] focus:outline-none focus:ring-1 focus:ring-[#1A73E8]" />
+                            <AutoGrowTextarea value={r.actor} onChange={e => patch('actor', e.target.value)} minRows={1} placeholder="주체" className="w-24 rounded border-0 bg-[#FEF7E0]/50 px-1.5 py-1 text-[13px] text-[#3C4043] focus:bg-[#FEF7E0] focus:outline-none focus:ring-1 focus:ring-[#F9AB00]" />
                           </div>
-                          <AutoGrowTextarea value={r.high} onChange={e => patch('high', e.target.value)} minRows={1} placeholder="상" className="w-full rounded border-0 bg-[#E6F4EA]/40 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#E6F4EA] focus:outline-none focus:ring-1 focus:ring-[#34A853]" />
-                          <AutoGrowTextarea value={r.mid} onChange={e => patch('mid', e.target.value)} minRows={1} placeholder="중" className="w-full rounded border-0 bg-[#FEF7E0]/50 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#FEF7E0] focus:outline-none focus:ring-1 focus:ring-[#F9AB00]" />
-                          <AutoGrowTextarea value={r.low} onChange={e => patch('low', e.target.value)} minRows={1} placeholder="하" className="w-full rounded border-0 bg-[#FCE8E6]/50 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#FCE8E6] focus:outline-none focus:ring-1 focus:ring-[#C5221F]" />
+                          {(r.high || r.mid || r.low) && (
+                            <div className="grid gap-1 sm:grid-cols-3">
+                              <AutoGrowTextarea value={r.high ?? ''} onChange={e => patch('high', e.target.value)} minRows={1} placeholder="상" className="w-full rounded border-0 bg-[#E6F4EA]/40 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#E6F4EA] focus:outline-none focus:ring-1 focus:ring-[#34A853]" />
+                              <AutoGrowTextarea value={r.mid ?? ''} onChange={e => patch('mid', e.target.value)} minRows={1} placeholder="중" className="w-full rounded border-0 bg-[#FEF7E0]/50 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#FEF7E0] focus:outline-none focus:ring-1 focus:ring-[#F9AB00]" />
+                              <AutoGrowTextarea value={r.low ?? ''} onChange={e => patch('low', e.target.value)} minRows={1} placeholder="하" className="w-full rounded border-0 bg-[#FCE8E6]/50 px-1.5 py-1 text-[13px] text-[#202124] focus:bg-[#FCE8E6] focus:outline-none focus:ring-1 focus:ring-[#C5221F]" />
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -1254,26 +1267,25 @@ export function EvaluationPlanWorkspaceModal({
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
-            <p className="text-[14px] font-bold text-[#5F6368]">평가 계획(Ds-1-1) 확정안 — 상/중/하 루브릭</p>
+            <p className="text-[14px] font-bold text-[#5F6368]">평가 계획(Ds-1) 예시 — 확인 지점·요소·방법·시점·주체</p>
             <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
               <div className="overflow-x-auto">
                 <table className="min-w-full border-collapse text-[14px]">
                   <thead className="bg-[#1A73E8]">
                     <tr>
-                      {['평가 항목', '평가 방법', '시점', '상', '중', '하'].map(h => (
-                        <th key={h} className="border border-[#1557B0] px-2 py-2 text-left font-extrabold text-white">{h}</th>
+                      {DEFAULT_COLUMNS.map(column => (
+                        <th key={column.id} className="border border-[#1557B0] px-2 py-2 text-left font-extrabold text-white">{column.label}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {EXAMPLE_EVP_DATA.rows.map((row, idx) => (
                       <tr key={idx} className="align-top">
-                        <td className="border border-[#DADCE0] px-2 py-2 font-bold text-[#202124]">{row.item}</td>
+                        <td className="border border-[#DADCE0] px-2 py-2 font-bold text-[#202124]">{row.checkpoint}</td>
+                        <td className="border border-[#DADCE0] px-2 py-2 text-[#3C4043]">{row.item}</td>
                         <td className="border border-[#DADCE0] px-2 py-2 text-[#3C4043]">{row.method}</td>
                         <td className="border border-[#DADCE0] px-2 py-2 text-[#3C4043] whitespace-nowrap">{row.timing}</td>
-                        <td className="border border-[#DADCE0] px-2 py-2 bg-[#E6F4EA]/40 text-[#202124]">{row.high}</td>
-                        <td className="border border-[#DADCE0] px-2 py-2 bg-[#FEF7E0]/50 text-[#202124]">{row.mid}</td>
-                        <td className="border border-[#DADCE0] px-2 py-2 bg-[#FCE8E6]/50 text-[#202124]">{row.low}</td>
+                        <td className="border border-[#DADCE0] px-2 py-2 bg-[#FEF7E0]/50 text-[#202124]">{row.actor}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -273,11 +273,11 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
     const dp = c.designPrinciples as Array<{ principle: string; rationale: string }> | undefined
     if (dp?.length) sections.push({ key: '설계 원칙', value: '| 설계 원칙 | 근거 |\n| --- | --- |\n' + dp.map(d => `| ${d.principle} | ${d.rationale} |`).join('\n') })
   } else if (c._schema === 'T-2-1') {
-    const roles = c.roles as Array<{ teacherName: string; subject: string; strengths: string; role: string; responsibilities: string }> | undefined
-    if (roles?.length) sections.push({ key: '역할 배분', value: '| 교사명 | 담당 교과 | 강점·전문성 | 팀 내 역할 | 담당 업무 |\n| --- | --- | --- | --- | --- |\n' + roles.map(r => `| ${r.teacherName} | ${r.subject || '-'} | ${r.strengths || '-'} | ${r.role} | ${r.responsibilities} |`).join('\n') })
+    const roles = c.roles as Array<{ teacherName: string; subject: string; strengths: string; role: string; responsibilities: string; deadline?: string }> | undefined
+    if (roles?.length) sections.push({ key: '역할 배분', value: '| 교사명 | 담당 교과 | 강점·전문성 | 팀 내 역할 | 담당 업무 | 완료 시점 |\n| --- | --- | --- | --- | --- | --- |\n' + roles.map(r => `| ${r.teacherName} | ${r.subject || '-'} | ${r.strengths || '-'} | ${r.role} | ${r.responsibilities} | ${r.deadline || '-'} |`).join('\n') })
   } else if (c._schema === 'T-2-2') {
-    const rules = c.rules as Array<{ category: string; name: string; description: string; violation: string }> | undefined
-    if (rules?.length) sections.push({ key: '팀 규칙', value: '| 범주 | 규칙명 | 설명 | 위반 시 |\n| --- | --- | --- | --- |\n' + rules.map(r => `| ${r.category || '-'} | ${r.name} | ${r.description} | ${r.violation || '-'} |`).join('\n') })
+    const rules = c.rules as Array<{ category: string; name: string; description: string; feasibility?: string; violation?: string }> | undefined
+    if (rules?.length) sections.push({ key: '팀 규칙', value: '| 범주 | 규칙명 | 설명 | 실천 방법 |\n| --- | --- | --- | --- |\n' + rules.map(r => `| ${r.category || '-'} | ${r.name} | ${r.description} | ${r.feasibility || r.violation || '-'} |`).join('\n') })
   } else if (c._schema === 'T-2-3') {
     const sched = c.schedule as Array<{ period: string; activity: string; content?: string; deliverable?: string; assignee: string }> | undefined
     if (sched?.length) sections.push({ key: '팀 일정', value: '| 기간 | 활동 | 내용 | 담당자 |\n| --- | --- | --- | --- |\n' + sched.map(s => `| ${s.period} | ${s.activity} | ${s.content || s.deliverable || '-'} | ${s.assignee || '-'} |`).join('\n') })
@@ -288,11 +288,15 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
     if (typeof c.topicType === 'string' && c.topicType) sections.push({ key: '주제 유형', value: c.topicType })
     if (typeof c.rationale === 'string' && c.rationale) sections.push({ key: '선정 근거', value: c.rationale })
   } else if (c._schema === 'A-2-1') {
-    const rows = c.rows as Array<{ subject: string; coreIdea: string; knowledgeUnderstanding: string; processFunction: string; isCommon?: boolean }> | undefined
-    if (rows?.length) sections.push({ key: '핵심아이디어 분석', value: '| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |\n| --- | --- | --- | --- |\n' + rows.map(r => `| ${r.isCommon ? '**' + (r.subject || '공통') + '**' : r.subject} | ${r.coreIdea} | ${r.knowledgeUnderstanding || '-'} | ${r.processFunction || '-'} |`).join('\n') })
+    const rows = c.rows as Array<{ subject: string; standard?: string; coreIdea: string; knowledgeUnderstanding: string; processFunction: string; valueAttitude?: string; contribution?: string; isCommon?: boolean }> | undefined
+    if (rows?.length) sections.push({ key: '주제의 상세 내용 분석', value: '| 교과 | 성취기준·핵심 아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 공통·고유 기여 |\n| --- | --- | --- | --- | --- | --- | --- |\n' + rows.map(r => `| ${r.subject} | ${[r.standard, r.coreIdea].filter(Boolean).join(' / ') || '-'} | ${r.knowledgeUnderstanding || '-'} | ${r.processFunction || '-'} | ${r.valueAttitude || '-'} | ${r.contribution || (r.isCommon ? '공통 요소' : '교과 고유 요소')} |`).join('\n') })
+    if (typeof c.commonElements === 'string' && c.commonElements) sections.push({ key: '공통 요소', value: c.commonElements })
+    if (typeof c.reconstructedStandard === 'string' && c.reconstructedStandard) sections.push({ key: '재구성 성취기준', value: c.reconstructedStandard })
   } else if (c._schema === 'A-2-2') {
     const cci = (c.commonCoreIdea as string | undefined)?.trim()
     if (cci) sections.push({ key: '공통 핵심 아이디어', value: cci })
+    const inquiryQuestion = (c.inquiryQuestion as string | undefined)?.trim()
+    if (inquiryQuestion) sections.push({ key: '탐구 질문', value: inquiryQuestion })
     const integratedSingle = (c.integratedGoal as string | undefined)?.trim()
     const integratedLegacy = c.integratedGoals as string[] | undefined
     if (integratedSingle) {

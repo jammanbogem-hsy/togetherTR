@@ -23,6 +23,7 @@ export interface RoleDistributionSuggestRequest {
     strengths?: string
     role?: string
     responsibilities?: string
+    deadline?: string
   }>
   /** 직전 단계(T-1-1 팀 비전)의 핵심 키워드/비전 — 역할 결정 맥락 */
   teamVision?: string
@@ -46,6 +47,7 @@ export interface RoleDistributionSuggestRequest {
       strengths?: string
       role?: string
       responsibilities?: string
+      deadline?: string
     }>
   }
   /** mode='chat' — 현재 활동의 팀 채팅 메시지 (최근 N개 권장). 토큰 절약 위해 호출측에서 제한. */
@@ -62,6 +64,7 @@ export interface RoleDistributionRoleSuggestion {
   strengths: string
   role: string
   responsibilities: string
+  deadline: string
 }
 
 export interface RoleDistributionSuggestResult {
@@ -81,7 +84,7 @@ export interface RoleDistributionSuggestResult {
   }
 }
 
-const SYSTEM_PROMPT = `당신은 초·중등 협력적 수업설계 과정의 역할 배분 코치입니다.
+const SYSTEM_PROMPT = `당신은 초·중·고 협력적 수업설계 과정의 역할 배분 코치입니다.
 T-2-1 활동 "역할 배분" 산출물의 추천 형식에 맞춰, 두 가지 모드 중 하나로 제안합니다.
 역할 배분은 설계 전 과정의 세부 과업(회의 진행·기록·자료 탐색·AI 프롬프트 작성·평가 도구 검토 등)을 먼저 목록화한 뒤, 각자의 강점과 도전하고 싶은 역할을 살펴 한 사람에게 쏠리지 않게 나누는 활동입니다. 준비 단계 역할이 실행(수업) 단계의 몫으로 자연스럽게 이어지도록 배려하고, 역할은 고정이 아니라 진행 중 유연하게 조정할 수 있습니다. AI가 내놓는 배분안은 결론이 아니라 후보·초안이며, 최종 결정은 교사팀의 몫입니다.
 
@@ -98,7 +101,8 @@ T-2-1 활동 "역할 배분" 산출물의 추천 형식에 맞춰, 두 가지 �
       "subject": "담당 교과 (모르면 빈 문자열)",
       "strengths": "추정 강점/관심사 1-2개 (쉼표 구분)",
       "role": "역할 명칭 (예: 회의 진행자, 기록자, 자료 탐색자, AI 프롬프트 작성자, 평가 도구 검토자 등)",
-      "responsibilities": "구체적 책임 — '누가·무엇을·언제까지'가 드러나게, 준비 단계 역할이 실행(수업) 단계로 이어지는 지점도 함께 1-2문장"
+      "responsibilities": "구체적 담당 업무 — 준비 단계 역할이 실행(수업) 단계로 이어지는 지점도 함께 1-2문장",
+      "deadline": "완료 시점 또는 확인 시점 — 예: A단계 시작 전, 매주 수요일 회의 전"
     }
   ],
   "tips": ["운영 팁 1줄", "운영 팁 1줄"],
@@ -115,7 +119,7 @@ T-2-1 활동 "역할 배분" 산출물의 추천 형식에 맞춰, 두 가지 �
 - 입력된 memberNames의 모든 팀원이 빠짐없이 1행씩 등장 — 순서·이름 그대로 사용
 - 설계 전 과정의 세부 과업을 먼저 떠올려, 협력적 수업설계에 필요한 세부 역할(회의 진행자, 기록자, 자료 탐색자, AI 프롬프트 작성자, 평가 도구 검토자, 학습 흐름 설계자, 학생 반응 관찰자 등)을 빠짐없이 고려
 - 한 명에게 과도하게 편중되지 않게 분배 — 가능하면 팀원 수만큼 서로 다른 역할. 강점만이 아니라 도전해 보고 싶은 역할도 반영
-- responsibilities에는 "누가·무엇을·언제까지"가 드러나게 적고, 준비 단계 역할이 실행(수업) 단계의 몫으로 이어지는 연결을 함께 담음
+- teacherName·responsibilities·deadline을 함께 읽으면 "누가·무엇을·언제까지"가 분명히 드러나게 작성
 - 역할은 고정이 아니라 진행 중 유연하게 조정될 수 있음을 전제로 서술
 - 팀 비전·핵심 키워드가 주어지면 역할 명칭이 비전과 정합되도록 표현
 - chat mode에서는 채팅에서 본인이 직접 말한 강점/관심사를 강점·역할에 우선 반영 (가능한 한 본인의 표현 사용)
@@ -172,6 +176,7 @@ function buildUserPrompt(body: RoleDistributionSuggestRequest, mode: 'artifact' 
       if (r.strengths?.trim()) cells.push(`강점: ${r.strengths.trim()}`)
       if (r.role?.trim()) cells.push(`역할: ${r.role.trim()}`)
       if (r.responsibilities?.trim()) cells.push(`책임: ${r.responsibilities.trim()}`)
+      if (r.deadline?.trim()) cells.push(`완료 시점: ${r.deadline.trim()}`)
       lines.push(`- 행${idx + 1}: ${cells.join(' · ')}`)
     })
     lines.push('')
@@ -196,7 +201,8 @@ function buildUserPrompt(body: RoleDistributionSuggestRequest, mode: 'artifact' 
       (r.subject && r.subject.trim()) ||
       (r.strengths && r.strengths.trim()) ||
       (r.role && r.role.trim()) ||
-      (r.responsibilities && r.responsibilities.trim())
+      (r.responsibilities && r.responsibilities.trim()) ||
+      (r.deadline && r.deadline.trim())
     )
     if (meaningful.length > 0) {
       lines.push('### 현재 워크스페이스 표 (이미 입력된 내용 — 중복/누락 피하기 위해 참고)')
@@ -207,6 +213,7 @@ function buildUserPrompt(body: RoleDistributionSuggestRequest, mode: 'artifact' 
         if (r.strengths?.trim()) cells.push(`강점: ${r.strengths.trim()}`)
         if (r.role?.trim()) cells.push(`역할: ${r.role.trim()}`)
         if (r.responsibilities?.trim()) cells.push(`책임: ${r.responsibilities.trim()}`)
+        if (r.deadline?.trim()) cells.push(`완료 시점: ${r.deadline.trim()}`)
         lines.push(`- ${cells.join(' · ')}`)
       }
       lines.push('')
@@ -299,6 +306,7 @@ export async function POST(request: Request) {
         strengths: typeof r?.strengths === 'string' ? r.strengths : '',
         role: typeof r?.role === 'string' ? r.role : '',
         responsibilities: typeof r?.responsibilities === 'string' ? r.responsibilities : '',
+        deadline: typeof r?.deadline === 'string' ? r.deadline : '',
       })),
       tips: Array.isArray(parsed.tips) ? parsed.tips.filter((t): t is string => typeof t === 'string') : undefined,
       basedOn,

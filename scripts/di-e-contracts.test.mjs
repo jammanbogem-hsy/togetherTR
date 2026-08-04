@@ -65,7 +65,7 @@ test('the first completed cycle transitions from cycle 1 to cycle 2 exactly once
   assert.equal(nextCycleNumber(completed), 2)
 })
 
-test('E completion requires all reflection sections but keeps team improvement optional', async () => {
+test('E completion requires official reflection outputs while next-cycle choice stays optional', async () => {
   const { ACTIVITY_META } = await import('../src/types/index.ts')
   const { validateRequiredSections } = await import('../src/lib/activity/requiredSections.ts')
 
@@ -81,7 +81,14 @@ test('E completion requires all reflection sections but keeps team improvement o
 
   const e2Sections = ACTIVITY_META['E-2-1'].requiredSections
   assert.equal(validateRequiredSections({
-    '다음 주기 선택': 'B안 — 개선사항만 기록하고 나중에 시작',
+    '다음 주기 선택': 'A안 — 개선사항을 반영하며 다음 주기 시작',
+  }, e2Sections), false)
+  assert.equal(validateRequiredSections({
+    '협력 과정 성찰': '기대했던 협력과 실제 실행을 비교하고, 잘 작동한 구조와 막힌 구조를 구체적인 장면으로 정리했습니다.',
+  }, e2Sections), false)
+  assert.equal(validateRequiredSections({
+    '협력 과정 성찰': '기대했던 협력과 실제 실행을 비교하고, 잘 작동한 구조와 막힌 구조를 구체적인 장면으로 정리했습니다.',
+    '팀 개선안': '공유 문서에 의견을 남기면 알림을 보내고 모든 팀원이 하루 안에 확인 댓글을 남깁니다.',
   }, e2Sections), true)
 })
 

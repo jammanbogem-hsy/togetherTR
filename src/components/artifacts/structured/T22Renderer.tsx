@@ -20,6 +20,7 @@ export function T22Renderer({ data }: { data: T22Structured }) {
         <div className="divide-y divide-[#F1F3F4]">
           {rules.map((r, i) => {
             const catStyle = CATEGORY_COLORS[r.category] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+            const feasibility = r.feasibility || r.violation
             return (
               <div key={i} className="px-4 py-3.5">
                 <div className="flex items-start gap-2.5">
@@ -31,9 +32,9 @@ export function T22Renderer({ data }: { data: T22Structured }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-[#202124]">{r.name}</p>
                     <p className="mt-1 text-xs text-[#5F6368] leading-relaxed">{r.description}</p>
-                    {r.violation && (
-                      <p className="mt-1.5 text-[10px] text-[#9AA0A6]">
-                        위반 시: {r.violation}
+                    {feasibility && (
+                      <p className="mt-1.5 text-[11px] font-medium text-[#5F6368]">
+                        실천 방법: {feasibility}
                       </p>
                     )}
                   </div>

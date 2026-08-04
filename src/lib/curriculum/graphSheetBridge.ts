@@ -132,19 +132,20 @@ export function buildCurriculumSheetArtifactProposal(
   rows: CurriculumSheetRow[],
 ): CurriculumSheetArtifactProposal | null {
   const validRows = rows.filter(row =>
-    row.subject || row.coreIdea || row.standard || row.knowledge || row.processFunction || row.agentLessonExample || row.description
+    row.subject || row.coreIdea || row.standard || row.knowledge || row.processFunction || row.valueAttitude || row.agentLessonExample || row.description
   )
   if (validRows.length === 0) return null
 
   const analysisTable = [
-    '| 교과 | 핵심 아이디어 | 성취기준 | 지식·이해 | 과정·기능 | Agent 추천 수업아이디어 | 수업내용 설명 |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
+    '| 교과 | 핵심 아이디어 | 성취기준 | 지식·이해 | 과정·기능 | 가치·태도 | Agent 추천 수업아이디어 | 수업내용 설명 |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
     ...validRows.map(row => [
       row.isCenter ? `${row.subject || '-'} ★중심` : row.subject || '-',
       row.coreIdea,
       row.standard,
       ensureGradePrefixes(row.knowledge, row.standard),
       ensureGradePrefixes(row.processFunction, row.standard),
+      ensureGradePrefixes(row.valueAttitude, row.standard),
       row.agentLessonExample,
       row.description,
     ].map(mdCell).join(' | ')).map(line => `| ${line} |`),
@@ -156,7 +157,7 @@ export function buildCurriculumSheetArtifactProposal(
     .join('\n')
 
   return {
-    title: '핵심아이디어 및 성취기준 분석표',
+    title: '주제의 상세 내용 분석표',
     sections: {
       '성취기준분석표': analysisTable,
       ...(lessonIdeas ? { 'Agent 추천 수업아이디어': lessonIdeas } : {}),

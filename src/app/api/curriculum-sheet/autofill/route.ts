@@ -5,14 +5,14 @@
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  * 1. 주제/전단계 산출물/채팅으로 교과별 핵심아이디어 후보를 추천
  * 2. 교사가 확인한 핵심아이디어를 기준으로 같은 영역·학년군 성취기준 추천
- * 3. 지식·이해/과정·기능은 DB 원문에서만 채움
+ * 3. 지식·이해/과정·기능/가치·태도는 DB 원문에서만 채움
  * 4. GPT는 수업내용 설명만 생성
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
-import { isElementaryGradeGroup, loadContentSystems, loadElementaryContentSystems, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
+import { isElementaryGradeGroup, loadContentSystemsForGradeGroup, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
 import { gradeBandNeedle, isUsableCoreIdea } from '@/lib/curriculum/curriculumFilters'
 import fs from 'fs'
 import path from 'path'
@@ -41,6 +41,7 @@ interface ExistingRow {
   standard?: string
   knowledge?: string
   processFunction?: string
+  valueAttitude?: string
   description?: string
 }
 
@@ -92,6 +93,7 @@ interface BuiltRow {
   standard: string
   knowledge: string
   processFunction: string
+  valueAttitude: string
 }
 
 let mappingCache: AreaMapping[] | null = null
@@ -546,7 +548,7 @@ async function resolveKnowledgeAndFunctions(params: {
   query: string
   contentSystems: ContentSystemRecord[]
   areaMappings: AreaMapping[]
-}): Promise<{ knowledge: string[]; functions: string[] }> {
+}): Promise<{ knowledge: string[]; functions: string[]; attitudes: string[] }> {
   const { subject, area, selectedIdea, selectedStandard, graph, gradeGroup, query, contentSystems, areaMappings } = params
   const elementQuery = [
     query,
@@ -558,14 +560,17 @@ async function resolveKnowledgeAndFunctions(params: {
 
   let knowledge: string[] = []
   let functions: string[] = []
+  let attitudes: string[] = []
 
   if (knowledge.length === 0 && functions.length === 0) {
     const contentRecord = findOfficialContentRecord(contentSystems, subject, area, selectedIdea)
     if (contentRecord) {
       const baseKnowledge = filterByGrade(contentRecord.knowledge, gradeGroup)
       const baseFunctions = filterByGrade(contentRecord.functions, gradeGroup)
+      const baseAttitudes = filterByGrade(contentRecord.attitudes, gradeGroup)
       knowledge = baseKnowledge
       functions = baseFunctions
+      attitudes = baseAttitudes
       const aligned = alignElementsToStandard({ graph, subject, area, gradeGroup, selectedStandard, knowledge, functions })
       if (aligned) {
         // 성취기준 인덱스 정렬 결과가 비면(정렬 불일치 등) 원문 전체로 복구한다.
@@ -586,6 +591,7 @@ async function resolveKnowledgeAndFunctions(params: {
   return {
     knowledge: await selectItems(elementQuery || query, knowledge, 3),
     functions: await selectItems(elementQuery || query, functions, 2),
+    attitudes: await selectItems(elementQuery || query, attitudes, 2),
   }
 }
 
@@ -650,6 +656,7 @@ function validateMappedRowsFromDb(params: {
         findOfficialAreaMapping(areaMappings, row.subject, selectedStandard.area, row.coreIdea)
     const allowedKnowledge = filterByGrade(contentRecord?.knowledge ?? mapping?.knowledge ?? [], gradeGroup)
     const allowedFunctions = filterByGrade(contentRecord?.functions ?? mapping?.functions ?? [], gradeGroup)
+    const allowedAttitudes = filterByGrade(contentRecord?.attitudes ?? [], gradeGroup)
 
     const checkValues = (label: string, value: string, allowed: string[]) => {
       const values = splitMappedValues(value)
@@ -674,6 +681,7 @@ function validateMappedRowsFromDb(params: {
 
     checkValues('지식·이해', row.knowledge, allowedKnowledge)
     checkValues('과정·기능', row.processFunction, allowedFunctions)
+    checkValues('가치·태도', row.valueAttitude, allowedAttitudes)
   }
 
   if (errors.length > 0) {
@@ -751,6 +759,7 @@ async function buildRowsFromSelections(params: {
       standard: selectedStandard ? formatStandard(selectedStandard) : '',
       knowledge: elements.knowledge.join(SEP),
       processFunction: elements.functions.join(SEP),
+      valueAttitude: elements.attitudes.join(SEP),
     })
   }
 
@@ -770,7 +779,7 @@ async function buildDescriptions(params: {
     const prompt = `초등학교 ${gradeGroup} 융합 수업의 교과별 "수업내용 설명"만 작성하세요.
 
 중요:
-- 핵심아이디어, 성취기준, 지식이해, 과정기능 값은 이미 DB에서 확정되었습니다.
+- 핵심아이디어, 성취기준, 지식이해, 과정기능, 가치태도 값은 이미 DB에서 확정되었습니다.
 - 아래 값들을 바꾸거나 새로 만들지 말고, 각 교과가 수업에서 맡을 역할만 1~2문장으로 설명하세요.
 
 주제: ${topic || '(아래 맥락에서 추론)'}
@@ -780,7 +789,8 @@ ${rows.map(r => `[${r.subject}${r.isCenter ? ' ★중심' : ''}]
 핵심아이디어: ${r.coreIdea}
 성취기준: ${r.standard}
 지식이해: ${r.knowledge}
-과정기능: ${r.processFunction}`).join('\n\n')}
+과정기능: ${r.processFunction}
+가치태도: ${r.valueAttitude}`).join('\n\n')}
 
 JSON: { "descriptions": { "교과명": "설명" } }`
 
@@ -818,12 +828,18 @@ export async function POST(request: NextRequest) {
       selectedCoreIdeas?: SelectedCoreIdea[]
     }
 
+    const gradeGroup = targetGradeGroup ?? ''
+    if (!isElementaryGradeGroup(gradeGroup)) {
+      return NextResponse.json({
+        error: '현재 자동 채우기 데이터는 초등 교육과정만 검증되어 있습니다. 중·고등 프로젝트에서는 해당 학교급 교육과정 원문을 교사가 직접 입력해 주세요.',
+        code: 'CURRICULUM_DATA_UNAVAILABLE',
+      }, { status: 409 })
+    }
+
     const graph = loadGraph()
     if (!graph) return NextResponse.json({ error: '교육과정 지식 그래프를 불러오지 못했습니다.' }, { status: 500 })
 
-    const gradeGroup = targetGradeGroup ?? ''
-    // [strict-elementary 2026-05-14] 초등 전용 웹앱 — 비초등 gradeGroup이 와도 강제로 초등 데이터만.
-    const contentSystems = loadElementaryContentSystems()
+    const contentSystems = loadContentSystemsForGradeGroup(gradeGroup)
     const areaMappings = loadAreaMappings()
     const linkedSubjects = parseLinkedSubjects(a12Artifact)
     const subjects = deriveSubjects(a12Artifact, linkedSubjects, graphSavedData, graph, chatContext, existingRows)

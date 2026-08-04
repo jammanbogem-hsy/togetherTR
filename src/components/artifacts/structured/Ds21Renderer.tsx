@@ -21,6 +21,7 @@ interface Material {
 interface Normalized {
   materials: Material[]
   envCheck: string
+  humanAIAgency: string
 }
 
 // markdown 파이프 테이블 문자열을 7개 컬럼 순서대로 파싱
@@ -51,7 +52,7 @@ function parseMarkdownTable(src: string): Material[] {
 }
 
 function normalize(content: AnyRec): Normalized {
-  const out: Normalized = { materials: [], envCheck: '' }
+  const out: Normalized = { materials: [], envCheck: '', humanAIAgency: '' }
 
   // (B) 구조: materials 배열 우선
   const rawM = content['materials']
@@ -92,6 +93,7 @@ function normalize(content: AnyRec): Normalized {
   }
 
   out.envCheck = S(content['envCheck'] || content['AI 점검'] || content['AI점검'])
+  out.humanAIAgency = S(content['humanAIAgency'] || content['Human-AI Agency'] || content['Human-AI 에이전시'])
 
   return out
 }
@@ -215,8 +217,9 @@ export function Ds21Renderer({ data }: { data: Record<string, unknown> }) {
   const d = normalize(data ?? {})
   const hasMaterials = d.materials.length > 0
   const hasEnvCheck = !!d.envCheck.trim()
+  const hasHumanAIAgency = !!d.humanAIAgency.trim()
 
-  if (!hasMaterials && !hasEnvCheck) {
+  if (!hasMaterials && !hasEnvCheck && !hasHumanAIAgency) {
     return (
       <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
         <div className="bg-[#F8F9FA] px-4 py-2.5 border-b border-[#DADCE0]">
@@ -277,6 +280,14 @@ export function Ds21Renderer({ data }: { data: Record<string, unknown> }) {
           <div className="px-4 py-3 bg-[#E8F0FE]">
             <p className="text-[12px] text-[#1967D2] leading-relaxed [word-break:keep-all] whitespace-pre-wrap">{d.envCheck}</p>
           </div>
+        </div>
+      )}
+      {hasHumanAIAgency && (
+        <div className="rounded-2xl border border-[#C4E7E0] overflow-hidden bg-white">
+          <div className="bg-[#E6F4F1] px-4 py-2.5 border-b border-[#C4E7E0]">
+            <span className="text-[11px] font-bold text-[#0F6B5B] uppercase tracking-wider">Human-AI Agency</span>
+          </div>
+          <p className="px-4 py-3 text-[13px] leading-relaxed text-[#202124] whitespace-pre-wrap">{d.humanAIAgency}</p>
         </div>
       )}
     </div>

@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       stage: StageCode
       activityCode: ActivityCode
       actorType: ActorType
-      project: Pick<Project, 'title' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'>
+      project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'>
       learnerProfileSummary?: string
       currentArtifact?: { title: string; content: Record<string, unknown>; status: string; version: number } | null
       confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown>; status?: string }>

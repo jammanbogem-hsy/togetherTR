@@ -19,6 +19,7 @@ export interface TeamRulesSuggestRequest {
     category?: string
     name?: string
     description?: string
+    feasibility?: string
     violation?: string
   }>
   /** 직전 단계(T-1-1 팀 비전)의 핵심 키워드/비전 — 규칙의 어조·중점 결정 맥락 */
@@ -41,6 +42,7 @@ export interface TeamRulesSuggestRequest {
       category?: string
       name?: string
       description?: string
+      feasibility?: string
       violation?: string
     }>
   }
@@ -56,7 +58,7 @@ export interface TeamRulesRuleSuggestion {
   category: string
   name: string
   description: string
-  violation: string
+  feasibility: string
 }
 
 export interface TeamRulesSuggestResult {
@@ -76,7 +78,7 @@ export interface TeamRulesSuggestResult {
   }
 }
 
-const SYSTEM_PROMPT = `당신은 초·중등 협력적 수업설계 과정의 팀 규칙 결정 코치입니다.
+const SYSTEM_PROMPT = `당신은 초·중·고 협력적 수업설계 과정의 팀 규칙 결정 코치입니다.
 T-2-2 활동 "팀 규칙" 산출물의 추천 형식에 맞춰, 두 가지 모드 중 하나로 제안합니다.
 팀 규칙은 지난 협업에서 겪은 어려움을 떠올려, 이번 팀에서 지켰으면 하는 약속을 5개 내외로 모아 실제 상황에서 무리 없이 지킬 수 있는 형태로 조율하는 활동입니다. 벌이나 제재가 아니라 '어떻게 하면 함께 지킬 수 있을까'가 중심이며, 의견이 강하게 부딪칠 때를 대비한 갈등 상황 규칙을 반드시 하나 포함합니다. AI가 내놓는 규칙은 결론이 아니라 후보·초안이며, 최종 확정은 교사팀의 몫입니다.
 
@@ -92,7 +94,7 @@ T-2-2 활동 "팀 규칙" 산출물의 추천 형식에 맞춰, 두 가지 모�
       "category": "분류 (예: 소통, 시간, 의사결정, 역할, 갈등 — 한 단어 우선, 대괄호 없이)",
       "name": "규칙명 (명확한 행동 동사로, 12자 내외)",
       "description": "설명 — 어떤 상황에서 어떻게 행동하는지 1-2문장",
-      "violation": "위반 시 조치 — 합의된 회복 절차 (벌이 아닌 복구·재합의·기록 등) 1문장"
+      "feasibility": "실천 방법 — 가장 빠듯한 팀원도 지킬 수 있도록 언제·어떻게 실행할지 1문장"
     }
   ],
   "tips": ["운영 팁 1줄", "운영 팁 1줄"],
@@ -110,7 +112,7 @@ T-2-2 활동 "팀 규칙" 산출물의 추천 형식에 맞춰, 두 가지 모�
 - 분류(category)는 가능한 한 다양화 — 소통·시간·의사결정·역할·갈등·기록·AI 활용 등에서 균형 있게 선택
 - 규칙명(name)은 명확한 행동 동사 — "정해진 회의 시간 지키기", "이견은 24시간 안에 글로 정리하기" 등
 - 설명(description)은 추상적 슬로건이 아닌 구체 행동 — "언제·누가·어떻게"
-- 위반 시 조치(violation)는 벌이 아닌 회복 지향 — 사과·기록·재합의·역할 보완·다음 회의 안건화 등
+- 위반 시 조치나 벌을 만들지 않습니다. feasibility에는 가장 여건이 빠듯한 팀원도 지킬 수 있는 구체적인 실천 방법을 씁니다.
 - 팀 비전·핵심 키워드가 주어지면 규칙 어조가 그것과 정합되도록 작성
 - 역할 배분(existingRoles)이 주어지면 해당 역할 수행에 필요한 약속(예: 진행자는 시작·종료 시간 알림 등)도 반영
 - chat mode에서는 채팅에서 본인이 직접 말한 협업 어려움/원칙을 우선 반영 (가능한 한 본인의 표현 사용)
@@ -173,7 +175,8 @@ function buildUserPrompt(body: TeamRulesSuggestRequest, mode: 'artifact' | 'chat
       if (r.category?.trim()) cells.push(`분류: ${r.category.trim()}`)
       if (r.name?.trim()) cells.push(`규칙명: ${r.name.trim()}`)
       if (r.description?.trim()) cells.push(`설명: ${r.description.trim()}`)
-      if (r.violation?.trim()) cells.push(`위반 시 조치: ${r.violation.trim()}`)
+      const feasibility = r.feasibility?.trim() || r.violation?.trim()
+      if (feasibility) cells.push(`실천 방법: ${feasibility}`)
       lines.push(`- 행${idx + 1}: ${cells.join(' · ')}`)
     })
     lines.push('')
@@ -197,7 +200,7 @@ function buildUserPrompt(body: TeamRulesSuggestRequest, mode: 'artifact' | 'chat
       (r.category && r.category.trim()) ||
       (r.name && r.name.trim()) ||
       (r.description && r.description.trim()) ||
-      (r.violation && r.violation.trim())
+      (r.feasibility && r.feasibility.trim()) || (r.violation && r.violation.trim())
     )
     if (meaningful.length > 0) {
       lines.push('### 현재 워크스페이스 표 (이미 입력된 내용 — 중복/누락 피하기 위해 참고)')
@@ -206,7 +209,8 @@ function buildUserPrompt(body: TeamRulesSuggestRequest, mode: 'artifact' | 'chat
         if (r.category?.trim()) cells.push(`분류: ${r.category.trim()}`)
         if (r.name?.trim()) cells.push(`규칙명: ${r.name.trim()}`)
         if (r.description?.trim()) cells.push(`설명: ${r.description.trim()}`)
-        if (r.violation?.trim()) cells.push(`위반 시 조치: ${r.violation.trim()}`)
+        const feasibility = r.feasibility?.trim() || r.violation?.trim()
+        if (feasibility) cells.push(`실천 방법: ${feasibility}`)
         lines.push(`- ${cells.join(' · ')}`)
       }
       lines.push('')
@@ -219,7 +223,7 @@ function buildUserPrompt(body: TeamRulesSuggestRequest, mode: 'artifact' | 'chat
     lines.push('')
   }
 
-  lines.push('위 정보를 종합하여 팀 규칙 산출물 형식의 JSON으로만 응답하세요. 규칙 3-6개, 분류를 다양화하고, 위반 시 조치는 회복 지향으로 작성하세요. basedOn 필드를 반드시 채우세요.')
+  lines.push('위 정보를 종합하여 팀 규칙 산출물 형식의 JSON으로만 응답하세요. 규칙 3-6개, 분류를 다양화하고, 가장 여건이 빠듯한 팀원도 지킬 수 있는 실천 방법을 작성하세요. basedOn 필드를 반드시 채우세요.')
   return lines.join('\n')
 }
 
@@ -230,7 +234,7 @@ export async function POST(request: Request) {
     const hasArtifact = !!(body.existingArtifact?.rules && body.existingArtifact.rules.length > 0)
     const hasChat = !!(body.chatContext && body.chatContext.length > 0)
     const hasCurrent = !!(body.currentRows && body.currentRows.some((r) =>
-      (r.category && r.category.trim()) || (r.name && r.name.trim()) || (r.description && r.description.trim()) || (r.violation && r.violation.trim())
+      (r.category && r.category.trim()) || (r.name && r.name.trim()) || (r.description && r.description.trim()) || (r.feasibility && r.feasibility.trim()) || (r.violation && r.violation.trim())
     ))
     if (!hasArtifact && !hasChat && !hasCurrent && !body.teamVision?.trim() && !(body.coreKeywords && body.coreKeywords.length > 0)) {
       return Response.json({ error: '팀 채팅·기존 산출물·팀 비전 중 하나 이상이 필요합니다.' }, { status: 400 })
@@ -290,7 +294,9 @@ export async function POST(request: Request) {
         category: typeof r?.category === 'string' ? r.category : '',
         name: typeof r?.name === 'string' ? r.name : '',
         description: typeof r?.description === 'string' ? r.description : '',
-        violation: typeof r?.violation === 'string' ? r.violation : '',
+        feasibility: typeof r?.feasibility === 'string'
+          ? r.feasibility
+          : (typeof (r as { violation?: unknown })?.violation === 'string' ? (r as unknown as { violation: string }).violation : ''),
       })),
       tips: Array.isArray(parsed.tips) ? parsed.tips.filter((t): t is string => typeof t === 'string') : undefined,
       basedOn,

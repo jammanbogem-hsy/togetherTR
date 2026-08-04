@@ -350,7 +350,9 @@ function RequiredSectionsChecklist({
       const s = content as unknown as {
         materials?: Array<{ activity?: string; name?: string; purpose?: string }>
         envCheck?: string
+        humanAIAgency?: string
         '활동별 자료 설계'?: string
+        'Human-AI Agency'?: string
         'AI 점검'?: string
       }
       if (sec.key === '활동별 자료 설계') {
@@ -361,6 +363,8 @@ function RequiredSectionsChecklist({
         }
       } else if (sec.key === 'AI 점검') {
         filled = (s.envCheck?.length ?? 0) || countKoreanChars(s['AI 점검'])
+      } else if (sec.key === 'Human-AI Agency') {
+        filled = (s.humanAIAgency?.length ?? 0) || countKoreanChars(s['Human-AI Agency'])
       }
     }
     if (filled === 0 && content._schema === 'Ds-2-2') {
@@ -387,6 +391,7 @@ function RequiredSectionsChecklist({
     if (filled === 0 && content._schema === 'A-2-2') {
       const s = content as unknown as {
         commonCoreIdea?: string
+        inquiryQuestion?: string
         integratedGoal?: string
         integratedGoals?: string[]
         subjectGoals?: unknown[]
@@ -394,6 +399,7 @@ function RequiredSectionsChecklist({
         method?: string
       }
       if (sec.key === '공통 핵심 아이디어' && s.commonCoreIdea) filled = s.commonCoreIdea.length
+      else if (sec.key === '탐구 질문' && s.inquiryQuestion) filled = s.inquiryQuestion.length
       else if (sec.key === '통합 수업목표' && (s.integratedGoal || s.integratedGoals?.length)) filled = (s.integratedGoal || s.integratedGoals?.join(' ') || '').length
       else if (sec.key === '교과별 수업목표' && s.subjectGoals?.length) filled = 20
       else if (sec.key === '핵심 키워드' && s.convergentKeywords?.length) filled = s.convergentKeywords.join(' ').length

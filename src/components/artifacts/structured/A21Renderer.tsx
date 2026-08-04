@@ -36,6 +36,8 @@ export function A21Renderer({ data }: { data: A21Structured }) {
   const subjectRows = rows.filter(r => !r.isCommon)
   const commonRows = rows.filter(r => r.isCommon)
   const hasStandard = rows.some(r => r.standard)
+  const hasValueAttitude = rows.some(r => r.valueAttitude)
+  const hasContribution = rows.some(r => r.contribution)
   const hasAgentLesson = rows.some(r => r.agentLessonExample)
   const hasDescription = rows.some(r => r.description)
   const headers = [
@@ -44,6 +46,8 @@ export function A21Renderer({ data }: { data: A21Structured }) {
     ...(hasStandard ? ['성취기준'] : []),
     '지식·이해',
     '과정·기능',
+    ...(hasValueAttitude ? ['가치·태도'] : []),
+    ...(hasContribution ? ['공통 요소·고유 기여'] : []),
     ...(hasAgentLesson ? ['Agent 추천 수업아이디어'] : []),
     ...(hasDescription ? ['수업내용 설명'] : []),
   ]
@@ -56,6 +60,8 @@ export function A21Renderer({ data }: { data: A21Structured }) {
         {hasStandard && <td className="px-3 py-3 leading-relaxed align-top text-[#1A73E8] min-w-[220px] whitespace-pre-line">{displayCell(r.standard)}</td>}
         <td className="px-3 py-3 leading-relaxed align-top text-[#5F6368] min-w-[160px] whitespace-pre-line">{displayContentElement(r.knowledgeUnderstanding, r.standard)}</td>
         <td className="px-3 py-3 leading-relaxed align-top text-[#5F6368] min-w-[160px] whitespace-pre-line">{displayContentElement(r.processFunction, r.standard)}</td>
+        {hasValueAttitude && <td className="px-3 py-3 leading-relaxed align-top text-[#5F6368] min-w-[160px] whitespace-pre-line">{displayContentElement(r.valueAttitude, r.standard)}</td>}
+        {hasContribution && <td className="px-3 py-3 leading-relaxed align-top text-[#202124] min-w-[180px] whitespace-pre-line">{displayCell(r.contribution)}</td>}
         {hasAgentLesson && <td className="px-3 py-3 leading-relaxed align-top text-[#4A148C] min-w-[240px] whitespace-pre-line">{displayCell(r.agentLessonExample)}</td>}
         {hasDescription && <td className="px-3 py-3 leading-relaxed align-top text-[#202124] min-w-[220px] whitespace-pre-line">{displayCell(r.description)}</td>}
       </>
@@ -96,6 +102,22 @@ export function A21Renderer({ data }: { data: A21Structured }) {
         <div className="border-t border-[#E8EAED] bg-[#FCF8FF] px-4 py-3">
           <p className="text-[11px] font-bold text-[#7B1FA2] uppercase tracking-wider mb-2">Agent 추천 수업아이디어</p>
           <p className="text-sm text-[#4A148C] leading-relaxed whitespace-pre-line">{displayCell(data.agentLessonIdeas)}</p>
+        </div>
+      )}
+      {(data?.commonElements || data?.reconstructedStandard) && (
+        <div className="border-t border-[#DADCE0] bg-[#F8F9FA] px-4 py-4 space-y-3">
+          {data.commonElements && (
+            <div>
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-[#5F6368]">교과 간 공통 요소</p>
+              <p className="text-sm leading-relaxed text-[#202124]">{data.commonElements}</p>
+            </div>
+          )}
+          {data.reconstructedStandard && (
+            <div className="rounded-xl border border-[#B7D1F8] bg-[#E8F0FE] px-3 py-3">
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-[#1557B0]">재구조화 성취기준</p>
+              <p className="text-sm font-semibold leading-relaxed text-[#202124]">{data.reconstructedStandard}</p>
+            </div>
+          )}
         </div>
       )}
     </div>

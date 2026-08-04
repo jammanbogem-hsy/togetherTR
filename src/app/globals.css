@@ -367,7 +367,16 @@ body {
 .stage-current-halo { animation: stage-current-halo 1.8s ease-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-dot-pulse, .stage-wave-bob, .stage-current-halo, .artifact-strip-pulse { animation: none; }
+  .live-dot-pulse,
+  .stage-wave-bob,
+  .stage-current-halo,
+  .artifact-strip-pulse,
+  .chat-avatar-animated,
+  .chat-motion-decorative,
+  .corner-wrap-chat .animate-bounce,
+  .corner-wrap-chat .animate-pulse {
+    animation: none !important;
+  }
 }
 
 /* ── 지식 그래프 버튼 무지개 테두리 ───────────────────── */

@@ -19,6 +19,7 @@ export interface IntegratedGoalSuggestRequest {
   /** 워크스페이스에 이미 입력된 내용(부분 채움 상태에서 보강 요청 시) */
   currentDraft?: {
     commonCoreIdea?: string
+    inquiryQuestion?: string
     integratedGoal?: string
     convergentKeywords?: string[]
     method?: 'inductive' | 'deductive'
@@ -34,6 +35,7 @@ export interface IntegratedGoalSuggestRequest {
   /** mode='artifact' — 이미 생성된 A-2-2 산출물 (보강의 출발점) */
   existingArtifact?: {
     commonCoreIdea?: string
+    inquiryQuestion?: string
     integratedGoal?: string
     subjectGoals?: Array<{ subject: string; goal: string; knowledge?: string; process?: string; attitude?: string }>
     convergentKeywords?: string[]
@@ -50,6 +52,7 @@ export interface IntegratedGoalSuggestRequest {
 
 export interface IntegratedGoalSuggestResult {
   commonCoreIdea: string
+  inquiryQuestion: string
   integratedGoal: string
   convergentKeywords: string[]
   method?: 'inductive' | 'deductive'
@@ -75,9 +78,9 @@ export interface IntegratedGoalSuggestResult {
   }
 }
 
-const SYSTEM_PROMPT = `당신은 초·중등 교과 융합 수업설계 전문가입니다.
-A-2-2 활동 "통합 수업목표 진술" 산출물의 추천 형식에 맞춰, 두 가지 모드 중 하나로 제안합니다.
-통합 수업목표 진술은 재구조화한 공통 성취기준을 하나의 방향으로 모아, 이 수업이 도달할 최종 상태를 한 문장으로 선언하는 활동입니다. 진술 방식은 두 가지 — 귀납적(개별 교과 목표를 먼저 세운 뒤 통합)과 연역적(팀 공동 목표를 먼저 세운 뒤 교과별로 구체화)이며, 교과 간 공통 축이 뚜렷하면 연역적이, 각자의 수업이 비교적 독립적이면 귀납적이 어울립니다. 여러 교과 목표에 겹쳐 나오는 키워드는 공통 핵심 아이디어로 수렴시키고, 통합 문장을 완성한 뒤에는 '이 한 문장 안에 내 교과의 자리가 보이는가'를 모든 교과 관점에서 확인해 안 보이는 교과가 있으면 그 교과의 핵심어를 문장에 되살립니다. AI가 내놓는 목표 문장은 결론이 아니라 후보·초안이며, 최종 진술과 확정은 교사팀의 몫입니다.
+const SYSTEM_PROMPT = `당신은 초·중·고 교과 융합 수업설계 전문가입니다.
+A-4 활동 "핵심 아이디어 도출 및 통합 수업목표 진술"의 최신 가이드 형식에 맞춰, 두 가지 모드 중 하나로 제안합니다.
+이 활동은 A-3에서 재구조화한 성취기준의 공통 요소와 교과별 고유 기여를 바탕으로 ① 교과를 가로지르는 핵심 아이디어를 도출하고 ② 이를 학생 언어의 개방형 탐구 질문으로 바꾼 뒤 ③ 귀납적 또는 연역적 방식으로 교과별 목표와 통합 수업목표를 진술합니다. AI가 내놓는 문장은 결론이 아니라 후보·초안이며, 최종 진술과 확정은 교사팀의 몫입니다.
 
 [mode='artifact'] — 채팅에서 이미 만들어진 A-2-2 산출물(existingArtifact)이 출발점입니다. 산출물의 공통 핵심 아이디어 · 통합 수업목표 · 교과별 수업목표 행을 존중하되, 표현·정합성·세부 진술을 보강해 정교화합니다. 새 교과를 추가하지 말고, 기존 교과 행만 수정·보완합니다.
 
@@ -87,6 +90,7 @@ A-2-2 활동 "통합 수업목표 진술" 산출물의 추천 형식에 맞춰, 
 
 {
   "commonCoreIdea": "교과를 가로지르는 공통 핵심 아이디어 1문장 — 여러 교과 목표가 수렴하는 지점",
+  "inquiryQuestion": "공통 핵심 아이디어를 학생의 언어로 바꾼 개방형 탐구 질문 1문장",
   "integratedGoal": "학생은 ~ 할 수 있다 형태의 통합 수업목표 1문장. 공통 핵심 아이디어와 가치·태도를 중심으로 묶되 모든 교과의 자리가 드러나게",
   "convergentKeywords": ["수렴 키워드1", "수렴 키워드2", "..."],
   "method": "inductive(교과별 목표→통합) 또는 deductive(통합→교과별 목표). 팀이 택한/채팅·초안에 드러난 방식을 반영, 명확하지 않으면 생략",
@@ -110,6 +114,7 @@ A-2-2 활동 "통합 수업목표 진술" 산출물의 추천 형식에 맞춰, 
 }
 
 작성 규칙:
+- inquiryQuestion은 정답이 하나로 정해지지 않고 학생의 탐구·판단·행동을 이끄는 물음표 문장 1개
 - integratedGoal은 1개의 상위 문장으로, 반드시 "학생은"으로 시작. 공통 핵심 아이디어와 가치·태도를 중심으로 묶되 특정 교과의 색이 옅어지지 않게 — 어느 교과의 자리가 안 보이면 그 교과 핵심어 하나를 문장에 되살림
 - method는 팀이 택한(또는 채팅·초안에서 드러나는) 진술 방식을 반영. 귀납적이면 교과별 목표에서 겹치는 키워드를 공통 핵심 아이디어로 수렴, 연역적이면 공통 핵심 아이디어를 각 교과 목표로 구체화. 판단이 서지 않으면 생략
 - convergentKeywords에는 여러 교과 목표에 겹쳐 나오는 공통 키워드를 담아 통합 문장이 어디로 수렴하는지 드러냄
@@ -132,6 +137,7 @@ function resolveMode(body: IntegratedGoalSuggestRequest): 'artifact' | 'chat' {
     ea && (
       (typeof ea.integratedGoal === 'string' && ea.integratedGoal.trim()) ||
       (typeof ea.commonCoreIdea === 'string' && ea.commonCoreIdea.trim()) ||
+      (typeof ea.inquiryQuestion === 'string' && ea.inquiryQuestion.trim()) ||
       (Array.isArray(ea.subjectGoals) && ea.subjectGoals.length > 0) ||
       (Array.isArray(ea.convergentKeywords) && ea.convergentKeywords.length > 0)
     )
@@ -172,12 +178,13 @@ function buildUserPrompt(body: IntegratedGoalSuggestRequest, mode: 'artifact' | 
 
   if (mode === 'artifact' && body.existingArtifact) {
     const ea = body.existingArtifact
-    const hasAny = (ea.commonCoreIdea?.trim() || ea.integratedGoal?.trim() ||
+    const hasAny = (ea.commonCoreIdea?.trim() || ea.inquiryQuestion?.trim() || ea.integratedGoal?.trim() ||
       (ea.subjectGoals && ea.subjectGoals.length > 0) ||
       (ea.convergentKeywords && ea.convergentKeywords.length > 0))
     if (hasAny) {
       lines.push('### 채팅에서 만들어진 기존 산출물 (출발점 — 이 내용을 정교화)')
       if (ea.commonCoreIdea?.trim()) lines.push(`- 공통 핵심 아이디어: ${ea.commonCoreIdea.trim()}`)
+      if (ea.inquiryQuestion?.trim()) lines.push(`- 탐구 질문: ${ea.inquiryQuestion.trim()}`)
       if (ea.integratedGoal?.trim()) lines.push(`- 통합 수업목표: ${ea.integratedGoal.trim()}`)
       if (ea.convergentKeywords?.length) lines.push(`- 수렴 키워드: ${ea.convergentKeywords.join(', ')}`)
       if (ea.subjectGoals?.length) {
@@ -213,12 +220,14 @@ function buildUserPrompt(body: IntegratedGoalSuggestRequest, mode: 'artifact' | 
     const d = body.currentDraft
     const hasContent =
       (d.commonCoreIdea && d.commonCoreIdea.trim()) ||
+      (d.inquiryQuestion && d.inquiryQuestion.trim()) ||
       (d.integratedGoal && d.integratedGoal.trim()) ||
       (d.convergentKeywords && d.convergentKeywords.length > 0) ||
       (d.subjectGoals && d.subjectGoals.length > 0)
     if (hasContent) {
       lines.push('### 현재 워크스페이스 초안 (보강·정교화 요청 시 참고)')
       if (d.commonCoreIdea?.trim()) lines.push(`- 공통 핵심 아이디어: ${d.commonCoreIdea.trim()}`)
+      if (d.inquiryQuestion?.trim()) lines.push(`- 탐구 질문: ${d.inquiryQuestion.trim()}`)
       if (d.integratedGoal?.trim()) lines.push(`- 통합 수업목표: ${d.integratedGoal.trim()}`)
       if (d.convergentKeywords?.length) lines.push(`- 수렴 키워드: ${d.convergentKeywords.join(', ')}`)
       if (d.method) lines.push(`- 진술 방식: ${d.method === 'inductive' ? '귀납적' : '연역적'}`)
@@ -261,6 +270,7 @@ export async function POST(request: Request) {
       (body.chatContext && body.chatContext.length > 0) ||
       (body.existingArtifact && (
         body.existingArtifact.commonCoreIdea?.trim() ||
+        body.existingArtifact.inquiryQuestion?.trim() ||
         body.existingArtifact.integratedGoal?.trim() ||
         (body.existingArtifact.subjectGoals && body.existingArtifact.subjectGoals.length > 0) ||
         (body.existingArtifact.convergentKeywords && body.existingArtifact.convergentKeywords.length > 0)
@@ -293,6 +303,7 @@ export async function POST(request: Request) {
     }
     // 최소 필드 보정 — 누락되어도 클라이언트 머지 로직이 안전하게 처리하도록 기본값 설정
     parsed.commonCoreIdea = parsed.commonCoreIdea ?? ''
+    parsed.inquiryQuestion = parsed.inquiryQuestion ?? ''
     parsed.integratedGoal = parsed.integratedGoal ?? ''
     parsed.convergentKeywords = Array.isArray(parsed.convergentKeywords) ? parsed.convergentKeywords : []
     parsed.subjectGoals = Array.isArray(parsed.subjectGoals) ? parsed.subjectGoals : []

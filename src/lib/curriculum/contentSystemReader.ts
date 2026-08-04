@@ -144,6 +144,17 @@ export function loadElementaryContentSystems(): ContentSystemRecord[] {
   return elementaryContentSystemCache
 }
 
+/**
+ * 프로젝트 학년군에 맞는 내용체계만 반환한다.
+ * 비초등 프로젝트에 초등 그래프 자료를 폴백하지 않는 것이 핵심 안전 규칙이다.
+ * 현재 로컬 자료가 일부 학교급·교과를 포함하지 않으면 빈 배열을 반환하고,
+ * 호출부는 교사 입력을 요청해야 한다.
+ */
+export function loadContentSystemsForGradeGroup(gradeGroup?: string | null): ContentSystemRecord[] {
+  if (!gradeGroup || isElementaryGradeGroup(gradeGroup)) return loadElementaryContentSystems()
+  return loadContentSystems().filter(record => matchesGradeGroup(record, gradeGroup))
+}
+
 function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = []): ContentSystemRecord[] {
   const graph = loadGraph()
   if (!graph) return []
@@ -379,9 +390,7 @@ export function searchContentSystems({
   const normalizedKeywords = [...new Set(keywords.map(normalizeKeyword).filter(Boolean))]
   if (normalizedKeywords.length === 0) return []
 
-  // [strict-elementary 2026-05-14] 이 웹앱은 초등 전용 — gradeGroup이 비초등이라도 강제로 초등 사용.
-  // Why: 사용자가 초등 프로젝트에 중·고 내용이 매핑되는 사례를 보고. content systems 단계에서 차단.
-  const records = loadElementaryContentSystems()
+  const records = loadContentSystemsForGradeGroup(gradeGroup)
 
   return records
     .filter(record => matchesGradeGroup(record, gradeGroup))
@@ -392,7 +401,11 @@ export function searchContentSystems({
 }
 
 export function isElementaryGradeGroup(gradeGroup?: string | null): boolean {
-  return !!gradeGroup?.replace(/^초/, '').replace(/~/g, '-').trim().match(/^(1-2|3-4|5-6)/)
+  const raw = (gradeGroup ?? '').trim()
+  if (!raw || /중학교|고등학교|^[중고]/.test(raw)) return false
+  if (/초등학교|^초/.test(raw)) return true
+  const grades = [...raw.matchAll(/\d/g)].map(match => Number(match[0]))
+  return grades.length > 0 && grades.every(grade => grade >= 1 && grade <= 6)
 }
 
 export function buildContentSystemContext(
@@ -520,7 +533,18 @@ function extractGradeBands(entry: RawObject): string[] {
 function matchesGradeGroup(record: ContentSystemRecord, gradeGroup?: string): boolean {
   if (!gradeGroup) return true
   if (record.gradeBands.length === 0) {
-    return !record.curriculum.trim().startsWith('선택 중심 교육과정')
+    if (isElementaryGradeGroup(gradeGroup)) {
+      return !record.curriculum.trim().startsWith('선택 중심 교육과정')
+    }
+    // 학년군 표시가 없는 공통 교육과정 자료는 초·중 구분이 불가능하므로 중학교에 자동 주입하지 않는다.
+    if (gradeGroup === '중1-3') return false
+    if (gradeGroup === '고공통') {
+      return /선택 중심 교육과정.*공통 과목/.test(record.curriculum)
+    }
+    if (gradeGroup === '고선택') {
+      return record.curriculum.trim().startsWith('선택 중심 교육과정') && !/공통 과목/.test(record.curriculum)
+    }
+    return false
   }
 
   const aliases: Record<string, string[]> = {

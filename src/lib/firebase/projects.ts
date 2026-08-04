@@ -740,6 +740,7 @@ export type CurriculumSheetEditableField =
   | 'standard'
   | 'knowledge'
   | 'processFunction'
+  | 'valueAttitude'
   | 'agentLessonExample'
   | 'description'
 
@@ -1156,6 +1157,7 @@ function emptyIntegratedGoalWorkspace(): IntegratedGoalWorkspace {
     columns: DEFAULT_INTEGRATED_GOAL_COLUMNS,
     rows: [],
     commonCoreIdea: '',
+    inquiryQuestion: '',
     integratedGoal: '',
     convergentKeywords: [],
     blocks: [],
@@ -1170,7 +1172,7 @@ export type IntegratedGoalWorkspacePatch =
   | { type: 'add-column'; column: IntegratedGoalWorkspaceColumn; updatedBy?: string }
   | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
   | { type: 'delete-column'; columnId: string }
-  | { type: 'update-meta'; field: 'commonCoreIdea' | 'integratedGoal' | 'convergentKeywords' | 'method'; value: string | string[] | IntegratedGoalMethod | null; updatedBy?: string }
+  | { type: 'update-meta'; field: 'commonCoreIdea' | 'inquiryQuestion' | 'integratedGoal' | 'convergentKeywords' | 'method'; value: string | string[] | IntegratedGoalMethod | null; updatedBy?: string }
   | { type: 'upsert-block'; block: IntegratedGoalWorkspaceBlock; updatedBy?: string }
   | { type: 'delete-block'; blockId: string }
   | { type: 'reorder-blocks'; blockIds: string[] }
@@ -1539,12 +1541,11 @@ export function watchLessonDesignDirectionWorkspacePresence(
 // LDD와 동일 패턴 — shape은 TeamVisionWorkspace 재사용, apply는 그대로 위임.
 
 const DEFAULT_EVALUATION_PLAN_COLUMNS: TeamVisionWorkspaceColumn[] = [
-  { id: 'item',   label: '평가 항목', color: '#E8F0FE' },
-  { id: 'method', label: '평가 방법', color: '#E8F0FE' },
-  { id: 'timing', label: '평가 시점', color: '#E8F0FE' },
-  { id: 'high',   label: '상',        color: '#E6F4EA' },
-  { id: 'mid',    label: '중',        color: '#FEF7E0' },
-  { id: 'low',    label: '하',        color: '#FCE8E6' },
+  { id: 'checkpoint', label: '확인 지점', color: '#E8F0FE' },
+  { id: 'item',       label: '평가 요소', color: '#E8F0FE' },
+  { id: 'method',     label: '평가 방법', color: '#E8F0FE' },
+  { id: 'timing',     label: '평가 시점', color: '#E8F0FE' },
+  { id: 'actor',      label: '평가 주체', color: '#FEF7E0' },
 ]
 
 export type EvaluationPlanWorkspacePatch =
@@ -1563,8 +1564,22 @@ function applyEvaluationPlanWorkspacePatch(
   current: EvaluationPlanWorkspace | undefined,
   patch: EvaluationPlanWorkspacePatch,
 ): EvaluationPlanWorkspace {
-  const tvCurrent = current
-    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+  const normalizedCurrent = current && !current.columns.some(column => column.id === 'checkpoint' || column.id === 'actor')
+    ? {
+        ...current,
+        columns: DEFAULT_EVALUATION_PLAN_COLUMNS,
+        rows: current.rows.map(row => ({
+          ...row,
+          cells: {
+            ...row.cells,
+            checkpoint: row.cells.timing ?? '',
+            actor: ['교사', '동료', '자기'].filter(actor => (row.cells.method ?? '').includes(actor)).join('·'),
+          },
+        })),
+      }
+    : current
+  const tvCurrent = normalizedCurrent
+    ? ({ ...normalizedCurrent, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
     : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_EVALUATION_PLAN_COLUMNS } as TeamVisionWorkspace)
   const next = applyTeamVisionWorkspacePatch(tvCurrent, patch as TeamVisionWorkspacePatch)
   return {
@@ -1908,6 +1923,7 @@ const DEFAULT_ROLE_DISTRIBUTION_COLUMNS: TeamVisionWorkspaceColumn[] = [
   { id: 'strengths',        label: '강점·전문성',    color: '#E8F0FE' },
   { id: 'role',             label: '팀 내 역할',     color: '#E8F0FE' },
   { id: 'responsibilities', label: '담당 업무',      color: '#E8F0FE' },
+  { id: 'deadline',         label: '완료 시점',      color: '#FEF7E0' },
 ]
 
 function emptyRoleDistributionWorkspace(): RoleDistributionWorkspace {
@@ -1935,8 +1951,11 @@ function applyRoleDistributionWorkspacePatch(
   current: RoleDistributionWorkspace | undefined,
   patch: RoleDistributionWorkspacePatch,
 ): RoleDistributionWorkspace {
-  const tvCurrent = current
-    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+  const normalizedCurrent = current && !current.columns.some(column => column.id === 'deadline')
+    ? { ...current, columns: [...current.columns, DEFAULT_ROLE_DISTRIBUTION_COLUMNS[DEFAULT_ROLE_DISTRIBUTION_COLUMNS.length - 1]] }
+    : current
+  const tvCurrent = normalizedCurrent
+    ? ({ ...normalizedCurrent, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
     : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_ROLE_DISTRIBUTION_COLUMNS } as TeamVisionWorkspace)
   const tvPatch = patch as TeamVisionWorkspacePatch
   const next = applyTeamVisionWorkspacePatch(tvCurrent, tvPatch)
@@ -2040,11 +2059,24 @@ const DEFAULT_TEAM_RULES_COLUMNS: TeamVisionWorkspaceColumn[] = [
   { id: 'category',    label: '분류',         color: '#E8F0FE' },
   { id: 'name',        label: '규칙명',       color: '#E8F0FE' },
   { id: 'description', label: '설명',         color: '#E8F0FE' },
-  { id: 'violation',   label: '위반 시 조치', color: '#E8F0FE' },
+  { id: 'feasibility', label: '실천 방법',     color: '#E8F0FE' },
 ]
 
 function emptyTeamRulesWorkspace(): TeamRulesWorkspace {
   return { columns: DEFAULT_TEAM_RULES_COLUMNS, rows: [], blocks: [] }
+}
+
+function normalizeTeamRulesWorkspace(workspace: TeamRulesWorkspace): TeamRulesWorkspace {
+  const columns = workspace.columns.map(column => column.id === 'violation'
+    ? { ...column, id: 'feasibility', label: '실천 방법' }
+    : column)
+  const rows = workspace.rows.map(row => {
+    const legacyValue = row.cells.violation
+    if (!legacyValue || row.cells.feasibility) return row
+    const cells = Object.fromEntries(Object.entries(row.cells).filter(([key]) => key !== 'violation'))
+    return { ...row, cells: { ...cells, feasibility: legacyValue } }
+  })
+  return { ...workspace, columns, rows }
 }
 
 export type TeamRulesWorkspacePatch =
@@ -2063,8 +2095,9 @@ function applyTeamRulesWorkspacePatch(
   current: TeamRulesWorkspace | undefined,
   patch: TeamRulesWorkspacePatch,
 ): TeamRulesWorkspace {
-  const tvCurrent = current
-    ? ({ ...current, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
+  const normalizedCurrent = current ? normalizeTeamRulesWorkspace(current) : undefined
+  const tvCurrent = normalizedCurrent
+    ? ({ ...normalizedCurrent, teamVision: '', coreKeywords: [] } as TeamVisionWorkspace)
     : ({ ...emptyTeamVisionWorkspace(), columns: DEFAULT_TEAM_RULES_COLUMNS } as TeamVisionWorkspace)
   const next = applyTeamVisionWorkspacePatch(tvCurrent, patch as TeamVisionWorkspacePatch)
   return { columns: next.columns, rows: next.rows, blocks: next.blocks, updatedBy: next.updatedBy, updatedAt: next.updatedAt }

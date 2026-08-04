@@ -19,11 +19,11 @@ export interface StageInfo {
 }
 
 export const STAGES: StageInfo[] = [
-  { code: 'T',  label: '팀준비',    description: '협력의 밭을 일구는 시간',            activities: ['T-1-1','T-1-2','T-2-1','T-2-2','T-2-3'] },
-  { code: 'A',  label: '분석',      description: '우리 땅을 살피고 씨앗을 고르는 시간', activities: ['A-1-1','A-1-2','A-2-1','A-2-2','A-2-3'] },
-  { code: 'Ds', label: '설계',      description: '배움의 텃밭을 함께 그려가는 시간',    activities: ['Ds-1-1','Ds-1-2','Ds-1-3','Ds-2-1','Ds-2-2'] },
-  { code: 'DI', label: '개발·실행', description: '우리의 협력이 꽃피우는 시간',         activities: ['DI-1-1','DI-2-1'] },
-  { code: 'E',  label: '평가',      description: '우리의 열매를 거두는 시간',           activities: ['E-1-1','E-2-1'] },
+  { code: 'T',  label: '팀준비',    description: '공동 비전·방향·역할·규칙·일정 합의', activities: ['T-1-1','T-1-2','T-2-1','T-2-2','T-2-3'] },
+  { code: 'A',  label: '분석',      description: '주제·교육과정·핵심 아이디어·목표 분석', activities: ['A-1-1','A-1-2','A-2-1','A-2-2','A-2-3'] },
+  { code: 'Ds', label: '설계',      description: '평가·문제상황·활동·도구·지원 설계', activities: ['Ds-1-1','Ds-1-2','Ds-1-3','Ds-2-1','Ds-2-2'] },
+  { code: 'DI', label: '개발·실행', description: '자료 개발·검토·수업 실행·기록', activities: ['DI-1-1','DI-2-1'] },
+  { code: 'E',  label: '평가',      description: '학습 증거와 협력 과정에 기반한 성찰·개선', activities: ['E-1-1','E-2-1'] },
 ]
 
 // 개인 설계(solo) 모드에서 화면·진행률 계산에서 제외하는 활동 6종 (협력 전용 성격이 강한 활동).
@@ -38,7 +38,7 @@ export type ActivityCode =
   | 'DI-1-1' | 'DI-2-1'
   | 'E-1-1' | 'E-2-1'
 
-// 화면·대화 표시용 활동 번호 (가이드 문서 260619 피드백판 체계).
+// 화면·대화 표시용 활동 번호 (가이드 문서 20260804 최신판 체계).
 // 내부 코드(Firestore 경로·신호·산출물 키)는 데이터 호환을 위해 유지하고, 사용자에게 보이는 번호만 이 매핑을 쓴다.
 // A-2-3(학습자·맥락 분석)은 문서에 없는 앱 고유 활동이라 순서상 A-5로 표시.
 export const ACTIVITY_DISPLAY_CODE: Record<ActivityCode, string> = {
@@ -110,7 +110,7 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'T-2-1': {
     code: 'T-2-1', label: '역할 배분', stage: 'T',
     recommendedSections: [
-      { key: '역할 배분', label: '역할 배분 (교사별 5열 표)', minChars: 20, required: 'any' },
+      { key: '역할 배분', label: '역할 배분 (누가·무엇을·언제까지)', minChars: 20, required: 'any' },
     ],
   },
   'T-2-2': {
@@ -143,23 +143,24 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'A-2-1': {
-    code: 'A-2-1', label: '주제 상세 분석·성취기준 재구조화', stage: 'A',
+    code: 'A-2-1', label: '주제의 상세 내용 분석', stage: 'A',
     // ⚠️ key는 `성취기준분석표` (띄어쓰기 없음). ChatPanel.tsx:660 extractA21TableForSave 출력과 1:1 일치.
     // ARTIFACT_UPDATE 신호 경로를 쓰지 않는 유일한 활동이라 Task #10 프롬프트 힌트도 별도 포맷 필요.
     recommendedSections: [
-      { key: '성취기준분석표', label: '핵심아이디어 + 성취기준 분석표 + 융합 분석', minChars: 20, required: 'any' },
+      { key: '성취기준분석표', label: '지식·이해 / 과정·기능 / 가치·태도 분석과 성취기준 재구조화', minChars: 20, required: 'any' },
     ],
   },
   'A-2-2': {
-    code: 'A-2-2', label: '통합 수업목표 진술', stage: 'A',
+    code: 'A-2-2', label: '핵심 아이디어 도출 및 통합 수업목표 진술', stage: 'A',
     recommendedSections: [
       { key: '공통 핵심 아이디어', label: '공통 핵심 아이디어 (1문장)',      minChars: 10, required: 'any' },
+      { key: '탐구 질문',          label: '핵심 아이디어를 학생 언어로 바꾼 탐구 질문', minChars: 10, required: 'any' },
       { key: '통합 수업목표',     label: '통합 수업목표 (단일 문장)',       minChars: 15, required: 'any' },
       { key: '교과별 수업목표',   label: '교과별 수업목표 (태그 포함 표)', minChars: 20, required: 'any' },
     ],
   },
   'A-2-3': {
-    code: 'A-2-3', label: '학습자·맥락 분석', stage: 'A', isGuardrailSource: true,
+    code: 'A-2-3', label: '학습자·맥락 분석 (앱 확장)', stage: 'A', isGuardrailSource: true,
     // Ds 가드레일 카드 연동 시 이 단일 key를 참조.
     recommendedSections: [
       { key: '학습자 프로필', label: '학습자 프로필 (팀 공통 + 교사별 맞춤)', minChars: 20, required: 'any' },
@@ -168,14 +169,14 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'Ds-1-1': {
     code: 'Ds-1-1', label: '평가 설계', stage: 'Ds', isBackwardDesignFirst: true,
     recommendedSections: [
-      { key: '평가 계획', label: '평가 계획 (평가 항목·방법·시점·상중하 루브릭)', minChars: 20, required: 'any' },
+      { key: '평가 계획', label: '평가 계획 (확인 지점·요소·방법·시점·주체)', minChars: 20, required: 'any' },
     ],
   },
   'Ds-1-2': {
     code: 'Ds-1-2', label: '문제 상황 설정', stage: 'Ds', isGuardrailTarget: true,
     recommendedSections: [
       { key: '문제상황',  label: '문제상황 시나리오 (제목·실제성·학습내용+산출물·청중+행위)', minChars: 20, required: 'any' },
-      { key: '핵심 질문', label: '탐구 질문 (Driving Question)',                          minChars: 10, required: 'any' },
+      { key: '핵심 질문', label: 'A-4 탐구 질문과 연결한 문제상황 질문',                    minChars: 10, required: 'any' },
     ],
   },
   'Ds-1-3': {
@@ -186,9 +187,10 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
     ],
   },
   'Ds-2-1': {
-    code: 'Ds-2-1', label: '자료와 도구 연결', stage: 'Ds', isGuardrailTarget: true,
+    code: 'Ds-2-1', label: '도구 연결', stage: 'Ds', isGuardrailTarget: true,
     recommendedSections: [
-      { key: '활동별 자료 설계', label: '활동별 자료 설계 (활동·자료·이유·탐색/개발·공동/개별·담당·일정)', minChars: 20, required: 'any' },
+      { key: '활동별 자료 설계', label: '도구 연결 (기능·탐색/개발·담당·일정)', minChars: 20, required: 'any' },
+      { key: 'Human-AI Agency', label: '학생·AI·교사의 역할 경계', minChars: 20, required: 'any' },
       { key: 'AI 점검',          label: 'AI 점검 (학생 수준·출처·저작권·개인정보·접근성)',              minChars: 20, required: 'any' },
     ],
   },
@@ -203,14 +205,14 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   'DI-1-1': {
     code: 'DI-1-1', label: '자료 탐색·개발', stage: 'DI',
     recommendedSections: [
-      { key: '개발 자료 목록', label: '개발 자료 목록 (자료명·사용 활동·완성 형태·사용 단위·협력 구조·담당·일정)', minChars: 20, required: 'any' },
+      { key: '개발 자료 목록', label: '개발 자료 목록 (자료·탐색/개발·담당·일정·학생 관점 검토)', minChars: 20, required: 'any' },
     ],
   },
   'DI-2-1': {
     code: 'DI-2-1', label: '수업 실행·기록', stage: 'DI',
     recommendedSections: [
-      { key: '주요 상황 기록', label: '주요 상황 기록 (시점·상황·학생 반응·시사점)', minChars: 20, required: 'any' },
-      { key: '종합 시사점',    label: '종합 시사점 (E단계 확인 질문·추가 증거·해석 쟁점)', minChars: 20, required: 'any' },
+      { key: '주요 상황 기록', label: '주요 상황 기록 (시점·상황·학생 반응·증거)', minChars: 20, required: 'any' },
+      { key: 'E단계 확인 질문', label: '해석을 유보하고 E단계에서 확인할 질문', minChars: 10, required: 'any' },
     ],
   },
   'E-1-1':  {
@@ -224,10 +226,11 @@ export const ACTIVITY_META: Record<ActivityCode, ActivityMeta> = {
   },
   'E-2-1':  {
     code: 'E-2-1', label: '협력 과정 성찰', stage: 'E',
-    // 다음 주기 결정(A안/B안)만 필수, 팀 개선안은 선택.
+    // 최신 가이드는 협력 구조의 성찰·개선을 공식 산출물로 두고, 다음 주기 선택은 앱의 선택 기능으로 분리한다.
     requiredSections: [
-      { key: '다음 주기 선택', label: '다음 주기 선택', minChars: 10, required: 'all' },
-      { key: '팀 개선안',      label: '팀 개선안',      minChars: 20, required: 'optional' },
+      { key: '협력 과정 성찰', label: '협력 과정 성찰', minChars: 20, required: 'all' },
+      { key: '팀 개선안',      label: '다음 설계를 위한 운영 원칙 개선', minChars: 20, required: 'all' },
+      { key: '다음 주기 선택', label: '다음 주기 선택 (앱 선택 기능)', minChars: 10, required: 'optional' },
     ],
   },
 }
@@ -427,10 +430,10 @@ export interface Project {
   // 문제상황 워크스페이스 — Ds-1-2 수동 공동 편집 초안 (기존 problemSituationData와 별개).
   problemSituationWorkspace?: ProblemSituationWorkspace
   // 역할 배분 워크스페이스 — T-2-1 수동 공동 편집 초안.
-  // 5열 표(교사명·담당교과·강점·전문성·팀내역할·담당업무) + 자유 블록. Presence는 projects/{id}/roleDistributionPresence subcollection로 분리.
+  // 6열 표(교사명·담당교과·강점·전문성·팀내역할·담당업무·완료시점) + 자유 블록. Presence는 projects/{id}/roleDistributionPresence subcollection로 분리.
   roleDistributionWorkspace?: RoleDistributionWorkspace
   // 팀 규칙 워크스페이스 — T-2-2 수동 공동 편집 초안.
-  // 4열 표(분류·규칙명·설명·위반 시 조치) + 자유 블록. Presence는 projects/{id}/teamRulesPresence subcollection로 분리.
+  // 4열 표(분류·규칙명·설명·실천 방법) + 자유 블록. Presence는 projects/{id}/teamRulesPresence subcollection로 분리.
   teamRulesWorkspace?: TeamRulesWorkspace
   // 팀 일정 워크스페이스 — T-2-3 수동 공동 편집 초안.
   // 4열 표(기간·활동·산출/마감·담당자) + 자유 블록. Presence는 projects/{id}/teamSchedulePresence subcollection로 분리.
@@ -484,6 +487,7 @@ export interface CurriculumSheetRow {
   standard: string              // 성취기준 코드 + 텍스트
   knowledge: string             // 지식·이해
   processFunction: string       // 과정·기능
+  valueAttitude?: string        // 가치·태도
   agentLessonExample?: string   // Agent 추천 수업 예시 (지식 그래프 관계 분석 기반)
   description: string           // 수업내용 설명 (자유 입력)
   updatedBy?: string            // 마지막 수정자 이름
@@ -555,6 +559,8 @@ export interface IntegratedGoalWorkspace {
   rows: IntegratedGoalWorkspaceRow[]
   /** 공통 핵심 아이디어 (단일 문장) */
   commonCoreIdea: string
+  /** 핵심 아이디어를 학생의 언어로 바꾼 개방형 탐구 질문 */
+  inquiryQuestion: string
   /** 통합 수업목표 (단일 문장, "학생은 ~ 할 수 있다") */
   integratedGoal: string
   /** 핵심 키워드 (수렴 키워드, 최대 8개) */
@@ -589,7 +595,7 @@ export interface LessonDesignDirectionWorkspace {
 }
 
 // ─── 평가 계획 워크스페이스 (Ds-1-1 공동 편집) ─────────
-// Ds-1-1에서 "평가 항목·방법·시점·상·중·하" 6열 루브릭 표와 자유 편집 블록을 다루는 수동 편집 상태.
+// Ds-1-1에서 "확인 지점·평가 요소·방법·시점·주체" 5열 기본 평가 표와 자유 편집 블록을 다루는 수동 편집 상태.
 // 최종 저장 시 Ds-1-1 구조화 산출물(Ds11Structured)의 manualWorkspace로 보존된다.
 export type EvaluationPlanWorkspaceColumn = TeamVisionWorkspaceColumn
 export type EvaluationPlanWorkspaceRow = TeamVisionWorkspaceRow
@@ -598,7 +604,7 @@ export type EvaluationPlanWorkspaceBlockType = TeamVisionWorkspaceBlockType
 export type EvaluationPlanWorkspaceTableData = TeamVisionWorkspaceTableData
 
 export interface EvaluationPlanWorkspace {
-  /** 루브릭 표 컬럼 (디폴트: item·method·timing·high·mid·low) */
+  /** 평가 계획 표 컬럼 (디폴트: checkpoint·item·method·timing·actor) */
   columns: EvaluationPlanWorkspaceColumn[]
   /** 표의 행 */
   rows: EvaluationPlanWorkspaceRow[]
@@ -642,7 +648,7 @@ export interface SupportToolWorkspace {
 }
 
 // ─── 역할 배분 워크스페이스 (T-2-1 공동 편집) ─────────────
-// T-2-1에서 5열 역할 배분 표(교사명·담당교과·강점·전문성·팀내역할·담당업무)와
+// T-2-1에서 6열 역할 배분 표(교사명·담당교과·강점·전문성·팀내역할·담당업무·완료시점)와
 // 자유 편집 블록을 함께 다루는 수동 편집 상태.
 // 최종 저장 시 T-2-1 구조화 산출물(T21Structured)의 manualWorkspace로 보존된다.
 // 컬럼/행/블록 타입은 TeamVisionWorkspace와 동일 구조를 재사용 (의미적 분리만 위한 alias).
@@ -653,7 +659,7 @@ export type RoleDistributionWorkspaceBlockType = TeamVisionWorkspaceBlockType
 export type RoleDistributionWorkspaceTableData = TeamVisionWorkspaceTableData
 
 export interface RoleDistributionWorkspace {
-  /** 역할 배분 표의 컬럼 (디폴트 5열: teacherName·subject·strengths·role·responsibilities) */
+  /** 역할 배분 표의 컬럼 (디폴트 6열: teacherName·subject·strengths·role·responsibilities·deadline) */
   columns: RoleDistributionWorkspaceColumn[]
   /** 표의 행 (팀원별 한 줄) */
   rows: RoleDistributionWorkspaceRow[]
@@ -664,7 +670,7 @@ export interface RoleDistributionWorkspace {
 }
 
 // ─── 팀 규칙 워크스페이스 (T-2-2 공동 편집) ──────────────
-// 4열 표(category·name·description·violation) + 자유 블록.
+// 4열 표(category·name·description·feasibility) + 자유 블록.
 export type TeamRulesWorkspaceColumn = TeamVisionWorkspaceColumn
 export type TeamRulesWorkspaceRow = TeamVisionWorkspaceRow
 export type TeamRulesWorkspaceBlock = TeamVisionWorkspaceBlock

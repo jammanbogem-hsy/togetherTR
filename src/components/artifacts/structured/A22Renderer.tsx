@@ -23,6 +23,7 @@ function HighlightedGoal({ text }: { text: string }) {
 export function A22Renderer({ data }: { data: A22Structured }) {
   const commonCoreIdea = data?.commonCoreIdea ?? ''
   const integratedGoal = data?.integratedGoal ?? ''
+  const inquiryQuestion = data?.inquiryQuestion ?? ''
   const subjectGoals = data?.subjectGoals ?? []
   const keywords = data?.convergentKeywords ?? []
   const method = data?.method
@@ -46,7 +47,19 @@ export function A22Renderer({ data }: { data: A22Structured }) {
         )}
       </div>
 
-      {/* 2. 통합 수업목표 (단일 문장) — 다른 산출물의 강조 카드(예: 주제 선정의 선정 주제 박스) 톤에 맞춰
+      {/* 2. 핵심 아이디어를 학생의 언어로 바꾼 탐구 질문 */}
+      <div className="overflow-hidden rounded-2xl border border-[#A8DAB5] bg-white">
+        <div className="border-b border-[#A8DAB5] bg-[#E6F4EA] px-4 py-2.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[#137333]">탐구 질문</span>
+        </div>
+        {inquiryQuestion ? (
+          <p className="px-4 py-3 text-sm font-semibold leading-relaxed text-[#202124]">{inquiryQuestion}</p>
+        ) : (
+          <div className="px-4 py-4 text-sm text-[#9AA0A6]">아직 탐구 질문이 정해지지 않았습니다</div>
+        )}
+      </div>
+
+      {/* 3. 통합 수업목표 (단일 문장) — 다른 산출물의 강조 카드(예: 주제 선정의 선정 주제 박스) 톤에 맞춰
           외곽·헤더는 절제된 연파랑, 본문에서 진파랑 텍스트로 핵심을 부각한다. */}
       <div className="rounded-2xl border border-[#1A73E8]/30 overflow-hidden bg-white">
         <div className="bg-[#E8F0FE] px-4 py-2.5 border-b border-[#1A73E8]/20">

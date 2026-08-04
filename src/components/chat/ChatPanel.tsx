@@ -56,10 +56,10 @@ import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, Chat,
+  ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, ArrowDown, Chat,
   Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler, PencilSimple,
 } from '@phosphor-icons/react'
 import dynamic from 'next/dynamic'
@@ -308,12 +308,12 @@ function OptionsMessage({
   }
 
   return (
-    <div className="flex gap-2 mb-3">
-      <div className="w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
-        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
+    <article className="flex gap-2 mb-3" aria-label="AI 공동설계자의 선택지 제안">
+      <div className="chat-avatar-animated w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
+        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }} aria-hidden="true">
         AI
       </div>
-      <div className="max-w-[85%] flex flex-col gap-3 flex-1">
+      <div className="max-w-[min(88%,46rem)] flex flex-col gap-3 flex-1">
         {pre && (
           <div className="bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
             <MarkdownContent text={pre} />
@@ -430,7 +430,7 @@ function OptionsMessage({
           </div>
         )}
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -490,6 +490,45 @@ function childrenToText(children: React.ReactNode): string {
   return ''
 }
 
+const markdownHeadingComponents: Pick<Components, 'h1' | 'h2' | 'h3'> = {
+  h1: ({ children }) => (
+    <h1 className="mt-4 mb-2 text-[17px] font-extrabold leading-snug tracking-[-0.01em] first:mt-0">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mt-3.5 mb-1.5 text-base font-extrabold leading-snug first:mt-0">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mt-3 mb-1 text-[15px] font-bold leading-snug first:mt-0">
+      {children}
+    </h3>
+  ),
+}
+
+function HighlightedStrong({ children, dark, pendingAware = false }: {
+  children?: React.ReactNode
+  dark: boolean
+  pendingAware?: boolean
+}) {
+  const text = childrenToText(children)
+  const isPending = pendingAware && /미결|보류|결정 필요|추후 결정/.test(text)
+  return (
+    <strong className={cn(
+      'box-decoration-clone rounded-md px-1.5 py-0.5 font-bold leading-relaxed',
+      dark
+        ? 'bg-white/25 text-white'
+        : isPending
+          ? 'bg-[#FFF3E0] text-[#C2410C]'
+          : 'bg-[#E8F0FE] text-[#1557B0]',
+    )}>
+      {children}
+    </strong>
+  )
+}
+
 function MarkdownContent({ text, dark = false, standardTextMap }: { text: string; dark?: boolean; standardTextMap?: Record<string, string> }) {
   // AI가 <br> 태그를 생성하는 경우 줄바꿈으로 치환
   // AI가 첫 줄에 [탐색] [팀+AI] 같은 활동유형/행위주체 태그를 출력하는 경우 제거
@@ -511,10 +550,11 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
   const guide = splitGuideLines(sanitized)
 
   if (guide) {
-    const strongComp = (isDark: boolean) => ({
+    const strongComp = (isDark: boolean): Components => ({
+      ...markdownHeadingComponents,
       p: ({ children }: { children?: React.ReactNode }) => <p className="mb-1 leading-relaxed">{children}</p>,
       strong: ({ children }: { children?: React.ReactNode }) => (
-        <span className={cn('inline-block px-1.5 py-0.5 rounded-md text-[13px] font-semibold leading-snug mx-0.5', isDark ? 'bg-white/25 text-white' : 'bg-[#E8F0FE] text-[#1A73E8]')}>{children}</span>
+        <HighlightedStrong dark={isDark}>{children}</HighlightedStrong>
       ),
     })
     return (
@@ -556,23 +596,11 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
+        ...markdownHeadingComponents,
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
-        strong: ({ children }) => {
-          const text = typeof children === 'string' ? children : String(children ?? '')
-          const isPending = /미결|보류|결정 필요|추후 결정/.test(text)
-          return (
-            <span className={cn(
-              'inline-block px-1.5 py-0.5 rounded-md text-[13px] font-semibold leading-snug mx-0.5',
-              dark
-                ? 'bg-white/25 text-white'
-                : isPending
-                  ? 'bg-[#FFF3E0] text-[#E65100]'   // 미결·보류 → 주황 파스텔
-                  : 'bg-[#E8F0FE] text-[#1A73E8]'   // 일반 강조 → 파란 파스텔
-            )}>
-              {children}
-            </span>
-          )
-        },
+        strong: ({ children }) => (
+          <HighlightedStrong dark={dark} pendingAware>{children}</HighlightedStrong>
+        ),
         em: ({ children }) => <em className="italic">{children}</em>,
         ul: ({ children }) => <ul className="mt-1.5 mb-1.5 space-y-1 pl-4 list-disc">{children}</ul>,
         ol: ({ children }) => <ol className="mt-1.5 mb-1.5 space-y-1.5 pl-4 list-decimal">{children}</ol>,
@@ -583,14 +611,18 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
           </code>
         ),
         blockquote: ({ children }) => (
-          <blockquote className={cn(
-            'my-3 rounded-xl border-l-4 px-4 py-3 shadow-sm [&>p:last-child]:mb-0',
-            dark
-              ? 'border-white/70 bg-white/15 text-white'
-              : 'border-[#1A73E8] bg-white/75 text-[#1A2E5A]',
-          )}>
+          <aside
+            role="note"
+            aria-label="핵심 안내"
+            className={cn(
+              'my-3 rounded-xl border-l-4 px-4 py-3 shadow-sm [&>p:last-child]:mb-0',
+              dark
+                ? 'border-white/70 bg-white/15 text-white'
+                : 'border-[#1A73E8] bg-white/75 text-[#1A2E5A]',
+            )}
+          >
             {children}
-          </blockquote>
+          </aside>
         ),
         // 테이블 렌더링 — 내부 셀은 자연스럽게 wrap, 정말 넓을 때만 overflow-x 스크롤 (말풍선 밖으로 흐르지 않도록)
         table: ({ children }) => (
@@ -847,11 +879,16 @@ function ActivityTag({ type }: { type: ActivityType }) {
 // ─── 공통 컨텍스트 메뉴 래퍼 (passthrough — 실제 컨텍스트 메뉴는 상위 Level(3101)에서 통합 처리) ──
 // 과거에는 여기서 "답글만" 메뉴를 띄웠으나, 현재는 MessageBubble 바깥 래퍼가
 // 답장/중요저장/복사 통합 메뉴를 제공하므로 이중 메뉴 충돌을 막기 위해 passthrough로 유지.
-function ContextMenuWrapper({ children, className }: {
+function ContextMenuWrapper({ children, className, asArticle = false, ariaLabel }: {
   children: React.ReactNode
   onReply?: () => void     // 시그니처 호환성만 유지 (미사용)
   className?: string
+  asArticle?: boolean
+  ariaLabel?: string
 }) {
+  if (asArticle) {
+    return <article className={className} aria-label={ariaLabel}>{children}</article>
+  }
   return <div className={className}>{children}</div>
 }
 
@@ -879,23 +916,41 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
     return (r * 299 + g * 587 + b * 114) / 1000 > 160
   })()
   const textOnColor = isLightColor ? '#374151' : '#ffffff'
+  const accessibleSender = isUser ? (senderName ?? '팀원') : 'AI 공동설계자'
+  const messageAriaLabel = `${accessibleSender}의 메시지${!isUser && activityType ? ` · ${activityType}` : ''}`
 
   return (
-    <ContextMenuWrapper onReply={onReply} className={cn('flex gap-2 mb-3', alignRight ? 'flex-row-reverse' : 'flex-row')}>
+    <ContextMenuWrapper
+      asArticle
+      ariaLabel={messageAriaLabel}
+      onReply={onReply}
+      className={cn('flex gap-2 mb-3', alignRight ? 'flex-row-reverse' : 'flex-row')}
+    >
       {/* 아바타 — 상단 정렬, 크게 */}
       <div
-        className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
+        className="chat-avatar-animated w-11 h-11 rounded-full flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
         style={{ backgroundColor: avatarColor, color: textOnColor, animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
         title={senderName}
+        aria-hidden="true"
       >
         {isUser ? (senderName?.slice(0, 1) ?? '?') : 'AI'}
       </div>
 
-      <div className={cn('max-w-[72%] min-w-0 space-y-0.5', alignRight ? 'items-end' : 'items-start', 'flex flex-col')}>
+      <div className={cn(
+        'min-w-0 space-y-0.5',
+        isUser ? 'max-w-[72%]' : 'w-fit max-w-[min(88%,46rem)]',
+        alignRight ? 'items-end' : 'items-start',
+        'flex flex-col',
+      )}>
         {isUser && !isSelf && senderName && (
           <span className="text-xs font-bold px-1 text-gray-700">{senderName}</span>
         )}
-        {!isUser && activityType && <ActivityTag type={activityType} />}
+        {!isUser && (
+          <div className="flex items-center gap-1.5 px-1">
+            <span className="text-xs font-bold text-[#3C4043]">AI 공동설계자</span>
+            {activityType && <ActivityTag type={activityType} />}
+          </div>
+        )}
 
         {/* 인용 원문 */}
         {replyTo && (
@@ -911,7 +966,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
         )}
 
         <div className={cn(
-          'px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
+          'max-w-full px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
           !isUser && 'rounded-tl-none border-l-[3px]',
           isUser && (alignRight ? 'rounded-tr-none' : 'rounded-tl-none'),
         )}
@@ -936,7 +991,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
 // ─── AI 분석 결과 버블 ────────────────────────────────
 function AnalysisBubble({ text }: { text: string }) {
   return (
-    <div className="mx-0 my-3">
+    <article className="mx-0 my-3" aria-label="AI 공동설계자의 팀 토의 분석 결과">
       <div className="bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-2">
           <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
@@ -948,7 +1003,7 @@ function AnalysisBubble({ text }: { text: string }) {
           <MarkdownContent text={text} />
         </div>
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -957,7 +1012,7 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
   if (!text) return null
   if (isAnalysis) {
     return (
-      <div className="mx-0 my-3">
+      <article className="mx-0 my-3" aria-label="AI 공동설계자가 팀 토의를 분석하는 중" aria-busy="true" aria-live="off">
         <div className="bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-6 h-6 rounded-full bg-[#00897B] flex items-center justify-center">
@@ -970,22 +1025,22 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
             <span className="inline-block w-1 h-4 bg-[#00897B] animate-pulse ml-0.5 align-middle" />
           </div>
         </div>
-      </div>
+      </article>
     )
   }
   const s = STAGE_BUBBLE[stage ?? 'T'] ?? STAGE_BUBBLE['T']
   return (
-    <div className="flex gap-2 mb-3">
-      <div className="w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
-        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
+    <article className="flex gap-2 mb-3" aria-label="AI 공동설계자가 응답하는 중" aria-busy="true" aria-live="off">
+      <div className="chat-avatar-animated w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
+        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }} aria-hidden="true">
         AI
       </div>
-      <div className="max-w-[75%] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] text-sm leading-relaxed"
+      <div className="w-fit max-w-[min(88%,46rem)] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] text-sm leading-relaxed"
         style={{ backgroundColor: s.bg, color: s.text, borderColor: s.border }}>
         <MarkdownContent text={text} />
         <span className="inline-block w-1 h-4 animate-pulse ml-0.5 align-middle" style={{ backgroundColor: s.border }} />
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -993,8 +1048,8 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
 function AIIdleBubble() {
   return (
     <div className="flex gap-2 items-end mb-4">
-      <div className="w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
-        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}>
+      <div className="chat-avatar-animated w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }} aria-hidden="true">
         AI
       </div>
       <div className="bg-[#F1F3F4] px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
@@ -1320,7 +1375,10 @@ function ChatPanelContent() {
   const chatMentionedStds = useMemo(() => {
     return activeGraphCodes.map(c => ({ ...c, source: 'chat' as const }))
   }, [activeGraphCodes])
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const messagesViewportRef = useRef<HTMLDivElement>(null)
+  const shouldFollowLatestRef = useRef(true)
+  const latestAssistantMessageIdRef = useRef<string | null>(null)
+  const [hasNewAIResponse, setHasNewAIResponse] = useState(false)
 
   // 스트리밍 중 Firestore 동기화용 interval ref
   const streamingFlushRef = useRef<NodeJS.Timeout | null>(null)
@@ -1334,6 +1392,9 @@ function ChatPanelContent() {
     setHelpCardMap({})
     setReplyTo(null)
     setCoeditHintActivity(null)  // 활동 전환 시 이전 활동의 공동편집 안내 말풍선 해제
+    shouldFollowLatestRef.current = true
+    latestAssistantMessageIdRef.current = null
+    setHasNewAIResponse(false)
     return () => { if (coeditHintTimerRef.current) clearTimeout(coeditHintTimerRef.current) }
   }, [currentActivity])
 
@@ -1578,9 +1639,40 @@ function ChatPanelContent() {
     })
   }
 
+  const scrollToLatestAIResponse = useCallback(() => {
+    shouldFollowLatestRef.current = true
+    setHasNewAIResponse(false)
+    const viewport = messagesViewportRef.current
+    if (!viewport) return
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
+  }, [])
+
+  const handleMessagesScroll = useCallback(() => {
+    const viewport = messagesViewportRef.current
+    if (!viewport) return
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+    const isNearBottom = distanceFromBottom <= 96
+    shouldFollowLatestRef.current = isNearBottom
+    if (isNearBottom) setHasNewAIResponse(false)
+  }, [])
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingText, remoteStreamingText])
+    const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
+    const latestAssistantId = latestAssistantMessage?.id ?? null
+    const hasCompletedAIResponse = latestAssistantId !== null
+      && latestAssistantId !== latestAssistantMessageIdRef.current
+    latestAssistantMessageIdRef.current = latestAssistantId
+
+    const hasIncomingAIUpdate = Boolean(
+      streamingText || remoteStreamingText || hasCompletedAIResponse,
+    )
+
+    if (shouldFollowLatestRef.current) {
+      scrollToLatestAIResponse()
+    } else if (hasIncomingAIUpdate) {
+      setHasNewAIResponse(true)
+    }
+  }, [messages, streamingText, remoteStreamingText, scrollToLatestAIResponse])
 
   // 다른 팀원의 AI 스트리밍 상태 구독 (사용자별 개별 문서 — 동시 스트리밍 충돌 없음)
   useEffect(() => {
@@ -1890,7 +1982,7 @@ function ChatPanelContent() {
     [projectArtifacts],
   )
   const integratedGoalExistingCoreIdea = useMemo(
-    () => (projectArtifacts?.['A-2-1']?.content as { commonCoreIdea?: string } | undefined)?.commonCoreIdea,
+    () => (projectArtifacts?.['A-2-2']?.content as { commonCoreIdea?: string } | undefined)?.commonCoreIdea,
     [projectArtifacts],
   )
   const integratedGoalCurrentUserColor = useMemo(
@@ -2514,10 +2606,10 @@ ${discussionSummary}
 ---
 
 출력 형식:
-1. 팀이 합의한 규칙 목록 (규칙명 + 구체적 내용 + 위반 시 조치 포함)
+1. 팀이 합의한 규칙 목록 (규칙명 + 구체적 내용 + 가장 여건이 빠듯한 팀원도 지킬 수 있는 실천 방법 포함)
 2. 보완이 필요한 부분 (없으면 생략)
 
-⚠️ 키워드 나열 금지. 규칙 설명과 위반 시 조치를 빠짐없이 포함한다.
+⚠️ 키워드 나열 금지. 규칙 설명과 실천 방법을 빠짐없이 포함하고, 벌이나 강제 조치를 만들지 않는다.
 
 규칙이 충분히 합의되면 응답 맨 끝에 ACTION_CARD로 교사 팀의 허락을 구한다:
 [ACTION_CARD: intent=팀 규칙 저장 제안 | primary=산출물에 저장 | secondary=조금 더 다듬기 | skip=지금은 넘기기]
@@ -3707,7 +3799,7 @@ ${discussionSummary}
   const cornerColor = STAGE_CORNER[project?.currentStage ?? 'T']
 
   return (
-    <div className="flex flex-col h-full overflow-hidden corner-wrap-chat"
+    <div className="chat-motion-decorative flex flex-col h-full overflow-hidden corner-wrap-chat"
       style={{ '--cc': cornerColor, ...(isTeamMode ? { animation: 'teamBorderPulse 2s ease-in-out infinite', boxShadow: 'inset 0 0 0 3px rgba(0, 137, 123, 0.7)' } : {}) } as React.CSSProperties}>
       {isTeamMode && (
         <style>{`
@@ -4088,7 +4180,17 @@ ${discussionSummary}
       })()}
 
       {/* 메시지 목록 — chatFontScale로 메시지 영역만 독립 zoom */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative" style={{ zoom: chatFontScale }}>
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={messagesViewportRef}
+          role="log"
+          aria-label="협력적 수업설계 대화 메시지"
+          aria-relevant="additions"
+          tabIndex={0}
+          onScroll={handleMessagesScroll}
+          className="h-full overflow-y-auto px-4 py-4 space-y-1 relative focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1A73E8]"
+          style={{ zoom: chatFontScale }}
+        >
         {visibleMessages.length === 0 && !streamingText && !isLoading && !messagesLoaded && (
           <div className="flex items-center justify-center h-full text-[#DADCE0]">
             <span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={28} /></span>
@@ -4762,6 +4864,7 @@ ${discussionSummary}
               if (r.standard?.trim()) parts.push(`성취기준: ${r.standard.trim()}`)
               if (r.knowledge?.trim()) parts.push(`지식·이해: ${r.knowledge.trim()}`)
               if (r.processFunction?.trim()) parts.push(`과정·기능: ${r.processFunction.trim()}`)
+              if (r.valueAttitude?.trim()) parts.push(`가치·태도: ${r.valueAttitude.trim()}`)
               return parts.join(' / ')
             })
             .join('\n') || undefined}
@@ -5226,7 +5329,18 @@ ${discussionSummary}
           </div>
         )}
 
-        <div ref={bottomRef} />
+        </div>
+        {hasNewAIResponse && (
+          <button
+            type="button"
+            onClick={scrollToLatestAIResponse}
+            className="absolute bottom-3 left-1/2 z-50 flex min-h-10 -translate-x-1/2 items-center gap-1.5 rounded-full border border-[#AECBFA] bg-white px-4 py-2 text-xs font-bold text-[#1557B0] shadow-lg transition-colors hover:bg-[#E8F0FE] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
+            aria-label="새 AI 응답으로 이동"
+          >
+            <ArrowDown size={14} weight="bold" aria-hidden="true" />
+            새 AI 응답
+          </button>
+        )}
       </div>
 
       {/* 팀 채팅 진행 중 스트립 */}
@@ -5464,7 +5578,7 @@ ${discussionSummary}
             onClick={handleSend}
             disabled={!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice)}
             className={cn(
-              'w-12 h-[70px] text-white flex items-center justify-center flex-shrink-0',
+              'chat-motion-decorative w-12 h-[70px] text-white flex items-center justify-center flex-shrink-0',
               'disabled:opacity-40 disabled:cursor-not-allowed',
               isTeamMode ? 'bg-[#00897B]'
                 : isWaitingForChoice ? 'bg-[#E65100]'

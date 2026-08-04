@@ -84,13 +84,13 @@ function renderArtifactContent(content: Record<string, unknown>): string {
     return ''
   }
   if (content._schema === 'T-2-1') {
-    const roles = content.roles as Array<{ teacherName: string; subject: string; strengths: string; role: string; responsibilities: string }> | undefined
-    if (roles?.length) return '**역할 배분**\n\n| 교사명 | 담당 교과 | 강점·전문성 | 팀 내 역할 | 담당 업무 |\n| --- | --- | --- | --- | --- |\n' + roles.map(r => `| ${r.teacherName} | ${r.subject || '-'} | ${r.strengths || '-'} | ${r.role} | ${r.responsibilities} |`).join('\n')
+    const roles = content.roles as Array<{ teacherName: string; subject: string; strengths: string; role: string; responsibilities: string; deadline?: string }> | undefined
+    if (roles?.length) return '**역할 배분**\n\n| 교사명 | 담당 교과 | 강점·전문성 | 팀 내 역할 | 담당 업무 | 완료 시점 |\n| --- | --- | --- | --- | --- | --- |\n' + roles.map(r => `| ${r.teacherName} | ${r.subject || '-'} | ${r.strengths || '-'} | ${r.role} | ${r.responsibilities} | ${r.deadline || '-'} |`).join('\n')
     return ''
   }
   if (content._schema === 'T-2-2') {
-    const rules = content.rules as Array<{ category: string; name: string; description: string; violation: string }> | undefined
-    if (rules?.length) return '**팀 규칙**\n\n| 범주 | 규칙명 | 설명 | 위반 시 |\n| --- | --- | --- | --- |\n' + rules.map(r => `| ${r.category || '-'} | ${r.name} | ${r.description} | ${r.violation || '-'} |`).join('\n')
+    const rules = content.rules as Array<{ category: string; name: string; description: string; feasibility?: string; violation?: string }> | undefined
+    if (rules?.length) return '**팀 규칙**\n\n| 범주 | 규칙명 | 설명 | 실천 방법 |\n| --- | --- | --- | --- |\n' + rules.map(r => `| ${r.category || '-'} | ${r.name} | ${r.description} | ${r.feasibility || r.violation || '-'} |`).join('\n')
     return ''
   }
   if (content._schema === 'T-2-3') {
@@ -109,14 +109,19 @@ function renderArtifactContent(content: Record<string, unknown>): string {
     return parts.join('\n\n')
   }
   if (content._schema === 'A-2-1') {
-    const rows = content.rows as Array<{ subject: string; coreIdea: string; knowledgeUnderstanding: string; processFunction: string; isCommon?: boolean }> | undefined
-    if (rows?.length) return '**핵심아이디어 분석표**\n\n| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |\n| --- | --- | --- | --- |\n' + rows.map(r => `| ${r.isCommon ? '**' + (r.subject || '공통') + '**' : r.subject} | ${r.coreIdea} | ${r.knowledgeUnderstanding || '-'} | ${r.processFunction || '-'} |`).join('\n')
-    return ''
+    const parts: string[] = []
+    const rows = content.rows as Array<{ subject: string; standard?: string; coreIdea: string; knowledgeUnderstanding: string; processFunction: string; valueAttitude?: string; contribution?: string; isCommon?: boolean }> | undefined
+    if (rows?.length) parts.push('**주제의 상세 내용 분석표**\n\n| 교과 | 성취기준·핵심 아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 공통·고유 기여 |\n| --- | --- | --- | --- | --- | --- | --- |\n' + rows.map(r => `| ${r.subject} | ${[r.standard, r.coreIdea].filter(Boolean).join(' / ') || '-'} | ${r.knowledgeUnderstanding || '-'} | ${r.processFunction || '-'} | ${r.valueAttitude || '-'} | ${r.contribution || (r.isCommon ? '공통 요소' : '교과 고유 요소')} |`).join('\n'))
+    if (content.commonElements) parts.push(`**공통 요소**\n\n${content.commonElements}`)
+    if (content.reconstructedStandard) parts.push(`**재구성 성취기준**\n\n${content.reconstructedStandard}`)
+    return parts.join('\n\n')
   }
   if (content._schema === 'A-2-2') {
     const parts: string[] = []
     const cci = (content.commonCoreIdea as string | undefined)?.trim()
     if (cci) parts.push(`**공통 핵심 아이디어**\n\n${cci}`)
+    const inquiryQuestion = (content.inquiryQuestion as string | undefined)?.trim()
+    if (inquiryQuestion) parts.push(`**탐구 질문**\n\n${inquiryQuestion}`)
     // 신규 single-string 형식과 레거시 array 형식 모두 수용
     const integratedSingle = (content.integratedGoal as string | undefined)?.trim()
     const integratedLegacy = content.integratedGoals as string[] | undefined

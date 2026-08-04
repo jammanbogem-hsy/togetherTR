@@ -428,12 +428,14 @@ function extractDesignPrinciplesFromChat(
 // ─── Ds-1-1 평가 계획 수립 ───────────────────────────────────────────────
 
 export interface Ds11RubricRow {
-  item: string    // 평가 항목
-  method: string  // 평가 방법
-  timing: string  // 평가 시점 (과정/결과 등)
-  high: string    // 상
-  mid: string     // 중
-  low: string     // 하
+  checkpoint: string // 확인 지점(최종 결과/활동 과정의 구체 장면)
+  item: string       // 평가 요소
+  method: string     // 평가 방법
+  timing: string     // 평가 시점
+  actor: string      // 평가 주체
+  high?: string      // 선택형 상세 루브릭(레거시 호환)
+  mid?: string
+  low?: string
 }
 
 export interface Ds11Structured {
@@ -458,19 +460,32 @@ function parseDs11Rubric(raw: string): Ds11RubricRow[] {
   const rows: Ds11RubricRow[] = []
   const lines = raw.split('\n').filter(l => l.trim().startsWith('|'))
   if (lines.length < 3) return rows
-  // 헤더 + 구분선 제거 후 데이터 행
-  const dataLines = lines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1)
+  const contentLines = lines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim()))
+  const headers = (contentLines[0] ?? '').replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
+  const dataLines = contentLines.slice(1)
+  const indexOfHeader = (...patterns: RegExp[]) => headers.findIndex(header => patterns.some(pattern => pattern.test(header)))
+  const checkpointIndex = indexOfHeader(/확인\s*지점/, /평가\s*장면/)
+  const itemIndex = indexOfHeader(/평가\s*(?:요소|항목)/)
+  const methodIndex = indexOfHeader(/평가\s*방법/)
+  const timingIndex = indexOfHeader(/평가\s*시점/, /^시점$/)
+  const actorIndex = indexOfHeader(/평가\s*주체/, /^주체$/)
+  const highIndex = indexOfHeader(/^상$/, /상\s*수준/)
+  const midIndex = indexOfHeader(/^중$/, /중\s*수준/)
+  const lowIndex = indexOfHeader(/^하$/, /하\s*수준/)
+  const hasLatestBase = checkpointIndex >= 0 || actorIndex >= 0
   for (const line of dataLines) {
     const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
     // parseTableRows와 동일 가드 — 선택지·확정 안내 행은 루브릭 콘텐츠가 아님
     if (cells.length >= 1 && cells[0] && !isNonContentLabel(cells[0])) {
       rows.push({
-        item: cells[0] ?? '',
-        method: cells[1] ?? '',
-        timing: cells[2] ?? '',
-        high: cells[3] ?? '',
-        mid: cells[4] ?? '',
-        low: cells[5] ?? '',
+        checkpoint: checkpointIndex >= 0 ? cells[checkpointIndex] ?? '' : cells[0] ?? '',
+        item: itemIndex >= 0 ? cells[itemIndex] ?? '' : cells[0] ?? '',
+        method: methodIndex >= 0 ? cells[methodIndex] ?? '' : cells[1] ?? '',
+        timing: timingIndex >= 0 ? cells[timingIndex] ?? '' : cells[2] ?? '',
+        actor: actorIndex >= 0 ? cells[actorIndex] ?? '' : '',
+        high: highIndex >= 0 ? cells[highIndex] ?? '' : hasLatestBase ? '' : cells[3] ?? '',
+        mid: midIndex >= 0 ? cells[midIndex] ?? '' : hasLatestBase ? '' : cells[4] ?? '',
+        low: lowIndex >= 0 ? cells[lowIndex] ?? '' : hasLatestBase ? '' : cells[5] ?? '',
       })
     }
   }
@@ -558,6 +573,7 @@ export interface T21Role {
   strengths: string
   role: string
   responsibilities: string
+  deadline?: string
 }
 
 export interface T21Structured {
@@ -575,16 +591,16 @@ export function buildT21Structured(
   const raw = (sections['역할 배분'] ?? '').trim()
   if (raw) result.roles = parseTableRows(raw, 5).map(cells => ({
     teacherName: cells[0] || '', subject: cells[1] || '', strengths: cells[2] || '',
-    role: cells[3] || '', responsibilities: cells[4] || '',
+    role: cells[3] || '', responsibilities: cells[4] || '', deadline: cells[5] || '',
   }))
   if (result.roles.length === 0) {
-    // 채팅 fallback: AI 응답에서 5열 표 추출
+    // 채팅 fallback: 최신 6열 표(레거시 5열도 허용) 추출
     for (const msg of [...chatMessages.filter(m => m.role === 'assistant')].reverse()) {
       const rows = parseTableRows(msg.content, 5)
       if (rows.length > 0) {
         result.roles = rows.map(cells => ({
           teacherName: cells[0] || '', subject: cells[1] || '', strengths: cells[2] || '',
-          role: cells[3] || '', responsibilities: cells[4] || '',
+          role: cells[3] || '', responsibilities: cells[4] || '', deadline: cells[5] || '',
         }))
         break
       }
@@ -599,7 +615,8 @@ export interface T22Rule {
   category: string    // [소통], [시간] 등
   name: string
   description: string
-  violation: string   // 위반 시 조치
+  feasibility: string // 가장 빠듯한 팀원도 지킬 수 있게 조정한 실천 방법
+  violation?: string  // 레거시 산출물 읽기 전용
 }
 
 export interface T22Structured {
@@ -642,8 +659,8 @@ function parseRules(raw: string): T22Rule[] {
     }
     // 새 규칙 항목 시작 감지
     const isNewRule = /^\d+\.\s*/.test(trimmed) || /^\*\*\[/.test(trimmed) || /^\*\*[^*]/.test(trimmed) || /^[-•]\s*\[/.test(trimmed)
-    // 위반 시 조치 하위 항목은 새 규칙이 아님
-    const isViolation = /위반\s*시/.test(trimmed)
+    // 실천 방법/레거시 위반 시 조치 하위 항목은 새 규칙이 아님
+    const isViolation = /(?:실천\s*(?:방법|조건)|위반\s*시)/.test(trimmed)
     if (isNewRule && !isViolation && current.trim()) {
       blocks.push(current.trim())
       current = line
@@ -657,20 +674,20 @@ function parseRules(raw: string): T22Rule[] {
 
   // Step 2: 각 블록에서 범주, 이름, 설명, 위반 시 조치 추출
   for (const block of blocks) {
-    // 위반 시 조치 추출 (별도 줄 또는 인라인)
-    let violation = ''
+    // 실천 방법 추출. 레거시 "위반 시 조치"는 데이터 유실 없이 실천 방법으로 읽는다.
+    let feasibility = ''
     let mainText = block
     // 별도 줄: • 위반 시 조치: ... 또는 • N회 이상 위반 시 조치: ...
-    const violationLineMatch = mainText.match(/\n\s*[-•]\s*(?:\d+회\s*이상\s*)?위반\s*시\s*(?:조치\s*)?[:：]\s*([^\n]+)/)
+    const violationLineMatch = mainText.match(/\n\s*[-•]\s*(?:(?:실천\s*(?:방법|조건))|(?:\d+회\s*이상\s*)?위반\s*시\s*(?:조치\s*)?)[:：]\s*([^\n]+)/)
     if (violationLineMatch) {
-      violation = violationLineMatch[1].trim().split('\n')[0] // 첫 줄만
+      feasibility = violationLineMatch[1].trim().split('\n')[0]
       mainText = mainText.slice(0, mainText.indexOf(violationLineMatch[0])).trim()
     }
     // 인라인: (위반 시: ...)
-    if (!violation) {
-      const inlineMatch = mainText.match(/\((?:\d+회\s*이상\s*)?위반\s*시\s*(?:조치\s*)?[:：]\s*(.+?)\)/)
+    if (!feasibility) {
+      const inlineMatch = mainText.match(/\((?:(?:실천\s*(?:방법|조건))|(?:\d+회\s*이상\s*)?위반\s*시\s*(?:조치\s*)?)[:：]\s*(.+?)\)/)
       if (inlineMatch) {
-        violation = inlineMatch[1].trim()
+        feasibility = inlineMatch[1].trim()
         mainText = mainText.replace(inlineMatch[0], '').trim()
       }
     }
@@ -696,11 +713,11 @@ function parseRules(raw: string): T22Rule[] {
       const name = mainText.slice(0, colonIdx).replace(/\*\*/g, '').trim()
       const desc = mainText.slice(colonIdx).replace(/^[\s:：]+/, '').trim()
       if (name && desc && !isNonContentLabel(name) && !isNonContentLabel(desc)) {
-        rules.push({ category, name, description: desc, violation })
+        rules.push({ category, name, description: desc, feasibility })
       }
     } else if (mainText.length > 5 && !isNonContentLabel(mainText)) {
       // 콜론 없으면 전체를 이름+설명으로
-      rules.push({ category, name: mainText.slice(0, 30).replace(/\*\*/g, ''), description: mainText, violation })
+      rules.push({ category, name: mainText.slice(0, 30).replace(/\*\*/g, ''), description: mainText, feasibility })
     }
   }
 
@@ -855,6 +872,8 @@ export interface Ds21Structured {
   materials: Ds21Material[]
   /** AI 점검 — 학생 수준·출처·저작권·개인정보·접근성·기술 안정성 */
   envCheck: string
+  /** Human-AI Agency — 학생·AI·교사의 역할, 판단 권한, 검증 책임 */
+  humanAIAgency?: string
   /** 수동 공동 편집 워크스페이스 스냅샷 */
   manualWorkspace?: import('@/types').SupportToolWorkspace
 }
@@ -879,6 +898,7 @@ export function buildDs21Structured(
 ): Ds21Structured {
   const result: Ds21Structured = { _schema: 'Ds-2-1', materials: [], envCheck: '' }
   result.envCheck = (sections['AI 점검'] ?? '').trim()
+  result.humanAIAgency = (sections['Human-AI Agency'] ?? sections['Human-AI 에이전시'] ?? sections['사람-AI 역할 조정'] ?? '').trim() || undefined
 
   const raw = (sections['활동별 자료 설계'] ?? sections['자료 설계'] ?? '').trim()
   if (raw) result.materials = rowsToDs21Materials(parseTableRows(raw, DS21_COLS))
@@ -1091,6 +1111,8 @@ export interface A21Row {
   standard?: string         // 성취기준
   knowledgeUnderstanding: string  // 지식·이해
   processFunction: string   // 과정·기능
+  valueAttitude?: string    // 가치·태도
+  contribution?: string     // 공통 요소 또는 교과의 고유 기여
   agentLessonExample?: string      // Agent 추천 수업아이디어
   description?: string             // 교사 수업내용 설명
   isCommon?: boolean        // 공통(팀 조정) 행 여부
@@ -1099,6 +1121,8 @@ export interface A21Row {
 export interface A21Structured {
   _schema: 'A-2-1'
   rows: A21Row[]
+  commonElements?: string
+  reconstructedStandard?: string
   agentLessonIdeas?: string
 }
 
@@ -1108,6 +1132,8 @@ export function buildA21Structured(sections: Record<string, string>, chat: Array
   // 기존 "성취기준분석표" 키에서 4열 표 파싱 시도
   const raw = (sections['성취기준분석표'] ?? sections['핵심아이디어분석'] ?? '').trim()
   if (raw) r.rows = parseA21Table(raw)
+  r.commonElements = (sections['공통 요소'] ?? sections['교과 간 공통 요소'] ?? '').trim() || undefined
+  r.reconstructedStandard = (sections['재구조화 성취기준'] ?? sections['재구성 성취기준'] ?? '').trim() || undefined
   const agentLessonIdeas = (
     sections['Agent 추천 수업아이디어']
     ?? sections['Agent 추천 수업 예시']
@@ -1141,6 +1167,8 @@ function parseA21Table(raw: string): A21Row[] {
   const standardIdx = findCol(['성취기준'])
   const knowledgeIdx = findCol(['지식', '이해'])
   const functionIdx = findCol(['과정', '기능'])
+  const attitudeIdx = findCol(['가치', '태도'])
+  const contributionIdx = findCol(['공통 요소', '고유 기여', '교과 기여', '기여'])
   const agentLessonIdx = findCol(['Agent', '추천 수업', '수업아이디어', '수업 아이디어', '수업 예시'])
   const descriptionIdx = findCol(['수업내용', '수업 내용', '설명'])
 
@@ -1153,6 +1181,8 @@ function parseA21Table(raw: string): A21Row[] {
     const standard = standardIdx >= 0 ? (cells[standardIdx] || '') : ''
     const knowledge = cells[knowledgeIdx >= 0 ? knowledgeIdx : 2] || ''
     const fn = cells[functionIdx >= 0 ? functionIdx : 3] || ''
+    const attitude = attitudeIdx >= 0 ? (cells[attitudeIdx] || '') : ''
+    const contribution = contributionIdx >= 0 ? (cells[contributionIdx] || '') : ''
     const agentLessonExample = agentLessonIdx >= 0 ? (cells[agentLessonIdx] || '') : ''
     const description = descriptionIdx >= 0 ? (cells[descriptionIdx] || '') : ''
 
@@ -1163,6 +1193,8 @@ function parseA21Table(raw: string): A21Row[] {
         standard,
         knowledgeUnderstanding: knowledge,
         processFunction: fn,
+        valueAttitude: attitude,
+        contribution,
         agentLessonExample,
         description,
         isCommon: /공통|팀\s*조정|통합/.test(subject),
@@ -1178,7 +1210,7 @@ function parseA21Table(raw: string): A21Row[] {
       const subjectMatch = lines[0]?.match(/^\d+\.\s*(.+?)(?:\s*$|\s*[:：])/)
       if (!subjectMatch) continue
       const subject = subjectMatch[1].trim()
-      let coreIdea = '', knowledge = '', fn = ''
+      let coreIdea = '', knowledge = '', fn = '', attitude = '', contribution = ''
       for (const line of lines) {
         const ci = line.match(/핵심\s*아이디어\s*[:：]\s*(.+)/)
         if (ci) coreIdea = ci[1].trim()
@@ -1186,9 +1218,13 @@ function parseA21Table(raw: string): A21Row[] {
         if (kn) knowledge = kn[1].trim()
         const pf = line.match(/과정[·⋅\s]*기능\s*[:：]\s*(.+)/)
         if (pf) fn = pf[1].trim()
+        const va = line.match(/가치[·⋅\s]*태도\s*[:：]\s*(.+)/)
+        if (va) attitude = va[1].trim()
+        const co = line.match(/(?:고유\s*기여|교과\s*기여|공통\s*요소)\s*[:：]\s*(.+)/)
+        if (co) contribution = co[1].trim()
       }
       if (subject && (coreIdea || knowledge)) {
-        rows.push({ subject, coreIdea, knowledgeUnderstanding: knowledge, processFunction: fn, isCommon: /공통|팀/.test(subject) })
+        rows.push({ subject, coreIdea, knowledgeUnderstanding: knowledge, processFunction: fn, valueAttitude: attitude, contribution, isCommon: /공통|팀/.test(subject) })
       }
     }
   }
@@ -1222,6 +1258,8 @@ export interface A22Structured {
   _schema: 'A-2-2'
   /** 공통 핵심 아이디어 (A-2-1에서 합의된 단일 문장. 산출물 상단에 노출) */
   commonCoreIdea: string
+  /** 공통 핵심 아이디어를 학생의 언어로 바꾼 개방형 질문 */
+  inquiryQuestion: string
   /** 통합 수업목표: 1개의 상위 문장. (레퍼런스 예: "학생은 ~ 할 수 있다") */
   integratedGoal: string
   /** 교과별 수업목표 표 */
@@ -1248,6 +1286,7 @@ export function buildA22Structured(sections: Record<string, string>, chat: Array
   const r: A22Structured = {
     _schema: 'A-2-2',
     commonCoreIdea: '',
+    inquiryQuestion: '',
     integratedGoal: '',
     subjectGoals: [],
     convergentKeywords: [],
@@ -1255,6 +1294,7 @@ export function buildA22Structured(sections: Record<string, string>, chat: Array
 
   // 1. 공통 핵심 아이디어 — A-2-2 산출물 본문 또는 A-2-1 산출물에서 가져옴
   r.commonCoreIdea = (sections['공통 핵심 아이디어'] ?? sections['핵심 아이디어'] ?? '').trim()
+  r.inquiryQuestion = (sections['탐구 질문'] ?? sections['핵심 질문'] ?? sections['탐구질문'] ?? '').trim()
 
   // 2. 통합 수업목표 (단일 문장)
   const integratedRaw = (sections['통합 수업목표'] ?? sections['통합 학습목표'] ?? '').trim()
@@ -1371,6 +1411,7 @@ export function workspaceToA22Structured(workspace: IntegratedGoalWorkspace): A2
   const structured: A22Structured = {
     _schema: 'A-2-2',
     commonCoreIdea: workspace.commonCoreIdea.trim(),
+    inquiryQuestion: workspace.inquiryQuestion.trim(),
     integratedGoal: workspace.integratedGoal.trim(),
     subjectGoals,
     convergentKeywords: workspace.convergentKeywords.map(k => k.trim()).filter(Boolean).slice(0, 8),
@@ -1488,11 +1529,12 @@ export function detectMissingFields(data: Record<string, unknown>): MissingField
     if (!d.rationale) missing.push({ label: '선정 근거', hint: '왜 이 주제를 선택했는지 근거를 적어주세요' })
   } else if (schema === 'A-2-1') {
     const d = data as unknown as A21Structured
-    if (!d.rows?.length) missing.push({ label: '핵심아이디어 분석표', hint: '교과별 핵심아이디어·지식이해·과정기능 표를 완성해주세요' })
-    else if (!d.rows.some(r => r.isCommon)) missing.push({ label: '공통(팀 조정) 행', hint: '교과 간 공통 요소를 정리한 통합 행을 추가해주세요' })
+    if (!d.rows?.length) missing.push({ label: '주제 상세 분석표', hint: '교과별 지식·이해, 과정·기능, 가치·태도 분석표를 완성해주세요' })
+    if (!d.reconstructedStandard) missing.push({ label: '재구조화 성취기준', hint: '공통 요소와 교과별 고유 기여를 반영한 성취기준을 확정해주세요' })
   } else if (schema === 'A-2-2') {
     const d = data as unknown as A22Structured
     if (!d.commonCoreIdea) missing.push({ label: '공통 핵심 아이디어', hint: 'A-2-1에서 합의된 공통 핵심 아이디어를 1문장으로 옮겨주세요' })
+    if (!d.inquiryQuestion) missing.push({ label: '탐구 질문', hint: '핵심 아이디어를 학생의 언어로 된 개방형 질문으로 바꿔주세요' })
     if (!d.integratedGoal) missing.push({ label: '통합 수업목표', hint: '"학생은 ~ 할 수 있다" 형식의 단일 통합 목표 1문장을 작성해주세요' })
     if (!d.subjectGoals?.length) missing.push({ label: '교과별 수업목표', hint: '각 교과별 수업목표를 (지식·이해)·(과정·기능)·(가치·태도) 태그와 함께 작성해주세요' })
   } else if (schema === 'A-2-3') {

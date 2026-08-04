@@ -7,7 +7,7 @@
  */
 
 import { loadGraph } from '@/lib/curriculum/graphReader'
-import { isElementaryGradeGroup, loadContentSystems, loadElementaryContentSystems } from '@/lib/curriculum/contentSystemReader'
+import { isElementaryGradeGroup, loadContentSystemsForGradeGroup } from '@/lib/curriculum/contentSystemReader'
 import type { GraphCenterNode, GraphRelationType, GraphSelectedStandard } from '@/lib/knowledge-graph/domain'
 
 export const runtime = 'nodejs'
@@ -84,6 +84,14 @@ export async function POST(request: Request) {
       return Response.json({ error: 'No standards provided' }, { status: 400 })
     }
 
+    if (targetGradeGroup && !isElementaryGradeGroup(targetGradeGroup)) {
+      return Response.json({
+        error: '해당 학교급의 검증된 지식 그래프가 아직 준비되지 않아 초등 자료로 대체하지 않았습니다.',
+        code: 'CURRICULUM_DATA_UNAVAILABLE',
+        requiresTeacherInput: true,
+      }, { status: 409 })
+    }
+
     const graph = loadGraph()
     if (!graph) {
       return Response.json({ error: 'Graph not loaded' }, { status: 500 })
@@ -136,9 +144,8 @@ export async function POST(request: Request) {
       .map(s => `• ${s.label} (${subjectNameMap.get(s.subjectId) ?? s.subjectId}${s.relationType ? `, ${s.relationType}` : ''}): "${s.text}"`)
       .join('\n')
 
-    // ─── 내용체계 데이터에서 지식·이해 / 과정·기능 원문 로드 ───
-    // [strict-elementary 2026-05-14] 초등 전용 웹앱 — gradeGroup 무관하게 초등만.
-    const csRecords = loadElementaryContentSystems()
+    // ─── 내용체계 데이터에서 지식·이해 / 과정·기능 / 가치·태도 원문 로드 ───
+    const csRecords = loadContentSystemsForGradeGroup(targetGradeGroup)
 
     function getContentSystemForSubject(subjectId: string, area: string) {
       const subjName = subjectNameMap.get(subjectId) ?? ''

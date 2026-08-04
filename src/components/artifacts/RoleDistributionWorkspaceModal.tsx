@@ -62,6 +62,7 @@ const DEFAULT_COLUMNS: RoleDistributionWorkspaceColumn[] = [
   { id: 'strengths',        label: '강점·전문성',    color: '#E8F0FE' },
   { id: 'role',             label: '팀 내 역할',     color: '#E8F0FE' },
   { id: 'responsibilities', label: '담당 업무',      color: '#E8F0FE' },
+  { id: 'deadline',         label: '완료 시점',      color: '#FEF7E0' },
 ]
 
 const INSERT_BLOCK_TYPES: Array<{
@@ -107,9 +108,9 @@ function emptyWorkspace(): RoleDistributionWorkspace {
 // Why: T-2-1 산출물 예시. 사용자가 "예시" 버튼으로 미리보기 → 워크스페이스 채우기.
 const EXAMPLE_RDW_DATA = {
   rows: [
-    { teacherName: '홍성용', subject: '국어',   strengths: '문해력 지도, 글쓰기 코칭',         role: '학습 흐름 설계 리드',    responsibilities: '단원 흐름 설계 · 평가 설계 초안 작성' },
-    { teacherName: '인주상', subject: '사회',   strengths: '쟁점 토론 진행, 자료 분석',         role: '평가·피드백 담당',       responsibilities: '루브릭 설계 · 평가 피드백 기록' },
-    { teacherName: '김연주', subject: '과학',   strengths: '실험 설계, 데이터 시각화',          role: '탐구 활동 코디네이터',   responsibilities: '실험 자료 준비 · 안전 점검' },
+    { teacherName: '홍성용', subject: '국어', strengths: '문해력 지도, 글쓰기 코칭', role: '학습 흐름 설계 리드', responsibilities: '단원 흐름 설계 · 평가 설계 초안 작성', deadline: 'A단계 시작 전' },
+    { teacherName: '인주상', subject: '사회', strengths: '쟁점 토론 진행, 자료 분석', role: '평가·피드백 담당', responsibilities: '평가 계획 검토 · 피드백 기록', deadline: 'Ds-1 협의 전' },
+    { teacherName: '김연주', subject: '과학', strengths: '실험 설계, 데이터 시각화', role: '탐구 활동 코디네이터', responsibilities: '실험 자료 준비 · 안전 점검', deadline: '수업 실행 3일 전' },
   ],
 } as const
 
@@ -124,6 +125,7 @@ function buildExampleWorkspace(): RoleDistributionWorkspace {
         strengths: row.strengths,
         role: row.role,
         responsibilities: row.responsibilities,
+        deadline: row.deadline,
       },
       color: '#FFFFFF',
     })),
@@ -133,7 +135,10 @@ function buildExampleWorkspace(): RoleDistributionWorkspace {
 
 function normalizeWorkspace(workspace?: RoleDistributionWorkspace, artifactContent?: Record<string, unknown>): RoleDistributionWorkspace {
   if (workspace) {
-    const columns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
+    const savedColumns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
+    const columns = savedColumns.some(column => column.id === 'deadline')
+      ? savedColumns
+      : [...savedColumns, DEFAULT_COLUMNS[DEFAULT_COLUMNS.length - 1]]
     const blocks = (workspace.blocks ?? []).map(block => block.type === 'table'
       ? { ...block, table: getBlockTable(block), content: '' }
       : block)
@@ -160,6 +165,7 @@ function normalizeWorkspace(workspace?: RoleDistributionWorkspace, artifactConte
       strengths: role.strengths ?? '',
       role: role.role ?? '',
       responsibilities: role.responsibilities ?? '',
+      deadline: role.deadline ?? '',
     },
     color: '#FFFFFF',
   }))
@@ -251,8 +257,9 @@ function workspaceToArtifact(workspace: RoleDistributionWorkspace): T21Structure
       strengths: getCell(row, 'strengths').trim(),
       role: getCell(row, 'role').trim(),
       responsibilities: getCell(row, 'responsibilities').trim(),
+      deadline: getCell(row, 'deadline').trim(),
     }))
-    .filter(r => r.teacherName || r.subject || r.role || r.responsibilities || r.strengths)
+    .filter(r => r.teacherName || r.subject || r.role || r.responsibilities || r.strengths || r.deadline)
 
   return {
     _schema: 'T-2-1',
@@ -627,7 +634,8 @@ export function RoleDistributionWorkspaceModal({
       strengths: getCell(row, 'strengths').trim() || undefined,
       role: getCell(row, 'role').trim() || undefined,
       responsibilities: getCell(row, 'responsibilities').trim() || undefined,
-    })).filter(r => r.teacherName || r.subject || r.strengths || r.role || r.responsibilities)
+      deadline: getCell(row, 'deadline').trim() || undefined,
+    })).filter(r => r.teacherName || r.subject || r.strengths || r.role || r.responsibilities || r.deadline)
 
     if ((!memberNames || memberNames.length === 0) && currentRows.length === 0) {
       setSuggestError('팀원 명단과 현재 행이 모두 비어 있어 제안을 만들 수 없습니다.')
@@ -640,7 +648,7 @@ export function RoleDistributionWorkspaceModal({
     const isArtifactMode = artifactContent?._schema === 'T-2-1' && Array.isArray((artifactContent as { roles?: unknown }).roles) && ((artifactContent as { roles?: unknown[] }).roles?.length ?? 0) > 0
     const mode: 'artifact' | 'chat' = isArtifactMode ? 'artifact' : 'chat'
     const existingArtifact = isArtifactMode
-      ? { roles: (artifactContent as { roles?: Array<{ teacherName?: string; subject?: string; strengths?: string; role?: string; responsibilities?: string }> }).roles ?? [] }
+      ? { roles: (artifactContent as { roles?: Array<{ teacherName?: string; subject?: string; strengths?: string; role?: string; responsibilities?: string; deadline?: string }> }).roles ?? [] }
       : undefined
     // 채팅 메시지는 토큰 절약을 위해 최근 40개로 자름 (가장 최근 = 가장 관련성 높음).
     const chatContext = mode === 'chat'
@@ -702,6 +710,7 @@ export function RoleDistributionWorkspaceModal({
         if (!cells.strengths)        cells.strengths = sugg.strengths
         if (!cells.role)             cells.role = sugg.role
         if (!cells.responsibilities) cells.responsibilities = sugg.responsibilities
+        if (!cells.deadline)         cells.deadline = sugg.deadline
         existingRows[matchIdx] = { ...row, cells, updatedBy: currentUserName, updatedAt: Date.now() }
       } else {
         remaining.push(sugg)
@@ -715,7 +724,8 @@ export function RoleDistributionWorkspaceModal({
         !getCell(row, 'subject').trim() &&
         !getCell(row, 'strengths').trim() &&
         !getCell(row, 'role').trim() &&
-        !getCell(row, 'responsibilities').trim(),
+        !getCell(row, 'responsibilities').trim() &&
+        !getCell(row, 'deadline').trim(),
       )
       if (emptyIdx >= 0) {
         const row = existingRows[emptyIdx]
@@ -727,6 +737,7 @@ export function RoleDistributionWorkspaceModal({
             strengths: sugg.strengths,
             role: sugg.role,
             responsibilities: sugg.responsibilities,
+            deadline: sugg.deadline,
           },
           updatedBy: currentUserName,
           updatedAt: Date.now(),
@@ -743,12 +754,13 @@ export function RoleDistributionWorkspaceModal({
         strengths: sugg.strengths,
         role: sugg.role,
         responsibilities: sugg.responsibilities,
+        deadline: sugg.deadline,
       },
       color: '#FFFFFF',
       updatedBy: currentUserName,
       updatedAt: Date.now(),
     }))
-    // 사용자가 컬럼을 수정했어도 산출물 형식(DEFAULT_COLUMNS — 5열)으로 복원해 AI 제안 모든 필드가 누락 없이 들어가게.
+    // 사용자가 컬럼을 수정했어도 최신 산출물 형식(DEFAULT_COLUMNS — 6열)으로 복원해 AI 제안 모든 필드가 누락 없이 들어가게.
     const allRows = [...existingRows, ...appended]
     const columnsChanged = workspace.columns.length !== DEFAULT_COLUMNS.length ||
       workspace.columns.some((c, i) => c.id !== DEFAULT_COLUMNS[i]?.id)
@@ -1430,6 +1442,7 @@ export function RoleDistributionWorkspaceModal({
                           {r.subject && <p className="text-[13px] font-semibold text-[#1A73E8] mt-0.5">{r.subject}</p>}
                           {r.strengths && <p className="text-[14px] text-[#3C4043] leading-relaxed mt-0.5"><span className="font-bold text-[#5F6368]">강점·</span>{r.strengths}</p>}
                           {r.responsibilities && <p className="text-[14px] text-[#202124] leading-relaxed mt-0.5"><span className="font-bold text-[#5F6368]">담당·</span>{r.responsibilities}</p>}
+                          {r.deadline && <p className="text-[13px] font-semibold text-[#8A5A00] mt-0.5"><span className="font-bold">완료 시점·</span>{r.deadline}</p>}
                         </li>
                       ))}
                     </ul>
@@ -1529,6 +1542,7 @@ export function RoleDistributionWorkspaceModal({
                         <td className="border-b border-r border-[#DADCE0] px-3 py-2 align-top text-[#3C4043] leading-relaxed">{row.strengths}</td>
                         <td className="border-b border-r border-[#DADCE0] px-3 py-2 align-top text-[#202124] leading-relaxed">{row.role}</td>
                         <td className="border-b border-[#DADCE0] px-3 py-2 align-top text-[#3C4043] leading-relaxed">{row.responsibilities}</td>
+                        <td className="border-b border-[#DADCE0] bg-[#FEF7E0]/50 px-3 py-2 align-top text-[#3C4043] leading-relaxed">{row.deadline}</td>
                       </tr>
                     ))}
                   </tbody>

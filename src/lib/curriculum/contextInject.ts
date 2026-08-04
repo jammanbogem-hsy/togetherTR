@@ -28,8 +28,7 @@ import {
   buildContentSystemContext,
   isElementaryGradeGroup,
   isContentSystemContextEnabled,
-  loadElementaryContentSystems,
-  loadContentSystems,
+  loadContentSystemsForGradeGroup,
 } from './contentSystemReader'
 
 function normalizeCurriculumText(value: string): string {
@@ -359,6 +358,13 @@ function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): 
   const { centerNode, selectedStandards, agentNotes } = graphData
   if (!centerNode && selectedStandards.length === 0) return ''
 
+  if (gradeGroup && !isElementaryGradeGroup(gradeGroup)) {
+    return `## 학교급 교육과정 데이터 안내
+
+현재 저장된 지식 그래프는 초등학교 전용이므로 ${gradeGroup} 프로젝트에 주입하지 않습니다.
+초등 자료로 대체하거나 성취기준을 추정하지 말고, 교사가 제공한 해당 학교급 성취기준·내용 요소만 사용하세요.`
+  }
+
   const noteMap = new Map(agentNotes.map(n => [n.standardId, n]))
 
   // 서버에서 그래프 로드하여 핵심아이디어 데이터 주입
@@ -370,8 +376,7 @@ function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): 
   const allStdIds = [centerNode?.id, ...selectedStandards.map(s => s.id)].filter(Boolean) as string[]
   const subjectIdSet = new Set([centerNode?.subjectId, ...selectedStandards.map(s => s.subjectId)].filter(Boolean) as string[])
 
-  // [strict-elementary 2026-05-14] 초등 전용 웹앱 — gradeGroup과 무관하게 초등 데이터만 사용.
-  const csRecords = loadElementaryContentSystems()
+  const csRecords = loadContentSystemsForGradeGroup(gradeGroup)
 
   function getContentSystemForArea(subjectId: string, area: string) {
     const subjName = subjectNameMap.get(subjectId) ?? ''
@@ -468,20 +473,22 @@ function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): 
     )
   }
 
-  // 4열 확정 분석표를 미리 완성 (AI가 만드는 것이 아님)
+  // 최신 A-3 분석표의 교육과정 원문 열을 미리 완성 (AI가 만드는 것이 아님)
   const prebuiltTableRows: string[] = []
   for (const mapping of confirmedMappings) {
-    // 매핑 텍스트에서 교과명, 핵심아이디어, 지식이해, 과정기능 추출
+    // 매핑 텍스트에서 교과명, 성취기준, 핵심아이디어와 세 차원 추출
     const subjMatch = mapping.match(/\[(.+?)\s*·/)
+    const standardMatch = mapping.match(/성취기준:\s*(.+?)(?:\n|$)/)
     const coreMatch = mapping.match(/✅ 핵심 아이디어: (.+?)(?:\n|$)/)
     const knMatch = mapping.match(/✅ 지식·이해: (.+?)(?:\n|$)/)
     const fnMatch = mapping.match(/✅ 과정·기능: (.+?)(?:\n|$)/)
+    const attitudeMatch = mapping.match(/✅ 가치·태도: (.+?)(?:\n|$)/)
     if (subjMatch && coreMatch) {
-      prebuiltTableRows.push(`| ${subjMatch[1].replace('★ ', '')} | ${coreMatch[1].trim()} | ${knMatch?.[1]?.trim() || '-'} | ${fnMatch?.[1]?.trim() || '-'} |`)
+      prebuiltTableRows.push(`| ${subjMatch[1].replace('★ ', '')} | ${standardMatch?.[1]?.trim() || '-'} | ${coreMatch[1].trim()} | ${knMatch?.[1]?.trim() || '-'} | ${fnMatch?.[1]?.trim() || '-'} | ${attitudeMatch?.[1]?.trim() || '-'} | (팀 협의) |`)
     }
   }
   const prebuiltTable = prebuiltTableRows.length > 0
-    ? `| 교과 | 핵심 아이디어 | 지식·이해 | 과정·기능 |\n| --- | --- | --- | --- |\n${prebuiltTableRows.join('\n')}`
+    ? `| 교과 | 성취기준 | 핵심 아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 공통·고유 기여 |\n| --- | --- | --- | --- | --- | --- | --- |\n${prebuiltTableRows.join('\n')}`
     : ''
 
   const coreIdeasSection = confirmedMappings.length > 0
@@ -496,7 +503,6 @@ ${confirmedMappings.join('\n\n')}
 
 ### 📋 사전 구축된 분석표 (아래 표를 Step 1에서 그대로 출력하세요 — 셀 값 변경 금지)
 ${prebuiltTable}
-| **공통 (팀 조정)** | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) | (교사 팀이 토의 후 작성) |
 
 ⛔ 검증 규칙: AI가 출력한 표의 "핵심아이디어" 열 값이 위 표와 한 글자라도 다르면 오답입니다.`
     : ''
@@ -528,12 +534,13 @@ ${connectedLines || '(선택된 연결 성취기준 없음)'}
 ${coreIdeasSection}
 
 ▶ 분석표 출력 지시 (반드시 준수):
-1. 핵심아이디어 분석표: **4열** (교과 | 핵심 아이디어 | 지식·이해 | 과정·기능)
+1. 주제의 상세 내용 분석표: **7열** (교과 | 성취기준 | 핵심 아이디어 | 지식·이해 | 과정·기능 | 가치·태도 | 공통·고유 기여)
    - 핵심 아이디어: 위 [교과별 핵심아이디어 후보] 또는 [내용체계]에서 **원문 그대로** 인용
    - 지식·이해: 위 성취기준별 "→ 지식·이해" 또는 [내용체계]의 '지식⋅이해'에서 **원문 그대로** 인용
    - 과정·기능: 위 성취기준별 "→ 과정·기능" 또는 [내용체계]의 '과정⋅기능'에서 **원문 그대로** 인용
+   - 가치·태도: 위 성취기준별 "→ 가치·태도" 또는 [내용체계]의 '가치⋅태도'에서 **원문 그대로** 인용
    ⚠️ AI가 자체적으로 만들어내는 것 금지. 반드시 위 데이터 인용.
-2. 마지막 행에 **공통(팀 조정)** 행 추가: 교과 간 겹치는 요소를 통합한 팀 차원의 핵심 요소
+2. 교과별 요소를 **공통 요소와 교과 고유 요소**로 묶어 별도 정리하고, 이를 바탕으로 **재구성 성취기준** 후보를 제시
 ▶ 중심 성취기준 [${centerNode?.label ?? '미설정'}]이 이 통합 수업의 핵심축입니다. 이 성취기준의 요소를 가장 풍부하게 작성하세요.`
 }
 

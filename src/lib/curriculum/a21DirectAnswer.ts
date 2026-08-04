@@ -2,6 +2,7 @@ import type { ActivityCode, Project } from '@/types'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { extractKeywords } from './contextInject'
 import { loadGraph, searchStandards, type CurriculumStandard } from './graphReader'
+import { isElementaryGradeGroup } from './contentSystemReader'
 
 interface BuildA21DirectAnswerParams {
   activityCode: ActivityCode
@@ -40,6 +41,15 @@ export function buildA21DirectAnswer({
 
   const latestUser = [...messages].reverse().find(message => message.role === 'user')?.content ?? ''
   if (!isCoreIdeaStandardsQuestion(latestUser)) return ''
+
+  if (gradeGroup && !isElementaryGradeGroup(gradeGroup)) {
+    return `### 학교급 교육과정 자료 확인 필요
+
+현재 검증된 지식 그래프는 초등학교 전용이어서 **${gradeGroup} 성취기준을 초등 자료로 대체하지 않습니다.**
+
+> **지금 할 일**
+> 담당 교과의 성취기준 코드와 원문을 입력하거나 교육과정 자료를 첨부해 주세요.`
+  }
 
   const graph = loadGraph()
   if (!graph) {

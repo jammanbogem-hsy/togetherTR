@@ -56,7 +56,7 @@ const DEFAULT_COLUMNS: TeamRulesWorkspaceColumn[] = [
   { id: 'category',    label: '분류',         color: '#E8F0FE' },
   { id: 'name',        label: '규칙명',       color: '#E8F0FE' },
   { id: 'description', label: '설명',         color: '#E8F0FE' },
-  { id: 'violation',   label: '위반 시 조치', color: '#E8F0FE' },
+  { id: 'feasibility', label: '실천 방법', color: '#E8F0FE' },
 ]
 
 const INSERT_BLOCK_TYPES: Array<{
@@ -102,10 +102,10 @@ function emptyWorkspace(): TeamRulesWorkspace {
 // Why: T-2-2 산출물 예시. 사용자가 "예시" 버튼으로 미리보기 → 워크스페이스 채우기.
 const EXAMPLE_TRW_DATA = {
   rows: [
-    { category: '소통',     name: '회의 시작 5분 전 도착하기',     description: '모든 팀원은 정해진 회의 시작 5분 전까지 접속·도착하여 자료를 미리 확인합니다.',      violation: '지각자가 다음 회의 안건 정리 담당' },
-    { category: '의사결정', name: '이견은 24시간 안에 글로 정리',   description: '회의 중 결정이 어려운 안건은 24시간 안에 채널에 글로 입장을 정리해 공유합니다.',     violation: '지연된 안건을 다음 회의 첫 안건으로 상정' },
-    { category: '역할',     name: '담당 산출물은 합의된 형식으로',   description: '각 담당자는 합의된 양식·체크리스트에 맞춰 산출물을 제출하고, 마감 24시간 전에 공유합니다.', violation: '담당자가 공유 채널에 사정 설명 후 동료에게 검토 요청' },
-    { category: '갈등',     name: '비난 대신 행동·합의로 말하기',    description: '의견이 충돌할 때는 사람·태도가 아닌 행동·합의 문구를 기준으로 이야기합니다.',       violation: '회의록에 사례를 익명으로 기록하고 다음 회의 첫 5분 회복 시간 갖기' },
+    { category: '소통', name: '확인 가능 시간을 함께 남기기', description: '메시지를 바로 답하기 어려우면 확인 가능한 시간을 먼저 남깁니다.', feasibility: '수업 중에는 응답을 요구하지 않고 평일 24시간 안에 확인합니다.' },
+    { category: '시간', name: '회의 시간을 50분으로 제한하기', description: '안건을 미리 공유하고 회의는 합의한 종료 시각에 마칩니다.', feasibility: '참석이 어려운 팀원은 회의 전에 공유 문서에 의견을 남길 수 있습니다.' },
+    { category: '역할', name: '마감 전에 막힘을 공유하기', description: '담당 산출물이 지연될 것 같으면 마감 하루 전에 막힌 지점을 공유합니다.', feasibility: '도움을 요청한 일을 팀이 다시 나누며 개인에게 책임을 몰지 않습니다.' },
+    { category: '갈등', name: '비전과 기준으로 다시 판단하기', description: '의견이 충돌하면 사람을 평가하지 않고 팀 비전과 합의 기준에 비추어 대안을 비교합니다.', feasibility: '결정이 어려우면 하루 숙고한 뒤 다음 회의 첫 안건으로 다룹니다.' },
   ],
 } as const
 
@@ -118,7 +118,7 @@ function buildExampleWorkspace(): TeamRulesWorkspace {
         category: row.category,
         name: row.name,
         description: row.description,
-        violation: row.violation,
+        feasibility: row.feasibility,
       },
       color: '#FFFFFF',
     })),
@@ -128,13 +128,19 @@ function buildExampleWorkspace(): TeamRulesWorkspace {
 
 function normalizeWorkspace(workspace?: TeamRulesWorkspace, artifactContent?: Record<string, unknown>): TeamRulesWorkspace {
   if (workspace) {
-    const columns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
+    const sourceColumns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
+    const columns = sourceColumns.map(column => column.id === 'violation'
+      ? { ...column, id: 'feasibility', label: '실천 방법' }
+      : column)
     const blocks = (workspace.blocks ?? []).map(block => block.type === 'table'
       ? { ...block, table: getBlockTable(block), content: '' }
       : block)
     return {
       columns,
-      rows: workspace.rows ?? [],
+      rows: (workspace.rows ?? []).map(row => {
+        const { violation, ...cells } = row.cells ?? {}
+        return { ...row, cells: { ...cells, feasibility: cells.feasibility || violation || '' } }
+      }),
       blocks,
       updatedBy: workspace.updatedBy,
       updatedAt: workspace.updatedAt,
@@ -153,7 +159,7 @@ function normalizeWorkspace(workspace?: TeamRulesWorkspace, artifactContent?: Re
       category: rule.category ?? '',
       name: rule.name ?? '',
       description: rule.description ?? '',
-      violation: rule.violation ?? '',
+      feasibility: rule.feasibility ?? rule.violation ?? '',
     },
     color: '#FFFFFF',
   }))
@@ -243,9 +249,9 @@ function workspaceToArtifact(workspace: TeamRulesWorkspace): T22Structured {
       category: getCell(row, 'category').trim(),
       name: getCell(row, 'name').trim(),
       description: getCell(row, 'description').trim(),
-      violation: getCell(row, 'violation').trim(),
+      feasibility: getCell(row, 'feasibility').trim(),
     }))
-    .filter(r => r.category || r.name || r.description || r.violation)
+    .filter(r => r.category || r.name || r.description || r.feasibility)
 
   return {
     _schema: 'T-2-2',
@@ -614,8 +620,8 @@ export function TeamRulesWorkspaceModal({
       category: getCell(row, 'category').trim() || undefined,
       name: getCell(row, 'name').trim() || undefined,
       description: getCell(row, 'description').trim() || undefined,
-      violation: getCell(row, 'violation').trim() || undefined,
-    })).filter(r => r.category || r.name || r.description || r.violation)
+      feasibility: getCell(row, 'feasibility').trim() || undefined,
+    })).filter(r => r.category || r.name || r.description || r.feasibility)
 
     // [2026-05-15] AI 제안 2-mode 분기:
     //  - artifact: 채팅에서 이미 생성된 T-2-2 산출물(artifactContent._schema 일치) 기반으로 정교화
@@ -623,7 +629,7 @@ export function TeamRulesWorkspaceModal({
     const isArtifactMode = artifactContent?._schema === 'T-2-2' && Array.isArray((artifactContent as { rules?: unknown }).rules) && ((artifactContent as { rules?: unknown[] }).rules?.length ?? 0) > 0
     const mode: 'artifact' | 'chat' = isArtifactMode ? 'artifact' : 'chat'
     const existingArtifact = isArtifactMode
-      ? { rules: (artifactContent as { rules?: Array<{ category?: string; name?: string; description?: string; violation?: string }> }).rules ?? [] }
+      ? { rules: (artifactContent as { rules?: Array<{ category?: string; name?: string; description?: string; feasibility?: string; violation?: string }> }).rules ?? [] }
       : undefined
     // 채팅 메시지는 토큰 절약을 위해 최근 40개로 자름 (가장 최근 = 가장 관련성 높음).
     const chatContext = mode === 'chat'
@@ -684,7 +690,7 @@ export function TeamRulesWorkspaceModal({
         const cells = { ...row.cells }
         if (!cells.category)    cells.category = sugg.category
         if (!cells.description) cells.description = sugg.description
-        if (!cells.violation)   cells.violation = sugg.violation
+        if (!cells.feasibility) cells.feasibility = sugg.feasibility
         existingRows[matchIdx] = { ...row, cells, updatedBy: currentUserName, updatedAt: Date.now() }
       } else {
         remaining.push(sugg)
@@ -697,7 +703,7 @@ export function TeamRulesWorkspaceModal({
         !getCell(row, 'category').trim() &&
         !getCell(row, 'name').trim() &&
         !getCell(row, 'description').trim() &&
-        !getCell(row, 'violation').trim(),
+        !getCell(row, 'feasibility').trim(),
       )
       if (emptyIdx >= 0) {
         const row = existingRows[emptyIdx]
@@ -707,7 +713,7 @@ export function TeamRulesWorkspaceModal({
             category: sugg.category,
             name: sugg.name,
             description: sugg.description,
-            violation: sugg.violation,
+            feasibility: sugg.feasibility,
           },
           updatedBy: currentUserName,
           updatedAt: Date.now(),
@@ -722,13 +728,13 @@ export function TeamRulesWorkspaceModal({
         category: sugg.category,
         name: sugg.name,
         description: sugg.description,
-        violation: sugg.violation,
+        feasibility: sugg.feasibility,
       },
       color: '#FFFFFF',
       updatedBy: currentUserName,
       updatedAt: Date.now(),
     }))
-    // 사용자가 컬럼을 수정했어도 산출물 형식(DEFAULT_COLUMNS)으로 복원해 AI 제안의 모든 필드(category/name/description/violation)가 누락 없이 들어가게.
+    // 사용자가 컬럼을 수정했어도 최신 산출물 형식(분류/규칙명/설명/실천 방법)으로 복원한다.
     const allRows = [...existingRows, ...appended]
     const columnsChanged = workspace.columns.length !== DEFAULT_COLUMNS.length ||
       workspace.columns.some((c, i) => c.id !== DEFAULT_COLUMNS[i]?.id)
@@ -1330,14 +1336,14 @@ export function TeamRulesWorkspaceModal({
                       <li>· <b>팀 규칙 3-6개</b></li>
                       <li>· <b>분류로 묶기</b> (소통·시간·의사결정·역할·갈등 등)</li>
                       <li>· <b>규칙명</b>은 명확한 행동 동사로</li>
-                      <li>· <b>위반 시 조치</b>는 합의된 결과로 (벌이 아닌 회복)</li>
+                      <li>· <b>실천 방법</b>은 가장 여건이 빠듯한 팀원도 지킬 수 있게</li>
                     </ul>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="block text-[15px] font-bold text-[#202124]">AI 에이전트의 제안 받기</label>
-                  <p className="text-[13px] leading-relaxed text-[#5F6368]">팀 채팅과 기존 행을 읽어 <b>4열 팀 규칙 표(분류 · 규칙명 · 설명 · 위반 시 조치)</b>의 행을 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
+                  <p className="text-[13px] leading-relaxed text-[#5F6368]">팀 채팅과 기존 행을 읽어 <b>4열 팀 규칙 표(분류 · 규칙명 · 설명 · 실천 방법)</b>의 행을 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
                   {existingRoles && existingRoles.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {existingRoles.slice(0, 6).map((r, idx) => (
@@ -1399,7 +1405,7 @@ export function TeamRulesWorkspaceModal({
                             {r.category && <span className="ml-1.5 text-[#1A73E8] font-bold">[{r.category}]</span>}
                           </p>
                           {r.description && <p className="text-[14px] text-[#3C4043] leading-relaxed mt-0.5"><span className="font-bold text-[#5F6368]">설명·</span>{r.description}</p>}
-                          {r.violation && <p className="text-[14px] text-[#202124] leading-relaxed mt-0.5"><span className="font-bold text-[#5F6368]">위반 시·</span>{r.violation}</p>}
+                          {r.feasibility && <p className="text-[14px] text-[#202124] leading-relaxed mt-0.5"><span className="font-bold text-[#5F6368]">실천 방법·</span>{r.feasibility}</p>}
                         </li>
                       ))}
                     </ul>
@@ -1497,7 +1503,7 @@ export function TeamRulesWorkspaceModal({
                         <td className="border-b border-r border-[#DADCE0] bg-[#E8F0FE] px-3 py-2 align-top font-extrabold text-[#1A73E8]">{row.category}</td>
                         <td className="border-b border-r border-[#DADCE0] px-3 py-2 align-top text-[#202124] leading-relaxed font-bold">{row.name}</td>
                         <td className="border-b border-r border-[#DADCE0] px-3 py-2 align-top text-[#3C4043] leading-relaxed">{row.description}</td>
-                        <td className="border-b border-[#DADCE0] px-3 py-2 align-top text-[#3C4043] leading-relaxed">{row.violation}</td>
+                        <td className="border-b border-[#DADCE0] px-3 py-2 align-top text-[#3C4043] leading-relaxed">{row.feasibility}</td>
                       </tr>
                     ))}
                   </tbody>

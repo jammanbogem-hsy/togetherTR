@@ -174,6 +174,8 @@ function buildExampleWorkspace(): SupportToolWorkspace {
     blocks: [
       { id: 'stw_wb_seed_0', type: 'subheading', content: 'AI 점검 (학생 수준·출처·저작권·개인정보·접근성)', color: '#FFFFFF', checked: false, includeInArtifact: true },
       { id: 'stw_wb_seed_1', type: 'quote', content: EXAMPLE_ENV_CHECK, color: '#FFFFFF', checked: false, includeInArtifact: true },
+      { id: 'stw_wb_seed_2', type: 'subheading', content: 'Human-AI Agency (학생·AI·교사의 역할과 책임)', color: '#FFFFFF', checked: false, includeInArtifact: true },
+      { id: 'stw_wb_seed_3', type: 'quote', content: '학생은 자료의 의미를 해석하고 최종 판단을 내립니다. AI는 자료 정리와 대안 비교를 지원하되 결론을 대신하지 않습니다. 교사는 출처·편향·개인정보를 검증하고 사용 범위를 안내합니다.', color: '#FFFFFF', checked: false, includeInArtifact: true },
     ],
   }
 }
@@ -259,6 +261,11 @@ function normalizeWorkspace(saved?: SupportToolWorkspace, artifactContent?: Reco
       blocks.push(wsBlock(bi++, 'subheading', 'AI 점검 (학생 수준·출처·저작권·개인정보·접근성)'))
       blocks.push(wsBlock(bi++, 'quote', envCheck))
     }
+    const humanAIAgency = asText(structured.humanAIAgency ?? (artifactContent as Record<string, unknown>)['Human-AI Agency'])
+    if (humanAIAgency) {
+      blocks.push(wsBlock(bi++, 'subheading', 'Human-AI Agency (학생·AI·교사의 역할과 책임)'))
+      blocks.push(wsBlock(bi++, 'quote', humanAIAgency))
+    }
 
     if (rows.length > 0 || blocks.length > 0) {
       return { columns: DEFAULT_COLUMNS, rows, blocks }
@@ -326,6 +333,7 @@ function workspaceToArtifact(workspace: SupportToolWorkspace): Ds21Structured {
   // envCheck: 'AI 점검' 소제목 다음 본문/인용, 없으면 임의 인용 블록 폴백
   const blocks = workspace.blocks
   let envCheck = ''
+  let humanAIAgency = ''
   const aiIdx = blocks.findIndex(b => b.type === 'subheading' && (b.content ?? '').includes('AI 점검'))
   if (aiIdx >= 0) {
     for (let j = aiIdx + 1; j < blocks.length; j++) {
@@ -341,11 +349,23 @@ function workspaceToArtifact(workspace: SupportToolWorkspace): Ds21Structured {
     const anyQuote = blocks.find(b => b.type === 'quote' && !!b.content?.trim())
     if (anyQuote) envCheck = anyQuote.content.trim()
   }
+  const agencyIdx = blocks.findIndex(b => (b.type === 'subheading' || b.type === 'heading') && /Human-AI Agency|사람-AI/.test(b.content ?? ''))
+  if (agencyIdx >= 0) {
+    for (let j = agencyIdx + 1; j < blocks.length; j++) {
+      const nextBlock = blocks[j]
+      if (nextBlock.type === 'subheading' || nextBlock.type === 'heading') break
+      if ((nextBlock.type === 'paragraph' || nextBlock.type === 'quote') && nextBlock.content?.trim()) {
+        humanAIAgency = nextBlock.content.trim()
+        break
+      }
+    }
+  }
 
   return {
     _schema: 'Ds-2-1',
     materials,
     envCheck,
+    humanAIAgency,
     manualWorkspace: workspace,
   }
 }
@@ -744,10 +764,16 @@ export function SupportToolWorkspaceModal({
     if (!suggestion) return
     // 사용자가 컬럼 구조를 수정했어도 산출물 형식(DEFAULT_COLUMNS — 7열)으로 재구조화한다.
     const newRows = materialsToRows(suggestion.materials)
+    const hasAgencyBlock = workspace.blocks.some(block => /Human-AI Agency|사람-AI/.test(block.content ?? ''))
+    const agencyBlocks: SupportToolWorkspaceBlock[] = suggestion.humanAIAgency && !hasAgencyBlock ? [
+      { id: makeId('stw_agency_heading'), type: 'subheading', content: 'Human-AI Agency (학생·AI·교사의 역할과 책임)', color: '#FFFFFF', checked: false, includeInArtifact: true },
+      { id: makeId('stw_agency_quote'), type: 'quote', content: suggestion.humanAIAgency, color: '#FFFFFF', checked: false, includeInArtifact: true },
+    ] : []
     const nextWorkspace: SupportToolWorkspace = {
       ...workspace,
       columns: DEFAULT_COLUMNS,
       rows: newRows.length > 0 ? newRows : workspace.rows,
+      blocks: [...workspace.blocks, ...agencyBlocks],
       updatedBy: currentUserName,
       updatedAt: Date.now(),
     }
@@ -1350,6 +1376,12 @@ export function SupportToolWorkspaceModal({
                     )}
                     {suggestion.rationale && (
                       <p className="text-[14px] italic text-[#5F6368]">{suggestion.rationale}</p>
+                    )}
+                    {suggestion.humanAIAgency && (
+                      <div className="rounded-lg border border-[#C4E7E0] bg-[#E6F4F1] px-3 py-2">
+                        <p className="text-[13px] font-extrabold text-[#0F6B5B]">Human-AI Agency</p>
+                        <p className="mt-1 text-[14px] leading-relaxed text-[#202124]">{suggestion.humanAIAgency}</p>
+                      </div>
                     )}
                     <div className="flex justify-end gap-2 pt-1">
                       <button

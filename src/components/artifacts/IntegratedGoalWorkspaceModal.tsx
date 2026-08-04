@@ -111,6 +111,7 @@ function emptyWorkspace(): IntegratedGoalWorkspace {
     columns: DEFAULT_COLUMNS,
     rows: [],
     commonCoreIdea: '',
+    inquiryQuestion: '',
     integratedGoal: '',
     convergentKeywords: [],
     blocks: [],
@@ -119,6 +120,7 @@ function emptyWorkspace(): IntegratedGoalWorkspace {
 
 const EXAMPLE_WORKSPACE_DATA = {
   commonCoreIdea: '기후변화는 자연·사회·언어가 교차하는 복합적 쟁점이며, 학습자는 이를 다각적으로 탐구하고 시민으로서 협력적으로 대응할 수 있다.',
+  inquiryQuestion: '기후변화에 대응하기 위해 우리 학교와 지역사회는 무엇을 함께 바꿀 수 있을까?',
   integratedGoal: '학생은 기후변화의 원인과 영향을 다각적으로 탐구하고, 근거에 기반한 해결 방안을 협력적으로 제안할 수 있다.',
   convergentKeywords: ['기후변화', '탐구', '시민적 책임'],
   rows: [
@@ -143,6 +145,7 @@ function buildExampleWorkspace(): IntegratedGoalWorkspace {
       color: '#FFFFFF',
     })),
     commonCoreIdea: EXAMPLE_WORKSPACE_DATA.commonCoreIdea,
+    inquiryQuestion: EXAMPLE_WORKSPACE_DATA.inquiryQuestion,
     integratedGoal: EXAMPLE_WORKSPACE_DATA.integratedGoal,
     convergentKeywords: [...EXAMPLE_WORKSPACE_DATA.convergentKeywords],
     blocks: [],
@@ -246,6 +249,7 @@ function workspaceFromA22(structured: A22Structured): IntegratedGoalWorkspace {
     columns: DEFAULT_COLUMNS,
     rows,
     commonCoreIdea: structured.commonCoreIdea ?? '',
+    inquiryQuestion: structured.inquiryQuestion ?? '',
     integratedGoal: structured.integratedGoal ?? '',
     convergentKeywords: structured.convergentKeywords ?? [],
     method: structured.method,
@@ -263,6 +267,7 @@ function normalizeWorkspace(workspace?: IntegratedGoalWorkspace, artifactContent
       columns,
       rows: workspace.rows ?? [],
       commonCoreIdea: workspace.commonCoreIdea ?? '',
+      inquiryQuestion: workspace.inquiryQuestion ?? '',
       integratedGoal: workspace.integratedGoal ?? '',
       convergentKeywords: workspace.convergentKeywords ?? [],
       method: workspace.method,
@@ -351,6 +356,10 @@ function preserveEditingValue(
   if (editingKey === 'meta:commonCoreIdea') {
     if (merged.commonCoreIdea === current.commonCoreIdea) return merged
     return { ...merged, commonCoreIdea: current.commonCoreIdea }
+  }
+  if (editingKey === 'meta:inquiryQuestion') {
+    if (merged.inquiryQuestion === current.inquiryQuestion) return merged
+    return { ...merged, inquiryQuestion: current.inquiryQuestion }
   }
   if (editingKey === 'meta:integratedGoal') {
     if (merged.integratedGoal === current.integratedGoal) return merged
@@ -530,7 +539,7 @@ export function IntegratedGoalWorkspaceModal({
     }))
   }
 
-  function setMetaLocal(field: 'commonCoreIdea' | 'integratedGoal' | 'convergentKeywords' | 'method', value: string | string[] | IntegratedGoalMethod | undefined) {
+  function setMetaLocal(field: 'commonCoreIdea' | 'inquiryQuestion' | 'integratedGoal' | 'convergentKeywords' | 'method', value: string | string[] | IntegratedGoalMethod | undefined) {
     setWorkspace(prev => ({ ...prev, [field]: value } as IntegratedGoalWorkspace))
   }
 
@@ -649,7 +658,7 @@ export function IntegratedGoalWorkspaceModal({
     await commit({ type: 'replace-all', workspace: next, updatedBy: currentUserName }, next, deletedIds)
   }
 
-  async function updateMeta(field: 'commonCoreIdea' | 'integratedGoal' | 'convergentKeywords' | 'method', value: string | string[] | IntegratedGoalMethod | null) {
+  async function updateMeta(field: 'commonCoreIdea' | 'inquiryQuestion' | 'integratedGoal' | 'convergentKeywords' | 'method', value: string | string[] | IntegratedGoalMethod | null) {
     const next = { ...workspace, [field]: value, updatedBy: currentUserName, updatedAt: Date.now() } as IntegratedGoalWorkspace
     if (field === 'method' && (value === null || value === '' || value === undefined)) {
       delete (next as Partial<IntegratedGoalWorkspace>).method
@@ -757,6 +766,7 @@ export function IntegratedGoalWorkspaceModal({
     const ac = (artifactContent ?? {}) as {
       _schema?: string
       commonCoreIdea?: string
+      inquiryQuestion?: string
       integratedGoal?: string
       subjectGoals?: Array<{ subject?: string; goal?: string; knowledge?: string; process?: string; attitude?: string }>
       convergentKeywords?: string[]
@@ -764,6 +774,7 @@ export function IntegratedGoalWorkspaceModal({
     const isArtifactMode = ac._schema === 'A-2-2' && (
       (typeof ac.integratedGoal === 'string' && ac.integratedGoal.trim().length > 0) ||
       (typeof ac.commonCoreIdea === 'string' && ac.commonCoreIdea.trim().length > 0) ||
+      (typeof ac.inquiryQuestion === 'string' && ac.inquiryQuestion.trim().length > 0) ||
       (Array.isArray(ac.subjectGoals) && ac.subjectGoals.length > 0) ||
       (Array.isArray(ac.convergentKeywords) && ac.convergentKeywords.length > 0)
     )
@@ -771,6 +782,7 @@ export function IntegratedGoalWorkspaceModal({
     const existingArtifact = isArtifactMode
       ? {
           commonCoreIdea: typeof ac.commonCoreIdea === 'string' ? ac.commonCoreIdea : undefined,
+          inquiryQuestion: typeof ac.inquiryQuestion === 'string' ? ac.inquiryQuestion : undefined,
           integratedGoal: typeof ac.integratedGoal === 'string' ? ac.integratedGoal : undefined,
           subjectGoals: Array.isArray(ac.subjectGoals)
             ? ac.subjectGoals.map(sg => ({
@@ -805,6 +817,7 @@ export function IntegratedGoalWorkspaceModal({
         chatContext,
         currentDraft: {
           commonCoreIdea: workspace.commonCoreIdea,
+          inquiryQuestion: workspace.inquiryQuestion,
           integratedGoal: workspace.integratedGoal,
           convergentKeywords: workspace.convergentKeywords,
           method: workspace.method,
@@ -891,6 +904,7 @@ export function IntegratedGoalWorkspaceModal({
       ...workspace,
       columns: DEFAULT_COLUMNS,
       commonCoreIdea: suggestion.commonCoreIdea || workspace.commonCoreIdea,
+      inquiryQuestion: suggestion.inquiryQuestion || workspace.inquiryQuestion,
       integratedGoal: suggestion.integratedGoal || workspace.integratedGoal,
       rows: remappedRows,
       updatedBy: currentUserName,
@@ -905,6 +919,7 @@ export function IntegratedGoalWorkspaceModal({
     const hasContent = workspace.rows.length > 0
       || workspace.blocks.length > 0
       || !!workspace.commonCoreIdea
+      || !!workspace.inquiryQuestion
       || !!workspace.integratedGoal
       || workspace.convergentKeywords.length > 0
     if (hasContent && !window.confirm('기존 내용을 예시로 교체할까요?')) return
@@ -1016,8 +1031,8 @@ export function IntegratedGoalWorkspaceModal({
           <div className="max-w-[1400px] mx-auto px-5 py-12 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-black text-[#1A73E8]">A-2-2</span>
-                <span className="text-[20px] font-extrabold text-[#202124]">통합 수업목표 진술</span>
+                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-black text-[#1A73E8]">A-4</span>
+                <span className="text-[20px] font-extrabold text-[#202124]">핵심 아이디어 도출 및 통합 수업목표 진술</span>
                 <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
                 </span>
@@ -1062,6 +1077,52 @@ export function IntegratedGoalWorkspaceModal({
                         text={workspace.commonCoreIdea}
                         editors={editors}
                         className="rounded-xl border border-transparent px-4 py-3 text-[18px] leading-relaxed"
+                      />
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* 탐구 질문 — 공통 핵심 아이디어를 학생의 언어로 전환 */}
+              {(() => {
+                const cellKey = 'meta:inquiryQuestion'
+                const editors = editorsForCell(cellKey)
+                const accentColor = editors[0]?.color
+                return (
+                  <div className="relative rounded-2xl border border-[#A8DAB5] bg-[#E6F4EA]/50 p-4">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <label className="text-[15px] font-bold text-[#137333]">탐구 질문</label>
+                      <span className="text-[12px] font-medium text-[#5F6368]">핵심 아이디어를 학생이 탐구할 개방형 질문으로 바꿉니다.</span>
+                      {editors.map(ed => (
+                        <span key={ed.uid} className="rounded-full px-2 py-0.5 text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                          {ed.displayName} 편집 중
+                        </span>
+                      ))}
+                    </div>
+                    <div className="relative">
+                      <AutoGrowTextarea
+                        value={workspace.inquiryQuestion}
+                        onChange={event => {
+                          setMetaLocal('inquiryQuestion', event.target.value)
+                          updatePresence(cellKey, event.target.selectionStart ?? undefined)
+                        }}
+                        onFocus={event => focusField(cellKey, event.currentTarget.selectionStart ?? 0)}
+                        onSelect={trackCaret(cellKey)}
+                        onKeyUp={trackCaret(cellKey)}
+                        onClick={trackCaret(cellKey)}
+                        onBlur={event => {
+                          updateMeta('inquiryQuestion', event.target.value)
+                          blurField()
+                        }}
+                        minRows={2}
+                        placeholder="예: 우리 학교가 기후변화에 대응하려면 무엇을 함께 바꿀 수 있을까?"
+                        style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                        className="relative w-full rounded-xl border border-[#A8DAB5] bg-white px-4 py-3 text-[18px] font-bold leading-relaxed text-[#202124] placeholder:text-[#9AA0A6] focus:border-[#137333] focus:outline-none focus:ring-2 focus:ring-[#137333]/20"
+                      />
+                      <CaretOverlay
+                        text={workspace.inquiryQuestion}
+                        editors={editors}
+                        className="rounded-xl border border-transparent px-4 py-3 text-[18px] font-bold leading-relaxed"
                       />
                     </div>
                   </div>
@@ -1644,6 +1705,15 @@ export function IntegratedGoalWorkspaceModal({
                         onChange={event => setSuggestion(prev => prev ? { ...prev, commonCoreIdea: event.target.value } : prev)}
                         minRows={2}
                         className="w-full rounded-md border border-[#E8EAED] bg-white px-3 py-2 text-[15px] text-[#202124] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#137333] mb-1">탐구 질문</label>
+                      <AutoGrowTextarea
+                        value={suggestion.inquiryQuestion}
+                        onChange={event => setSuggestion(prev => prev ? { ...prev, inquiryQuestion: event.target.value } : prev)}
+                        minRows={2}
+                        className="w-full rounded-md border border-[#A8DAB5] bg-[#E6F4EA]/40 px-3 py-2 text-[15px] font-semibold text-[#202124] focus:border-[#137333] focus:outline-none focus:ring-2 focus:ring-[#137333]/20"
                       />
                     </div>
                     {suggestion.subjectGoals?.length > 0 && (

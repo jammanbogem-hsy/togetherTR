@@ -42,6 +42,7 @@ const SHEET_EDITABLE_FIELDS: CurriculumSheetEditableField[] = [
   'standard',
   'knowledge',
   'processFunction',
+  'valueAttitude',
   'agentLessonExample',
   'description',
 ]
@@ -70,7 +71,7 @@ interface AutofillReview {
 let nanoidCounter = 0
 function makeId() { return `cs_${Date.now()}_${++nanoidCounter}` }
 function emptyRow(): CurriculumSheetRow {
-  return { id: makeId(), session: '', subject: '', coreIdea: '', standard: '', knowledge: '', processFunction: '', agentLessonExample: '', description: '' }
+  return { id: makeId(), session: '', subject: '', coreIdea: '', standard: '', knowledge: '', processFunction: '', valueAttitude: '', agentLessonExample: '', description: '' }
 }
 function splitValues(v: string): string[] { return v ? v.split(SEP).map(s => s.trim()).filter(Boolean) : [] }
 function joinValues(arr: string[]): string { return arr.join(SEP) }
@@ -136,6 +137,7 @@ function normalizeRowGradePrefixes(row: CurriculumSheetRow, fallbackGradeGroup?:
     ...row,
     knowledge: ensureGradePrefixesForValue(row.knowledge, row.standard, fallbackGradeGroup),
     processFunction: ensureGradePrefixesForValue(row.processFunction, row.standard, fallbackGradeGroup),
+    valueAttitude: ensureGradePrefixesForValue(row.valueAttitude ?? '', row.standard, fallbackGradeGroup),
   }
 }
 function samePickerOption(a: string, b: string): boolean {
@@ -368,9 +370,9 @@ interface Props {
   chatContext?: string
 }
 
-type PickerField = 'coreIdea' | 'standard' | 'knowledge' | 'processFunction'
+type PickerField = 'coreIdea' | 'standard' | 'knowledge' | 'processFunction' | 'valueAttitude'
 type PickerTarget = { rowId: string; field: PickerField; rect: DOMRect } | null
-const MULTI_FIELDS: PickerField[] = ['standard', 'knowledge', 'processFunction']
+const MULTI_FIELDS: PickerField[] = ['standard', 'knowledge', 'processFunction', 'valueAttitude']
 
 export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, onPatchSave, onRequestArtifactSave, onPresenceUpdate, onSwitchToGraph, presence, currentUserName, currentUid, currentUserColor, a12Artifact, graphSavedData, targetGradeGroup, chatContext }: Props) {
   const [rows, setRows] = useState<CurriculumSheetRow[]>([])
@@ -499,7 +501,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     const p1 = fetch(`/api/core-ideas?${params.toString()}`, { cache: 'no-store' }).then(r => r.json()).then(d => {
       setContentItems(sanitizeContentItems(d.items ?? []))
     }).catch(() => {})
-    const p2 = Promise.all(
+    const isElementaryTarget = !/(?:중학교|고등학교|^\s*[중고])/.test(targetGradeGroup ?? '')
+    const p2 = isElementaryTarget ? Promise.all(
       Object.entries(SUBJECT_FILE).map(async ([subj, file]) => {
         try {
           const data: CurriculumFile = await (await fetch(curriculumJsonAssetPath(file))).json()
@@ -511,7 +514,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           return flat
         } catch { return [] }
       }),
-    ).then(a => setStandards(a.flat()))
+    ).then(a => setStandards(a.flat())) : Promise.resolve(setStandards([]))
     Promise.all([p1, p2]).finally(() => setLoading(false))
   }, [open, targetGradeGroup])
 
@@ -611,13 +614,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   // 채워지면 재실행돼도 no-op이라 루프가 종료된다.
   useEffect(() => {
     if (!open || loading || contentItems.length === 0) return
-    const CAPS = { knowledge: 3, processFunction: 2 } as const
-    const changedCells: Array<{ rowId: string; field: 'knowledge' | 'processFunction'; value: string }> = []
+    const CAPS = { knowledge: 3, processFunction: 2, valueAttitude: 2 } as const
+    const changedCells: Array<{ rowId: string; field: 'knowledge' | 'processFunction' | 'valueAttitude'; value: string }> = []
     const changedRowIds = new Set<string>()
     const nextRows = rows.map(row => {
       if (!(row.coreIdea ?? '').trim()) return row
       let next = row
-      for (const field of ['knowledge', 'processFunction'] as const) {
+      for (const field of ['knowledge', 'processFunction', 'valueAttitude'] as const) {
         if ((row[field] ?? '').trim()) continue
         if (dirtyCellVersionsRef.current[`${row.id}:${field}`] !== undefined) continue
         const matched = matchContentElementsForRow(row, field).slice(0, CAPS[field])
@@ -712,6 +715,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     return rows.some(r => r.subject) ? rows.map(r => ({
       subject: r.subject, coreIdea: r.coreIdea, standard: r.standard,
       knowledge: r.knowledge, processFunction: r.processFunction,
+      valueAttitude: r.valueAttitude,
       agentLessonExample: r.agentLessonExample, description: r.description, isCenter: r.isCenter,
     })) : undefined
   }
@@ -806,9 +810,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     })
   }
 
-  // 행의 핵심아이디어에 매칭되는 내용체계 원문(지식·이해/과정·기능)만 반환 — getPickerOptions coreIdea 분기와 동일 스코핑.
+  // 행의 핵심아이디어에 매칭되는 내용체계 원문(지식·이해/과정·기능/가치·태도)만 반환 — getPickerOptions coreIdea 분기와 동일 스코핑.
   // STRICT: 핵심아이디어에 매칭되는 항목이 없으면 [] (자동 보강이 핵심아이디어와 무관한 값을 쓰지 않도록).
-  function matchContentElementsForRow(row: CurriculumSheetRow, field: 'knowledge' | 'processFunction'): string[] {
+  function matchContentElementsForRow(row: CurriculumSheetRow, field: 'knowledge' | 'processFunction' | 'valueAttitude'): string[] {
     const subj = row.subject ?? ''; const ci = row.coreIdea ?? ''
     if (!ci) return []
     const si = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
@@ -825,7 +829,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     const matched = areaScopedItems.filter(i => i.coreIdeas.some(c => curriculumTextMatches(c, ci)))
     if (matched.length === 0) return []
     matched.sort((a, b) => a.coreIdeas.length - b.coreIdeas.length)
-    const raw = filterByTargetGrade(field === 'knowledge' ? matched[0].knowledge : matched[0].functions, targetGradeGroup)
+    const rawItems = field === 'knowledge' ? matched[0].knowledge : field === 'processFunction' ? matched[0].functions : matched[0].attitudes
+    const raw = filterByTargetGrade(rawItems, targetGradeGroup)
     return [...new Set(raw)]
   }
 
@@ -848,7 +853,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       const s = subj ? standards.filter(s => s.subject === subj) : standards
       return s.filter(standard => standardMatchesTargetGrade(standard, targetGradeGroup)).map(s => s.label)
     }
-    if (field === 'knowledge' || field === 'processFunction') {
+    if (field === 'knowledge' || field === 'processFunction' || field === 'valueAttitude') {
       // 내용체계 JSON 원문만 사용한다. 보조 매핑/AI 생성값은 선택창 후보에서 제외한다.
       if (ci && row) {
         const matched = matchContentElementsForRow(row, field)
@@ -856,7 +861,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       }
 
       // 폴백도 현재 교과/영역/학년군의 내용체계 원문으로만 제한
-      return [...new Set(gradeFiltered(areaScopedItems.flatMap(i => field === 'knowledge' ? i.knowledge : i.functions)))]
+      return [...new Set(gradeFiltered(areaScopedItems.flatMap(i => field === 'knowledge' ? i.knowledge : field === 'processFunction' ? i.functions : i.attitudes)))]
     }
     return []
   }
@@ -920,8 +925,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
   if (!open) return null
 
-  const FL: Record<string, string> = { coreIdea: '핵심아이디어', standard: '성취기준', knowledge: '지식·이해', processFunction: '과정·기능' }
-  const FC: Record<string, string> = { coreIdea: '#7B1FA2', standard: '#1A73E8', knowledge: '#0D47A1', processFunction: '#137333' }
+  const FL: Record<string, string> = { coreIdea: '핵심아이디어', standard: '성취기준', knowledge: '지식·이해', processFunction: '과정·기능', valueAttitude: '가치·태도' }
+  const FC: Record<string, string> = { coreIdea: '#7B1FA2', standard: '#1A73E8', knowledge: '#0D47A1', processFunction: '#137333', valueAttitude: '#8A5A00' }
 
   const allEditors = presence ? [...new Map(Object.values(presence).filter(p => Date.now() - p.updatedAt < 20000).map(p => [p.uid, p] as const)).values()] : []
   const myColor = currentUserColor ?? (currentUid ? PRESENCE_COLORS[(currentUid.charCodeAt(0) + currentUid.charCodeAt(Math.min(currentUid.length - 1, 5))) % PRESENCE_COLORS.length] : '#999')
@@ -1064,12 +1069,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             <div className="py-20 text-center text-base text-[#9AA0A6]">교육과정 데이터 로딩 중...</div>
           ) : (
             <div className="h-full overflow-auto" style={{ scrollbarGutter: 'stable both-edges' }}>
-              <table className="w-[2320px] min-w-[2320px] table-fixed border-collapse">
+              <table className="w-[2605px] min-w-[2605px] table-fixed border-collapse">
                 <colgroup>
                   <col style={{ width: 36 }} />
                   <col style={{ width: 125 }} />
                   <col style={{ width: 360 }} />
                   <col style={{ width: 420 }} />
+                  <col style={{ width: 285 }} />
                   <col style={{ width: 285 }} />
                   <col style={{ width: 285 }} />
                   <col style={{ width: 360 }} />
@@ -1084,6 +1090,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     <th className="px-3 py-3 text-left text-base font-bold text-[#1A73E8] whitespace-nowrap">성취기준</th>
                     <th className="px-3 py-3 text-left text-base font-bold text-[#0D47A1] whitespace-nowrap">지식·이해</th>
                     <th className="px-3 py-3 text-left text-base font-bold text-[#137333] whitespace-nowrap">과정·기능</th>
+                    <th className="px-3 py-3 text-left text-base font-bold text-[#8A5A00] whitespace-nowrap">가치·태도</th>
                     <th className="px-3 py-3 text-left text-base font-bold text-[#7B1FA2] whitespace-nowrap">Agent 추천 수업 예시</th>
                     <th className="px-3 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap">수업내용 설명</th>
                     <th className="px-2 py-3 sticky right-0 z-20 bg-[#F8F9FA] border-l border-[#DADCE0]" />
@@ -1174,13 +1181,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       })()}
                     </td>
 
-                    {/* 성취기준 / 지식이해 / 과정기능 (다중 태그) */}
-                    {(['standard', 'knowledge', 'processFunction'] as const).map(field => {
+                    {/* 성취기준 / 지식·이해 / 과정·기능 / 가치·태도 (다중 태그) */}
+                    {(['standard', 'knowledge', 'processFunction', 'valueAttitude'] as const).map(field => {
                       const oe = getPresenceForCell(row.id, field)
                       const isMy = getMyPresenceForCell(row.id, field)
                       return (
                         <td key={field} className="px-3 py-2 align-top relative">
-                          <TagCell value={row[field]} placeholder={FL[field]} color={FC[field]}
+                          <TagCell value={row[field] ?? ''} placeholder={FL[field]} color={FC[field]}
                             onClickAdd={e => handleCellClick(row.id, field, e)} onRemove={tag => removeTag(row.id, field, tag)}
                             otherEditor={oe} myEditing={isMy} myColor={myColor} />
                           {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
