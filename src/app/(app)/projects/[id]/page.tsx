@@ -31,6 +31,7 @@ import { STAGE_COLOR, STAGE_LABELS } from '@/lib/ui/stageColors'
 import { isEffectivelyDone as checkEffectivelyDone, parseNextCycleChoice } from '@/lib/activity/completion'
 import { hasNewCycleT11Artifact, shouldOpenCycleTransition } from '@/lib/activity/cycle'
 import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, PaperPlaneRight, FileText, Books, Sparkle, X as XIcon, ArrowRight, CaretRight, CaretDown, Globe, Graph as GraphIcon, House } from '@phosphor-icons/react'
+import { Avatar } from '@/components/ui/Avatar'
 import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 
@@ -152,15 +153,7 @@ function WaitingRoom({
                 const isSelf = mUid === uid
                 return (
                   <div key={mUid} className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 flex items-center justify-center text-[15px] font-extrabold text-white flex-shrink-0 select-none shadow-sm"
-                      style={{
-                        backgroundColor: info?.color ?? '#9AA0A6',
-                        animation: isThisHost ? 'morph-shape 8s ease-in-out infinite' : 'morph-shape 11s ease-in-out infinite',
-                      }}
-                    >
-                      {(info?.displayName?.[0] ?? '?').toUpperCase()}
-                    </div>
+                    <Avatar name={info?.displayName} color={info?.color ?? '#9AA0A6'} size={40} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[14px] font-bold text-[#202124] truncate">
@@ -240,12 +233,7 @@ function WaitingRoom({
               const isSelf = msg.uid === uid
               return (
                 <div key={msg.id} className={cn('flex gap-2.5', isSelf ? 'flex-row-reverse' : 'flex-row')}>
-                  <div
-                    className="w-9 h-9 flex items-center justify-center text-[13px] font-extrabold text-white flex-shrink-0 select-none"
-                    style={{ backgroundColor: msg.color, animation: 'morph-shape 10s ease-in-out infinite' }}
-                  >
-                    {(msg.displayName?.[0] ?? '?').toUpperCase()}
-                  </div>
+                  <Avatar name={msg.displayName} color={msg.color} size={36} />
                   <div className={cn('max-w-[75%] space-y-0.5 flex flex-col', isSelf ? 'items-end' : 'items-start')}>
                     {!isSelf && (
                       <span className="text-[11px] font-bold px-1" style={{ color: msg.color }}>
@@ -1265,16 +1253,7 @@ export default function ProjectPage() {
                   const isHostMember = mUid === (project.hostUid ?? project.createdBy)
                   return (
                     <div key={mUid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8F9FA]">
-                      <div
-                        className="w-8 h-8 flex items-center justify-center text-white text-[13px] font-black flex-shrink-0"
-                        style={{
-                          backgroundColor: color,
-                          animation: 'morph-shape 8s ease-in-out infinite',
-                          boxShadow: `0 3px 8px ${color}55`,
-                        }}
-                      >
-                        {displayName?.[0]?.toUpperCase() ?? '?'}
-                      </div>
+                      <Avatar name={displayName} color={color} size={36} />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-semibold text-[#202124] truncate">
                           {displayName}

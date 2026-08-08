@@ -5,8 +5,8 @@ import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence } from '@/lib/firebase/projects'
-import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows } from '@/lib/firebase/projects'
+import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch, CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import type { GraphPinnedStandard, GraphSavedData } from '@/lib/knowledge-graph/domain'
@@ -26,6 +26,8 @@ import { EvaluationPlanWorkspaceModal } from '@/components/artifacts/EvaluationP
 import { ProblemSituationWorkspaceModal } from '@/components/artifacts/ProblemSituationWorkspaceModal'
 import { SupportToolWorkspaceModal } from '@/components/artifacts/SupportToolWorkspaceModal'
 import { IntegratedGoalWorkspaceModal } from '@/components/artifacts/IntegratedGoalWorkspaceModal'
+import { CoeditWorkspaceModal, type CoeditSuggestContext } from '@/components/artifacts/CoeditWorkspaceModal'
+import { MATERIAL_DEV_CONFIG, LESSON_RECORD_CONFIG, LESSON_REFLECTION_CONFIG, COLLABORATION_REFLECTION_CONFIG } from '@/components/artifacts/coeditConfigs'
 import { RoleDistributionWorkspaceModal } from '@/components/artifacts/RoleDistributionWorkspaceModal'
 import { TeamRulesWorkspaceModal } from '@/components/artifacts/TeamRulesWorkspaceModal'
 import { TeamScheduleWorkspaceModal } from '@/components/artifacts/TeamScheduleWorkspaceModal'
@@ -56,6 +58,8 @@ import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
+import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
+import { Avatar, AvatarChip } from '@/components/ui/Avatar'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -309,10 +313,7 @@ function OptionsMessage({
 
   return (
     <article className="flex gap-2 mb-3" aria-label="AI 공동설계자의 선택지 제안">
-      <div className="chat-avatar-animated w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
-        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }} aria-hidden="true">
-        AI
-      </div>
+      <Avatar className="chat-avatar-animated self-start" ai size={40} />
       <div className="max-w-[min(88%,46rem)] flex flex-col gap-3 flex-1">
         {pre && (
           <div className="bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
@@ -926,15 +927,15 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
       onReply={onReply}
       className={cn('flex gap-2 mb-3', alignRight ? 'flex-row-reverse' : 'flex-row')}
     >
-      {/* 아바타 — 상단 정렬, 크게 */}
-      <div
-        className="chat-avatar-animated w-11 h-11 rounded-full flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
-        style={{ backgroundColor: avatarColor, color: textOnColor, animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
+      {/* 아바타 — 상단 정렬, Google 프로필 스타일(플랫 원형) */}
+      <Avatar
+        className="chat-avatar-animated self-start"
+        name={senderName}
+        color={avatarColor}
+        size={40}
+        ai={!isUser}
         title={senderName}
-        aria-hidden="true"
-      >
-        {isUser ? (senderName?.slice(0, 1) ?? '?') : 'AI'}
-      </div>
+      />
 
       <div className={cn(
         'min-w-0 space-y-0.5',
@@ -1031,10 +1032,7 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
   const s = STAGE_BUBBLE[stage ?? 'T'] ?? STAGE_BUBBLE['T']
   return (
     <article className="flex gap-2 mb-3" aria-label="AI 공동설계자가 응답하는 중" aria-busy="true" aria-live="off">
-      <div className="chat-avatar-animated w-11 h-11 rounded-full bg-[#202124] text-white flex items-center justify-center text-sm font-extrabold flex-shrink-0 shadow-md self-start"
-        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }} aria-hidden="true">
-        AI
-      </div>
+      <Avatar className="chat-avatar-animated self-start" ai size={40} />
       <div className="w-fit max-w-[min(88%,46rem)] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] text-sm leading-relaxed"
         style={{ backgroundColor: s.bg, color: s.text, borderColor: s.border }}>
         <MarkdownContent text={text} />
@@ -1048,10 +1046,7 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
 function AIIdleBubble() {
   return (
     <div className="flex gap-2 items-end mb-4">
-      <div className="chat-avatar-animated w-8 h-8 rounded-full bg-[#202124] text-white flex items-center justify-center text-xs font-bold flex-shrink-0"
-        style={{ animation: 'avatar-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both' }} aria-hidden="true">
-        AI
-      </div>
+      <Avatar className="chat-avatar-animated" ai size={32} />
       <div className="bg-[#F1F3F4] px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
         <div className="flex gap-1.5 items-center">
           {[0, 1, 2].map(i => (
@@ -1151,14 +1146,15 @@ function CoeditButton({ label, title, onClick, showHint }: {
           <span className="absolute -top-1.5 right-8 h-3 w-3 rotate-45 border-l border-t border-white/80 bg-[#1A73E8]" />
         </div>
       )}
-      <button
+      <MD3Button
         onClick={onClick}
         title={title}
-        className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-white text-[#1A73E8] border-2 border-[#AECBFA] hover:bg-[#E8F0FE] shadow-sm transition-colors whitespace-nowrap"
+        variant="filled"
+        tone="blue"
+        icon={<PencilSimple size={MD3_ICON.sm} weight="bold" />}
       >
-        <PencilSimple size={13} weight="bold" />
         {label}
-      </button>
+      </MD3Button>
     </div>
   )
 }
@@ -1244,6 +1240,15 @@ function ChatPanelContent() {
   const [supportToolPresence, setSupportToolPresence] = useState<Record<string, SupportToolPresenceEntry>>({})
   const [learningActivityPresence, setLearningActivityPresence] = useState<Record<string, LearningActivityPresenceEntry>>({})
   const [scaffoldingPresence, setScaffoldingPresence] = useState<Record<string, ScaffoldingPresenceEntry>>({})
+  // ── DI·E 공동 편집 세션 (가이드 20260804 §4·§5) ──
+  const [showMaterialDevWorkspace, setShowMaterialDevWorkspace] = useState(false)
+  const [showLessonRecordWorkspace, setShowLessonRecordWorkspace] = useState(false)
+  const [showLessonReflectionWorkspace, setShowLessonReflectionWorkspace] = useState(false)
+  const [showCollaborationReflectionWorkspace, setShowCollaborationReflectionWorkspace] = useState(false)
+  const [materialDevPresence, setMaterialDevPresence] = useState<Record<string, CoeditPresenceEntry>>({})
+  const [lessonRecordPresence, setLessonRecordPresence] = useState<Record<string, CoeditPresenceEntry>>({})
+  const [lessonReflectionPresence, setLessonReflectionPresence] = useState<Record<string, CoeditPresenceEntry>>({})
+  const [collaborationReflectionPresence, setCollaborationReflectionPresence] = useState<Record<string, CoeditPresenceEntry>>({})
   const [workspaceInitialView, setWorkspaceInitialView] = useState<'sheet' | 'graph'>('sheet')
   const [noteTooltip, setNoteTooltip] = useState<{ num: number; preview: string; x: number; y: number } | null>(null)
   // 우클릭 컨텍스트 메뉴 상태
@@ -1398,6 +1403,12 @@ function ChatPanelContent() {
     return () => { if (coeditHintTimerRef.current) clearTimeout(coeditHintTimerRef.current) }
   }, [currentActivity])
 
+  // 개인 설계(solo)에서만 T-1-1 빌더에 1인 파싱 경로를 연다.
+  // 협력 모드에서는 undefined를 넘겨 팀 파싱 동작을 그대로 유지한다.
+  function soloT11Opts(): { teacherName?: string } | undefined {
+    return proj.mode === 'solo' ? { teacherName: userProfile?.displayName } : undefined
+  }
+
   // 구조화 산출물 fallback 자동 저장 — ARTIFACT_UPDATE 실패 시 채팅에서 직접 추출
   function tryStructuredFallbackSave(responseText: string, activity: ActivityCode) {
     if (!/저장/.test(responseText)) return
@@ -1406,7 +1417,7 @@ function ChatPanelContent() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let structured: any = null
 
-    if (activity === 'T-1-1' && responseText.includes('|')) { const s = artifactSchemas.buildT11Structured({}, ctx); if (s.teamVision || s.personalVisions.length > 0) structured = s }
+    if (activity === 'T-1-1' && responseText.includes('|')) { const s = artifactSchemas.buildT11Structured({}, ctx, soloT11Opts()); if (s.teamVision || s.personalVisions.length > 0) structured = s }
     else if (activity === 'T-1-2' && (responseText.includes('|') || /원칙|방향/.test(responseText))) { const s = artifactSchemas.buildT12Structured({}, ctx); if (s.designPrinciples.length > 0) structured = s }
     else if (activity === 'T-2-1' && responseText.includes('|')) { const s = artifactSchemas.buildT21Structured({}, ctx); if (s.roles.length > 0) structured = s }
     else if (activity === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(responseText)) { const s = artifactSchemas.buildT22Structured({}, ctx); if (s.rules.length > 0) structured = s }
@@ -1450,7 +1461,7 @@ function ChatPanelContent() {
     // 사용자가 /산출물·우클릭으로 직접 저장한 manual 경로는 'AI가 입력' 안내가 부정확하므로 제외.
     if (origin === 'ai') flashCoeditHint(targetAct)
     if (targetAct === 'T-1-1') {
-      const structured = buildT11Structured(sections, contextMsgs)
+      const structured = buildT11Structured(sections, contextMsgs, soloT11Opts())
       sections = structured as unknown as Record<string, string>
     } else if (targetAct === 'T-1-2') {
       sections = buildT12Structured(sections, contextMsgs) as unknown as Record<string, string>
@@ -1841,6 +1852,25 @@ function ChatPanelContent() {
       })
     })
     return () => { unsub(); setScaffoldingPresence({}) }
+  }, [project?.id])
+
+  // DI·E 공동 편집 4종 presence 구독 — 동일 패턴을 한 effect로 묶는다
+  useEffect(() => {
+    if (!project?.id) return
+    const id = project.id
+    const unsubs = [
+      watchMaterialDevWorkspacePresence(id, setMaterialDevPresence),
+      watchLessonRecordWorkspacePresence(id, setLessonRecordPresence),
+      watchLessonReflectionWorkspacePresence(id, setLessonReflectionPresence),
+      watchCollaborationReflectionWorkspacePresence(id, setCollaborationReflectionPresence),
+    ]
+    return () => {
+      unsubs.forEach(u => u())
+      setMaterialDevPresence({})
+      setLessonRecordPresence({})
+      setLessonReflectionPresence({})
+      setCollaborationReflectionPresence({})
+    }
   }, [project?.id])
 
   // T-2-1 역할 배분 워크스페이스 presence subcollection 구독 — 같은 패턴
@@ -2430,7 +2460,7 @@ function ChatPanelContent() {
     )
     // 구조화된 산출물로 변환
     if (targetActivity === 'T-1-1') {
-      enrichedSections = buildT11Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
+      enrichedSections = buildT11Structured(enrichedSections, ctxMsgs, soloT11Opts()) as unknown as Record<string, string>
     } else if (targetActivity === 'T-1-2') {
       enrichedSections = buildT12Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     } else if (targetActivity === 'T-2-1') {
@@ -2941,6 +2971,148 @@ ${discussionSummary}
       entry ? { ...entry, color } : null,
     ).catch(console.error)
   }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+
+  // ── DI·E 공동 편집 세션 핸들러 (가이드 20260804 §4·§5) ──
+  // 4종이 동일한 shape을 쓰므로 patch/presence/저장을 팩토리로 묶는다.
+  const coeditModules = useMemo(() => ({
+    'DI-1-1': {
+      patch: patchMaterialDevWorkspace,
+      setPresence: setMaterialDevWorkspacePresence,
+      empty: emptyMaterialDevWorkspace,
+      config: MATERIAL_DEV_CONFIG,
+      title: '자료 탐색·개발 산출물',
+      artifactType: '자료 탐색·개발',
+    },
+    'DI-2-1': {
+      patch: patchLessonRecordWorkspace,
+      setPresence: setLessonRecordWorkspacePresence,
+      empty: emptyLessonRecordWorkspace,
+      config: LESSON_RECORD_CONFIG,
+      title: '수업 실행·기록 산출물',
+      artifactType: '수업 실행·기록',
+    },
+    'E-1-1': {
+      patch: patchLessonReflectionWorkspace,
+      setPresence: setLessonReflectionWorkspacePresence,
+      empty: emptyLessonReflectionWorkspace,
+      config: LESSON_REFLECTION_CONFIG,
+      title: '수업 성찰·공동 개선 산출물',
+      artifactType: '수업 성찰과 공동 개선',
+    },
+    'E-2-1': {
+      patch: patchCollaborationReflectionWorkspace,
+      setPresence: setCollaborationReflectionWorkspacePresence,
+      empty: emptyCollaborationReflectionWorkspace,
+      config: COLLABORATION_REFLECTION_CONFIG,
+      title: '협력 과정 성찰 산출물',
+      artifactType: '협력 과정 성찰',
+    },
+  }), [])
+
+  // E-2-1 합의 대조판은 빈 표가 아니라 T단계 산출물 5행이 채워진 상태로 열린다.
+  // 가이드 p68 HOW — 이미 저장된 비전·방향·역할·규칙·일정을 손으로 옮겨 적게 하지 않는다.
+  // solo는 T-1-2·T-2-1·T-2-2가 숨김 활동이라 비전·일정 2행만 생성된다.
+  const collaborationEmptyWithAgreements = useCallback(() => {
+    const base = emptyCollaborationReflectionWorkspace()
+    return { ...base, rows: buildCollaborationAgreementRows(proj.artifacts, proj.mode === 'solo') }
+  }, [proj.artifacts, proj.mode])
+
+  // AI 제안 맥락 — 활동마다 "근거로 삼아야 할 이전 산출물"이 다르다(가이드 §4·§5).
+  // 산출물이 없으면 해당 항목을 빼고 보낸다 → 라우트가 지어내지 않고 빈 칸으로 둔다.
+  const makeCoeditSuggestContext = useCallback((code: 'DI-1-1' | 'DI-2-1' | 'E-1-1' | 'E-2-1'): CoeditSuggestContext => {
+    const asText = (activityCode: string): string => {
+      const content = proj.artifacts?.[activityCode]?.content as Record<string, unknown> | undefined
+      if (!content) return ''
+      return Object.entries(content)
+        .filter(([k]) => k !== '_schema')
+        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+        .join('\n')
+    }
+    const pick = (specs: Array<[string, string]>) => specs
+      .map(([activityCode, label]) => ({ label, text: asText(activityCode) }))
+      .filter(a => a.text.trim())
+
+    const priorArtifacts =
+      code === 'DI-1-1' ? pick([['Ds-1-3', 'Ds-3 학습활동 설계'], ['Ds-2-2', 'Ds-5 스캐폴딩 설계'], ['Ds-1-1', 'Ds-1 평가 계획']])
+      : code === 'DI-2-1' ? pick([['DI-1-1', 'DI-1 개발 자료 목록'], ['Ds-1-3', 'Ds-3 학습활동 설계']])
+      : code === 'E-1-1' ? pick([['Ds-1-1', 'Ds-1 평가 계획·루브릭'], ['DI-2-1', 'DI-2 수업 기록'], ['A-2-2', 'A-4 통합 수업목표']])
+      : pick([['T-1-1', 'T-1 공동 비전'], ['T-1-2', 'T-2 수업설계 방향'], ['T-2-1', 'T-3 역할 배분'], ['T-2-2', 'T-4 팀 규칙'], ['T-2-3', 'T-5 팀 일정']])
+
+    return {
+      projectTitle: proj.title,
+      targetGradeGroup: proj.targetGradeGroup,
+      targetSubjects: proj.targetSubjects,
+      teamMembers: Object.values(proj.memberInfo ?? {}).map(m => m.displayName).filter(Boolean),
+      priorArtifacts,
+      chatContext: messages
+        .filter(m => m.activityCode === code)
+        .map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
+    }
+  }, [proj.artifacts, proj.title, proj.targetGradeGroup, proj.targetSubjects, proj.memberInfo, messages])
+
+  const makeCoeditPatchHandler = useCallback((code: 'DI-1-1' | 'DI-2-1' | 'E-1-1' | 'E-2-1') =>
+    async (patch: CoeditWorkspacePatch) => {
+      if (!projectId) return undefined
+      return coeditModules[code].patch(projectId, patch)
+    }, [projectId, coeditModules])
+
+  const makeCoeditPresenceHandler = useCallback((code: 'DI-1-1' | 'DI-2-1' | 'E-1-1' | 'E-2-1') =>
+    async (entry: CoeditPresenceEntry | null) => {
+      if (!projectId || !userProfile?.uid) return
+      const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+      await coeditModules[code].setPresence(
+        projectId,
+        userProfile.uid,
+        entry ? { ...entry, color } : null,
+      ).catch(console.error)
+    }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color, coeditModules])
+
+  const makeCoeditSendHandler = useCallback((code: 'DI-1-1' | 'DI-2-1' | 'E-1-1' | 'E-2-1') =>
+    async (content: Record<string, string>) => {
+      if (!project?.id) return
+      const mod = coeditModules[code]
+      // 팀원은 직접 저장하지 않고 방장에게 제안 (기존 워크스페이스와 동일 규칙)
+      if (project.mode === 'collaborative' && !isHost) {
+        await proposeArtifactToHost(
+          project.id, code, content,
+          userProfile?.uid ?? '', userProfile?.displayName ?? '팀원',
+        )
+        return
+      }
+      const firestoreArtifact = project.artifacts?.[code]
+      const existing = currentArtifact?.activityCode === code ? currentArtifact : null
+      const version = (firestoreArtifact?.version ?? existing?.currentVersion ?? 0) + 1
+      // 기존 내용 병합 — 공동 편집이 채우지 않은 섹션(AI가 쓴 것)을 지우지 않는다
+      const base = (firestoreArtifact?.content ?? {}) as Record<string, unknown>
+      const merged = { ...base }
+      for (const [k, v] of Object.entries(content)) {
+        if (v && v.trim()) merged[k] = v
+      }
+      await setProjectArtifact(project.id, code, {
+        status: 'in_review',
+        title: mod.title,
+        content: merged,
+        version,
+      })
+      setViewingActivity(code)
+      setCurrentArtifact({
+        id: existing?.id ?? Date.now().toString(),
+        activityCode: code,
+        artifactType: mod.artifactType,
+        title: mod.title,
+        status: 'in_review',
+        currentVersion: version,
+        aiDraft: merged,
+        createdBy: userProfile?.uid ?? 'manual',
+        meta: {
+          author: '수동 공동 편집',
+          createdAt: existing?.meta?.createdAt ?? Timestamp.now(),
+          updatedAt: Timestamp.now(),
+          evidence: `${mod.artifactType} 공동 편집`,
+          approvalStatus: 'pending',
+        },
+      })
+    }, [project, isHost, currentArtifact, userProfile, coeditModules, setViewingActivity, setCurrentArtifact])
 
   async function handleScaffoldingSendArtifact(content: Ds22Structured) {
     if (!project?.id || !isHost) return
@@ -3563,8 +3735,16 @@ ${discussionSummary}
 
     if (handleA21SheetArtifactRequest(userMessage)) return
 
-    // 팀 토의 모드 또는 선택 대기 중: AI 호출 없이 메시지만 저장
-    if (isTeamMode || isWaitingForChoice) return
+    // 팀 토의 모드: AI 호출 없이 메시지만 저장 (AI는 토의 종료 후 응답)
+    if (isTeamMode) return
+
+    // 선택 대기 중 자유 입력 — 제시된 안이 마음에 들지 않아 직접 말로 답한 경우.
+    // 방장(=solo 사용자 포함)이 입력하면 "이 중에는 없다 · 직접 입력"으로 간주해
+    // 선택 대기를 해제하고 AI 응답을 이어간다. 팀원은 기존대로 의견만 남긴다.
+    if (isWaitingForChoice) {
+      if (!isHost) return
+      if (lastAIMsg) await closeOptionChoice(proj.id, lastAIMsg.id).catch(console.error)
+    }
 
     setIsLoading(true)
     clearStreamingText()
@@ -3822,8 +4002,8 @@ ${discussionSummary}
         GRAPH_ACTIVITIES.includes(currentActivity) && !showWorkspace ? 'pt-12 pb-3' : 'py-3',
         isTeamMode ? 'bg-[#E0F2F1] border-[#80CBC4]' : 'bg-white border-[#DADCE0]',
       )}>
-        <div className={cn('w-2 h-2 rounded-full animate-pulse', isTeamMode ? 'bg-[#00897B]' : 'bg-[#34A853]')} />
-        <span className="text-sm font-semibold text-[#202124]">{activityMeta.label}</span>
+        <div className={cn('w-2 h-2 rounded-full animate-pulse flex-shrink-0', isTeamMode ? 'bg-[#00897B]' : 'bg-[#34A853]')} />
+        <span className="text-[15px] font-semibold text-[#202124] truncate min-w-0">{activityMeta.label}</span>
         {activityMeta.isGuardrailSource && (
           <span className="flex items-center gap-1 text-[10px] bg-[#F3E5F5] text-[#7B1FA2] px-1.5 py-0.5 rounded-full">
             <Shield size={11} weight="fill" /> 가드레일 소스
@@ -3834,21 +4014,24 @@ ${discussionSummary}
             <Star size={11} weight="fill" /> 평가 먼저
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+        <div className="ml-auto flex items-center gap-2 flex-shrink-0">
           <ChatFontScaleControl />
           {/* 중요 노트 버튼 */}
-          <button
-            type="button"
+          <MD3Button
             onClick={() => setShowKeyNotes(true)}
             title="저장된 중요 노트 보기"
             aria-label="중요 노트 보기"
-            className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full
-              bg-white text-[#E65100] border-2 border-[#FFB74D] hover:bg-[#FFF3E0] shadow-sm
-              transition-colors whitespace-nowrap"
+            variant="tonal"
+            tone="amber"
+            icon={<Star size={MD3_ICON.sm} weight="fill" />}
           >
-            <Star size={13} weight="fill" />
-            노트{proj.keyNotes?.length ? <span className="px-1 rounded-full bg-[#E65100] text-white text-[9px] leading-tight">{proj.keyNotes.length}</span> : ''}
-          </button>
+            노트
+            {!!proj.keyNotes?.length && (
+              <span className="ml-0.5 min-w-[18px] rounded-full bg-[#E65100] px-1 py-[1px] text-[11px] font-medium leading-tight text-white">
+                {proj.keyNotes.length}
+              </span>
+            )}
+          </MD3Button>
           {/* 끊긴 대화 재시도 버튼: 마지막 메시지가 user이고 로딩 중이 아닐 때 */}
           {(() => {
             const lastMsg = messages[messages.length - 1]
@@ -3856,16 +4039,19 @@ ${discussionSummary}
             if (!canRetry) return null
             const retryContent = lastMsg.content
             return (
-              <button
+              <MD3Button
                 onClick={() => sendMessageDirectly(retryContent)}
-                className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full border border-[#F28B82] bg-[#FCE8E6] text-[#C5221F] hover:bg-[#f9d2cf] transition-colors"
                 title="AI 응답이 끊겼습니다. 다시 시도합니다"
+                variant="tonal"
+                tone="red"
+                icon={
+                  <svg width={MD3_ICON.sm} height={MD3_ICON.sm} viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.76-4.24L9 6h6V0l-1.35 2.35z"/>
+                  </svg>
+                }
               >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.76-4.24L9 6h6V0l-1.35 2.35z"/>
-                </svg>
                 재시도
-              </button>
+              </MD3Button>
             )
           })()}
           {currentActivity === 'T-1-1' && (
@@ -3928,6 +4114,27 @@ ${discussionSummary}
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowIntegratedGoalWorkspace(true) }} />
           )}
+          {/* DI·E 공동 편집 (가이드 20260804 §4·§5) */}
+          {currentActivity === 'DI-1-1' && (
+            <CoeditButton label="자료 목록 공동 편집" title="자료 탐색·개발 공동 편집 (자료 워크스루)"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowMaterialDevWorkspace(true) }} />
+          )}
+          {currentActivity === 'DI-2-1' && (
+            <CoeditButton label="수업 기록 공동 편집" title="수업 실행·기록 공동 편집 (결정적 장면 기록)"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowLessonRecordWorkspace(true) }} />
+          )}
+          {currentActivity === 'E-1-1' && (
+            <CoeditButton label="성찰 공동 편집" title="수업 성찰·공동 개선 공동 편집 (증거 검토)"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowLessonReflectionWorkspace(true) }} />
+          )}
+          {currentActivity === 'E-2-1' && (
+            <CoeditButton label="협력 성찰 공동 편집" title="협력 과정 성찰 공동 편집 (T단계 합의 대조)"
+              showHint={coeditHintActivity === currentActivity}
+              onClick={() => { setCoeditHintActivity(null); setShowCollaborationReflectionWorkspace(true) }} />
+          )}
           {/* 교육과정 분석 워크스페이스 버튼 (A단계 활동에서만 표시) */}
           {GRAPH_ACTIVITIES.includes(currentActivity) && (
             <div className="relative flex items-center">
@@ -3937,7 +4144,7 @@ ${discussionSummary}
                   <span className="absolute -bottom-1.5 right-8 h-3 w-3 rotate-45 border-b border-r border-white/80 bg-[#7B1FA2]" />
                 </div>
               )}
-              <button
+              <MD3Button
                 onClick={() => {
                   setShowWorkspace(true)
                   setWorkspaceInitialView('sheet')
@@ -3947,17 +4154,15 @@ ${discussionSummary}
                   setStableGraphKeyword(' ')
                   if (isHost) setGraphOpen(proj.id, true, undefined, 'sheet').catch(console.error)
                 }}
-                className={cn(
-                  'flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full transition-colors whitespace-nowrap',
-                  showWorkspace
-                    ? 'bg-[#7B1FA2] text-white border-2 border-[#7B1FA2] shadow-md'
-                    : 'bg-white text-[#7B1FA2] border-2 border-[#CE93D8] hover:bg-[#F3E5F5] shadow-sm kg-graph-btn-rainbow',
-                )}
+                variant="tonal"
+                tone="purple"
+                selected={showWorkspace}
+                className={cn('border-2 border-transparent', !showWorkspace && 'kg-graph-btn-rainbow')}
+                icon={<TreeStructure size={MD3_ICON.sm} weight={showWorkspace ? 'fill' : 'bold'} />}
                 title="교육과정 분석 시트 + 지식 그래프"
               >
-                <TreeStructure size={13} weight={showWorkspace ? 'fill' : 'bold'} />
                 교육과정 분석
-              </button>
+              </MD3Button>
             </div>
           )}
           {/* 문제 상황 설정 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
@@ -3969,7 +4174,7 @@ ${discussionSummary}
                   문제상황 워크숍을 이용한 후 공동 편집을 하는 것도 좋습니다.
                 </div>
               )}
-              <button
+              <MD3Button
                 onClick={() => {
                   const next = !showProblemSituationDesigner
                   setShowProblemSituationDesigner(next)
@@ -3979,35 +4184,25 @@ ${discussionSummary}
                     )
                   }
                 }}
-                className={cn(
-                  'workshop-glow flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border-2 transition-colors whitespace-nowrap',
-                  showProblemSituationDesigner
-                    ? 'bg-[#00897B] text-white border-[#00897B]'
-                    : 'bg-white text-[#00897B] border-[#4DB6AC] hover:bg-[#E0F2F1]',
-                )}
+                variant="tonal"
+                tone="teal"
+                selected={showProblemSituationDesigner}
+                className="workshop-glow"
+                icon={<PencilRuler size={MD3_ICON.sm} weight={showProblemSituationDesigner ? 'fill' : 'regular'} />}
                 title="문제 상황 설정 워크숍 (이 단계 전용 특별 기능)"
               >
-                <span className="relative z-10 flex items-center gap-1">
-                  <PencilRuler size={13} weight={showProblemSituationDesigner ? 'fill' : 'regular'} />
-                  문제상황 워크숍
-                  {isHost && <span className="text-[8px] opacity-70 ml-0.5">{showProblemSituationDesigner ? '공유중' : ''}</span>}
-                </span>
-              </button>
+                문제상황 워크숍
+                {isHost && showProblemSituationDesigner && (
+                  <span className="ml-0.5 text-[11px] opacity-80">공유중</span>
+                )}
+              </MD3Button>
             </div>
           )}
           {userProfile && (
-            <div className="flex items-center gap-1.5">
-              <div
-                className="w-6 h-6 rounded-full text-white text-[11px] font-bold flex items-center justify-center"
-                style={{ backgroundColor: userProfile.color }}
-              >
-                {userProfile.displayName?.slice(0, 1) ?? '?'}
-              </div>
-              <span className="text-xs font-medium text-[#5F6368]">{userProfile.displayName}</span>
-            </div>
+            <AvatarChip name={userProfile.displayName} color={userProfile.color} size={32} />
           )}
           {isTeamMode && (
-            <span className="text-[10px] bg-[#B2DFDB] text-[#00695C] px-2 py-0.5 rounded-full font-medium">
+            <span className="text-[12px] bg-[#CDE9E5] text-[#00564C] px-3 h-8 inline-flex items-center rounded-full font-medium">
               팀 자유 토의 중
             </span>
           )}
@@ -4837,6 +5032,75 @@ ${discussionSummary}
           })()}
         />
 
+        {/* DI·E 공동 편집 세션 (가이드 20260804 §4·§5) — 공용 모달 + 활동별 설정 */}
+        <CoeditWorkspaceModal
+          open={showMaterialDevWorkspace}
+          onClose={() => setShowMaterialDevWorkspace(false)}
+          config={MATERIAL_DEV_CONFIG}
+          workspace={proj.materialDevWorkspace}
+          emptyWorkspace={emptyMaterialDevWorkspace}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={materialDevPresence}
+          isHost={isHost}
+          onPatchSave={makeCoeditPatchHandler('DI-1-1')}
+          onPresenceUpdate={makeCoeditPresenceHandler('DI-1-1')}
+          onSendArtifact={makeCoeditSendHandler('DI-1-1')}
+          suggestContext={makeCoeditSuggestContext('DI-1-1')}
+        />
+
+        <CoeditWorkspaceModal
+          open={showLessonRecordWorkspace}
+          onClose={() => setShowLessonRecordWorkspace(false)}
+          config={LESSON_RECORD_CONFIG}
+          workspace={proj.lessonRecordWorkspace}
+          emptyWorkspace={emptyLessonRecordWorkspace}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={lessonRecordPresence}
+          isHost={isHost}
+          onPatchSave={makeCoeditPatchHandler('DI-2-1')}
+          onPresenceUpdate={makeCoeditPresenceHandler('DI-2-1')}
+          onSendArtifact={makeCoeditSendHandler('DI-2-1')}
+          suggestContext={makeCoeditSuggestContext('DI-2-1')}
+        />
+
+        <CoeditWorkspaceModal
+          open={showLessonReflectionWorkspace}
+          onClose={() => setShowLessonReflectionWorkspace(false)}
+          config={LESSON_REFLECTION_CONFIG}
+          workspace={proj.lessonReflectionWorkspace}
+          emptyWorkspace={emptyLessonReflectionWorkspace}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={lessonReflectionPresence}
+          isHost={isHost}
+          onPatchSave={makeCoeditPatchHandler('E-1-1')}
+          onPresenceUpdate={makeCoeditPresenceHandler('E-1-1')}
+          onSendArtifact={makeCoeditSendHandler('E-1-1')}
+          suggestContext={makeCoeditSuggestContext('E-1-1')}
+        />
+
+        <CoeditWorkspaceModal
+          open={showCollaborationReflectionWorkspace}
+          onClose={() => setShowCollaborationReflectionWorkspace(false)}
+          config={COLLABORATION_REFLECTION_CONFIG}
+          workspace={proj.collaborationReflectionWorkspace}
+          emptyWorkspace={collaborationEmptyWithAgreements}
+          currentUid={userProfile?.uid}
+          currentUserName={userProfile?.displayName}
+          currentUserColor={userProfile?.uid ? (proj.memberInfo?.[userProfile.uid]?.color ?? userProfile?.color) : userProfile?.color}
+          presence={collaborationReflectionPresence}
+          isHost={isHost}
+          onPatchSave={makeCoeditPatchHandler('E-2-1')}
+          onPresenceUpdate={makeCoeditPresenceHandler('E-2-1')}
+          onSendArtifact={makeCoeditSendHandler('E-2-1')}
+          suggestContext={makeCoeditSuggestContext('E-2-1')}
+        />
+
         <IntegratedGoalWorkspaceModal
           open={showIntegratedGoalWorkspace}
           onClose={() => setShowIntegratedGoalWorkspace(false)}
@@ -5375,7 +5639,7 @@ ${discussionSummary}
             <span className="text-[11px] text-[#E65100] font-medium flex items-center gap-1">
               <Chat size={16} weight="regular" className="text-[#E65100]" />
               {isHost
-                ? '안을 선택하거나 다시 논의하기를 선택해 주세요 · AI는 선택 후 응답합니다'
+                ? '안을 선택하거나, 마음에 들지 않으면 원하는 내용을 그대로 입력해 주세요'
                 : '방장이 안을 검토하고 있습니다 · 의견을 남길 수 있어요'}
             </span>
           ) : (
@@ -5532,7 +5796,7 @@ ${discussionSummary}
                 placeholder={isTeamMode
                   ? '팀원에게 의견을 전달하세요...'
                   : isWaitingForChoice
-                    ? isHost ? '안을 선택하거나 다시 논의하기를 선택해 주세요...' : '방장에게 의견을 남겨 주세요...'
+                    ? isHost ? '안을 고르거나, 원하는 내용을 직접 입력해도 됩니다...' : '방장에게 의견을 남겨 주세요...'
                     : '메시지를 입력하세요... (/ 로 커맨드 · Shift+Enter: 줄바꿈)'}
                 rows={3}
                 disabled={isLoading && !isTeamMode && !isWaitingForChoice}
