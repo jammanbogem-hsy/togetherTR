@@ -3429,3 +3429,252 @@ export async function clearCollaborativePromptDraft(
   const snap = await getDocs(colRef)
   await Promise.all(snap.docs.map(d => deleteDoc(d.ref)))
 }
+
+// ─── DI·E 공동 편집 워크스페이스 (가이드 20260804 §4·§5) ─────────────────
+// 기존 12종은 활동마다 patch/presence 함수를 통째로 복제했지만, 신규 4종은
+// shape이 완전히 동일하므로 공통 팩토리로 묶는다 (동작은 동일, 코드만 1/4).
+// ⚠️ 기존 12종 함수는 그대로 둔다 — 팀 모드 동작 불변이 최우선.
+
+import type {
+  CoeditWorkspace,
+  CoeditWorkspaceBlock,
+  CoeditWorkspaceColumn,
+  CoeditWorkspaceRow,
+  MaterialDevWorkspace,
+  LessonRecordWorkspace,
+  LessonReflectionWorkspace,
+  CollaborationReflectionWorkspace,
+} from '@/types'
+
+export type CoeditWorkspacePatch =
+  | { type: 'replace-all'; workspace: CoeditWorkspace; updatedBy?: string }
+  | { type: 'update-cell'; rowId: string; columnId: string; value: string; updatedBy?: string }
+  | { type: 'add-row'; row: CoeditWorkspaceRow; updatedBy?: string }
+  | { type: 'delete-row'; rowId: string }
+  | { type: 'add-column'; column: CoeditWorkspaceColumn; updatedBy?: string }
+  | { type: 'update-column'; columnId: string; label: string; color?: string; updatedBy?: string }
+  | { type: 'delete-column'; columnId: string }
+  | { type: 'upsert-block'; block: CoeditWorkspaceBlock; updatedBy?: string }
+  | { type: 'delete-block'; blockId: string }
+  | { type: 'reorder-blocks'; blockIds: string[] }
+
+export type CoeditPresenceEntry = {
+  uid: string
+  displayName: string
+  color: string
+  cellKey: string
+  caretPos?: number
+  updatedAt: number
+}
+
+const COEDIT_PRESENCE_DEBOUNCE_MS = 300
+const coeditPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/**
+ * 하나의 DI·E 워크스페이스에 대한 patch/presence 모듈을 생성한다.
+ * @param field            Project 문서의 워크스페이스 필드명
+ * @param presenceCol      presence subcollection 이름 (부모 문서 미변경 → 트랜잭션 충돌 없음)
+ * @param defaultColumns   최초 진입 시 주입할 기본 컬럼
+ * @param seedBlocks       최초 진입 시 주입할 보조 표/안내 블록 (없으면 빈 배열)
+ */
+function createCoeditWorkspaceModule<T extends CoeditWorkspace>(
+  field: string,
+  presenceCol: string,
+  defaultColumns: CoeditWorkspaceColumn[],
+  seedBlocks: () => CoeditWorkspaceBlock[] = () => [],
+) {
+  function empty(): CoeditWorkspace {
+    return { columns: defaultColumns.map(c => ({ ...c })), rows: [], blocks: seedBlocks() }
+  }
+
+  function apply(current: CoeditWorkspace | undefined, patch: CoeditWorkspacePatch): CoeditWorkspace {
+    // TeamVision 패치 로직을 그대로 재사용 — 검증된 단일 구현을 공유한다.
+    const base = current ?? empty()
+    const tv = { ...base, teamVision: '', coreKeywords: [] } as unknown as TeamVisionWorkspace
+    const next = applyTeamVisionWorkspacePatch(tv, patch as TeamVisionWorkspacePatch)
+    return { columns: next.columns, rows: next.rows, blocks: next.blocks, updatedBy: next.updatedBy, updatedAt: next.updatedAt }
+  }
+
+  async function patchWorkspace(projectId: string, patch: CoeditWorkspacePatch): Promise<T> {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Record<string, unknown>
+    const next = apply(data[field] as CoeditWorkspace | undefined, patch)
+    const clean = stripUndefinedDeep(next) as T
+    await updateDoc(ref, { [field]: clean, updatedAt: serverTimestamp() })
+    return clean
+  }
+
+  async function flushPresence(projectId: string, uid: string, presence: CoeditPresenceEntry | null): Promise<void> {
+    const ref = doc(db, 'projects', projectId, presenceCol, uid)
+    if (presence) {
+      const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
+      await setDoc(ref, clean)
+    } else {
+      await deleteDoc(ref)
+    }
+  }
+
+  async function setPresence(projectId: string, uid: string, presence: CoeditPresenceEntry | null): Promise<void> {
+    const key = `${presenceCol}::${projectId}::${uid}`
+    const pending = coeditPresenceTimers.get(key)
+    if (pending) {
+      clearTimeout(pending)
+      coeditPresenceTimers.delete(key)
+    }
+    if (presence === null) {
+      await flushPresence(projectId, uid, null)
+      return
+    }
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        coeditPresenceTimers.delete(key)
+        flushPresence(projectId, uid, presence).then(resolve, (err) => {
+          console.warn(`[${presenceCol}] presence flush failed:`, err)
+          resolve()
+        })
+      }, COEDIT_PRESENCE_DEBOUNCE_MS)
+      coeditPresenceTimers.set(key, timer)
+    })
+  }
+
+  function watchPresence(
+    projectId: string,
+    onChange: (presence: Record<string, CoeditPresenceEntry>) => void,
+  ): Unsubscribe {
+    const ref = collection(db, 'projects', projectId, presenceCol)
+    return onSnapshot(ref, (snap) => {
+      const out: Record<string, CoeditPresenceEntry> = {}
+      snap.forEach(d => { out[d.id] = d.data() as CoeditPresenceEntry })
+      onChange(out)
+    })
+  }
+
+  return { empty, patchWorkspace, setPresence, watchPresence }
+}
+
+// ── DI-1-1 자료 탐색·개발 ──────────────────────────────────
+// 가이드 p56~57 활동 흐름 ➊~➍를 한 표에 담는다.
+// '완료' 칸: p57 협력UP #조정 "'완료 여부' 칸을 함께 만들어 두세요"
+// '학생 관점 검토' 칸: ➍ 자료 워크스루 — 동료가 학생인 척 따라가며 막힌 지점을 남긴다.
+const DEFAULT_MATERIAL_DEV_COLUMNS: CoeditWorkspaceColumn[] = [
+  { id: 'activity',   label: '대상 학습활동',   color: '#E8F0FE' },
+  { id: 'material',   label: '필요 자료',       color: '#E8F0FE' },
+  { id: 'sourceType', label: '탐색/개발',       color: '#E6F4EA' },
+  { id: 'devScope',   label: '공동/개별',       color: '#E6F4EA' },
+  { id: 'owner',      label: '담당 교사',       color: '#FEF7E0' },
+  { id: 'deadline',   label: '마감',            color: '#FEF7E0' },
+  { id: 'done',       label: '완료',            color: '#FEF7E0' },
+  { id: 'walkthrough', label: '학생 관점 검토(막힌 지점)', color: '#F3E5F5' },
+]
+
+// ── DI-2-1 수업 실행·기록 ──────────────────────────────────
+// 주 표 = 결정적 장면 기록(산출물 '주요 상황 기록'·'E단계 확인 질문'과 직결).
+// 'E단계 확인 질문' 열은 p59 "깊은 분석은 평가 단계에서 합니다"를 구조로 강제 —
+// 기록 시점에 해석을 유보시키고 그대로 E-1-1의 입력이 된다.
+const DEFAULT_LESSON_RECORD_COLUMNS: CoeditWorkspaceColumn[] = [
+  { id: 'when',     label: '시점(차시·시각)',        color: '#E8F0FE' },
+  { id: 'scene',    label: '장면·에피소드',          color: '#E8F0FE' },
+  { id: 'reaction', label: '학생 반응(직접 인용)',   color: '#E6F4EA' },
+  { id: 'gap',      label: '설계와 달랐던 점',       color: '#FCE8E6' },
+  { id: 'question', label: 'E단계 확인 질문',        color: '#F3E5F5' },
+]
+
+// 보조 표 = 실행 계획. p58 협력UP #상호의존 "같은 프로젝트를 누가 언제 하는지 한 장에 모아 두세요"
+function seedLessonRecordBlocks(): CoeditWorkspaceBlock[] {
+  return [
+    { id: 'plan-heading', type: 'subheading', content: '수업 실행 계획 — 누가 언제 어떻게' },
+    {
+      id: 'plan-table',
+      type: 'table',
+      content: '',
+      table: {
+        columns: [
+          { id: 'teacher',  label: '교사',                 color: '#E8F0FE' },
+          { id: 'subject',  label: '교과',                 color: '#E8F0FE' },
+          { id: 'when',     label: '일시',                 color: '#E8F0FE' },
+          { id: 'mode',     label: '실행 방식(개별/공동)', color: '#E6F4EA' },
+          { id: 'observer', label: '참관자',               color: '#FEF7E0' },
+          { id: 'focus',    label: '관찰 요청 사항',        color: '#FEF7E0' },
+        ],
+        rows: [],
+      },
+    },
+  ]
+}
+
+// ── E-1-1 수업 성찰과 공동 개선 ────────────────────────────
+// 주 표 = 학생 증거. p65 협력UP #인지분산이 지정한 3분류 샘플을 열로 고정한다.
+const DEFAULT_LESSON_REFLECTION_COLUMNS: CoeditWorkspaceColumn[] = [
+  { id: 'teacher',   label: '교사·교과',                       color: '#E8F0FE' },
+  { id: 'sampleType', label: '샘플 유형(도달/오개념/예상 밖)',  color: '#E8F0FE' },
+  { id: 'evidence',  label: '학생 결과물 근거',                color: '#E6F4EA' },
+  { id: 'rubric',    label: '루브릭 도달 정도',                color: '#FEF7E0' },
+  { id: 'gap',       label: '설계 의도와의 차이',              color: '#FCE8E6' },
+]
+
+// 보조 표 = 개선안. p66 협력UP #외현화 "바뀐 내용 옆에 '왜 바꿨는지'를 한 줄로 붙여 두세요"
+function seedLessonReflectionBlocks(): CoeditWorkspaceBlock[] {
+  return [
+    { id: 'improve-heading', type: 'subheading', content: '수업 개선 — 무엇을 왜 바꿨는가' },
+    {
+      id: 'improve-table',
+      type: 'table',
+      content: '',
+      table: {
+        columns: [
+          { id: 'difficulty', label: '학생이 어려워한 지점', color: '#FCE8E6' },
+          { id: 'cause',      label: '원인(설계의 어디에?)', color: '#FEF7E0' },
+          { id: 'fix',        label: '수정 내용',            color: '#E6F4EA' },
+          { id: 'why',        label: '왜 바꿨는지',          color: '#E8F0FE' },
+          { id: 'where',      label: '반영 위치(지도안/활동지/평가도구)', color: '#E8F0FE' },
+        ],
+        rows: [],
+      },
+    },
+  ]
+}
+
+// ── E-2-1 협력 과정 성찰 ───────────────────────────────────
+// '구조적 보완점' 열 이름 자체가 안전장치 — p68 "'확인이 늦었다'가 아니라
+// '확인 여부를 알 수 있는 장치가 없었다'로 옮겨 보면, 탓하지 않으면서도 진짜 고칠 지점이 드러납니다."
+const DEFAULT_COLLABORATION_REFLECTION_COLUMNS: CoeditWorkspaceColumn[] = [
+  { id: 'agreement', label: '초기 합의(T단계)',   color: '#E8F0FE' },
+  { id: 'actual',    label: '실제 진행',          color: '#E8F0FE' },
+  { id: 'kept',      label: '잘된 점',            color: '#E6F4EA' },
+  { id: 'structural', label: '구조적 보완점',     color: '#FEF7E0' },
+  { id: 'principle', label: '다음 협력 운영 원칙', color: '#F3E5F5' },
+]
+
+const materialDevModule = createCoeditWorkspaceModule<MaterialDevWorkspace>(
+  'materialDevWorkspace', 'materialDevPresence', DEFAULT_MATERIAL_DEV_COLUMNS)
+const lessonRecordModule = createCoeditWorkspaceModule<LessonRecordWorkspace>(
+  'lessonRecordWorkspace', 'lessonRecordPresence', DEFAULT_LESSON_RECORD_COLUMNS, seedLessonRecordBlocks)
+const lessonReflectionModule = createCoeditWorkspaceModule<LessonReflectionWorkspace>(
+  'lessonReflectionWorkspace', 'lessonReflectionPresence', DEFAULT_LESSON_REFLECTION_COLUMNS, seedLessonReflectionBlocks)
+const collaborationReflectionModule = createCoeditWorkspaceModule<CollaborationReflectionWorkspace>(
+  'collaborationReflectionWorkspace', 'collaborationReflectionPresence', DEFAULT_COLLABORATION_REFLECTION_COLUMNS)
+
+export const patchMaterialDevWorkspace = materialDevModule.patchWorkspace
+export const setMaterialDevWorkspacePresence = materialDevModule.setPresence
+export const watchMaterialDevWorkspacePresence = materialDevModule.watchPresence
+export const emptyMaterialDevWorkspace = materialDevModule.empty
+
+export const patchLessonRecordWorkspace = lessonRecordModule.patchWorkspace
+export const setLessonRecordWorkspacePresence = lessonRecordModule.setPresence
+export const watchLessonRecordWorkspacePresence = lessonRecordModule.watchPresence
+export const emptyLessonRecordWorkspace = lessonRecordModule.empty
+
+export const patchLessonReflectionWorkspace = lessonReflectionModule.patchWorkspace
+export const setLessonReflectionWorkspacePresence = lessonReflectionModule.setPresence
+export const watchLessonReflectionWorkspacePresence = lessonReflectionModule.watchPresence
+export const emptyLessonReflectionWorkspace = lessonReflectionModule.empty
+
+export const patchCollaborationReflectionWorkspace = collaborationReflectionModule.patchWorkspace
+export const setCollaborationReflectionWorkspacePresence = collaborationReflectionModule.setPresence
+export const watchCollaborationReflectionWorkspacePresence = collaborationReflectionModule.watchPresence
+export const emptyCollaborationReflectionWorkspace = collaborationReflectionModule.empty
+
+// E-2-1 합의 대조 행 생성 — 순수 로직은 테스트 가능한 모듈에 둔다.
+export { buildCollaborationAgreementRows } from '@/lib/artifacts/coeditSerialize'

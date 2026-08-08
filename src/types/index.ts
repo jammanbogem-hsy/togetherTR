@@ -59,6 +59,27 @@ export function displayActivityCode(code: string): string {
   return ACTIVITY_DISPLAY_CODE[code as ActivityCode] ?? code
 }
 
+// 개인 설계(solo) 모드의 산출물 섹션 표시 라벨.
+// ⚠️ 섹션 **키**는 팀판과 동일하게 유지한다(보고서·주기 전환·완료 판정이 같은 키를 읽음).
+// 바뀌는 것은 화면에 보이는 라벨뿐 — solo 사용자가 "팀 공통 비전"을 자기 산출물로 인식하지 못하는 문제 해소.
+// 키 형식: `${ActivityCode}:${section.key}`
+const SOLO_SECTION_LABELS: Record<string, string> = {
+  'T-1-1:개인 비전': '나의 비전 키워드·정교화 문장',
+  'T-1-1:팀 공통 비전': '나의 확정 비전 문장',
+  'T-2-3:팀 일정': '설계 일정 (기간·활동·마감)',
+  'E-2-1:팀 개선안': '다음 설계 개선안',
+}
+
+/** 산출물 섹션 라벨 — solo 모드에서는 1인 관점 라벨로 치환. 없으면 팀 라벨 그대로. */
+export function displaySectionLabel(
+  activityCode: string,
+  section: { key: string; label: string },
+  isSolo: boolean,
+): string {
+  if (!isSolo) return section.label
+  return SOLO_SECTION_LABELS[`${activityCode}:${section.key}`] ?? section.label
+}
+
 export interface ActivityMeta {
   code: ActivityCode
   label: string
@@ -452,6 +473,15 @@ export interface Project {
   // 5열 스캐폴딩 계획 표(대상활동·유형·내용·대상수준·점진적제거) + 메타(AI 점검) + 자유 블록.
   // Presence는 projects/{id}/scaffoldingPresence subcollection로 분리.
   scaffoldingWorkspace?: ScaffoldingWorkspace
+  // ── DI·E 공동 편집 워크스페이스 (가이드 20260804 DI-1/DI-2/E-1/E-2) ──
+  // 자료 개발 보드 — DI-1-1. 자료 목록 + 담당·마감·완료 + 학생 관점 검토(자료 워크스루).
+  materialDevWorkspace?: MaterialDevWorkspace
+  // 수업 기록판 — DI-2-1. 결정적 장면 기록 표 + 실행 계획 표(블록).
+  lessonRecordWorkspace?: LessonRecordWorkspace
+  // 증거 검토판 — E-1-1. 학생 증거 표 + 개선 표(블록).
+  lessonReflectionWorkspace?: LessonReflectionWorkspace
+  // 합의 대조판 — E-2-1. T단계 합의 5행 선주입 + 구조적 보완점·운영 원칙.
+  collaborationReflectionWorkspace?: CollaborationReflectionWorkspace
   // 공개 배포 상태 — "공개 링크" 기능으로 보고서를 외부에 공유 중일 때 true.
   // 실제 공개 데이터는 Firestore `public_reports/{projectId}`에 **스냅샷**으로 별도 저장.
   // 원본 프로젝트를 직접 공개하지 않는 이유: 팀원 UID/메시지 등 민감 데이터 분리 보장.
@@ -768,6 +798,34 @@ export interface ScaffoldingWorkspace {
   updatedBy?: string
   updatedAt?: number
 }
+
+// ─── DI·E 공동 편집 워크스페이스 (가이드 20260804 §4·§5) ───────────────
+// 기존 12종과 동일한 shape(주 표 + 자유 블록)을 공유한다. 표가 둘 필요한 활동은
+// 보조 표를 `table` 블록으로 선주입해 shape을 늘리지 않는다.
+// 컬럼 구성 근거는 lib/firebase/projects.ts의 DEFAULT_*_COLUMNS 주석 참조.
+export type CoeditWorkspaceColumn = TeamVisionWorkspaceColumn
+export type CoeditWorkspaceRow = TeamVisionWorkspaceRow
+export type CoeditWorkspaceBlock = TeamVisionWorkspaceBlock
+export type CoeditWorkspaceBlockType = TeamVisionWorkspaceBlockType
+export type CoeditWorkspaceTableData = TeamVisionWorkspaceTableData
+
+/** DI·E 공동 편집 워크스페이스 공통 shape */
+export interface CoeditWorkspace {
+  columns: CoeditWorkspaceColumn[]
+  rows: CoeditWorkspaceRow[]
+  blocks: CoeditWorkspaceBlock[]
+  updatedBy?: string
+  updatedAt?: number
+}
+
+/** DI-1-1 자료 탐색·개발 — 자료 워크스루 보드 */
+export type MaterialDevWorkspace = CoeditWorkspace
+/** DI-2-1 수업 실행·기록 — 결정적 장면 기록판 (보조 표: 실행 계획) */
+export type LessonRecordWorkspace = CoeditWorkspace
+/** E-1-1 수업 성찰과 공동 개선 — 증거 검토판 (보조 표: 개선안) */
+export type LessonReflectionWorkspace = CoeditWorkspace
+/** E-2-1 협력 과정 성찰 — 합의 대조판 (T단계 합의 5행 선주입) */
+export type CollaborationReflectionWorkspace = CoeditWorkspace
 
 // ─── 공개 배포 보고서 ─────────────────────────────────
 // Firestore 루트 컬렉션 `public_reports/{projectId}`에 저장되는 스냅샷.
