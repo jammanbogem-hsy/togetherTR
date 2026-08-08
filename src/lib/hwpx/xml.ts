@@ -101,6 +101,25 @@ interface BorderFillDef {
   fill?: { faceColor: string; hatchColor: string }
 }
 
+/**
+ * HWPML이 허용하는 테두리 굵기 열거값. 이 목록에 없는 값(예: '0.18 mm')을 쓰면
+ * 한글이 해당 테두리를 그리지 못해 **표 선이 사라지거나 일부만 그려진다**.
+ * 자유 수치를 쓰지 못하므로 가장 가까운 허용값으로 스냅한다.
+ */
+export const HWP_LINE_WIDTHS = [
+  0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0,
+] as const
+
+/** 임의의 'N mm' 문자열을 허용 열거값으로 스냅. 파싱 실패 시 최소값으로 안전 폴백. */
+export function snapLineWidth(width: string): string {
+  const mm = Number.parseFloat(width)
+  if (!Number.isFinite(mm)) return '0.1 mm'
+  const nearest = HWP_LINE_WIDTHS.reduce((best, cand) =>
+    Math.abs(cand - mm) < Math.abs(best - mm) ? cand : best)
+  // 0.1 → '0.1 mm', 1 → '1.0 mm' (한글이 쓰는 표기 그대로)
+  return `${nearest < 1 ? nearest : nearest.toFixed(1)} mm`
+}
+
 export function buildBorderFill(def: BorderFillDef): string {
   const none = { type: 'NONE', width: '0.1 mm', color: '#000000' }
   const l = def.left ?? none
@@ -113,7 +132,8 @@ export function buildBorderFill(def: BorderFillDef): string {
     fillXml = `<hc:fillBrush><hc:winBrush faceColor="${def.fill.faceColor}" hatchColor="${def.fill.hatchColor}"/></hc:fillBrush>`
   }
 
-  return `<hh:borderFill id="${def.id}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="${l.type}" width="${l.width}" color="${l.color}"/><hh:rightBorder type="${r.type}" width="${r.width}" color="${r.color}"/><hh:topBorder type="${t.type}" width="${t.width}" color="${t.color}"/><hh:bottomBorder type="${b.type}" width="${b.width}" color="${b.color}"/><hh:diagonal type="NONE" width="0.1 mm" color="#000000"/>${fillXml}</hh:borderFill>`
+  const w = snapLineWidth
+  return `<hh:borderFill id="${def.id}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="${l.type}" width="${w(l.width)}" color="${l.color}"/><hh:rightBorder type="${r.type}" width="${w(r.width)}" color="${r.color}"/><hh:topBorder type="${t.type}" width="${w(t.width)}" color="${t.color}"/><hh:bottomBorder type="${b.type}" width="${w(b.width)}" color="${b.color}"/><hh:diagonal type="NONE" width="0.1 mm" color="#000000"/>${fillXml}</hh:borderFill>`
 }
 
 // ─── XML validation (dev only) ──────────────────────────────────────────

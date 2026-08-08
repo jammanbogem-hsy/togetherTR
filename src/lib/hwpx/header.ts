@@ -25,19 +25,22 @@ const BORDER_FILLS = [
     top: { type: 'SOLID', width: '0.12 mm', color: '#000000' },
     bottom: { type: 'SOLID', width: '0.12 mm', color: '#000000' },
   }),
+  // 표 본문 셀 — 굵기는 HWP 허용 열거값(HWP_LINE_WIDTHS)만 사용해야 한글이 선을 그린다.
+  // 0.18mm 같은 비허용 값은 테두리가 통째로 사라지는 원인이었다.
   buildBorderFill({
     id: 3,
-    left: { type: 'SOLID', width: '0.18 mm', color: '#B8C1D1' },
-    right: { type: 'SOLID', width: '0.18 mm', color: '#B8C1D1' },
-    top: { type: 'SOLID', width: '0.18 mm', color: '#8B96A8' },
-    bottom: { type: 'SOLID', width: '0.18 mm', color: '#8B96A8' },
+    left: { type: 'SOLID', width: '0.2 mm', color: '#B8C1D1' },
+    right: { type: 'SOLID', width: '0.2 mm', color: '#B8C1D1' },
+    top: { type: 'SOLID', width: '0.2 mm', color: '#8B96A8' },
+    bottom: { type: 'SOLID', width: '0.2 mm', color: '#8B96A8' },
   }),
+  // 표 헤더 셀 — 본문보다 한 단계 굵게 (0.25mm) 하여 머리행 위계를 만든다.
   buildBorderFill({
     id: 4,
-    left: { type: 'SOLID', width: '0.22 mm', color: '#1557B0' },
-    right: { type: 'SOLID', width: '0.22 mm', color: '#1557B0' },
-    top: { type: 'SOLID', width: '0.22 mm', color: '#0D47A1' },
-    bottom: { type: 'SOLID', width: '0.22 mm', color: '#0D47A1' },
+    left: { type: 'SOLID', width: '0.25 mm', color: '#1557B0' },
+    right: { type: 'SOLID', width: '0.25 mm', color: '#1557B0' },
+    top: { type: 'SOLID', width: '0.25 mm', color: '#0D47A1' },
+    bottom: { type: 'SOLID', width: '0.25 mm', color: '#0D47A1' },
     fill: { faceColor: '#1A73E8', hatchColor: '#1A73E8' },
   }),
   buildBorderFill({
@@ -51,7 +54,7 @@ const BORDER_FILLS = [
   // H2 배지 박스: 연블루 배경 + 좌측 두꺼운 파란 바 (화면의 #E8F0FE badge 재현)
   buildBorderFill({
     id: 6,
-    left: { type: 'SOLID', width: '1.2 mm', color: '#1A73E8' },
+    left: { type: 'SOLID', width: '1.0 mm', color: '#1A73E8' },
     right: { type: 'NONE', width: '0.1 mm', color: '#000000' },
     top: { type: 'NONE', width: '0.1 mm', color: '#000000' },
     bottom: { type: 'SOLID', width: '0.3 mm', color: '#1A73E8' },
