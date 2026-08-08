@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
 import { STAGES, type StageCode } from '@/types'
@@ -300,23 +301,37 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
                       {children}
                     </h1>
                   ),
-                  h2: ({ children }) => (
-                    <div style={{ marginTop: '2.4rem', marginBottom: '1rem' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 800, color: '#1A73E8', background: '#E8F0FE', borderRadius: '8px', padding: '0.4rem 0.85rem', letterSpacing: '0.01em' }}>
-                        {children}
-                      </span>
-                    </div>
-                  ),
-                  h3: ({ children }) => (
-                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#202124', margin: '1.6rem 0 0.4rem', paddingLeft: '0.65rem', borderLeft: '3px solid #1A73E8', lineHeight: 1.4 }}>
-                      {children}
-                    </h3>
-                  ),
-                  h4: ({ children }) => (
-                    <h4 style={{ fontSize: '0.88rem', fontWeight: 700, color: '#5F6368', margin: '1.2rem 0 0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid #DADCE0', lineHeight: 1.4 }}>
-                      {children}
-                    </h4>
-                  ),
+                  h2: ({ children }) => {
+                    // 이모지 제목 → M3 tonal 컨테이너 + 벡터 아이콘
+                    const raw = childrenToText(children)
+                    const iconName = pickReportIcon(raw)
+                    return (
+                      <div style={{ marginTop: '2.4rem', marginBottom: '1rem' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.9rem', fontWeight: 600, color: '#0842A0', background: '#D3E3FD', borderRadius: '10px', padding: '0.45rem 0.9rem', letterSpacing: '0.01em' }}>
+                          {iconName && <ReportIcon name={iconName} size={18} />}
+                          {stripLeadingEmoji(raw) || children}
+                        </span>
+                      </div>
+                    )
+                  },
+                  h3: ({ children }) => {
+                    const raw = childrenToText(children)
+                    return (
+                      <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#202124', margin: '1.6rem 0 0.4rem', paddingLeft: '0.65rem', borderLeft: '3px solid #0B57D0', lineHeight: 1.4 }}>
+                        {stripLeadingEmoji(raw) || children}
+                      </h3>
+                    )
+                  },
+                  h4: ({ children }) => {
+                    const raw = childrenToText(children)
+                    const iconName = pickReportIcon(raw)
+                    return (
+                      <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.9rem', fontWeight: 600, color: '#5F6368', margin: '1.2rem 0 0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid #E9E9E7', lineHeight: 1.4 }}>
+                        {iconName && <ReportIcon name={iconName} size={16} fill={0} />}
+                        {stripLeadingEmoji(raw) || children}
+                      </h4>
+                    )
+                  },
                   p: ({ children }) => (
                     <p style={{ fontSize: '0.92rem', color: '#3C4043', lineHeight: 1.82, margin: '0.55rem 0' }}>
                       {children}

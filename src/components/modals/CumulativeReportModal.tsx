@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
 import type { ActivityCode } from '@/types'
@@ -541,13 +542,19 @@ ${html}
                         {children}
                       </h1>
                     ),
-                    h2: ({ children }) => (
-                      <div style={{ marginTop: '3.2rem', marginBottom: '1.4rem', borderRadius: '10px', background: 'linear-gradient(135deg, #E65100 0%, #BF360C 100%)', padding: '0.75rem 1.2rem', display: 'flex', alignItems: 'center' }}>
-                        <span style={{ fontSize: '1.05rem', fontWeight: 800, color: 'white', letterSpacing: '0.01em', lineHeight: 1.3 }}>
-                          {children}
-                        </span>
-                      </div>
-                    ),
+                    h2: ({ children }) => {
+                      // 이모지 제목 → 벡터 아이콘 (그라데이션은 M3 단색 컨테이너로)
+                      const raw = childrenToText(children)
+                      const iconName = pickReportIcon(raw)
+                      return (
+                        <div style={{ marginTop: '3.2rem', marginBottom: '1.4rem', borderRadius: '12px', background: '#BF360C', padding: '0.75rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {iconName && <ReportIcon name={iconName} size={20} color="#FFFFFF" />}
+                          <span style={{ fontSize: '1.05rem', fontWeight: 600, color: 'white', letterSpacing: '0.01em', lineHeight: 1.3 }}>
+                            {stripLeadingEmoji(raw) || children}
+                          </span>
+                        </div>
+                      )
+                    },
                     h3: ({ children }) => (
                       <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#E65100', margin: '1.8rem 0 0.6rem', paddingLeft: '0.8rem', borderLeft: '3px solid #E65100', lineHeight: 1.4, background: '#FFF8F5', padding: '0.45rem 0.8rem', borderRadius: '0 6px 6px 0' }}>
                         {children}

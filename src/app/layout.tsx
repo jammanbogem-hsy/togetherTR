@@ -20,6 +20,38 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className={`${notoSansKR.variable} h-full`}>
+      <head>
+        {/*
+          Material Symbols Rounded — MD3 공식 아이콘 에셋.
+          이 폰트가 없으면 리거처가 해석되지 않아 아이콘 자리에 'menu_book' 같은
+          **글자가 그대로 노출**된다(로그인 랜딩에서 실제로 그렇게 보이던 문제).
+          icon_names로 실제 쓰는 아이콘만 서브셋해 폰트 용량을 최소화한다.
+          새 아이콘을 쓸 때는 반드시 이 목록에 이름을 추가할 것.
+        */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href={
+            'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded' +
+            ':opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200' +
+            // ⚠️ icon_names는 **알파벳 오름차순**이어야 한다.
+            //    정렬이 어긋나면 Google Fonts가 400을 돌려주고 폰트가 통째로 로드되지 않아
+            //    모든 아이콘이 'assignment' 같은 리거처 이름 글자로 노출된다.
+            //    (아래 sort()가 그 실수를 구조적으로 막는다)
+            '&icon_names=' + [
+              // 로그인·랜딩
+              'add_circle', 'arrow_forward', 'auto_awesome', 'check', 'check_circle',
+              'checklist', 'edit_document', 'expand_more', 'forum', 'groups',
+              'login', 'menu_book', 'sync', 'task_alt',
+              // 보고서 섹션
+              'assignment', 'bar_chart', 'description', 'lightbulb', 'search',
+              'target', 'warning',
+            ].sort().join(',') +
+            '&display=swap'
+          }
+        />
+      </head>
       <body className="min-h-full flex flex-col antialiased">{children}</body>
     </html>
   );
