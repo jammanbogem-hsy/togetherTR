@@ -148,6 +148,11 @@ export interface T11Structured {
 export function buildT11Structured(
   sections: Record<string, string>,
   chatMessages: Array<{ role: string; content: string; displayName?: string }>,
+  /**
+   * 개인 설계(solo) 모드 전용 옵션. 협력(팀) 모드에서는 절대 전달하지 않는다 — 팀 파싱 동작 불변.
+   * solo에서는 AI가 '개인 비전'을 표가 아닌 한 문장으로 보내므로 별도 수용 경로가 필요하다.
+   */
+  soloOpts?: { teacherName?: string },
 ): T11Structured {
   const result: T11Structured = {
     _schema: 'T-1-1',
@@ -183,11 +188,27 @@ export function buildT11Structured(
   const pvRaw = (sections['개인 비전'] ?? '').trim()
   if (pvRaw) {
     result.personalVisions = parsePersonalVisions(pvRaw)
+    // solo: 표/화살표가 아닌 한 문장 형식을 1인 항목으로 수용 (팀 모드에서는 soloOpts 미전달이라 미실행)
+    if (result.personalVisions.length === 0 && soloOpts) {
+      const single = parseSoloPersonalVision(pvRaw, soloOpts.teacherName, result.coreKeywords)
+      if (single) result.personalVisions = [single]
+    }
   }
 
   // 5. 개인 비전이 비어있으면 채팅 이력에서 자동 추출
   if (result.personalVisions.length === 0) {
     result.personalVisions = extractPersonalVisionsFromChat(chatMessages)
+  }
+
+  // 5-b. solo 보정: 개인 설계에서는 '개인 비전'과 '팀 공통 비전'이 같은 문장이다
+  // (SOLO_ACTIVITY_PROCEDURE T-1-1 명시). 팀 형식 추출이 모두 실패해도 비전 문장이 있으면
+  // 개인 비전 칸이 비어 있는 채로 남지 않도록 미러링한다.
+  if (soloOpts && result.personalVisions.length === 0 && result.teamVision && !isNonContentLabel(result.teamVision)) {
+    result.personalVisions = [{
+      teacherName: soloOpts.teacherName?.trim() || '나',
+      keywords: result.coreKeywords,
+      refinedVision: result.teamVision,
+    }]
   }
 
   // 6. 핵심 키워드가 비어있으면 비전에서 자동 추출
@@ -266,6 +287,46 @@ function parsePersonalVisions(raw: string): T11PersonalVision[] {
   }
 
   return entries
+}
+
+/**
+ * 개인 설계(solo) 모드의 '개인 비전' 값 파싱.
+ * solo 절차는 표가 아니라 한 문장(때로 "키워드: …" 줄 동반)을 보내므로
+ * 팀용 parsePersonalVisions가 항상 빈 배열을 돌려주던 문제를 여기서 흡수한다.
+ */
+function parseSoloPersonalVision(
+  raw: string,
+  teacherName: string | undefined,
+  fallbackKeywords: string[],
+): T11PersonalVision | null {
+  const keywords: string[] = []
+  const visionLines: string[] = []
+
+  for (const line of raw.split('\n')) {
+    const t = line.replace(/^[-*•]\s*/, '').trim()
+    if (!t) continue
+    const kw = t.match(/^(?:\*\*)?(?:핵심\s*)?키워드(?:\*\*)?\s*[:：=]\s*(.+)$/)
+    if (kw) {
+      keywords.push(...kw[1].split(/[,，·/]/).map(s => s.trim()).filter(Boolean))
+      continue
+    }
+    // "비전:" / "개인 비전:" 라벨은 제거하고 문장만 남긴다
+    visionLines.push(t.replace(/^(?:\*\*)?(?:나의\s*|개인\s*)?비전(?:\s*문장)?(?:\*\*)?\s*[:：=]\s*/, ''))
+  }
+
+  const refinedVision = visionLines
+    .join(' ')
+    .replace(/^["'「『“‘]+|["'」』”’]+$/g, '')
+    .trim()
+
+  // 절차 문구·선택지 라벨이 값으로 새어 들어온 경우는 저장하지 않는다
+  if (!refinedVision || isNonContentLabel(refinedVision)) return null
+
+  return {
+    teacherName: teacherName?.trim() || '나',
+    keywords: keywords.length > 0 ? keywords : fallbackKeywords,
+    refinedVision,
+  }
 }
 
 /** 채팅 이력에서 개인 비전 정보를 추출 */

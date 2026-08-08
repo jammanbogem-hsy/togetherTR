@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
-import { ACTIVITY_META, STAGES, displayActivityCode } from '@/types'
+import { ACTIVITY_META, STAGES, displayActivityCode, displaySectionLabel } from '@/types'
 import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
 import {
   clearArtifactRevisionRequest,
@@ -64,6 +64,8 @@ function EmptyState({ activityLabel, sections, sectionVariant, stageLight, stage
   stageLight: string   // stageColor.light 클래스
   stageText: string    // stageColor.text 클래스
 }) {
+  const isSolo = useProjectStore(s => s.project?.mode === 'solo')
+  const activityCode = useProjectStore(s => s.viewingActivity ?? s.currentActivity)
   const sectionHeader = sectionVariant === 'required'
     ? '이 활동에서 꼭 채워야 할 내용'
     : '이 활동에서 채우면 좋은 내용'
@@ -94,7 +96,7 @@ function EmptyState({ activityLabel, sections, sectionVariant, stageLight, stage
                 )}
               >
                 <CircleIcon size={6} weight="fill" />
-                {sec.label}
+                {displaySectionLabel(activityCode, sec, isSolo)}
               </span>
             ))}
           </div>
@@ -292,6 +294,7 @@ function RequiredSectionsChecklist({
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const setChatInputRequest = useProjectStore(s => s.setChatInputRequest)
+  const isSolo = useProjectStore(s => s.project?.mode === 'solo')
   const meta = ACTIVITY_META[activityCode]
   // required 우선, 없으면 recommended fallback (동시 존재 케이스 없음 — Task #9 설계 결정).
   const sections = meta.requiredSections ?? meta.recommendedSections
@@ -521,7 +524,7 @@ function RequiredSectionsChecklist({
                   {satisfied
                     ? <CheckCircle size={16} weight="fill" className="text-[#34A853] flex-shrink-0" />
                     : <CircleIcon  size={14} weight="bold" className="text-[#9AA0A6] flex-shrink-0" />}
-                  <span className="text-[12px] font-bold text-[#202124]">{sec.label}</span>
+                  <span className="text-[12px] font-bold text-[#202124]">{displaySectionLabel(activityCode, sec, isSolo)}</span>
                   {isAll && (
                     <span className="text-[9px] font-extrabold bg-[#C62828] text-white px-1.5 py-0.5 rounded-full tracking-wide">
                       필수
@@ -549,7 +552,7 @@ function RequiredSectionsChecklist({
           <button
             type="button"
             onClick={() => {
-              const labels = sections.map(s => s.label).join(' · ')
+              const labels = sections.map(s => displaySectionLabel(activityCode, s, isSolo)).join(' · ')
               const prompt = `"${labels}" 순서로 정리해줘`
               setChatInputRequest(prompt)
             }}

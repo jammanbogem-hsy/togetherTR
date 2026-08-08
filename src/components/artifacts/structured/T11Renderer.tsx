@@ -1,6 +1,7 @@
 'use client'
 
 import type { T11Structured } from '@/lib/artifacts/schemas'
+import { useProjectStore } from '@/store/project'
 
 export type T11DeletableField = 'personalVisions' | 'teamVision' | 'coreKeywords' | 'designPrinciples' | 'blocks'
 
@@ -27,6 +28,11 @@ function SectionDeleteButton({ onClick, label }: { onClick: () => void; label: s
 }
 
 export function T11Renderer({ data, onDeleteField }: Props) {
+  // 개인 설계 모드에서는 팀 용어가 자기 산출물로 읽히지 않으므로 표시 라벨만 1인 관점으로 바꾼다.
+  // 저장 데이터 필드명(personalVisions/teamVision)은 그대로 — 보고서·주기 전환이 같은 필드를 읽는다.
+  const isSolo = useProjectStore(s => s.project?.mode === 'solo')
+  const personalVisionLabel = isSolo ? '나의 비전' : '개인 비전'
+  const teamVisionLabel = isSolo ? '확정 비전 문장' : '팀 공통 비전'
   const personalVisions = data?.personalVisions ?? []
   const teamVision = data?.teamVision ?? ''
   const coreKeywords = data?.coreKeywords ?? []
@@ -45,8 +51,8 @@ export function T11Renderer({ data, onDeleteField }: Props) {
       {/* 개인 비전 표 */}
       <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
         <div className="bg-[#F8F9FA] px-4 py-2.5 border-b border-[#DADCE0] flex items-center">
-          <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider">개인 비전</span>
-          {onDeleteField && <SectionDeleteButton onClick={() => onDeleteField('personalVisions')} label="개인 비전" />}
+          <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider">{personalVisionLabel}</span>
+          {onDeleteField && <SectionDeleteButton onClick={() => onDeleteField('personalVisions')} label={personalVisionLabel} />}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[480px] text-sm border-collapse [word-break:keep-all]">
@@ -98,8 +104,8 @@ export function T11Renderer({ data, onDeleteField }: Props) {
       {/* 팀 공통 비전 */}
       <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
         <div className="bg-[#F8F9FA] px-4 py-2.5 border-b border-[#DADCE0] flex items-center">
-          <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider">팀 공통 비전</span>
-          {onDeleteField && <SectionDeleteButton onClick={() => onDeleteField('teamVision')} label="팀 공통 비전" />}
+          <span className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wider">{teamVisionLabel}</span>
+          {onDeleteField && <SectionDeleteButton onClick={() => onDeleteField('teamVision')} label={teamVisionLabel} />}
         </div>
         <div className="px-4 py-4">
           {teamVision ? (
