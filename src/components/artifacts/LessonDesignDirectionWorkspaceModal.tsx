@@ -489,6 +489,39 @@ export function LessonDesignDirectionWorkspaceModal({
     await commit({ type: 'update-cell', rowId, columnId, value, updatedBy: currentUserName }, next)
   }
 
+  // ── Notion식 편집 편의 ─────────────────────────────────────────
+  // 새 텍스트 블록을 만들면 곧바로 커서를 넣어 바로 타이핑할 수 있게 한다.
+  // React 이펙트 안에서 포커스를 잡으면 리렌더 정리(cleanup)에 취소되어 놓치는 경우가 있어,
+  // 생명주기 밖에서 DOM에 나타날 때까지 짧게 재시도한다.
+  function focusBlockSoon(blockId: string, tries = 0) {
+    const el = document.querySelector<HTMLTextAreaElement>(`[data-block-input="${blockId}"]`)
+    if (el) {
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+      return
+    }
+    if (tries < 40) setTimeout(() => focusBlockSoon(blockId, tries + 1), 25)
+  }
+
+  /** 빈 공간 클릭 / 본문에서 Enter → 새 본문 블록 추가 후 즉시 입력 가능 */
+  async function appendParagraph(afterBlockId?: string) {
+    const block = makeDocumentBlock('paragraph')
+    const blocks = [...workspace.blocks]
+    const at = afterBlockId ? blocks.findIndex(item => item.id === afterBlockId) : -1
+    if (at >= 0) blocks.splice(at + 1, 0, block)
+    else blocks.push(block)
+    const next = { ...workspace, blocks }
+    focusBlockSoon(block.id)
+    // 중간 삽입은 순서가 중요하므로 replace-all로 전체를 보낸다 (append는 upsert로 충분)
+    await commit(
+      at >= 0
+        ? { type: 'replace-all', workspace: next, updatedBy: currentUserName }
+        : { type: 'upsert-block', block, updatedBy: currentUserName },
+      next,
+    )
+    focusBlockSoon(block.id)
+  }
+
   async function addBlock(type: LessonDesignDirectionWorkspaceBlockType) {
     if (type === 'table') {
       setShowInsertMenu(false)
@@ -654,14 +687,14 @@ export function LessonDesignDirectionWorkspaceModal({
       <div className="bg-white w-full max-w-[1480px] h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col">
         {/* 헤더 */}
         <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3 border-b border-[#DADCE0] bg-white">
-          <span className="inline-flex items-center gap-1 rounded-full border border-[#E8EAED] bg-white px-3 py-2 text-[14px] font-extrabold text-[#3C4043] shadow-sm">
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#C4C7C5] bg-white px-3 text-[13px] font-medium text-[#3C4043]">
             <FileText size={17} weight="bold" />
             T-1-2
           </span>
-          <span className="hidden sm:inline-flex items-center justify-center rounded-full bg-[#E8F0FE] px-4 py-2 text-[14px] font-extrabold text-[#1A73E8]">
+          <span className="hidden sm:inline-flex h-8 items-center justify-center rounded-lg bg-[#D3E3FD] px-3 text-[13px] font-medium text-[#0842A0]">
             {editorModeLabel}
           </span>
-          <span className="hidden md:inline-flex items-center rounded-full bg-[#F8F9FA] px-3 py-2 text-[14px] font-bold text-[#5F6368]">
+          <span className="hidden md:inline-flex h-8 items-center rounded-lg bg-[#F1F3F4] px-3 text-[13px] font-medium text-[#5F6368]">
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
@@ -675,7 +708,7 @@ export function LessonDesignDirectionWorkspaceModal({
             </div>
           )}
           <span className={cn(
-            'hidden md:inline-flex rounded-full px-3 py-2 text-[14px] font-bold',
+            'hidden md:inline-flex h-8 items-center rounded-lg px-3 text-[13px] font-medium',
             isHost ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'bg-[#F1F3F4] text-[#5F6368]',
           )}>
             {isHost ? '방장' : '팀원'}
@@ -684,7 +717,7 @@ export function LessonDesignDirectionWorkspaceModal({
             type="button"
             onClick={() => setShowExample(true)}
             title="최종 산출물 예시 보기"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#E8EAED] bg-white text-[#3C4043] text-[14px] font-bold shadow-sm transition-colors hover:bg-[#F1F3F4]"
+            className="hidden sm:flex h-10 items-center gap-2 px-4 rounded-full border border-[#C4C7C5] bg-white text-[#3C4043] text-[14px] font-medium transition-colors hover:bg-[#F1F3F4] active:bg-[#E8EAED]"
           >
             <Sparkle size={17} weight="fill" className="text-[#1A73E8]" />
             예시
@@ -694,7 +727,7 @@ export function LessonDesignDirectionWorkspaceModal({
             onClick={sendArtifact}
             disabled={!isHost || sending}
             title={isHost ? '현재 워크스페이스를 T-1-2 산출물로 보냅니다' : '방장만 산출물로 보낼 수 있습니다'}
-            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[14px] font-bold transition-colors disabled:opacity-50 disabled:hover:bg-[#1A73E8]"
+            className="hidden sm:flex h-10 items-center gap-2 px-5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06327A] text-white text-[14px] font-medium shadow-[0_1px_2px_rgba(60,64,67,0.3),0_1px_3px_1px_rgba(60,64,67,0.15)] transition-colors disabled:opacity-40 disabled:shadow-none"
           >
             <PaperPlaneRight size={17} weight="fill" />
             {sending ? '전송 중' : '산출물로 보내기'}
@@ -702,7 +735,7 @@ export function LessonDesignDirectionWorkspaceModal({
           <button
             type="button"
             onClick={onClose}
-            className="w-11 h-11 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+            className="w-10 h-10 rounded-full hover:bg-black/[0.08] active:bg-black/[0.12] text-[#5F6368] flex items-center justify-center transition-colors"
             aria-label="닫기"
           >
             <X size={20} weight="bold" />
@@ -720,14 +753,14 @@ export function LessonDesignDirectionWorkspaceModal({
           <div className="max-w-[1400px] mx-auto px-5 py-12 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-black text-[#1A73E8]">02</span>
-                <span className="text-[20px] font-extrabold text-[#202124]">수업설계 방향 설정</span>
-                <span className="ml-auto hidden sm:inline-flex rounded-full border border-[#E8EAED] bg-white px-3 py-1.5 text-[14px] font-bold text-[#5F6368]">
+                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-bold text-[#1A73E8]">02</span>
+                <span className="text-[30px] font-bold tracking-[-0.02em] text-[#37352F]">수업설계 방향 설정</span>
+                <span className="ml-auto hidden sm:inline-flex h-7 items-center rounded-md bg-[#F1F3F4] px-2.5 text-[12px] font-medium text-[#6B6A67]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
                 </span>
               </div>
 
-              <p className="text-[14px] font-semibold leading-relaxed text-[#5F6368]">
+              <p className="text-[15px] leading-[1.7] text-[#6B6A67]">
                 {sourceMode === 'aiDraft'
                   ? 'AI가 만든 산출물 초안을 불러왔습니다. 직접 수정하거나 우측에서 AI 제안을 추가로 받을 수 있습니다.'
                   : sourceMode === 'workspace'
@@ -738,23 +771,23 @@ export function LessonDesignDirectionWorkspaceModal({
               {/* 설계 원칙·근거 표 */}
               <section className="group relative space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[20px] font-extrabold text-[#202124]">설계 원칙 · 근거</p>
+                  <p className="text-[20px] font-semibold tracking-[-0.01em] text-[#37352F]">설계 원칙 · 근거</p>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={addColumn} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
+                    <button type="button" onClick={addColumn} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#C4C7C5] bg-white px-3 text-[13px] font-medium text-[#0B57D0] transition-colors hover:bg-[#D3E3FD]/50 active:bg-[#D3E3FD]">
                       <Plus size={15} weight="bold" /> 열
                     </button>
-                    <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-[#DADCE0] bg-white px-3 py-1.5 text-[14px] font-bold text-[#1A73E8] transition-colors hover:bg-[#E8F0FE]">
+                    <button type="button" onClick={addRow} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#C4C7C5] bg-white px-3 text-[13px] font-medium text-[#0B57D0] transition-colors hover:bg-[#D3E3FD]/50 active:bg-[#D3E3FD]">
                       <Plus size={15} weight="bold" /> 행
                     </button>
                   </div>
                 </div>
-                <div className="overflow-x-auto rounded-xl border border-[#DADCE0] bg-white">
+                <div className="workspace-table-scroll overflow-x-auto rounded-lg border border-[#E9E9E7] bg-white">
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
                       <tr>
-                        <th className="w-12 border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2 text-left text-[14px] font-extrabold text-white">행</th>
+                        <th className="sticky left-0 z-20 w-12 border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2 text-left text-[13px] font-medium text-[#6B6A67]">행</th>
                         {workspace.columns.map(column => (
-                          <th key={column.id} className="min-w-[220px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2">
+                          <th key={column.id} className="min-w-[150px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2">
                             <div className="flex items-center gap-1.5">
                               <input
                                 value={column.label}
@@ -764,9 +797,9 @@ export function LessonDesignDirectionWorkspaceModal({
                                   updateColumnLabel(column.id, event.target.value)
                                   blurField()
                                 }}
-                                className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[14px] font-extrabold text-white hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
+                                className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] font-semibold text-[#37352F] hover:bg-[#EFEFEE] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                               />
-                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-white/75 hover:bg-white/15 hover:text-white" aria-label="열 삭제">
+                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-8 w-8 items-center justify-center rounded-md text-[#9B9A97] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-[#EFEFEE] hover:text-[#37352F]" aria-label="열 삭제">
                                 <Trash size={15} weight="bold" />
                               </button>
                             </div>
@@ -777,16 +810,16 @@ export function LessonDesignDirectionWorkspaceModal({
                     <tbody>
                       {workspace.rows.length === 0 ? (
                         <tr>
-                          <td colSpan={workspace.columns.length + 1} className="border border-[#DADCE0] bg-[#F8F9FA] px-4 py-6 text-center text-sm text-[#9AA0A6]">
+                          <td colSpan={workspace.columns.length + 1} className="border border-[#E9E9E7] bg-white px-4 py-10 text-center text-[14px] text-[#9B9A97]">
                             아직 설계 원칙이 없습니다. &lsquo;+ 행&rsquo;을 눌러 추가하거나 우측 AI 제안을 받아보세요.
                           </td>
                         </tr>
                       ) : workspace.rows.map((row, rowIndex) => (
                         <tr key={row.id}>
-                          <td className="w-12 border-b border-r border-[#DADCE0] bg-[#F8F9FA] px-2 py-2 align-top">
+                          <td className="sticky left-0 z-10 w-12 border-b border-r border-[#E9E9E7] bg-[#FBFBFA] px-2 py-2 align-top">
                             <div className="flex items-center gap-1">
                               <span className="text-[13px] font-bold text-[#1A73E8]">{rowIndex + 1}</span>
-                              <button type="button" onClick={() => deleteRow(row.id)} className="flex h-7 w-7 items-center justify-center rounded text-[#9AA0A6] hover:bg-[#FCE8E6] hover:text-[#C62828]" aria-label="행 삭제">
+                              <button type="button" onClick={() => deleteRow(row.id)} className="flex h-7 w-7 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 text-[#9B9A97] hover:bg-[#FCE8E6] hover:text-[#C5221F]" aria-label="행 삭제">
                                 <Trash size={13} weight="bold" />
                               </button>
                             </div>
@@ -795,7 +828,7 @@ export function LessonDesignDirectionWorkspaceModal({
                             const cellKey = `${row.id}:${column.id}`
                             const editor = editorForCell(cellKey)
                             return (
-                              <td key={column.id} className="border-b border-r border-[#DADCE0] bg-white p-2 align-top">
+                              <td key={column.id} className="border-b border-r border-[#E9E9E7] bg-white p-2 align-top">
                                 <div className="relative">
                                   {editor && (
                                     <span className="absolute -top-2.5 left-3 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: editor.color }}>
@@ -811,7 +844,7 @@ export function LessonDesignDirectionWorkspaceModal({
                                       blurField()
                                     }}
                                     minRows={2}
-                                    className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                                    className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F7F7F5] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                                   />
                                 </div>
                               </td>
@@ -856,12 +889,12 @@ export function LessonDesignDirectionWorkspaceModal({
                       </button>
                       <div className="px-0 pb-2">
                         {table ? (
-                          <div className="relative overflow-x-auto rounded-xl border border-[#DADCE0] bg-white">
+                          <div className="relative overflow-x-auto rounded-lg border border-[#E9E9E7] bg-white">
                             <table className="min-w-full border-collapse text-sm">
                               <thead>
                                 <tr>
                                   {table.columns.map(column => (
-                                    <th key={column.id} className="min-w-[180px] border-b border-r border-[#1557B0] bg-[#1A73E8] px-2 py-2 text-left text-[14px] font-extrabold text-white">
+                                    <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2 text-left text-[13px] font-medium text-[#6B6A67]">
                                       {column.label}
                                     </th>
                                   ))}
@@ -871,7 +904,7 @@ export function LessonDesignDirectionWorkspaceModal({
                                 {table.rows.map(row => (
                                   <tr key={row.id}>
                                     {table.columns.map(column => (
-                                      <td key={column.id} className="border-b border-r border-[#DADCE0] bg-white p-2 align-top">
+                                      <td key={column.id} className="border-b border-r border-[#E9E9E7] bg-white p-2 align-top">
                                         <AutoGrowTextarea
                                           value={(row.cells?.[column.id] ?? '') as string}
                                           onChange={event => {
@@ -895,7 +928,7 @@ export function LessonDesignDirectionWorkspaceModal({
                                             blurField()
                                           }}
                                           minRows={2}
-                                          className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F8F9FA] focus:border-[#1A73E8] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                                          className="w-full min-h-[58px] rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F7F7F5] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                                         />
                                       </td>
                                     ))}
@@ -960,6 +993,7 @@ export function LessonDesignDirectionWorkspaceModal({
                           <AutoGrowTextarea
                             value={block.content}
                             onChange={event => setBlockLocal({ ...block, content: event.target.value })}
+                            data-block-input={block.id}
                             onFocus={() => focusField(`block:${block.id}`)}
                             onBlur={event => {
                               updateBlock({ ...block, content: event.target.value })
@@ -974,7 +1008,7 @@ export function LessonDesignDirectionWorkspaceModal({
                             }
                             className={cn(
                               'w-full rounded-xl border border-transparent bg-transparent px-1 py-1.5 text-[18px] leading-[1.6] text-[#202124] hover:border-[#E8EAED] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]',
-                              block.type === 'heading' && 'font-extrabold text-[32px] leading-tight',
+                              block.type === 'heading' && 'font-semibold text-[32px] leading-tight',
                               block.type === 'subheading' && 'font-bold text-[22px] leading-tight',
                               block.type === 'quote' && 'border-l-4 border-l-[#DADCE0] pl-4 italic text-[#5F6368]',
                             )}
@@ -992,7 +1026,7 @@ export function LessonDesignDirectionWorkspaceModal({
                       setShowInsertMenu(value => !value)
                       setTableDraft(prev => ({ ...prev, open: false }))
                     }}
-                    className="inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-[15px] font-bold text-[#5F6368] transition-colors hover:border-[#DADCE0] hover:bg-[#F8F9FA]"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[14px] font-normal text-[#9B9A97] transition-colors hover:bg-[#EFEFEE] hover:text-[#37352F]"
                   >
                     <Plus size={17} weight="bold" />
                     삽입
@@ -1013,7 +1047,7 @@ export function LessonDesignDirectionWorkspaceModal({
                               <ItemIcon size={18} weight="bold" />
                             </span>
                             <span className="flex-1 min-w-0">
-                              <span className="block text-[15px] font-extrabold text-[#202124]">{item.label}</span>
+                              <span className="block text-[15px] font-semibold text-[#202124]">{item.label}</span>
                               <span className="block text-[13px] text-[#5F6368]">{item.description}</span>
                             </span>
                           </button>
@@ -1023,7 +1057,7 @@ export function LessonDesignDirectionWorkspaceModal({
                   )}
                   {tableDraft.open && (
                     <div className="absolute left-0 top-10 z-20 w-64 rounded-xl border border-[#DADCE0] bg-white p-3 shadow-lg">
-                      <p className="mb-3 text-[15px] font-extrabold text-[#202124]">표 크기</p>
+                      <p className="mb-3 text-[15px] font-semibold text-[#202124]">표 크기</p>
                       <div className="grid grid-cols-2 gap-2">
                         <label className="text-[14px] font-bold text-[#5F6368]">
                           행
@@ -1052,17 +1086,30 @@ export function LessonDesignDirectionWorkspaceModal({
                   팀원은 공동 초안을 편집할 수 있고, 최종 산출물 전송은 방장이 실행합니다.
                 </div>
               )}
+              {/* 빈 공간 클릭 → 바로 본문 입력 (Notion 편집창과 동일한 동작) */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => void appendParagraph()}
+                onKeyDown={event => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  void appendParagraph()
+                }}
+                aria-label="빈 곳을 눌러 내용 추가"
+                className="min-h-[240px] w-full cursor-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0B57D0]/30"
+              />
             </article>
 
             {/* 우측: AI 추천 패널 */}
             <aside className="space-y-4 lg:sticky lg:top-6 self-start">
-              <section className="rounded-2xl border border-[#E8EAED] bg-[#FAFBFC] p-5 space-y-4">
+              <section className="rounded-2xl border border-[#E9E9E7] bg-[#FBFBFA] p-5 space-y-4">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#1A73E8] to-[#7B2FF7] text-white">
+                  <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#D3E3FD] text-[#0842A0]">
                     <Sparkle size={20} weight="fill" />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[16px] font-extrabold text-[#202124]">추천 산출물 형식</p>
+                    <p className="text-[15px] font-semibold text-[#37352F]">추천 산출물 형식</p>
                     <ul className="mt-2 space-y-1 text-[14px] leading-relaxed text-[#5F6368]">
                       <li>· <b>설계 원칙</b>: 구체적 방법론(PBL/협동/탐구 등) 포함한 1문장</li>
                       <li>· <b>근거</b>: 팀 비전·키워드와의 연결 1문장</li>
@@ -1082,7 +1129,7 @@ export function LessonDesignDirectionWorkspaceModal({
                       type="button"
                       onClick={() => requestSuggestion()}
                       disabled={suggestLoading}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#1A73E8] to-[#7B2FF7] px-4 py-2 text-[14px] font-extrabold text-white shadow-sm transition-opacity disabled:opacity-50"
+                      className="inline-flex h-10 items-center gap-2 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06327A] px-5 text-[14px] font-medium text-white shadow-[0_1px_2px_rgba(60,64,67,0.3),0_1px_3px_1px_rgba(60,64,67,0.15)] transition-colors disabled:opacity-40 disabled:shadow-none"
                     >
                       <Sparkle size={16} weight="fill" />
                       {suggestLoading ? '제안 받는 중...' : 'AI 제안 받기'}
@@ -1109,7 +1156,7 @@ export function LessonDesignDirectionWorkspaceModal({
                     <p className="text-[13px] font-semibold text-[#5F6368]">아래 내용을 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;을 누르면 표가 교체됩니다.</p>
                     {suggestion.basedOn && (
                       <div className="rounded-md border border-[#AECBFA] bg-[#E8F0FE] px-3 py-2 space-y-1.5">
-                        <p className="text-[13px] font-extrabold text-[#1967D2] inline-flex items-center gap-1">
+                        <p className="text-[13px] font-semibold text-[#1967D2] inline-flex items-center gap-1">
                           <Sparkle size={13} weight="fill" />
                           {suggestion.basedOn.mode === 'artifact' ? '채팅 산출물 기반' : '팀 채팅 대화 기반'} · 제안 근거
                         </p>
@@ -1215,16 +1262,16 @@ export function LessonDesignDirectionWorkspaceModal({
           onClick={event => event.stopPropagation()}
         >
           <div className="px-6 py-4 border-b border-[#E8EAED] bg-white flex items-center gap-3 flex-shrink-0">
-            <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0FE] px-3 py-1.5 text-[14px] font-extrabold text-[#1A73E8]">
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F0FE] px-3 py-1.5 text-[14px] font-semibold text-[#1A73E8]">
               <Sparkle size={16} weight="fill" />
               예시
             </span>
-            <span className="text-[17px] font-extrabold text-[#202124]">최종 산출물 예시</span>
+            <span className="text-[17px] font-semibold text-[#202124]">최종 산출물 예시</span>
             <div className="flex-1" />
             <button
               type="button"
               onClick={() => setShowExample(false)}
-              className="w-11 h-11 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] flex items-center justify-center transition-colors"
+              className="w-10 h-10 rounded-full hover:bg-black/[0.08] active:bg-black/[0.12] text-[#5F6368] flex items-center justify-center transition-colors"
               aria-label="예시 닫기"
             >
               <X size={20} weight="bold" />
@@ -1245,7 +1292,7 @@ export function LessonDesignDirectionWorkspaceModal({
                         {idx + 1}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[16px] font-extrabold text-[#202124] leading-relaxed">{row.principle}</p>
+                        <p className="text-[15px] font-semibold text-[#37352F] leading-relaxed">{row.principle}</p>
                         <p className="mt-1.5 text-[14px] text-[#5F6368] leading-relaxed">{row.rationale}</p>
                       </div>
                     </div>
@@ -1266,7 +1313,7 @@ export function LessonDesignDirectionWorkspaceModal({
             <button
               type="button"
               onClick={applyExampleToWorkspace}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#1A73E8] px-4 py-2 text-[14px] font-extrabold text-white hover:bg-[#1557B0] transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#1A73E8] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#1557B0] transition-colors"
             >
               <Sparkle size={16} weight="fill" />
               워크스페이스에 채우기

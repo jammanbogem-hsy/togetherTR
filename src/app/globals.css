@@ -761,3 +761,15 @@ details.faq-item[open] > summary .material-symbols-rounded { transform: rotate(1
 @media (prefers-reduced-motion: reduce) {
   .m3-nav-drawer, .m3-nav-rail, .m3-switch-thumb { transition: none; }
 }
+
+/* ── 공동 편집 표 가로 스크롤 힌트 ─────────────────────────
+   컬럼이 많으면 표가 문서 폭을 넘어간다. 오른쪽 끝에 옅은 그라데이션을 얹어
+   "더 있음"을 알리고, 행 번호 열은 sticky로 고정해 스크롤 중에도 기준이 남게 한다. */
+.workspace-table-scroll {
+  background:
+    linear-gradient(to right, #fff 30%, rgba(255,255,255,0)) left / 32px 100% no-repeat,
+    linear-gradient(to left,  #fff 30%, rgba(255,255,255,0)) right / 32px 100% no-repeat,
+    radial-gradient(farthest-side at 0 50%, rgba(55,53,47,0.10), transparent) left / 14px 100% no-repeat,
+    radial-gradient(farthest-side at 100% 50%, rgba(55,53,47,0.10), transparent) right / 14px 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
