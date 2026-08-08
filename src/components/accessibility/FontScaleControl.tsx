@@ -50,12 +50,12 @@ function ScaleButtons({
   const isMax = idx === SCALES.length - 1
   return (
     <div
-      className="flex items-center gap-0.5 bg-white rounded-full border border-[#DADCE0] px-1 py-0.5 flex-shrink-0"
+      className="flex items-center gap-0.5 bg-[#F1F3F4] rounded-full h-10 px-1 flex-shrink-0"
       role="group"
       aria-label={label}
     >
       {icon && (
-        <span className="flex items-center justify-center w-6 h-7 text-[#9AA0A6]" aria-hidden="true">
+        <span className="flex items-center justify-center w-6 h-8 text-[#5F6368]" aria-hidden="true">
           {icon}
         </span>
       )}
@@ -65,16 +65,16 @@ function ScaleButtons({
         disabled={isMin}
         title={`${titlePrefix} 작게`}
         aria-label={`${titlePrefix} 작게`}
-        className="flex items-center justify-center w-7 h-7 rounded-full text-[#5F6368] hover:bg-[#F1F3F4] hover:text-[#1A73E8] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+        className="flex items-center justify-center w-8 h-8 rounded-full text-[#3C4043] hover:bg-black/[0.08] active:bg-black/[0.12] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
       >
-        <Minus size={13} weight="bold" />
+        <Minus size={16} weight="bold" />
       </button>
       <button
         type="button"
         onClick={() => setIdx(() => DEFAULT_IDX)}
         title={`${titlePrefix} 초기화 (현재 ${pct}%)`}
         aria-label={`현재 ${titlePrefix} ${pct}퍼센트. 초기화하려면 클릭`}
-        className="flex items-center justify-center px-2.5 h-7 rounded-full text-[11px] font-bold text-[#5F6368] hover:bg-[#F1F3F4] hover:text-[#1A73E8] tabular-nums transition-colors min-w-[44px]"
+        className="flex items-center justify-center px-2 h-8 rounded-full text-[13px] font-medium text-[#3C4043] hover:bg-black/[0.08] active:bg-black/[0.12] tabular-nums transition-colors min-w-[48px]"
       >
         {pct}%
       </button>
@@ -84,9 +84,9 @@ function ScaleButtons({
         disabled={isMax}
         title={`${titlePrefix} 크게`}
         aria-label={`${titlePrefix} 크게`}
-        className="flex items-center justify-center w-7 h-7 rounded-full text-[#5F6368] hover:bg-[#F1F3F4] hover:text-[#1A73E8] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+        className="flex items-center justify-center w-8 h-8 rounded-full text-[#3C4043] hover:bg-black/[0.08] active:bg-black/[0.12] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
       >
-        <Plus size={13} weight="bold" />
+        <Plus size={16} weight="bold" />
       </button>
     </div>
   )
@@ -103,7 +103,7 @@ export function FontScaleControl() {
   }, [scale, mounted])
 
   if (!mounted) return null
-  return <ScaleButtons idx={idx} setIdx={setIdx} label="전체 글자 크기 조절" titlePrefix="전체 글자" icon={<TextAa size={13} weight="bold" />} />
+  return <ScaleButtons idx={idx} setIdx={setIdx} label="전체 글자 크기 조절" titlePrefix="전체 글자" icon={<TextAa size={17} weight="bold" />} />
 }
 
 // 채팅 전용 글자 크기 — 같은 탭 내 여러 소비자(Control 버튼 + 메시지 영역) 간 상태 공유 필요.
@@ -155,5 +155,5 @@ export function useChatFontScale(): number {
 export function ChatFontScaleControl() {
   const [idx, setIdx, mounted] = useSharedChatIdx()
   if (!mounted) return null
-  return <ScaleButtons idx={idx} setIdx={setIdx} label="채팅 글자 크기 조절" titlePrefix="채팅 글자" icon={<TextAa size={13} weight="bold" />} />
+  return <ScaleButtons idx={idx} setIdx={setIdx} label="채팅 글자 크기 조절" titlePrefix="채팅 글자" icon={<TextAa size={17} weight="bold" />} />
 }
