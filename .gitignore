@@ -58,3 +58,18 @@ next-env.d.ts
 # scripts/sync-runtime-assets.mjs. Not committed to avoid stale duplication.
 /public/curriculum-content-systems/
 /public/core-idea-area-mapping.json
+
+# 참고자료 — 미출간 원고·제3자 피드백 문서. 로컬에는 두되 원격에는 올리지 않는다.
+/260619_3장_피드백_이은상이동국.pdf
+/3장. 협력적 수업설계 핵심 가이드_20260804_디자인 의뢰본_일부수정.pdf
+/feedback1.pdf
+/docs/paper.md
+/docs/issue-paper/chapter-tcid-agent.md
+/docs/booklet/service-intro-top5.md
+/public/issue-paper.html
+
+# 도구·작업용 산출물
+/.agents/
+/.codex/
+/tmp/
+*.bak
