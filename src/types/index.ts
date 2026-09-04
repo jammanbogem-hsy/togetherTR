@@ -300,7 +300,15 @@ export interface Project {
   inviteCode?: string
   hostUid?: string
   memberUids?: string[]
-  memberInfo?: Record<string, { uid: string; displayName: string; color: string; emoji: string; joinedAt: number }>
+  memberInfo?: Record<string, {
+    uid: string
+    displayName: string
+    color: string
+    emoji: string
+    joinedAt: number
+    role?: string
+    expertise?: string
+  }>
   started?: boolean        // 방장이 시작 버튼을 눌러야 true
   analysisOpen?: boolean   // 단계 분석 모달 팀 동기화
   analysisReport?: {       // 방장이 생성한 보고서 (팀원 공유용, 현재 진행 중)
