@@ -58,11 +58,31 @@ test('the first completed cycle transitions from cycle 1 to cycle 2 exactly once
   const {
     completedCycleNumberForTransition,
     nextCycleNumber,
+    resolveStageTransitionDirection,
+    shouldChooseEToTTransition,
   } = await import('../src/lib/activity/cycle.ts')
 
   const completed = completedCycleNumberForTransition({ currentCycle: 1, cycleCount: 1 })
   assert.equal(completed, 1)
   assert.equal(nextCycleNumber(completed), 2)
+  assert.equal(resolveStageTransitionDirection('E', 'T', false), 'backward')
+  assert.equal(resolveStageTransitionDirection('E', 'T', true), 'cycle')
+  assert.equal(resolveStageTransitionDirection('T', 'A', true), 'forward')
+  assert.equal(resolveStageTransitionDirection('A', 'T', true), 'backward')
+  assert.equal(shouldChooseEToTTransition('E', 'T', true), true)
+  assert.equal(shouldChooseEToTTransition('E', 'T', false), false)
+  assert.equal(shouldChooseEToTTransition('A', 'T', true), false)
+})
+
+test('stage movement asks for an E-to-T choice without asking for a written reason', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const source = await readFile(new URL('../src/components/modals/StageMoveModal.tsx', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(source, /<textarea/)
+  assert.doesNotMatch(source, /이동 이유/)
+  assert.match(source, /type="radio"/)
+  assert.match(source, /T 단계로 이동/)
+  assert.match(source, /새 주기 시작/)
 })
 
 test('E completion requires official reflection outputs while next-cycle choice stays optional', async () => {

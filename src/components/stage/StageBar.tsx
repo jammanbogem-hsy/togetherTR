@@ -165,10 +165,10 @@ function CycleArrow({
         onClick={onLabelClick}
         className="absolute z-10 -translate-x-1/2 -translate-y-1/2 px-2.5 py-1 rounded-full bg-white border border-[#34A853] text-[#1E8E3E] text-[11px] font-bold shadow-sm hover:bg-[#34A853] hover:text-white active:scale-95 transition-all duration-150 flex items-center gap-1"
         style={{ left: geom.labelX, top: geom.labelY }}
-        title="E→T 순환: 새로운 주기를 시작합니다"
+        title="T 단계로 이동하거나 새로운 주기를 시작합니다"
       >
         <ArrowsClockwise size={11} weight="bold" />
-        새로운 주기 시작
+        T 단계로 이동
       </button>
       <style jsx>{`
         @keyframes cycle-dash-flow {
@@ -349,11 +349,12 @@ export function StageBar() {
   const hasGuardrail = !!a23Artifact && summarizeA23(a23Artifact.content as Record<string, unknown> | undefined) !== null
   const guardrailSummary = hasGuardrail ? summarizeA23(a23Artifact!.content as Record<string, unknown> | undefined) : null
 
-  // E→T 순환 화살표: E 단계가 모두 완료되었거나 isECompleted true일 때
-  const eStage = STAGES.find(s => s.code === 'E')!
-  const eAllDone = eStage.activities.every(a => isEffectivelyDone(a))
-  const canOpenCycleMove = currentStage !== 'T'
-  const showCycleArrow = canOpenCycleMove && (eAllDone || project.isECompleted === true)
+  // 마지막 E 단계 활동을 모두 마친 때만 T 이동 화살표를 보인다.
+  // 이동 후 현재 주기 유지/새 주기 시작은 모달에서 선택한다.
+  const eStage = STAGES.find(stage => stage.code === 'E')!
+  const eStageDone = eStage.activities.every(activity => isEffectivelyDone(activity))
+  const canOpenCycleMove = currentStage === 'E' && eStageDone
+  const showCycleArrow = canOpenCycleMove
 
   return (
     // Task #31: items-start로 변경 — 모든 컬럼이 top 정렬되고, 각 컬럼 첫 요소가 노드 슬롯이라 노드 수평선 자동 통일.

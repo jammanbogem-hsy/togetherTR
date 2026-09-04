@@ -15,7 +15,14 @@ import { ArrowRight, X, Warning, ChartBar } from '@phosphor-icons/react'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
 import { setAnalysisOpen } from '@/lib/firebase/projects'
 import { isEffectivelyDone } from '@/lib/activity/completion'
-import { completedCycleNumberForTransition, nextCycleNumber } from '@/lib/activity/cycle'
+import {
+  completedCycleNumberForTransition,
+  nextCycleNumber,
+  resolveStageTransitionDirection,
+  shouldChooseEToTTransition,
+} from '@/lib/activity/cycle'
+
+type EToTMoveChoice = 'move' | 'new-cycle'
 
 function getStageLabel(code: StageCode) {
   return STAGES.find(s => s.code === code)?.label ?? code
@@ -53,8 +60,7 @@ export function StageMoveModal() {
     userProfile,
   } = useProjectStore()
 
-  const [reason, setReason] = useState('')
-  const [reasonError, setReasonError] = useState<string | null>(null)
+  const [eToTMoveChoice, setEToTMoveChoice] = useState<EToTMoveChoice | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [showAnalysis, setShowAnalysis] = useState(false)
@@ -72,21 +78,17 @@ export function StageMoveModal() {
   const incompleteActivities = getIncompleteActivities(fromStage, activityStatus, project.artifacts as Record<string, { status?: string }> | undefined, isSolo)
   const isBackward = STAGES.findIndex(s => s.code === toStage) <
     STAGES.findIndex(s => s.code === fromStage)
-  const isCycle = fromStage === 'E' && toStage === 'T'
-  // 단순 역방향(예: 분석→팀준비): 보완하러 잠깐 되돌아가는 흐름이라 이동 사유 입력을 생략한다(사용자 요청).
-  const isBackwardSimple = isBackward && !isCycle
+  const currentStageDone = incompleteActivities.length === 0
+  const needsEToTMoveChoice = shouldChooseEToTTransition(fromStage, toStage, currentStageDone)
+  const isStartingNewCycle = needsEToTMoveChoice && eToTMoveChoice === 'new-cycle'
 
   async function handleConfirm() {
     if (!project || submittingRef.current) return
 
-    const trimmedReason = reason.trim()
-    // spec(07.절차프롬프트_v2 "이동 사유 기록 필수") — 순방향·사이클은 사유 필수.
-    // 단순 역방향(분석→팀준비 등)은 잠깐 보완하러 되돌아가는 흐름이라 사유 입력을 생략한다(사용자 요청).
-    if (!isBackwardSimple && !trimmedReason) {
-      setReasonError('이동 사유를 입력해주세요. (T-CID 모형: 단계 이동 사유 기록 필수)')
+    if (needsEToTMoveChoice && !eToTMoveChoice) {
+      setSubmitError('T 단계로 이동할 방식을 선택해주세요.')
       return
     }
-    setReasonError(null)
     setSubmitError(null)
 
     const targetStage = STAGES.find(s => s.code === toStage)
@@ -97,7 +99,7 @@ export function StageMoveModal() {
       ? (targetStage.activities.find(a => !SOLO_HIDDEN_ACTIVITIES.includes(a)) ?? targetStage.activities[0])
       : targetStage.activities[0]
     const direction: import('@/types').StageTransition['direction'] =
-      isCycle ? 'cycle' : isBackward ? 'backward' : 'forward'
+      resolveStageTransitionDirection(fromStage, toStage, isStartingNewCycle)
     const completedCycle = completedCycleNumberForTransition(project)
     const cycleNumber = completedCycle
     // initiatedBy: Firestore rules가 request.auth.uid와 일치 강제 (data-architect 협의)
@@ -128,7 +130,12 @@ export function StageMoveModal() {
       toStage,
       direction,
       cycleNumber,
-      reason: trimmedReason || (isBackwardSimple ? '이전 단계로 돌아가 보완' : ''),
+      // 사용자에게 사유를 요구하지 않고 선택한 이동 유형만 이력으로 남긴다.
+      reason: direction === 'cycle'
+        ? '새 주기 시작'
+        : direction === 'backward'
+          ? '이전 단계로 이동'
+          : '다음 단계로 이동',
       ...(incompleteActivities.length > 0 && !isBackward
         ? { missingItemsIgnored: incompleteActivities }
         : {}),
@@ -144,7 +151,7 @@ export function StageMoveModal() {
         } : undefined), 'ensureProjectMemberUid', 8000)
       }
 
-      if (isBackward || isCycle) {
+      if (direction !== 'forward') {
         // 이전 단계로 이동: returnToActivity + currentStage 업데이트
         await withTimeout(returnToActivity(project.id, firstActivity, toStage), 'returnToActivity')
       } else {
@@ -181,7 +188,7 @@ export function StageMoveModal() {
     setCurrentActivity(firstActivity)
     setMessages([])
     setPendingStageMove(null)
-    setReason('')
+    setEToTMoveChoice(null)
     submittingRef.current = false
     setSubmitting(false)
 
@@ -190,8 +197,7 @@ export function StageMoveModal() {
   function handleCancel() {
     if (submittingRef.current) return
     setPendingStageMove(null)
-    setReason('')
-    setReasonError(null)
+    setEToTMoveChoice(null)
     setSubmitError(null)
   }
 
@@ -202,15 +208,20 @@ export function StageMoveModal() {
       if (project?.id) setAnalysisOpen(project.id, false).catch(console.error)
     }} />}
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stage-move-title"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+      >
         {/* 헤더 */}
         <div className={cn(
           'px-6 py-4 flex items-center justify-between',
-          isCycle ? 'bg-[#E6F4EA]' : isBackward ? 'bg-[#FFF3E0]' : 'bg-[#E8F0FE]'
+          needsEToTMoveChoice ? 'bg-[#E6F4EA]' : isBackward ? 'bg-[#FFF3E0]' : 'bg-[#E8F0FE]'
         )}>
           <div>
-            <h2 className="font-bold text-[#202124]">
-              {isCycle ? '새로운 설계 주기 시작' : isBackward ? '이전 단계로 이동' : '다음 단계로 이동'}
+            <h2 id="stage-move-title" className="font-bold text-[#202124]">
+              {needsEToTMoveChoice ? 'T 단계 이동 방식 선택' : isBackward ? '이전 단계로 이동' : '다음 단계로 이동'}
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-sm font-medium text-[#5F6368]">
@@ -219,13 +230,18 @@ export function StageMoveModal() {
               <ArrowRight size={16} weight="regular" className="text-[#9AA0A6]" />
               <span className={cn(
                 'text-sm font-bold',
-                isCycle ? 'text-[#137333]' : isBackward ? 'text-[#E65100]' : 'text-[#1A73E8]'
+                needsEToTMoveChoice ? 'text-[#137333]' : isBackward ? 'text-[#E65100]' : 'text-[#1A73E8]'
               )}>
                 {toStage} · {getStageLabel(toStage)}
               </span>
             </div>
           </div>
-          <button onClick={handleCancel} className="text-[#9AA0A6] hover:text-[#5F6368]">
+          <button
+            type="button"
+            onClick={handleCancel}
+            aria-label="단계 이동 창 닫기"
+            className="text-[#9AA0A6] hover:text-[#5F6368]"
+          >
             <X size={16} weight="regular" />
           </button>
         </div>
@@ -247,56 +263,76 @@ export function StageMoveModal() {
             </div>
           )}
 
-          {/* 사이클 안내 */}
-          {isCycle && (
-            <div className="bg-[#E6F4EA] border border-[#81C995] rounded-2xl p-3">
-              <p className="text-sm text-[#1E4620]">
-                평가 단계 성찰을 바탕으로 <strong>주기 {nextCycleNumber(completedCycleNumberForTransition(project))}</strong>를
-                시작합니다. T 단계부터 새로운 시각으로 설계를 개선해보세요.
-              </p>
-            </div>
+          {/* E 단계 완료 후 E→T: 현재 주기 유지와 새 주기 시작을 명시적으로 선택 */}
+          {needsEToTMoveChoice && (
+            <fieldset>
+              <legend className="text-sm font-semibold text-[#202124] mb-2">
+                이동 방식을 선택해주세요
+                <span className="text-[#D93025] ml-1">(필수)</span>
+              </legend>
+              <div className="space-y-2">
+                <label className={cn(
+                  'flex items-start gap-3 rounded-2xl border-2 px-4 py-3 cursor-pointer transition-colors',
+                  'focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-[#1A73E8]',
+                  eToTMoveChoice === 'move'
+                    ? 'border-[#1A73E8] bg-[#E8F0FE]'
+                    : 'border-[#DADCE0] bg-white hover:border-[#AECBFA]'
+                )}>
+                  <input
+                    type="radio"
+                    name="e-to-t-move-choice"
+                    value="move"
+                    checked={eToTMoveChoice === 'move'}
+                    onChange={() => {
+                      setEToTMoveChoice('move')
+                      setSubmitError(null)
+                    }}
+                    disabled={submitting}
+                    className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#1A73E8]"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-[#202124]">T 단계로 이동</span>
+                    <span className="block mt-0.5 text-xs leading-relaxed text-[#5F6368]">
+                      현재 주기 {completedCycleNumberForTransition(project)}를 유지하고 기존 T 단계 내용을 확인·보완합니다.
+                    </span>
+                  </span>
+                </label>
+
+                <label className={cn(
+                  'flex items-start gap-3 rounded-2xl border-2 px-4 py-3 cursor-pointer transition-colors',
+                  'focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-[#34A853]',
+                  eToTMoveChoice === 'new-cycle'
+                    ? 'border-[#34A853] bg-[#E6F4EA]'
+                    : 'border-[#DADCE0] bg-white hover:border-[#81C995]'
+                )}>
+                  <input
+                    type="radio"
+                    name="e-to-t-move-choice"
+                    value="new-cycle"
+                    checked={eToTMoveChoice === 'new-cycle'}
+                    onChange={() => {
+                      setEToTMoveChoice('new-cycle')
+                      setSubmitError(null)
+                    }}
+                    disabled={submitting}
+                    className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#34A853]"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-[#137333]">새 주기 시작</span>
+                    <span className="block mt-0.5 text-xs leading-relaxed text-[#3C6142]">
+                      주기 {nextCycleNumber(completedCycleNumberForTransition(project))}로 전환하고 평가 단계의 성찰을 이어 설계를 개선합니다.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
           )}
 
-          {/* 단순 역방향: 사유 없이 간단 확인만 */}
-          {isBackwardSimple && (
+          {/* 일반 역방향 이동: 사유 없이 간단 확인만 */}
+          {isBackward && !needsEToTMoveChoice && (
             <p className="text-sm text-[#5F6368] leading-relaxed">
               이전 단계로 돌아가 산출물을 다시 보완할 수 있습니다. 진행할까요?
             </p>
-          )}
-
-          {/* 이동 이유 입력 (순방향·사이클만 필수, 단순 역방향은 생략) */}
-          {!isBackwardSimple && (
-          <div>
-            <label className="block text-sm font-medium text-[#202124] mb-1.5">
-              이동 이유 <span className="text-[#D93025] font-semibold">(필수)</span>
-            </label>
-            <textarea
-              value={reason}
-              onChange={e => {
-                setReason(e.target.value)
-                if (reasonError && e.target.value.trim()) setReasonError(null)
-              }}
-              placeholder={
-                isBackward
-                  ? '어떤 부분을 수정하거나 보완하려 하시나요?'
-                  : isCycle
-                  ? '이번 주기에서 개선하고 싶은 점은 무엇인가요?'
-                  : '다음 단계로 이동하는 이유를 간단히 적어주세요'
-              }
-              rows={3}
-              aria-invalid={!!reasonError}
-              className={cn(
-                'w-full resize-none rounded-2xl border px-3 py-2',
-                'text-sm focus:outline-none focus:ring-2 text-[#202124]',
-                reasonError
-                  ? 'border-[#D93025] focus:ring-[#D93025]'
-                  : 'border-[#DADCE0] focus:ring-[#1A73E8]'
-              )}
-            />
-            {reasonError && (
-              <p className="mt-1.5 text-xs text-[#D93025]">{reasonError}</p>
-            )}
-          </div>
           )}
 
           {/* 이력 저장 실패 등 제출 에러 (인라인 표시 — 모달은 닫지 않음) */}
@@ -308,7 +344,7 @@ export function StageMoveModal() {
           )}
 
           {/* 현재 단계 분석 제안 (다음 단계 이동 시만 표시) */}
-          {!isBackward && !isCycle && (
+          {!isBackward && (
             <div className="relative rounded-2xl overflow-hidden p-[1.5px]"
               style={{ background: 'linear-gradient(135deg, #1A73E8, #7B2FF7, #1A73E8)', backgroundSize: '200% 200%', animation: 'gradient-shift 3s ease infinite' }}
             >
@@ -383,18 +419,24 @@ export function StageMoveModal() {
             </button>
             <button
               onClick={handleConfirm}
-              disabled={submitting || (!isBackwardSimple && reason.trim() === '')}
+              disabled={submitting || (needsEToTMoveChoice && !eToTMoveChoice)}
               className={cn(
                 'flex-1 py-2.5 rounded-full text-sm font-bold text-white transition-colors',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
-                isCycle ? 'bg-[#34A853] hover:bg-[#2d9248]'
+                isStartingNewCycle ? 'bg-[#34A853] hover:bg-[#2d9248]'
                   : isBackward ? 'bg-[#E65100] hover:bg-[#cc4700]'
                   : 'bg-[#1A73E8] hover:bg-[#1557b0]'
               )}
             >
               {submitting
                 ? '저장 중...'
-                : isCycle ? '새 주기 시작' : isBackward ? '이전으로 이동' : '다음으로 이동'}
+                : needsEToTMoveChoice
+                  ? eToTMoveChoice === 'new-cycle'
+                    ? '새 주기 시작'
+                    : eToTMoveChoice === 'move'
+                      ? 'T 단계로 이동'
+                      : '이동 방식 선택'
+                  : isBackward ? '이전으로 이동' : '다음으로 이동'}
             </button>
           </div>
         </div>

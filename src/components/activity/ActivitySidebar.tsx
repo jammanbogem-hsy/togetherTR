@@ -214,7 +214,7 @@ const STAGE_TRANSITION_MSG: Record<string, { nextLabel: string; message: string 
   A:  { nextLabel: '다음: Ds 설계',     message: '다음 Ds 단계에서는 A-2-3 학습자 프로필을 가드레일로 평가와 활동을 설계합니다.' },
   Ds: { nextLabel: '다음: DI 개발·실행', message: '다음 DI 단계에서는 평가 계획과 스캐폴딩을 실제 자료로 개발하고 수업을 실행합니다.' },
   DI: { nextLabel: '다음: E 평가',      message: '다음 E 단계에서는 수업 기록을 근거로 성찰하고 다음 주기의 개선안을 남깁니다.' },
-  E:  { nextLabel: '새 주기: T 팀준비',  message: 'E-2-1 팀 성찰이 다음 T-1-1의 입력이 됩니다 — 새로운 주기를 시작할 준비가 됐어요.' },
+  E:  { nextLabel: '다음: T 팀준비',       message: 'T 단계로 돌아가 기존 설계를 보완하거나, E 단계 성찰을 이어 새 주기를 시작할 수 있어요.' },
 }
 
 // 상태별 뱃지 스펙(ui-spec 1-3): 3영역 공통 의미의 상태 컬러.

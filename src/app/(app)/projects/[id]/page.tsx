@@ -616,8 +616,8 @@ export default function ProjectPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.activityStatuses])
 
-  // E→T 순환 모달 자동 트리거: E 단계 모든 활동이 완료(또는 경고+산출물)되면
-  // pendingStageMove='T'를 설정하여 StageMoveModal(cycle 모드)을 띄움.
+  // 마지막 E 단계 활동 완료 후 E→T 이동 모달 자동 트리거.
+  // 모달에서 현재 주기 유지/새 주기 시작을 다시 명시적으로 선택한다.
   // 한 번 띄운 뒤에는 sessionStorage로 무시 표시 (per-user, per-session, per-project)
   useEffect(() => {
     if (!project) return
@@ -627,19 +627,19 @@ export default function ProjectPage() {
     const dismissKey = `tcid-cycle-dismissed:${projectId}`
     if (sessionStorage.getItem(dismissKey)) return
 
-    const eStage = STAGES.find(s => s.code === 'E')!
-    const eAllDone = eStage.activities.every(a =>
-      checkEffectivelyDone(a, project.activityStatuses ?? {}, project.artifacts),
+    const eStage = STAGES.find(stage => stage.code === 'E')!
+    const eStageDone = eStage.activities.every(activity =>
+      checkEffectivelyDone(activity, project.activityStatuses ?? {}, project.artifacts),
     )
     const nextCycleChoice = parseNextCycleChoice(
       project.artifacts?.['E-2-1']?.content?.['다음 주기 선택'] as string | undefined,
     )
-    if (shouldOpenCycleTransition(eAllDone, nextCycleChoice)) {
+    if (shouldOpenCycleTransition(eStageDone, nextCycleChoice)) {
       sessionStorage.setItem(dismissKey, '1')
       setPendingStageMove('T')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.currentStage, project?.activityStatuses, project?.artifacts, projectId])
+  }, [project?.currentStage, project?.mode, project?.activityStatuses, project?.artifacts, projectId])
 
   // P1-I 3-C: 새 주기 T-1-1의 첫 산출물 저장 감지 → isECompleted false 복귀.
   // 방장이 단독으로 write하며, `clearECompleted`는 idempotent하므로 race condition 무해.
