@@ -296,6 +296,20 @@ export interface Project {
     generatedAt: number
     personaUids: string[]
   }
+  // 실제 멀티에이전트 데모 실행 체크포인트. config는 전용 런타임 파서로 검증해 사용한다.
+  demoRun?: {
+    status: 'ready' | 'running' | 'paused' | 'completed' | 'failed'
+    config: unknown
+    activityIndex: number
+    activityCode?: ActivityCode
+    phase?: 'orchestrator-intro' | 'teacher-contribution' | 'teacher-response' | 'orchestrator-synthesis'
+    completedTurns: number
+    totalTurns: number
+    startedAt?: number
+    updatedAt: number
+    completedAt?: number
+    error?: string | null
+  }
   // 초대코드 & 팀 관련
   inviteCode?: string
   hostUid?: string
