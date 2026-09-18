@@ -7,7 +7,14 @@ import remarkGfm from 'remark-gfm'
 import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass, FileTextIcon as FileText, SidebarSimpleIcon as SidebarSimple, CaretRightIcon as CaretRight, CircleNotchIcon as CircleNotch, PencilRulerIcon as PencilRuler } from '@phosphor-icons/react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import type { ProblemSituationResult, ProblemScenarioCandidate } from '@/app/api/problem-situation/generate/route'
+import {
+  DETAIL_PARTS,
+  applyCandidateDetail,
+  type DetailPart,
+  type ProblemCandidateDetail,
+  type ProblemSituationResult,
+  type ProblemScenarioCandidate,
+} from '@/lib/problem-situation/generation'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 
 // ─── 교과 색상 ────────────────────────────────────────
@@ -31,14 +38,51 @@ function shortStdId(id: string) {
   return last >= 0 ? id.slice(last + 1) : id
 }
 
-// 생성 진행 단계 라벨 (로딩 화면용)
+// 생성 진행 단계 라벨 (로딩 화면용 — 1단계 '개요' 생성 동안 표시)
 const GEN_STEPS = [
   '성취기준·지식 그래프 분석',
   'A단계 수업목표·평가 계획 연계 지점 확인',
-  '실생활 맥락·실제 데이터 출처 탐색',
-  '교과 융합 문제상황 후보 3안 생성',
+  '교과 융합 문제상황 후보 3안 구상',
   '탐구 질문·하위 탐구 질문 도출',
 ]
+
+// 생성은 2단계로 나뉜다. Firebase Hosting이 요청 하나를 60초에서 끊기 때문에
+// 개요(후보 요약+탐구 질문)를 먼저 받고, 후보별 상세는 병렬 요청으로 이어서 받는다.
+type DetailStatus = 'loading' | 'error' | 'done'
+type DetailStatusMap = Partial<Record<number, DetailStatus>>
+
+// Hosting 제한(60초)보다 조금 앞서 끊어 사용자에게 명확한 안내를 보여준다.
+const GENERATE_TIMEOUT_MS = 58_000
+
+async function postGenerate<T>(body: Record<string, unknown>): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS)
+  try {
+    const res = await fetch('/api/problem-situation/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    const data = await res.json().catch(() => null) as (T & { error?: string }) | null
+    if (!res.ok) {
+      if (res.status === 502 || res.status === 504) {
+        throw new Error('서버 응답 시간(60초)을 초과했습니다. 다시 시도해 주세요.')
+      }
+      throw new Error(data?.error ?? `API 오류 ${res.status}`)
+    }
+    if (!data) throw new Error('서버 응답을 읽지 못했습니다.')
+    if (data.error) throw new Error(String(data.error))
+    return data
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('응답이 60초 안에 오지 않아 요청을 중단했습니다. 다시 시도해 주세요.')
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 // ─── 타입 ─────────────────────────────────────────────
 interface ProblemScenario {
@@ -252,9 +296,13 @@ function NodeMap({ centerNode, selectedStandards }: {
 // ─── 결과 표시 컴포넌트 ───────────────────────────────
 function ResultView({
   result,
+  detailStatus,
+  onRetryDetail,
   onSelect,
 }: {
   result: ProblemSituationResult
+  detailStatus: DetailStatusMap
+  onRetryDetail: (index: number) => void
   onSelect: (data: ProblemSituationData) => void
 }) {
   const [selectedIndex, setSelectedIndex] = useState(result.recommended?.index ?? 0)
@@ -267,6 +315,14 @@ function ResultView({
   const detail = getScenarioDetail(result, selectedIndex)
   const isRecommended = result.recommended?.index === selectedIndex
   const isCommitted = committedIndex === selectedIndex
+  const selectedStatus = detailStatus[selectedIndex]
+  // 상세가 아직 생성 중이거나 실패한 후보는 산출물로 선택할 수 없다 (빈 상세 저장 방지).
+  // 상세는 두 조각으로 나뉘어 도착하므로 일부만 채워진 상태에서도 선택을 막는다.
+  const detailPending = selectedStatus === 'loading' || selectedStatus === 'error'
+  const anyDetailLoading = candidates.some((_, i) => detailStatus[i] === 'loading')
+  const detailDoneCount = candidates.filter((c, i) => detailStatus[i] === 'done' || (detailStatus[i] == null && !!c.fullScenario)).length
+  // 조각이 아직 안 온 필드는 빈칸 대신 생성 중 표시
+  const orPending = (v: string | undefined) => v || (selectedStatus === 'loading' ? '생성 중…' : '')
   const commitSelected = () => {
     setCommittedIndex(selectedIndex)
     try { onSelect(resultToSaveData(result, selectedIndex)) }
@@ -293,6 +349,11 @@ function ResultView({
           <div className="w-1 h-4 rounded-full bg-[#1A73E8]" />
           <h3 className="text-xs font-bold text-[#202124]">문제 상황 후보</h3>
           <span className="text-[10px] text-[#9AA0A6]">({candidates.length}개 · 하나만 산출물로 선택)</span>
+          {anyDetailLoading && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold text-[#1967D2] bg-[#E8F0FE] px-2 py-0.5 rounded-full">
+              <SpinnerGap size={10} className="animate-spin" weight="bold" /> 후보 상세 생성 중 {detailDoneCount}/{candidates.length}
+            </span>
+          )}
         </div>
         <div className="flex items-end gap-1 border-b border-[#DADCE0]">
           {candidates.map((c, i) => {
@@ -338,12 +399,15 @@ function ResultView({
               <button
                 type="button"
                 onClick={commitSelected}
-                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-[#1A73E8] hover:bg-[#1557B0] px-3 py-1.5 rounded-full transition-colors"
+                disabled={detailPending}
+                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-[#1A73E8] hover:bg-[#1557B0] px-3 py-1.5 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <CheckCircle size={13} weight="fill" /> 이 후보를 산출물로 선택
               </button>
             )}
-            <span className="text-[10px] text-[#9AA0A6]">산출물에는 선택한 1개 후보만 저장됩니다</span>
+            <span className="text-[10px] text-[#9AA0A6]">
+              {detailPending ? '상세 생성이 끝나면 선택할 수 있습니다' : '산출물에는 선택한 1개 후보만 저장됩니다'}
+            </span>
           </div>
         </div>
       </section>
@@ -370,11 +434,33 @@ function ResultView({
 
         {detail == null ? (
           <div className="rounded-2xl border border-[#DADCE0] bg-white overflow-hidden">
-            <div className="px-4 py-3 bg-[#FEF7E0] border-b border-[#DADCE0]">
-              <p className="text-[11px] text-[#B06000] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-                이 후보는 요약만 생성되었습니다. &lsquo;재생성&rsquo;하면 모든 후보의 상세를 받을 수 있습니다.
-              </p>
-            </div>
+            {selectedStatus === 'loading' ? (
+              <div className="px-4 py-3 bg-[#E8F0FE] border-b border-[#DADCE0] flex items-center gap-2">
+                <SpinnerGap size={14} className="animate-spin text-[#1A73E8] flex-shrink-0" weight="bold" />
+                <p className="text-[11px] text-[#1967D2] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                  이 후보의 상세(문제 상황 전문·성취기준 연결·실제 자료·산출물·AI 점검)를 생성하고 있습니다. 약 30초 정도 걸립니다.
+                </p>
+              </div>
+            ) : selectedStatus === 'error' ? (
+              <div className="px-4 py-3 bg-[#FCE8E6] border-b border-[#DADCE0] flex items-center gap-2 flex-wrap">
+                <p className="text-[11px] text-[#C5221F] leading-relaxed flex-1 min-w-0" style={{ wordBreak: 'keep-all' }}>
+                  이 후보의 상세 생성에 실패했습니다. 다른 후보에는 영향이 없습니다.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onRetryDetail(selectedIndex)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-[#C5221F] hover:bg-[#A50E0E] px-3 py-1 rounded-full transition-colors"
+                >
+                  <ArrowClockwise size={12} weight="bold" /> 이 후보 상세 다시 생성
+                </button>
+              </div>
+            ) : (
+              <div className="px-4 py-3 bg-[#FEF7E0] border-b border-[#DADCE0]">
+                <p className="text-[11px] text-[#B06000] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                  이 후보는 요약만 생성되었습니다. &lsquo;재생성&rsquo;하면 모든 후보의 상세를 받을 수 있습니다.
+                </p>
+              </div>
+            )}
             <Block label="문제 상황 요약" onZoom={openZoom}>
               <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.scenario}</p>
             </Block>
@@ -439,19 +525,19 @@ function ResultView({
 
             <Block label="교과별 학습 내용" onZoom={openZoom}>
               <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-                {detail.learningContent}
+                {orPending(detail.learningContent)}
               </p>
             </Block>
 
             <Block label="산출물" onZoom={openZoom}>
               <p className="text-[11px] text-[#444] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-                {detail.artifacts}
+                {orPending(detail.artifacts)}
               </p>
             </Block>
 
             <Block label="AI 점검: 학습내용/산출물 반영 검토" labelColor="#1967D2" bg="bg-[#E8F0FE]" borderless onZoom={openZoom}>
               <p className="text-[11px] text-[#1967D2] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
-                {detail.alignmentCheck}
+                {orPending(detail.alignmentCheck)}
               </p>
             </Block>
           </div>
@@ -569,6 +655,12 @@ export default function ProblemSituationDesigner({
   const [showStandards, setShowStandards] = useState(true)
   // 생성 진행 단계 인디케이터
   const [genStep, setGenStep] = useState(0)
+  // 후보별 상세 생성 상태 (개요를 받은 뒤 후보마다 병렬로 요청)
+  const [detailStatus, setDetailStatus] = useState<DetailStatusMap>({})
+  // 재생성 시 이전 생성의 늦은 응답을 버리기 위한 세대 번호
+  const generationRef = useRef(0)
+  // 상세 재요청에 쓰는 현재 개요 (요약+탐구 질문)
+  const outlineRef = useRef<ProblemSituationResult | null>(null)
 
   // graphSavedData: Firestore 실시간 리스너로 항상 최신 데이터 유지
   const [localGraphData, setLocalGraphData] = useState<Props['graphSavedData']>(graphSavedData ?? null)
@@ -600,36 +692,73 @@ export default function ProblemSituationDesigner({
   const chatBottomRef = useRef<HTMLDivElement>(null)
   const [isSaving, setIsSaving] = useState(false)
 
-  // ── 생성 ──────────────────────────────────────────
+  // ── 생성 (2단계: 개요 → 후보별 상세 병렬) ─────────────────
+  const buildRequestBody = useCallback(() => ({
+    graphSavedData: localGraphData,
+    achievementStandardsAnalysis,
+    evaluationPlan,
+    learningObjective,
+    learnerProfile,
+    projectTitle,
+    targetGradeGroup,
+    targetSubjects,
+  }), [localGraphData, achievementStandardsAnalysis, evaluationPlan, learningObjective, learnerProfile, projectTitle, targetGradeGroup, targetSubjects])
+
+  // 후보 하나의 상세를 두 조각(scenario / plan)으로 동시에 요청해 결과에 병합한다.
+  // 조각이 도착하는 대로 화면에 채우고, 둘 다 성공해야 'done'. gen이 바뀌었으면(재생성) 늦은 응답은 버린다.
+  const loadCandidateDetail = useCallback(async (outline: ProblemSituationResult, index: number, gen: number) => {
+    setDetailStatus(prev => ({ ...prev, [index]: 'loading' }))
+    const body = buildRequestBody()
+    const results = await Promise.allSettled(DETAIL_PARTS.map(async part => {
+      const { detail } = await postGenerate<{ index: number; part: DetailPart; detail: Partial<ProblemCandidateDetail> }>({
+        ...body,
+        phase: 'detail',
+        candidateIndex: index,
+        part,
+        outline,
+      })
+      if (gen !== generationRef.current) return
+      setResult(prev => (prev ? applyCandidateDetail(prev, index, detail) : prev))
+    }))
+    if (gen !== generationRef.current) return
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (failed.length > 0) {
+      console.error(`[ProblemSituationDesigner] 후보 ${index + 1} 상세 생성 실패:`, failed.map(f => f.reason))
+      setDetailStatus(prev => ({ ...prev, [index]: 'error' }))
+      return
+    }
+    setDetailStatus(prev => ({ ...prev, [index]: 'done' }))
+  }, [buildRequestBody])
+
   const generate = useCallback(async () => {
+    const gen = ++generationRef.current
     setIsGenerating(true)
     setGenerateError(null)
     setResult(null)
+    setDetailStatus({})
+    outlineRef.current = null
+    let outline: ProblemSituationResult
     try {
-      const res = await fetch('/api/problem-situation/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          graphSavedData: localGraphData,
-          achievementStandardsAnalysis,
-          evaluationPlan,
-          learningObjective,
-          learnerProfile,
-          projectTitle,
-          targetGradeGroup,
-          targetSubjects,
-        }),
-      })
-      if (!res.ok) throw new Error(`API 오류 ${res.status}`)
-      const data = await res.json() as ProblemSituationResult
-      if ('error' in data) throw new Error(String((data as {error:string}).error))
-      setResult(data)
+      outline = await postGenerate<ProblemSituationResult>({ ...buildRequestBody(), phase: 'outline' })
     } catch (e) {
+      if (gen !== generationRef.current) return
       setGenerateError(e instanceof Error ? e.message : '생성 실패')
-    } finally {
       setIsGenerating(false)
+      return
     }
-  }, [localGraphData, achievementStandardsAnalysis, evaluationPlan, learningObjective, learnerProfile, projectTitle, targetGradeGroup, targetSubjects])
+    if (gen !== generationRef.current) return
+    outlineRef.current = outline
+    setResult(outline)
+    setIsGenerating(false)
+    // 후보별 상세는 각각 별도 요청으로 동시에 받는다 (요청당 60초 제한 회피).
+    outline.candidates.forEach((_, i) => { void loadCandidateDetail(outline, i, gen) })
+  }, [buildRequestBody, loadCandidateDetail])
+
+  const retryDetail = useCallback((index: number) => {
+    const outline = outlineRef.current
+    if (!outline) return
+    void loadCandidateDetail(outline, index, generationRef.current)
+  }, [loadCandidateDetail])
 
   // 기존 저장 내용이 없으면 자동 생성, 있으면 선택지 표시
   useEffect(() => {
@@ -871,7 +1000,7 @@ export default function ProblemSituationDesigner({
                   </div>
                   <div className="text-center">
                     <p className="text-[15px] font-extrabold text-[#1967D2]">문제상황 설계 중…</p>
-                    <p className="text-[12px] text-[#9AA0A6] mt-1">평균 30초~1분 정도 소요됩니다. 잠시만 기다려 주세요.</p>
+                    <p className="text-[12px] text-[#9AA0A6] mt-1">후보 개요를 먼저 만든 뒤(약 20~30초) 후보별 상세를 이어서 채웁니다.</p>
                   </div>
                 </div>
                 <div className="w-full max-w-md bg-[#F8F9FA] rounded-2xl border border-[#DADCE0] px-5 py-4 space-y-2.5">
@@ -930,7 +1059,7 @@ export default function ProblemSituationDesigner({
               </div>
             )}
             {result && !isGenerating && (
-              <ResultView result={result} onSelect={setCurrentData} />
+              <ResultView result={result} detailStatus={detailStatus} onRetryDetail={retryDetail} onSelect={setCurrentData} />
             )}
           </div>
         </div>
