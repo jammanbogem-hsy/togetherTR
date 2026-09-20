@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { resolveClaudeModel, isClaude5Family } from '@/lib/llm/anthropic'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { recoverTruncatedJson } from '@/lib/llm/recoverJson'
 import {
@@ -29,7 +30,7 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = resolveClaudeModel('suggest')
 
 // 2단계 생성:
 //   phase 'outline' → 탐구 질문 + 후보 3개 요약 (ProblemSituationResult, 상세 비어 있음)
@@ -107,6 +108,8 @@ async function complete(system: string, user: string, maxTokens: number): Promis
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: maxTokens,
+    // Claude 5 계열은 기본 adaptive thinking — JSON 절단 방지를 위해 끔(sonnet-4-6 과 동일 동작)
+    ...(isClaude5Family(MODEL) ? { thinking: { type: 'disabled' as const } } : {}),
     system,
     messages: [{ role: 'user', content: user }],
   })

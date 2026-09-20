@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { claudeJsonParams, resolveClaudeModel } from '@/lib/llm/anthropic'
 import { recoverTruncatedJson } from '@/lib/llm/recoverJson'
 
 export const runtime = 'nodejs'
@@ -143,8 +144,7 @@ export async function POST(request: Request) {
     }
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 3072,
+      ...claudeJsonParams(resolveClaudeModel('suggest'), 3072),
       system: BASE_SYSTEM,
       messages: [{ role: 'user', content: buildUserPrompt(body) }],
     })

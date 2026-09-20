@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { resolveClaudeModel } from '@/lib/llm/anthropic'
 import { ACTIVITY_META, displayActivityCode } from '@/types'
 import type { ActivityCode } from '@/types'
 
@@ -463,7 +464,7 @@ export async function POST(request: Request) {
       async start(controller) {
         try {
           const response = await client.messages.create({
-            model: 'claude-opus-4-6',
+            model: resolveClaudeModel('analysis'),
             max_tokens: 32000,
             messages: [{ role: 'user', content: prompt }],
             stream: true,

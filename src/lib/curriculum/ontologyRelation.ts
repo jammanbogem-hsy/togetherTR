@@ -10,6 +10,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { resolveClaudeModel } from '@/lib/llm/anthropic'
 import fs from 'fs'
 import path from 'path'
 import type { GraphRelationType } from '@/lib/knowledge-graph/domain'
@@ -256,7 +257,7 @@ ${failing.map((item, i) => `[후보 ${i + 1}] ${item.candidate.code} (${item.can
 
   try {
     const msg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: resolveClaudeModel('relation'),
       max_tokens: 1500,
       temperature: 0.6,
       messages: [{ role: 'user', content: rewritePrompt }],
@@ -418,7 +419,7 @@ ${judgedNote}
 
   try {
     const msg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: resolveClaudeModel('relation'),
       // 후보 8개 × (근거+아이디어 3개+수업 제안) 이 2500 토큰에서 잘려 JSON 파싱이 깨지던 문제 → 4000.
       max_tokens: 4000,
       temperature: 0.8,

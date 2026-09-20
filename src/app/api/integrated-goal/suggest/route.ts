@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { contextFromBody, verifySuggestion } from '@/lib/curriculum/suggestVerify'
+import { claudeJsonParams, resolveClaudeModel } from '@/lib/llm/anthropic'
 import { recoverTruncatedJson } from '@/lib/llm/recoverJson'
 
 export const runtime = 'nodejs'
@@ -281,8 +283,7 @@ export async function POST(request: Request) {
     }
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      ...claudeJsonParams(resolveClaudeModel('suggest'), 4096),
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildUserPrompt(body, mode) }],
     })
@@ -333,7 +334,9 @@ export async function POST(request: Request) {
       ...parsed,
       basedOn,
     }
-    return Response.json(result)
+    // [2026-09-20] 사후 검증(차단 없음): 성취기준 코드 대조 + Jev 정합·적정성. 응답 메타로만 붙인다.
+    const verification = await verifySuggestion('integrated-goal', result, contextFromBody(body as unknown as Record<string, unknown>, {}))
+    return Response.json({ ...result, verification })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return Response.json({ error: msg }, { status: 500 })

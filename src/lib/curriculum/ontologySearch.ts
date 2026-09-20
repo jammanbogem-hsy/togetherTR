@@ -15,6 +15,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { resolveClaudeModel } from '@/lib/llm/anthropic'
 import OpenAI from 'openai'
 import fs from 'fs'
 import path from 'path'
@@ -180,7 +181,7 @@ export async function structureTopic(theme: string): Promise<StructuredTopic> {
   try {
     const client = new Anthropic({ apiKey })
     const msg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: resolveClaudeModel('relation'),
       max_tokens: 400,
       messages: [{
         role: 'user',
@@ -521,7 +522,7 @@ ${candidateList}
 
     try {
       const msg = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: resolveClaudeModel('relation'),
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],
       })
