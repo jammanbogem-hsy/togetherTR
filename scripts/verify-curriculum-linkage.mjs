@@ -28,6 +28,7 @@ const {
   toElementaryBand,
 } = await import('../src/lib/curriculum/elementaryContentLists.ts')
 const { loadGraph, searchStandards } = await import('../src/lib/curriculum/graphReader.ts')
+const { findDuplicateCoreIdeaSentences } = await import('../src/lib/curriculum/coreIdeaDedupe.ts')
 const { searchJsonStandards } = await import('../src/lib/curriculum/curriculumJsonReader.ts')
 const {
   buildContentSystemContext,
@@ -323,6 +324,14 @@ const rawGraph = JSON.parse(fs.readFileSync(DATA_GRAPH, 'utf-8'))
     }
   }
   report('D7', '그래프 핵심아이디어 문장이 내용체계 핵심아이디어와 대응 (PDF 추출 차이는 경고)', failures, { warn: true, total })
+}
+
+{
+  // 같은 교과·학년군 안에서 한 문장이 두 노드에 있으면 후보 목록 중복·Jev 확률 분산이 생긴다.
+  // 파일은 sanitize 스크립트가 정리하고, 런타임(loadGraph)도 같은 규칙을 적용한다.
+  const failures = findDuplicateCoreIdeaSentences(rawGraph)
+    .map(dup => `${dup.subjectId} ${dup.band}: "${dup.idea.slice(0, 40)}…" ← ${[dup.keptNodeId, ...dup.removedNodeIds].join(' / ')}`)
+  report('D8', '같은 교과·학년군 안에서 핵심아이디어 문장이 한 노드에만 있음 (npm run sanitize:knowledge-graph)', failures)
 }
 
 // ───────────────────────────── R. runtime code paths ─────────────────────────────

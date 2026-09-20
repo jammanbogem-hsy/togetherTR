@@ -7,6 +7,7 @@ import fs from 'fs'
 import path from 'path'
 import OpenAI from 'openai'
 import { applyElementaryContentLists } from './elementaryContentLists'
+import { dedupeCoreIdeaSentences } from '@/lib/curriculum/coreIdeaDedupe'
 
 export interface CurriculumStandard {
   id: string
@@ -144,6 +145,9 @@ export function loadGraph(): KnowledgeGraph | null {
     // 초·중 공통 핵심아이디어 그룹 목록(대부분 중학교 열)을 복사한 것이라 신뢰하지 않는다.
     // 내용체계(학년군별) 항목으로 강제 교체 — scripts/verify-curriculum-linkage.mjs가 검증.
     applyElementaryContentLists(parsed)
+    // [2026-09-20] 같은 교과·학년군 안에서 두 노드에 중복 수록된 핵심아이디어 문장 정리
+    // (사회 5-6 인문환경 4문장). 파일 자체는 sanitize 스크립트가 같은 규칙으로 정리한다.
+    dedupeCoreIdeaSentences(parsed)
     _cache = parsed
     _cacheAt = Date.now()
     return _cache

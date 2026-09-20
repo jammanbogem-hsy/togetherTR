@@ -13,6 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { applyElementaryContentLists } from '../src/lib/curriculum/elementaryContentLists.ts'
+import { dedupeCoreIdeaSentences } from '../src/lib/curriculum/coreIdeaDedupe.ts'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TARGETS = [
@@ -31,6 +32,8 @@ if (!source) {
 const graph = JSON.parse(fs.readFileSync(source, 'utf-8'))
 const before = countItems(graph)
 applyElementaryContentLists(graph)
+// 같은 교과·학년군 안에서 여러 노드에 중복된 핵심아이디어 문장은 성취기준이 많은 노드에만 남긴다.
+const duplicates = dedupeCoreIdeaSentences(graph)
 const after = countItems(graph)
 
 graph.metadata = {
@@ -47,6 +50,9 @@ for (const target of TARGETS) {
 }
 console.log(`[sanitize] standards: knowledge ${before.knowledge} → ${after.knowledge}, functions ${before.functions} → ${after.functions}, competencies ${before.competencies} → ${after.competencies}`)
 console.log(`[sanitize] coreIdeas: knowledge ${before.ciKnowledge} → ${after.ciKnowledge}, functions ${before.ciFunctions} → ${after.ciFunctions}`)
+for (const dup of duplicates) {
+  console.log(`[sanitize] core idea dedupe ${dup.subjectId} ${dup.band}: "${dup.idea.slice(0, 40)}…" → ${dup.keptNodeId} 유지, ${dup.removedNodeIds.join(', ')} 에서 제거`)
+}
 
 function countItems(g) {
   const sum = (arr, key) => arr.reduce((acc, item) => acc + (item[key]?.length ?? 0), 0)
