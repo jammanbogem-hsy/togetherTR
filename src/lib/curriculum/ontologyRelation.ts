@@ -14,6 +14,7 @@ import fs from 'fs'
 import path from 'path'
 import type { GraphRelationType } from '@/lib/knowledge-graph/domain'
 import { DEFAULT_GRAPH_RELATION_TYPE, normalizeGraphRelationType } from '@/lib/knowledge-graph/domain'
+import { jevJudgeEnabled, judgeRelations, verifyTeachingNotes, type RelationJudgement } from '@/lib/curriculum/jevJudge'
 
 // ─── 타입 ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,10 @@ export interface RelationResult {
   ideas?: string[]       // 수업 아이디어 2~3개 (콘텐츠 접근: 보편/창의 혼합)
   teachingNote?: string  // 수업 제안: 차시·역할·산출물이 있는 융합 수업 구조
   source: 'claude' | 'rule'
+  /** [2026-09-20] 관계 유형·강도를 Jev 가 판정했으면 'jev'. LLM 은 설명·아이디어·수업 제안만 썼다. */
+  judge?: 'jev'
+  /** Jev Noul: 수업 제안이 두 성취기준을 실제로 다루는 정도(0~1). 재작성 후 값. */
+  verified?: number
 }
 
 // ─── 캐시 ────────────────────────────────────────────────────────────────────
@@ -177,7 +182,112 @@ function ruleBasedRelation(center: StandardMeta, cand: StandardMeta): RelationRe
   }
 }
 
+/** LLM 이 실패해도 Jev 판정(유형·강도)은 살린 규칙 폴백. */
+function ruleWithJudgement(
+  center: StandardMeta,
+  cand: StandardMeta,
+  verdict?: RelationJudgement['byCandidateId'][string],
+): RelationResult {
+  const base = ruleBasedRelation(center, cand)
+  if (!verdict) return base
+  const relationType = normalizeGraphRelationType(verdict.relationType) ?? base.relationType
+  return {
+    ...base,
+    relationType,
+    score: verdict.strength,
+    explanation: buildFallbackExplanation(center, cand, relationType),
+    teachingNote: buildFallbackTeachingNote(center, cand, relationType),
+    judge: 'jev',
+  }
+}
+
 // ─── Claude 분류 ──────────────────────────────────────────────────────────────
+
+const REWRITE_DEADLINE_MS = 35_000
+const VERIFY_THRESHOLD = 0.5
+
+async function verifyAndRewrite(params: {
+  client: Anthropic
+  theme: string
+  center: StandardMeta
+  toClassify: StandardMeta[]
+  results: RelationResult[]
+  cache: Record<string, RelationResult>
+  artifactContext?: string
+  startedAt: number
+}): Promise<void> {
+  const { client, theme, center, toClassify, results, cache, artifactContext, startedAt } = params
+  const byTarget = new Map(results.filter(r => r.source === 'claude').map(r => [r.targetId, r]))
+  const candById = new Map(toClassify.map(c => [c.id, c]))
+  const items = [...byTarget.values()].map(r => ({
+    candidate: candById.get(r.targetId)!,
+    relationType: r.relationType,
+    teachingNote: r.teachingNote ?? '',
+    ideas: r.ideas,
+  })).filter(item => item.candidate)
+  const verdict = await verifyTeachingNotes(theme, center, items)
+  if (!verdict) return
+  for (const [id, noul] of Object.entries(verdict.byCandidateId)) {
+    const result = byTarget.get(id)
+    if (result) result.verified = noul
+  }
+
+  const failing = items.filter(item => (verdict.byCandidateId[item.candidate.id] ?? 1) < VERIFY_THRESHOLD)
+  if (failing.length === 0 || performance.now() - startedAt > REWRITE_DEADLINE_MS) return
+
+  const rewritePrompt = `당신은 초등 교육과정 융합 수업 설계 전문가입니다.
+아래 후보들의 직전 수업 제안이 "두 성취기준을 실제로 다루지 않는다"고 판정되었습니다.
+중심 성취기준과 후보 성취기준 **둘 다의 문장에 있는 활동**이 수업 시퀀스 안에 드러나도록 다시 쓰십시오.
+다른 성취기준의 내용을 끌어오지 말고, 확정된 관계 유형을 바꾸지 마십시오.
+
+## 수업 주제
+${theme || '(주제 미지정)'}
+${artifactContext ? `\n## 수업 설계 맥락\n${artifactContext}\n` : ''}
+## 중심 성취기준
+${center.code} (${center.subjectName}) ${center.text}
+
+## 다시 쓸 후보
+${failing.map((item, i) => `[후보 ${i + 1}] ${item.candidate.code} (${item.candidate.subjectName}) ${item.candidate.text}
+- 확정된 관계 유형: ${item.relationType}
+- 직전 수업 제안(부적합): ${item.teachingNote}`).join('\n\n')}
+
+## 출력 형식 (JSON만)
+{ "relations": [ { "index": 1, "explanation": "두 성취기준 실문을 인용한 관계 근거 1문장", "ideas": ["아이디어1", "아이디어2"], "teachingNote": "차시·역할·산출물·평가가 드러나는 2~3문장" } ] }`
+
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      temperature: 0.6,
+      messages: [{ role: 'user', content: rewritePrompt }],
+    })
+    const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return
+    const parsed = JSON.parse(jsonMatch[0]) as { relations: Array<{ index: number; explanation?: string; ideas?: string[]; teachingNote?: string }> }
+    const rewritten: typeof items = []
+    for (const rel of parsed.relations ?? []) {
+      const item = failing[rel.index - 1]
+      const result = item && byTarget.get(item.candidate.id)
+      if (!item || !result) continue
+      if (rel.teachingNote?.trim()) result.teachingNote = rel.teachingNote.trim()
+      if (rel.explanation?.trim()) result.explanation = rel.explanation.trim()
+      const ideas = Array.isArray(rel.ideas) ? rel.ideas.map(s => String(s).trim()).filter(Boolean).slice(0, 3) : []
+      if (ideas.length > 0) result.ideas = ideas
+      rewritten.push({ candidate: item.candidate, relationType: result.relationType, teachingNote: result.teachingNote ?? '', ideas: result.ideas })
+      cache[cacheKey(theme, center.id, item.candidate.id)] = result
+    }
+    const recheck = rewritten.length > 0 ? await verifyTeachingNotes(theme, center, rewritten) : null
+    if (recheck) {
+      for (const [id, noul] of Object.entries(recheck.byCandidateId)) {
+        const result = byTarget.get(id)
+        if (result) result.verified = noul
+      }
+    }
+  } catch (err) {
+    console.error('[ontologyRelation] 재작성 실패 — 직전 제안 유지:', err)
+  }
+}
 
 export async function classifyRelations(
   theme: string,
@@ -216,6 +326,14 @@ export async function classifyRelations(
   }
 
   const client = new Anthropic({ apiKey })
+  const startedAt = performance.now()
+
+  // [1] 관계 유형·강도 판정은 Jev. LLM 이 관계까지 정하면 후보마다 유형이 흔들리고 코드가 지어낸 근거가 섞였다.
+  //     Jev 미설정·실패면 예전처럼 LLM 이 관계도 정한다(폴백).
+  const judgement: RelationJudgement | null = jevJudgeEnabled()
+    ? await judgeRelations(theme, center, toClassify, artifactContext)
+    : null
+  const judged = (cand: StandardMeta) => judgement?.byCandidateId[cand.id]
 
   const candidatesList = toClassify
     .map(
@@ -224,9 +342,19 @@ export async function classifyRelations(
 - 성취기준: ${c.text}
 - 개념: ${c.keywords.slice(0, 5).join(', ')}
 - 기능: ${c.functions.slice(0, 4).join(', ')}
-- 가치·태도: ${c.values.slice(0, 3).join(', ')}`
+- 가치·태도: ${c.values.slice(0, 3).join(', ')}${judged(c) ? `
+- ★ 확정된 관계 유형: ${judged(c)!.relationType} (강도 ${judged(c)!.strength.toFixed(2)}) — 바꾸지 말 것` : ''}`
     )
     .join('\n\n')
+
+  const judgedNote = judgement
+    ? `
+## 확정 사실 (교육과정 판정기 결과 — 이 범위 밖으로 나가지 마시오)
+각 후보의 관계 유형과 강도는 이미 판정되어 위 목록에 ★로 표시되어 있습니다. 당신은 유형을 고르지 않습니다.
+확정된 유형에 맞게 explanation·ideas·teachingNote 만 작성하고, JSON 의 relationType·score 에는 확정값을 그대로 적으십시오.
+중심·후보 성취기준 문장에 없는 다른 성취기준의 내용을 끌어오지 마십시오.
+`
+    : ''
 
   const prompt = `당신은 초등 교육과정 융합 수업 설계 전문가입니다.
 이 요청의 목적은 두 성취기준을 묶었을 때 **교사에게 인사이트를 주는 구체적인 수업 설계**를 제시하는 것입니다. 상식적이고 보편적인 문장(예: "~탐구 후 ~로 표현한다")만 내놓으면 실패입니다.
@@ -245,7 +373,7 @@ ${center.code} (${center.subjectName})
 
 ## 연결 후보 성취기준
 ${candidatesList}
-
+${judgedNote}
 ## 출력 스펙
 각 후보마다 다음 JSON 필드를 생성하라.
 
@@ -291,7 +419,8 @@ ${candidatesList}
   try {
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2500,
+      // 후보 8개 × (근거+아이디어 3개+수업 제안) 이 2500 토큰에서 잘려 JSON 파싱이 깨지던 문제 → 4000.
+      max_tokens: 4000,
       temperature: 0.8,
       messages: [{ role: 'user', content: prompt }],
     })
@@ -316,7 +445,9 @@ ${candidatesList}
       const cand = toClassify[rel.index - 1]
       if (!cand) continue
       handled.add(cand.id)
-      const relationType = normalizeGraphRelationType(rel.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE
+      // 판정값이 있으면 LLM 이 JSON 에 뭐라고 적었든 Jev 의 유형·강도를 쓴다.
+      const verdict = judged(cand)
+      const relationType = normalizeGraphRelationType(verdict?.relationType ?? rel.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE
       const fallback = ruleBasedRelation(center, cand)
       const cleanedIdeas = Array.isArray(rel.ideas)
         ? rel.ideas.map(s => String(s).trim()).filter(Boolean).slice(0, 3)
@@ -326,26 +457,33 @@ ${candidatesList}
         sourceId: center.id,
         targetId: cand.id,
         relationType,
-        score: Math.min(1, Math.max(0, rel.score)),
+        score: verdict ? verdict.strength : Math.min(1, Math.max(0, rel.score)),
         explanation: rel.explanation?.trim() || buildFallbackExplanation(center, cand, relationType) || fallback.explanation,
         ideas: cleanedIdeas && cleanedIdeas.length > 0 ? cleanedIdeas : undefined,
         teachingNote: rel.teachingNote?.trim() || buildFallbackTeachingNote(center, cand, relationType),
         source: 'claude',
+        ...(verdict ? { judge: 'jev' as const } : {}),
       }
       results.push(result)
       cache[cacheKey(theme, center.id, cand.id)] = result
     }
 
+    // [4] Jev 로 수업 제안 검증 → 두 성취기준을 실제로 안 다루는 후보만 1회 재작성.
+    //     60초 제한 안에 끝나도록 35초를 넘겼으면 재작성은 건너뛰고 검증값만 남긴다.
+    if (judgement) {
+      await verifyAndRewrite({ client, theme, center, toClassify, results, cache, artifactContext, startedAt })
+    }
+
     // Claude가 인덱스를 빠뜨린 후보는 룰 폴백을 돌려주되, 다음 호출에서 재시도되도록 캐시에 남기지 않는다.
     for (const cand of toClassify) {
       if (handled.has(cand.id)) continue
-      results.push(ruleBasedRelation(center, cand))
+      results.push(ruleWithJudgement(center, cand, judged(cand)))
     }
   } catch (err) {
     console.error('[ontologyRelation] Claude 오류, 규칙 기반 폴백:', err)
     // 전역 실패는 캐시하지 않음 — 이후 호출에서 Claude 재시도 기회를 열어둔다.
     for (const cand of toClassify) {
-      results.push(ruleBasedRelation(center, cand))
+      results.push(ruleWithJudgement(center, cand, judged(cand)))
     }
   }
 

@@ -255,3 +255,130 @@ export async function verifyDescriptions(
   })
   return { inScope, elapsedMs: response.elapsedMs }
 }
+
+// ── 성취기준 간 관계(지식 그래프·수업 예시) ────────────────────────────────
+
+/** 관계 유형 설명 — ontologyRelation.ts 의 규칙 기반 설명과 같은 뜻으로 맞춘다. */
+export const RELATION_TYPE_CRITERIA: Record<string, string> = {
+  '의미연결': '두 성취기준이 공통 개념·주제를 중심으로 연결된다',
+  '도구-활용': '한 교과의 기능·방법(그래프, 글쓰기 기법, 측정 등)을 다른 교과 탐구의 도구로 쓴다',
+  '현상-가치': '한 교과에서 탐구한 현상·사실을 다른 교과에서 가치·윤리 관점으로 성찰한다',
+  '내용-표현': '한 교과에서 탐구한 내용을 다른 교과의 활동(그림, 음악, 몸짓, 글)으로 표현한다',
+  '개념-적용': '한쪽은 개념 이해, 다른 쪽은 그 개념을 실제 상황에 적용·실천한다',
+  '문제-해결': '두 교과가 같은 문제를 서로 다른 방식으로 함께 해결한다',
+  '탐구-실천': '탐구 활동의 결과가 생활 속 실천 활동으로 이어진다',
+  '원인-결과': '한쪽 내용이 다른 쪽의 원인 또는 결과가 되는 인과 구조다',
+}
+
+const RELATION_STRENGTH_LEVELS = [
+  '무관 — 두 성취기준을 한 수업에 엮을 근거가 없다',
+  '약함 — 억지로 엮을 수는 있지만 자연스럽지 않다',
+  '관련 — 한 수업 시퀀스에서 자연스럽게 이어진다',
+  '핵심 — 이 주제의 융합 수업을 이 두 성취기준으로 설계하는 것이 가장 자연스럽다',
+]
+
+export interface RelationStandard {
+  id: string
+  code: string
+  subjectName: string
+  text: string
+  coreIdea?: string
+}
+
+export interface RelationJudgement {
+  byCandidateId: Record<string, {
+    relationType: string
+    typeConfidence: number
+    /** 0~1 (Score 0~3 을 3으로 나눔) */
+    strength: number
+    strengthConfidence: number
+  }>
+  elapsedMs: number
+}
+
+function standardBlock(std: RelationStandard): Record<string, string> {
+  return { 교과: std.subjectName, 코드: std.code, 성취기준: std.text, 핵심아이디어: std.coreIdea ?? '' }
+}
+
+/** 후보마다 관계 유형 Choice + 관계 강도 Score 를 한 번의 fan-out 으로 판정한다. */
+export async function judgeRelations(
+  theme: string,
+  center: RelationStandard,
+  candidates: RelationStandard[],
+  artifactContext?: string,
+): Promise<RelationJudgement | null> {
+  if (candidates.length === 0) return null
+  const typeKeys = Object.keys(RELATION_TYPE_CRITERIA)
+  const questions: Record<string, JevQuestion> = {}
+  candidates.forEach((cand, index) => {
+    const pair = `중심 ${center.code}(${center.subjectName}) ↔ 후보 ${cand.code}(${cand.subjectName}) "${cand.text}"`
+    questions[`t${index}`] = {
+      type: 'choice',
+      instructions: `${pair} — 두 성취기준을 한 융합 수업으로 엮을 때 관계 유형은 무엇인가?`,
+      criteria: Object.fromEntries(typeKeys.map((type, k) => [`r${k}`, `${type}: ${RELATION_TYPE_CRITERIA[type]}`])),
+    }
+    questions[`s${index}`] = {
+      type: 'score',
+      instructions: `${pair} — 수업 주제를 두고 두 성취기준을 엮는 것이 얼마나 자연스러운가?`,
+      criteria: RELATION_STRENGTH_LEVELS,
+    }
+  })
+  const state = {
+    수업주제: theme || '(미지정)',
+    수업설계맥락: artifactContext?.slice(0, 1500) ?? '',
+    중심_성취기준: standardBlock(center),
+    후보_성취기준: candidates.map((cand, index) => ({ 번호: index + 1, ...standardBlock(cand) })),
+  }
+  const response = await callJev(state, questions)
+  if (!response) return null
+  const byCandidateId: RelationJudgement['byCandidateId'] = {}
+  candidates.forEach((cand, index) => {
+    const type = response.answers[`t${index}`] as JevChoiceAnswer | undefined
+    const strength = response.answers[`s${index}`] as JevScoreAnswer | undefined
+    if (type?.type !== 'choice' || strength?.type !== 'score') return
+    byCandidateId[cand.id] = {
+      relationType: typeKeys[Number(type.choice.slice(1))] ?? typeKeys[0],
+      typeConfidence: type.confidence,
+      strength: Math.max(0, Math.min(1, strength.score / 3)),
+      strengthConfidence: strength.confidence,
+    }
+  })
+  return { byCandidateId, elapsedMs: response.elapsedMs }
+}
+
+export interface TeachingNoteVerdict {
+  /** 후보 id → 0~1 (수업 제안이 두 성취기준을 실제로 다루는가) */
+  byCandidateId: Record<string, number>
+  elapsedMs: number
+}
+
+/** [4] LLM 이 쓴 수업 제안·아이디어가 확정된 두 성취기준을 실제로 다루는지 검증한다. */
+export async function verifyTeachingNotes(
+  theme: string,
+  center: RelationStandard,
+  items: Array<{ candidate: RelationStandard; relationType: string; teachingNote: string; ideas?: string[] }>,
+): Promise<TeachingNoteVerdict | null> {
+  const targets = items.filter(item => item.teachingNote)
+  if (targets.length === 0) return null
+  const questions: Record<string, JevQuestion> = {}
+  targets.forEach((item, index) => {
+    questions[`v${index}`] = {
+      type: 'noul',
+      instructions: {
+        질문: `이 수업 제안이 중심 성취기준 ${center.code}과 후보 성취기준 ${item.candidate.code}을 둘 다 실제 활동으로 다루며, 확정된 관계 유형(${item.relationType})에 맞게 엮고 있는가? 한쪽 성취기준이 이름만 언급되거나 다른 성취기준 내용을 끌어오면 아니오.`,
+        중심_성취기준: standardBlock(center),
+        후보_성취기준: standardBlock(item.candidate),
+        수업_제안: item.teachingNote,
+        수업_아이디어: item.ideas ?? [],
+      },
+    }
+  })
+  const response = await callJev({ 수업주제: theme || '(미지정)' }, questions)
+  if (!response) return null
+  const byCandidateId: Record<string, number> = {}
+  targets.forEach((item, index) => {
+    const answer = response.answers[`v${index}`] as JevNoulAnswer | undefined
+    if (answer?.type === 'noul') byCandidateId[item.candidate.id] = answer.noul
+  })
+  return { byCandidateId, elapsedMs: response.elapsedMs }
+}
