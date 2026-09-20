@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
 import { CheckCircle, ChatCircleDots, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Sparkle, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DownloadSimple, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import { CollaborativePromptModal } from './CollaborativePromptModal'
@@ -282,7 +283,7 @@ function workshopArtifactToWorkspace(content: Record<string, unknown>): ProblemS
 }
 
 function normalizeWorkspace(saved?: ProblemSituationWorkspace, artifactContent?: Record<string, unknown>): ProblemSituationWorkspace {
-  if (saved && saved.columns && saved.columns.length > 0) {
+  if (saved && saved.columns && saved.columns.length > 0 && !isBlankWorkspace(saved)) {
     return {
       columns: saved.columns,
       rows: saved.rows ?? [],

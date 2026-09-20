@@ -821,12 +821,14 @@ export function buildT23Structured(
 ): T23Structured {
   const result: T23Structured = { _schema: 'T-2-3', schedule: [] }
   const raw = (sections['팀 일정'] ?? '').trim()
-  if (raw) result.schedule = parseTableRows(raw, 4).map(cells => ({
+  // [2026-09-20] 담당자가 정해지지 않은 초기 일정은 모델이 3열(기간|활동|마감) 표로 보내기도 한다
+  // (라이브에서 팀 일정이 빈 채로 저장된 원인). 3열도 받아 담당자를 빈 값으로 둔다.
+  if (raw) result.schedule = parseTableRows(raw, 3).map(cells => ({
     period: cells[0] || '', activity: cells[1] || '', content: cells[2] || '', assignee: cells[3] || '',
   }))
   if (result.schedule.length === 0) {
     for (const msg of [...chatMessages.filter(m => m.role === 'assistant')].reverse()) {
-      const rows = parseTableRows(msg.content, 4)
+      const rows = parseTableRows(msg.content, 3)
       if (rows.length > 0) {
         result.schedule = rows.map(cells => ({
           period: cells[0] || '', activity: cells[1] || '', content: cells[2] || '', assignee: cells[3] || '',

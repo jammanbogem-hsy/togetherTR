@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
 import { CheckCircle, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import type {
@@ -144,7 +145,7 @@ function buildExampleWorkspace(): TeamVisionWorkspace {
 }
 
 function normalizeWorkspace(workspace?: TeamVisionWorkspace, artifactContent?: Record<string, unknown>): TeamVisionWorkspace {
-  if (workspace) {
+  if (workspace && !isBlankWorkspace(workspace)) {
     const columns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
     const blocks = (workspace.blocks ?? []).map(block => block.type === 'table'
       ? { ...block, table: getBlockTable(block), content: '' }

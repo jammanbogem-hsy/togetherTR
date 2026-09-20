@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
 import { CheckCircle, ChatCircleDots, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Sparkle, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import { CollaborativePromptModal } from './CollaborativePromptModal'
@@ -140,7 +141,7 @@ function buildExampleWorkspace(): EvaluationPlanWorkspace {
 }
 
 function normalizeWorkspace(saved?: EvaluationPlanWorkspace, artifactContent?: Record<string, unknown>): EvaluationPlanWorkspace {
-  if (saved && saved.columns && saved.columns.length > 0) {
+  if (saved && saved.columns && saved.columns.length > 0 && !isBlankWorkspace(saved)) {
     const hasLatestColumns = saved.columns.some(column => column.id === 'checkpoint' || column.id === 'actor')
     const rows = (saved.rows ?? []).map(row => hasLatestColumns ? row : ({
       ...row,

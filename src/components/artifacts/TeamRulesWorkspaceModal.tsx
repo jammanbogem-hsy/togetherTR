@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
 import { CheckCircle, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import type {
@@ -127,7 +128,7 @@ function buildExampleWorkspace(): TeamRulesWorkspace {
 }
 
 function normalizeWorkspace(workspace?: TeamRulesWorkspace, artifactContent?: Record<string, unknown>): TeamRulesWorkspace {
-  if (workspace) {
+  if (workspace && !isBlankWorkspace(workspace)) {
     const sourceColumns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
     const columns = sourceColumns.map(column => column.id === 'violation'
       ? { ...column, id: 'feasibility', label: '실천 방법' }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
 import { CheckCircle, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Sparkle, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import type {
@@ -252,7 +253,7 @@ function workspaceFromDs22(structured: Ds22ArtifactShape): ScaffoldingWorkspace 
 }
 
 function normalizeWorkspace(workspace?: ScaffoldingWorkspace, artifactContent?: Record<string, unknown>): ScaffoldingWorkspace {
-  if (workspace) {
+  if (workspace && !isBlankWorkspace(workspace)) {
     const columns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
     const blocks = (workspace.blocks ?? []).map(block => block.type === 'table'
       ? { ...block, table: getBlockTable(block), content: '' }

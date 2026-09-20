@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
 import { CheckCircle, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import type {
@@ -134,7 +135,7 @@ function buildExampleWorkspace(): RoleDistributionWorkspace {
 }
 
 function normalizeWorkspace(workspace?: RoleDistributionWorkspace, artifactContent?: Record<string, unknown>): RoleDistributionWorkspace {
-  if (workspace) {
+  if (workspace && !isBlankWorkspace(workspace)) {
     const savedColumns = workspace.columns?.length ? workspace.columns : DEFAULT_COLUMNS
     const columns = savedColumns.some(column => column.id === 'deadline')
       ? savedColumns

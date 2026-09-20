@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
 import { CheckCircle, ChatCircleDots, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Sparkle, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DownloadSimple, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import { CollaborativePromptModal } from './CollaborativePromptModal'
@@ -216,7 +217,7 @@ function parsePipeTable(raw: string, expectedCols: number): string[][] {
 
 // Ds-2-1 산출물 → "산출물 형식에 최적화된" 공동 편집 워크스페이스로 변환한다.
 function normalizeWorkspace(saved?: SupportToolWorkspace, artifactContent?: Record<string, unknown>): SupportToolWorkspace {
-  if (saved && saved.columns && saved.columns.length > 0) {
+  if (saved && saved.columns && saved.columns.length > 0 && !isBlankWorkspace(saved)) {
     return {
       columns: saved.columns,
       rows: saved.rows ?? [],
