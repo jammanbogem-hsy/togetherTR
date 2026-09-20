@@ -14,6 +14,16 @@ import OpenAI from 'openai'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
 import { isElementaryGradeGroup, loadContentSystemsForGradeGroup, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
 import { gradeBandNeedle, isUsableCoreIdea } from '@/lib/curriculum/curriculumFilters'
+import {
+  judgeCoreIdeas,
+  judgeElements,
+  judgeStandards,
+  pickTopByScore,
+  jevJudgeEnabled,
+  verifyDescriptions,
+  type JudgeContext,
+  type JudgeMode,
+} from '@/lib/curriculum/jevJudge'
 import fs from 'fs'
 import path from 'path'
 
@@ -70,12 +80,17 @@ interface SelectedCoreIdea {
 interface CoreIdeaOption {
   subject: string
   coreIdeaId: string
+  /** 같은 문장이 그래프의 여러 노드(영역)에 중복 수록된 경우 전부. coreIdeaId 는 첫 번째. */
+  coreIdeaIds: string[]
   area: string
+  areas: string[]
   idea: string
   score: number
   standardsCount: number
   sampleStandards: string[]
 }
+
+type JudgeKind = 'jev' | 'embedding'
 
 interface CoreIdeaProposal {
   subject: string
@@ -83,6 +98,17 @@ interface CoreIdeaProposal {
   isCenter: boolean
   selectedCoreIdea: string
   options: CoreIdeaOption[]
+  /** 어떤 판정기로 순위를 매겼는지. 시트 UI가 확신도 배지를 보여주는 데 쓴다. */
+  judge?: JudgeKind
+  confidence?: number
+  mode?: JudgeMode
+}
+
+interface StepTiming {
+  id: string
+  label: string
+  ms: number
+  judge?: JudgeKind
 }
 
 interface BuiltRow {
@@ -425,21 +451,38 @@ async function buildCoreIdeaProposal(params: {
   }
 
   const allOptions: CoreIdeaOption[] = []
+  const optionByText = new Map<string, CoreIdeaOption>()
   for (const [coreIdeaId, groupStandards] of byCoreIdeaId) {
     const coreIdea = graph.coreIdeas.find(item => item.id === coreIdeaId)
     if (!coreIdea) continue
     for (const idea of coreIdea.ideas) {
       // 완전한 핵심아이디어 문장만 후보로. '[별표 …]'·어휘 목록 같은 그래프 잡음은 제외.
       if (!isUsableCoreIdea(idea)) continue
-      allOptions.push({
+      // [2026-09-20] 같은 문장이 두 노드에 중복 수록된 경우(사회 5-6 인문환경 4문장) 하나로 합친다.
+      // 따로 두면 후보 목록에 같은 문장이 두 번 보이고 Jev Choice 확률이 반으로 갈린다.
+      const text = idea.replace(/\s+/g, ' ').trim()
+      const existing = optionByText.get(text)
+      if (existing) {
+        if (!existing.coreIdeaIds.includes(coreIdeaId)) {
+          existing.coreIdeaIds.push(coreIdeaId)
+          existing.standardsCount += groupStandards.length
+        }
+        if (!existing.areas.includes(coreIdea.area)) existing.areas.push(coreIdea.area)
+        continue
+      }
+      const option: CoreIdeaOption = {
         subject,
         coreIdeaId,
+        coreIdeaIds: [coreIdeaId],
         area: coreIdea.area,
-        idea,
+        areas: [coreIdea.area],
+        idea: text,
         score: 0,
         standardsCount: groupStandards.length,
         sampleStandards: [],
-      })
+      }
+      optionByText.set(text, option)
+      allOptions.push(option)
     }
   }
 
@@ -453,7 +496,7 @@ async function buildCoreIdeaProposal(params: {
   )
   const relatedStandards = new Map<CoreIdeaOption, CurriculumStandard[]>()
   allOptions.forEach((option, optionIndex) => {
-    const related = (byCoreIdeaId.get(option.coreIdeaId) ?? [])
+    const related = option.coreIdeaIds.flatMap(id => byCoreIdeaId.get(id) ?? [])
       .map(std => ({ std, sim: ideaToStandard[optionIndex]?.[standardIndex.get(std.id) ?? -1] ?? 0 }))
       .sort((a, b) => b.sim - a.sim)
       .slice(0, 3)
@@ -465,38 +508,62 @@ async function buildCoreIdeaProposal(params: {
   // 내용체계 원문(지식·이해/과정·기능)으로 해소되는 후보만 남긴다. 하나도 없으면
   // 기능을 막지 않도록 전체 후보로 폴백한다.
   const resolvable = allOptions.filter(option =>
-    optionResolvesToOfficial(option.subject, option.area, option.idea, contentSystems, areaMappings),
+    option.areas.some(area => optionResolvesToOfficial(option.subject, area, option.idea, contentSystems, areaMappings)),
   )
   const options = resolvable.length > 0 ? resolvable : allOptions
 
   if (options.length === 0) return null
 
-  // 후보 점수: 영역 + 문장 + 그 문장과 관련된 성취기준(그룹 전체가 아님)으로 주제와 비교.
-  // 그룹 전체를 넣으면 같은 영역 문장끼리 점수가 거의 같아진다.
+  // 후보 점수 — [2026-09-20] Jev 판정 우선. 임베딩은 후보 점수가 0.31~0.35 로 몰려 변별이 안 됐다
+  // (실측 20건 중 14건에서 Jev 가 더 타당, 기존 우세 0건). Jev 미설정·오류 시 임베딩으로 폴백.
+  const isCenter = graphSavedData?.centerNode
+    ? getSubjectIds(graph, subject).includes(graphSavedData.centerNode.subjectId)
+    : false
   const query = queryForSubject(subject, focus, topic, chatContext)
-  const scores = await rankTexts(query, options.map(option => {
-    const related = relatedStandards.get(option) ?? []
-    return `${option.area} ${option.idea} ${related.map(standardEmbeddingText).join(' ')}`
-  }))
+  let scores: number[] | null = null
+  let judge: JudgeKind = 'embedding'
+  let confidence: number | undefined
+  let mode: JudgeMode | undefined
+  if (jevJudgeEnabled()) {
+    const judgement = await judgeCoreIdeas(
+      { subject, isCenter, gradeGroup: formatGradeGroupLabel(gradeGroup) || gradeGroup, topic, chatContext, focus },
+      options.map((option, index) => ({ key: `c${index}`, area: option.areas.join(' / '), idea: option.idea })),
+    )
+    if (judgement) {
+      scores = options.map((_, index) => judgement.probabilities[`c${index}`] ?? 0)
+      judge = 'jev'
+      confidence = judgement.confidence
+      mode = judgement.mode
+    }
+  }
+  if (!scores) {
+    // 영역 + 문장 + 그 문장과 관련된 성취기준(그룹 전체가 아님)으로 주제와 비교.
+    // 그룹 전체를 넣으면 같은 영역 문장끼리 점수가 거의 같아진다.
+    scores = await rankTexts(query, options.map(option => {
+      const related = relatedStandards.get(option) ?? []
+      return `${option.area} ${option.idea} ${related.map(standardEmbeddingText).join(' ')}`
+    }))
+  }
 
   const existingNormalized = normalizeText(existingCoreIdea ?? '')
   const scored = options.map((option, index) => {
-    const savedBoost = (byCoreIdeaId.get(option.coreIdeaId) ?? []).some(std => savedIds.has(std.id)) ? 0.2 : 0
+    const savedBoost = option.coreIdeaIds.some(id => (byCoreIdeaId.get(id) ?? []).some(std => savedIds.has(std.id))) ? 0.2 : 0
     const existingBoost = existingNormalized && normalizeText(option.idea) === existingNormalized ? 1 : 0
     return {
       ...option,
-      score: Math.round((scores[index] + savedBoost + existingBoost) * 100) / 100,
+      score: Math.round(((scores?.[index] ?? 0) + savedBoost + existingBoost) * 100) / 100,
     }
   }).sort((a, b) => b.score - a.score || b.standardsCount - a.standardsCount)
 
   return {
     subject,
     focus,
-    isCenter: graphSavedData?.centerNode
-      ? getSubjectIds(graph, subject).includes(graphSavedData.centerNode.subjectId)
-      : false,
+    isCenter,
     selectedCoreIdea: scored[0]?.idea ?? '',
     options: scored.slice(0, 6),
+    judge,
+    confidence,
+    mode,
   }
 }
 
@@ -582,6 +649,7 @@ async function selectItems(query: string, items: string[], count: number): Promi
 async function resolveKnowledgeAndFunctions(params: {
   subject: string
   area: string
+  areas?: string[]
   selectedIdea: string
   coreIdeaId: string
   selectedStandard?: CurriculumStandard
@@ -590,8 +658,12 @@ async function resolveKnowledgeAndFunctions(params: {
   query: string
   contentSystems: ContentSystemRecord[]
   areaMappings: AreaMapping[]
-}): Promise<{ knowledge: string[]; functions: string[]; attitudes: string[] }> {
-  const { subject, area, selectedIdea, selectedStandard, graph, gradeGroup, query, contentSystems, areaMappings } = params
+  judgeCtx?: JudgeContext
+}): Promise<{ knowledge: string[]; functions: string[]; attitudes: string[]; judge?: JudgeKind; judgeMs: number }> {
+  const { subject, selectedIdea, selectedStandard, graph, gradeGroup, query, contentSystems, areaMappings, judgeCtx } = params
+  // 중복 병합된 문장은 소속 영역이 둘일 수 있다 — 내용체계 원문이 있는 영역을 먼저 쓴다.
+  const candidateAreas = params.areas?.length ? params.areas : [params.area]
+  const area = candidateAreas.find(a => findOfficialContentRecord(contentSystems, subject, a, selectedIdea)) ?? candidateAreas[0]
   const elementQuery = [
     query,
     selectedStandard?.area,
@@ -630,10 +702,39 @@ async function resolveKnowledgeAndFunctions(params: {
     }
   }
 
+  // [2026-09-20] 요소 선별도 Jev Score(불필요~필수)로. 세 목록을 한 번에 fan-out 하고 상위 n개.
+  // 목록이 n개 이하면 판정 없이 전부 쓴다(기존 selectItems 와 동일 규칙).
+  const uniqueKnowledge = unique(knowledge.filter(Boolean))
+  const uniqueFunctions = unique(functions.filter(Boolean))
+  const uniqueAttitudes = unique(attitudes.filter(Boolean))
+  const needsJudge = uniqueKnowledge.length > 3 || uniqueFunctions.length > 2 || uniqueAttitudes.length > 2
+  if (judgeCtx && needsJudge && jevJudgeEnabled()) {
+    const judgement = await judgeElements(
+      judgeCtx,
+      { area, idea: selectedIdea, standard: selectedStandard ? formatStandard(selectedStandard) : '' },
+      {
+        knowledge: uniqueKnowledge.length > 3 ? uniqueKnowledge : [],
+        functions: uniqueFunctions.length > 2 ? uniqueFunctions : [],
+        attitudes: uniqueAttitudes.length > 2 ? uniqueAttitudes : [],
+      },
+    )
+    if (judgement) {
+      return {
+        knowledge: uniqueKnowledge.length > 3 ? pickTopByScore(uniqueKnowledge, judgement.knowledge, 3) : uniqueKnowledge,
+        functions: uniqueFunctions.length > 2 ? pickTopByScore(uniqueFunctions, judgement.functions, 2) : uniqueFunctions,
+        attitudes: uniqueAttitudes.length > 2 ? pickTopByScore(uniqueAttitudes, judgement.attitudes, 2) : uniqueAttitudes,
+        judge: 'jev',
+        judgeMs: judgement.elapsedMs,
+      }
+    }
+  }
   return {
     knowledge: await selectItems(elementQuery || query, knowledge, 3),
     functions: await selectItems(elementQuery || query, functions, 2),
     attitudes: await selectItems(elementQuery || query, attitudes, 2),
+    // 목록이 n개 이하면 판정 없이 전부 쓴다 — 판정기 표시 없음.
+    judge: needsJudge ? 'embedding' : undefined,
+    judgeMs: 0,
   }
 }
 
@@ -742,11 +843,11 @@ async function buildRowsFromSelections(params: {
   chatContext?: string
   contentSystems: ContentSystemRecord[]
   areaMappings: AreaMapping[]
-}): Promise<BuiltRow[]> {
+}): Promise<{ rows: BuiltRow[]; steps: StepTiming[] }> {
   const { graph, proposals, selectedCoreIdeas, existingRows, graphSavedData, topic, gradeGroup, chatContext, contentSystems, areaMappings } = params
-  const rows: BuiltRow[] = []
 
-  for (const proposal of proposals) {
+  // 교과마다 판정 호출이 2회(성취기준, 내용 요소)라 교과 간에는 병렬로 돌린다.
+  const built = await Promise.all(proposals.map(async (proposal): Promise<{ row: BuiltRow; steps: StepTiming[] }> => {
     const subject = proposal.subject
     const focus = proposal.focus
     const userSelectedIdea = explicitSelectedCoreIdea(selectedCoreIdeas, subject)
@@ -760,26 +861,54 @@ async function buildRowsFromSelections(params: {
     }
 
     const query = queryForSubject(subject, focus, topic, chatContext)
+    const optionIds = option.coreIdeaIds?.length ? option.coreIdeaIds : [option.coreIdeaId]
     const standards = standardsForSubject(graph, subject, gradeGroup)
-      .filter(std => std.core_idea_id === option.coreIdeaId)
+      .filter(std => optionIds.includes(std.core_idea_id ?? ''))
     const existingCodes = extractStandardCodes(existingStandardForSubject(existingRows, subject))
     const savedIds = savedStandardsForSubject(graphSavedData, graph, subject)
+    const judgeCtx: JudgeContext = {
+      subject,
+      isCenter: proposal.isCenter,
+      gradeGroup: formatGradeGroupLabel(gradeGroup) || gradeGroup,
+      topic,
+      chatContext,
+      focus,
+    }
+    const steps: StepTiming[] = []
 
     let rankedStandards = standards
     if (standards.length > 1) {
-      // [2026-09-19] 주제 질의와 교사가 고른 핵심아이디어 문장을 절반씩 반영.
-      // 문장을 빼면 "물의 순환" 문장을 골라도 그룹 안의 다른 성취기준이 뽑힐 수 있었다.
-      const [topicScores, ideaScores] = await rankMatrix(
-        [query, `${option.area} ${option.idea}`],
-        standards.map(standardEmbeddingText),
-      )
+      // [2026-09-20] 성취기준 관련도는 Jev Score(0~3)로 판정, 실패 시 임베딩(주제·문장 50:50)으로 폴백.
+      let relevance: number[] | null = null
+      let judge: JudgeKind = 'embedding'
+      let judgeMs = 0
+      if (jevJudgeEnabled()) {
+        const judgement = await judgeStandards(
+          judgeCtx,
+          { area: option.areas?.join(' / ') ?? option.area, idea: option.idea },
+          standards.map(std => ({ id: std.id, code: formatCode(std.code), text: std.text })),
+        )
+        if (judgement) {
+          relevance = standards.map(std => (judgement.scores[std.id] ?? 0) / 3)
+          judge = 'jev'
+          judgeMs = judgement.elapsedMs
+        }
+      }
+      if (!relevance) {
+        const [topicScores, ideaScores] = await rankMatrix(
+          [query, `${option.area} ${option.idea}`],
+          standards.map(standardEmbeddingText),
+        )
+        relevance = standards.map((_, index) => 0.5 * (topicScores[index] ?? 0) + 0.5 * (ideaScores[index] ?? 0))
+      }
+      steps.push({ id: `standards:${subject}`, label: `${subject} 성취기준 판정`, ms: judgeMs, judge })
+      const scoresForStandards = relevance
       rankedStandards = standards
         .map((std, index) => {
           const code = codeWithoutBrackets(std.code)
           const existingBoost = existingCodes.has(code) ? 1 : 0
           const savedBoost = savedIds.has(std.id) ? 0.25 : 0
-          const relevance = 0.5 * (topicScores[index] ?? 0) + 0.5 * (ideaScores[index] ?? 0)
-          return { std, score: relevance + existingBoost + savedBoost }
+          return { std, score: (scoresForStandards[index] ?? 0) + existingBoost + savedBoost }
         })
         .sort((a, b) => b.score - a.score)
         .map(item => item.std)
@@ -789,6 +918,7 @@ async function buildRowsFromSelections(params: {
     const elements = await resolveKnowledgeAndFunctions({
       subject,
       area: option.area,
+      areas: option.areas,
       selectedIdea: option.idea,
       coreIdeaId: option.coreIdeaId,
       selectedStandard,
@@ -797,21 +927,26 @@ async function buildRowsFromSelections(params: {
       query,
       contentSystems,
       areaMappings,
+      judgeCtx,
     })
+    steps.push({ id: `elements:${subject}`, label: `${subject} 지식·이해/과정·기능/가치·태도 판정`, ms: elements.judgeMs, judge: elements.judge })
 
-    rows.push({
-      subject,
-      isCenter: proposal.isCenter,
-      coreIdea: option.idea,
-      area: option.area,
-      standard: selectedStandard ? formatStandard(selectedStandard) : '',
-      knowledge: elements.knowledge.join(SEP),
-      processFunction: elements.functions.join(SEP),
-      valueAttitude: elements.attitudes.join(SEP),
-    })
-  }
+    return {
+      row: {
+        subject,
+        isCenter: proposal.isCenter,
+        coreIdea: option.idea,
+        area: option.area,
+        standard: selectedStandard ? formatStandard(selectedStandard) : '',
+        knowledge: elements.knowledge.join(SEP),
+        processFunction: elements.functions.join(SEP),
+        valueAttitude: elements.attitudes.join(SEP),
+      },
+      steps,
+    }
+  }))
 
-  return rows
+  return { rows: built.map(item => item.row), steps: built.flatMap(item => item.steps) }
 }
 
 async function buildDescriptions(params: {
@@ -819,8 +954,10 @@ async function buildDescriptions(params: {
   topic: string
   gradeGroup: string
   chatContext?: string
+  /** Jev 검증에서 범위 밖으로 판정된 교과를 다시 쓸 때 붙이는 추가 지시. */
+  retryNote?: string
 }): Promise<Record<string, string>> {
-  const { rows, topic, gradeGroup, chatContext } = params
+  const { rows, topic, gradeGroup, chatContext, retryNote } = params
   if (!process.env.OPENAI_API_KEY || rows.length === 0) return {}
 
   try {
@@ -829,7 +966,8 @@ async function buildDescriptions(params: {
 중요:
 - 핵심아이디어, 성취기준, 지식이해, 과정기능, 가치태도 값은 이미 DB에서 확정되었습니다.
 - 아래 값들을 바꾸거나 새로 만들지 말고, 각 교과가 수업에서 맡을 역할만 1~2문장으로 설명하세요.
-
+- 확정된 성취기준·내용 요소 밖의 다른 성취기준이나 내용을 끌어오지 마세요.
+${retryNote ? `- ${retryNote}\n` : ''}
 주제: ${topic || '(아래 맥락에서 추론)'}
 대화 맥락: ${chatContext?.substring(0, 500) || '(없음)'}
 
@@ -856,6 +994,48 @@ JSON: { "descriptions": { "교과명": "설명" } }`
   }
 }
 
+/**
+ * [3]+[4] LLM 설명 작성 → Jev 범위 검증 → 범위 밖(noul < 0.5) 교과만 1회 재작성.
+ * 검증 결과는 행에 넣지 않고 응답 메타(verification)로만 돌려준다(Firestore 행 스키마 불변).
+ */
+async function describeAndVerify(params: {
+  rows: BuiltRow[]
+  topic: string
+  gradeGroup: string
+  chatContext?: string
+}): Promise<{ descriptions: Record<string, string>; verification: Record<string, number>; steps: StepTiming[] }> {
+  const { rows, topic, gradeGroup, chatContext } = params
+  const steps: StepTiming[] = []
+  const llmStart = performance.now()
+  let descriptions = await buildDescriptions({ rows, topic, gradeGroup, chatContext })
+  steps.push({ id: 'describe', label: 'LLM 수업내용 설명 작성', ms: Math.round(performance.now() - llmStart) })
+
+  let verification: Record<string, number> = {}
+  if (!jevJudgeEnabled() || Object.keys(descriptions).length === 0) return { descriptions, verification, steps }
+
+  const verdict = await verifyDescriptions(topic, gradeGroup, rows, descriptions)
+  if (!verdict) return { descriptions, verification, steps }
+  verification = verdict.inScope
+  steps.push({ id: 'verify', label: 'Jev 설명 범위 검증', ms: verdict.elapsedMs, judge: 'jev' })
+
+  const outOfScope = rows.filter(row => (verification[row.subject] ?? 1) < 0.5)
+  if (outOfScope.length > 0) {
+    const retryStart = performance.now()
+    const rewritten = await buildDescriptions({
+      rows: outOfScope,
+      topic,
+      gradeGroup,
+      chatContext,
+      retryNote: '직전 설명이 확정된 성취기준 범위를 벗어났습니다. 확정된 성취기준 문장과 지식이해·과정기능 요소만 근거로 다시 쓰세요.',
+    })
+    descriptions = { ...descriptions, ...rewritten }
+    const recheck = await verifyDescriptions(topic, gradeGroup, outOfScope, rewritten)
+    if (recheck) verification = { ...verification, ...recheck.inScope }
+    steps.push({ id: 'rewrite', label: `범위 밖 설명 재작성 (${outOfScope.map(r => r.subject).join('·')})`, ms: Math.round(performance.now() - retryStart), judge: 'jev' })
+  }
+  return { descriptions, verification, steps }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -866,15 +1046,22 @@ export async function POST(request: NextRequest) {
       chatContext,
       existingRows = [],
       selectedCoreIdeas = [],
+      rows: rowsToDescribe = [],
     } = await request.json() as {
-      mode?: 'coreIdeas' | 'complete'
+      /**
+       * coreIdeas: 핵심아이디어 후보(판정) · rows: 성취기준·내용 요소까지 판정(설명 없음)
+       * describe: 확정된 행으로 LLM 설명 작성 + Jev 검증 · complete: rows + describe 한 번에
+       */
+      mode?: 'coreIdeas' | 'rows' | 'describe' | 'complete'
       a12Artifact?: Record<string, unknown>
       graphSavedData?: GraphSavedData
       targetGradeGroup?: string
       chatContext?: string
       existingRows?: ExistingRow[]
       selectedCoreIdeas?: SelectedCoreIdea[]
+      rows?: Array<BuiltRow & { id?: string }>
     }
+    const startedAt = performance.now()
 
     const gradeGroup = targetGradeGroup ?? ''
     if (!isElementaryGradeGroup(gradeGroup)) {
@@ -887,11 +1074,25 @@ export async function POST(request: NextRequest) {
     const graph = loadGraph()
     if (!graph) return NextResponse.json({ error: '교육과정 지식 그래프를 불러오지 못했습니다.' }, { status: 500 })
 
+    const topic = String(a12Artifact?.['selectedTopic'] || a12Artifact?.['선택 주제'] || a12Artifact?.['주제'] || '')
+
+    // describe 모드: 판정이 끝난 행만 받아 LLM 설명을 쓰고 Jev 로 범위를 검증한다.
+    if (mode === 'describe') {
+      const describable = rowsToDescribe.filter(row => row.subject)
+      const { descriptions, verification, steps } = await describeAndVerify({ rows: describable, topic, gradeGroup, chatContext })
+      return NextResponse.json({
+        descriptions,
+        verification,
+        steps,
+        judge: jevJudgeEnabled() ? 'jev' : 'embedding',
+        message: `${Object.keys(descriptions).length}개 교과 설명 작성`,
+      })
+    }
+
     const contentSystems = loadContentSystemsForGradeGroup(gradeGroup)
     const areaMappings = loadAreaMappings()
     const linkedSubjects = parseLinkedSubjects(a12Artifact)
     const subjects = deriveSubjects(a12Artifact, linkedSubjects, graphSavedData, graph, chatContext, existingRows)
-    const topic = String(a12Artifact?.['selectedTopic'] || a12Artifact?.['선택 주제'] || a12Artifact?.['주제'] || '')
 
     if (subjects.length === 0) {
       return NextResponse.json({ error: '교과 정보를 찾을 수 없습니다. 분석표에 과목을 입력하거나 주제(A-1-2)를 먼저 선정한 뒤 다시 시도하세요.' }, { status: 400 })
@@ -925,9 +1126,12 @@ export async function POST(request: NextRequest) {
         ? proposals
         : proposals.map((proposal, index) => ({ ...proposal, isCenter: index === 0 }))
 
+    const judge: JudgeKind = centeredProposals.every(proposal => proposal.judge === 'jev') ? 'jev' : 'embedding'
     if (mode === 'coreIdeas') {
       return NextResponse.json({
         proposals: centeredProposals,
+        judge,
+        steps: [{ id: 'coreIdeas', label: '핵심아이디어 판정', ms: Math.round(performance.now() - startedAt), judge }],
         message: `${centeredProposals.length}개 교과의 핵심아이디어 후보를 찾았습니다.`,
       })
     }
@@ -944,7 +1148,7 @@ export async function POST(request: NextRequest) {
           : scopedProposals.map((proposal, index) => ({ ...proposal, isCenter: index === 0 })))
       : centeredProposals
 
-    const builtRows = await buildRowsFromSelections({
+    const { rows: builtRows, steps: rowSteps } = await buildRowsFromSelections({
       graph,
       proposals: finalProposals,
       selectedCoreIdeas,
@@ -958,17 +1162,31 @@ export async function POST(request: NextRequest) {
     })
     validateMappedRowsFromDb({ rows: builtRows, graph, gradeGroup, contentSystems, areaMappings })
 
-    const descriptions = await buildDescriptions({ rows: builtRows, topic, gradeGroup, chatContext })
-    const rows = builtRows.map(row => ({
+    const stamp = (row: BuiltRow, description: string) => ({
       id: `af_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ...row,
-      description: descriptions[row.subject] ?? '',
+      description,
       updatedBy: 'AI 자동 채우기',
       updatedAt: Date.now(),
-    }))
+    })
+
+    if (mode === 'rows') {
+      return NextResponse.json({
+        rows: builtRows.map(row => stamp(row, '')),
+        judge,
+        steps: [{ id: 'rows', label: '성취기준·내용 요소 판정', ms: Math.round(performance.now() - startedAt), judge }, ...rowSteps],
+        message: `${builtRows.length}개 교과 — 성취기준·내용 요소 판정 완료`,
+      })
+    }
+
+    const { descriptions, verification, steps: describeSteps } = await describeAndVerify({ rows: builtRows, topic, gradeGroup, chatContext })
+    const rows = builtRows.map(row => stamp(row, descriptions[row.subject] ?? ''))
 
     return NextResponse.json({
       rows,
+      judge,
+      verification,
+      steps: [{ id: 'rows', label: '성취기준·내용 요소 판정', ms: Math.round(performance.now() - startedAt), judge }, ...rowSteps, ...describeSteps],
       message: `${rows.length}개 교과 — 핵심아이디어 확인 기반 DB 매핑 완료`,
     })
   } catch (err) {

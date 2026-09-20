@@ -62,11 +62,32 @@ interface CoreIdeaProposal {
   isCenter: boolean
   selectedCoreIdea: string
   options: CoreIdeaOption[]
+  /** 서버 판정기(jev | embedding)와 Jev confidence 게이트(제시/확인/명료화). */
+  judge?: 'jev' | 'embedding'
+  confidence?: number
+  mode?: '제시' | '확인' | '명료화'
+}
+interface AutofillStep {
+  id: string
+  label: string
+  ms?: number
+  judge?: 'jev' | 'embedding'
 }
 interface AutofillReview {
   proposals: CoreIdeaProposal[]
   message?: string
+  judge?: 'jev' | 'embedding'
+  steps?: AutofillStep[]
 }
+/** 자동 채우기 진행 단계 표시(에이전트가 지금 무엇을 하는지). */
+interface AutofillProgress {
+  id: string
+  label: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  ms?: number
+  note?: string
+}
+const JUDGE_LABEL: Record<'jev' | 'embedding', string> = { jev: 'Jev 판정', embedding: '임베딩 유사도(Jev 미사용)' }
 
 let nanoidCounter = 0
 function makeId() { return `cs_${Date.now()}_${++nanoidCounter}` }
@@ -388,6 +409,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const [autofillReview, setAutofillReview] = useState<AutofillReview | null>(null)
   const [coreIdeaSelections, setCoreIdeaSelections] = useState<Record<string, string>>({})
   const [autofillError, setAutofillError] = useState('')
+  const [autofillProgress, setAutofillProgress] = useState<AutofillProgress[]>([])
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const patchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const dirtyCellVersionsRef = useRef<Record<string, number>>({})
@@ -720,9 +742,15 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     })) : undefined
   }
 
+  function setProgressStep(id: string, patch: Partial<AutofillProgress>) {
+    setAutofillProgress(prev => prev.map(step => step.id === id ? { ...step, ...patch } : step))
+  }
+
   async function handleAutofill() {
     setAutofillLoading(true)
     setAutofillError('')
+    setAutofillProgress([{ id: 'coreIdeas', label: '핵심아이디어 판정 (Jev)', status: 'running' }])
+    const started = performance.now()
     try {
       const resp = await fetch('/api/curriculum-sheet/autofill', {
         method: 'POST',
@@ -744,53 +772,101 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           setCoreIdeaSelections(defaults)
           setAutofillReview(data)
         }
+        const judge = data.judge ?? 'embedding'
+        setProgressStep('coreIdeas', { status: 'done', label: `핵심아이디어 판정 (${JUDGE_LABEL[judge]})`, ms: Math.round(performance.now() - started), note: `${data.proposals?.length ?? 0}개 교과` })
       } else {
         const err = await resp.json().catch(() => ({}))
         setAutofillError(err.error ?? '핵심아이디어 후보를 찾지 못했습니다.')
+        setProgressStep('coreIdeas', { status: 'error', note: err.error })
         console.error('[autofill error]', err)
       }
     } catch (e) {
       setAutofillError('자동 채우기 요청 중 오류가 발생했습니다.')
+      setProgressStep('coreIdeas', { status: 'error' })
       console.error('[autofill]', e)
     }
     finally { setAutofillLoading(false) }
   }
 
+  // [2026-09-20] 판정(rows) → 설명 작성·검증(describe) 두 요청으로 나눠 단계를 그대로 보여주고,
+  // 요청당 시간을 줄인다(Firebase Hosting 60초 제한). 설명 요청이 실패해도 판정된 행은 살린다.
   async function applyAutofillReview() {
     if (!autofillReview) return
     setAutofillLoading(true)
     setAutofillError('')
+    setAutofillProgress(prev => [
+      ...prev.filter(step => step.id === 'coreIdeas'),
+      { id: 'rows', label: '성취기준 · 지식·이해 · 과정·기능 · 가치·태도 판정 (Jev)', status: 'running' },
+      { id: 'describe', label: 'LLM 수업내용 설명 작성 (확정된 값만 사용)', status: 'pending' },
+      { id: 'verify', label: 'Jev 설명 범위 검증', status: 'pending' },
+    ])
+    const common = { existingRows: getAutofillExistingRows(), a12Artifact, graphSavedData, targetGradeGroup, chatContext }
     try {
+      const rowsStart = performance.now()
       const resp = await fetch('/api/curriculum-sheet/autofill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mode: 'complete',
-          existingRows: getAutofillExistingRows(),
+          mode: 'rows',
           selectedCoreIdeas: Object.entries(coreIdeaSelections).map(([subject, coreIdea]) => ({ subject, coreIdea })),
-          a12Artifact,
-          graphSavedData,
-          targetGradeGroup,
-          chatContext,
+          ...common,
         }),
       })
-      if (resp.ok) {
-        const data = await resp.json()
-        const newRows = (data.rows ?? []).map((r: CurriculumSheetRow) => ({ ...emptyRow(), ...r }))
-        if (newRows.length > 0) {
-          setRows(newRows)
-          setDirty(true)
-          if (onPatchSave) void saveStructuralPatch({ type: 'replace-all', rows: newRows, updatedBy: currentUserName })
-          else triggerSave(newRows)
-          setAutofillReview(null)
-        }
-      } else {
+      if (!resp.ok) {
         const err = await resp.json().catch(() => ({}))
         setAutofillError(err.error ?? '분석표 생성에 실패했습니다.')
+        setProgressStep('rows', { status: 'error', note: err.error })
         console.error('[autofill apply error]', err)
+        return
+      }
+      const data = await resp.json() as { rows?: CurriculumSheetRow[]; judge?: 'jev' | 'embedding' }
+      const judgedRows = (data.rows ?? []).map((r: CurriculumSheetRow) => ({ ...emptyRow(), ...r }))
+      setProgressStep('rows', {
+        status: 'done',
+        label: `성취기준 · 지식·이해 · 과정·기능 · 가치·태도 판정 (${JUDGE_LABEL[data.judge ?? 'embedding']})`,
+        ms: Math.round(performance.now() - rowsStart),
+        note: `${judgedRows.length}행`,
+      })
+      if (judgedRows.length === 0) return
+
+      // 판정된 행을 먼저 반영해 두고, 설명은 뒤이어 채운다.
+      const commitRows = (next: CurriculumSheetRow[]) => {
+        setRows(next)
+        setDirty(true)
+        if (onPatchSave) void saveStructuralPatch({ type: 'replace-all', rows: next, updatedBy: currentUserName })
+        else triggerSave(next)
+      }
+      commitRows(judgedRows)
+      setAutofillReview(null)
+
+      setProgressStep('describe', { status: 'running' })
+      const describeStart = performance.now()
+      try {
+        const descResp = await fetch('/api/curriculum-sheet/autofill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'describe', rows: judgedRows, ...common }),
+        })
+        if (!descResp.ok) throw new Error(`HTTP ${descResp.status}`)
+        const desc = await descResp.json() as { descriptions?: Record<string, string>; verification?: Record<string, number>; steps?: AutofillStep[] }
+        const withDescriptions = judgedRows.map(row => ({ ...row, description: desc.descriptions?.[row.subject] ?? row.description ?? '' }))
+        commitRows(withDescriptions)
+        const serverStep = (id: string) => desc.steps?.find(step => step.id === id)
+        setProgressStep('describe', { status: 'done', ms: serverStep('describe')?.ms ?? Math.round(performance.now() - describeStart) })
+        const verifyStep = serverStep('verify')
+        const rewriteStep = serverStep('rewrite')
+        const lowest = Object.values(desc.verification ?? {})
+        setProgressStep('verify', verifyStep
+          ? { status: 'done', ms: (verifyStep.ms ?? 0) + (rewriteStep?.ms ?? 0), note: rewriteStep ? rewriteStep.label : (lowest.length ? `범위 내 ${Math.round(Math.min(...lowest) * 100)}% 이상` : undefined) }
+          : { status: 'done', note: 'Jev 미사용' })
+      } catch (e) {
+        setProgressStep('describe', { status: 'error', note: '설명은 비워 두었습니다' })
+        setProgressStep('verify', { status: 'error' })
+        console.error('[autofill describe]', e)
       }
     } catch (e) {
       setAutofillError('분석표 생성 중 오류가 발생했습니다.')
+      setProgressStep('rows', { status: 'error' })
       console.error('[autofill apply]', e)
     }
     finally { setAutofillLoading(false) }
@@ -1012,6 +1088,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                             {proposal.isCenter && <span className="px-2 py-0.5 rounded-full bg-[#FEF7E0] text-[#E65100] text-[12px] font-bold">중심</span>}
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {proposal.judge === 'jev' && proposal.mode && (
+                              <span
+                                title={`Jev confidence ${(proposal.confidence ?? 0).toFixed(2)} — 제시: 그대로 진행해도 됨 · 확인: 후보 비교 권장 · 명료화: 주제·맥락을 더 적어 주세요`}
+                                className={`px-2 py-0.5 rounded-full text-[12px] font-bold ${proposal.mode === '제시' ? 'bg-[#E6F4EA] text-[#137333]' : proposal.mode === '확인' ? 'bg-[#FEF7E0] text-[#B06000]' : 'bg-[#F1F3F4] text-[#5F6368]'}`}
+                              >
+                                {proposal.mode} {(proposal.confidence ?? 0).toFixed(2)}
+                              </span>
+                            )}
                             <span className="text-[13px] font-semibold text-[#7B1FA2]">{selectedOption?.area ?? '영역'}</span>
                             <button
                               onClick={() => removeAutofillProposal(proposal.subject)}
@@ -1249,6 +1333,28 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           )}
         </div>
 
+        {/* ── 자동 채우기 진행 단계 ── */}
+        {autofillProgress.length > 0 && (
+          <div className="px-6 py-2 border-t border-[#DADCE0] bg-white flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]">
+            <span className="font-bold text-[#5F6368]">AI 자동 채우기 진행</span>
+            {autofillProgress.map(step => (
+              <span key={step.id} className={`flex items-center gap-1.5 ${step.status === 'pending' ? 'text-[#9AA0A6]' : step.status === 'running' ? 'font-bold text-[#1A73E8]' : step.status === 'error' ? 'text-[#C5221F]' : 'text-[#202124]'}`}>
+                {step.status === 'running'
+                  ? <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  : step.status === 'done' ? <span className="text-[#137333]">✓</span>
+                  : step.status === 'error' ? <span>✕</span>
+                  : <span>○</span>}
+                <span>{step.label}</span>
+                {step.ms != null && <span className="text-[#9AA0A6]">{(step.ms / 1000).toFixed(1)}s</span>}
+                {step.note && <span className="text-[#9AA0A6]">· {step.note}</span>}
+              </span>
+            ))}
+            {!autofillLoading && (
+              <button onClick={() => setAutofillProgress([])} className="ml-auto text-[#9AA0A6] hover:text-[#5F6368]" title="진행 표시 닫기">&times;</button>
+            )}
+          </div>
+        )}
+
         {/* ── 하단 ── */}
         <div className="px-6 py-3 border-t border-[#DADCE0] bg-[#FAFAFA] flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1259,7 +1365,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm"
               title={!a12Artifact?.selectedTopic && !graphSavedData ? 'A-1-2 주제 선정 또는 지식 그래프 데이터 필요' : '핵심아이디어 후보를 먼저 확인하고 DB 기반으로 자동 채우기'}>
               {autofillLoading ? (
-                <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> 후보 찾는 중...</>
+                <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> {autofillReview ? '분석표 생성 중...' : '핵심아이디어 판정 중...'}</>
               ) : 'AI 자동 채우기'}
             </button>
             {onSwitchToGraph && hasGraphRows && (
