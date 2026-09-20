@@ -1,5 +1,8 @@
 {
   "hosting": {
+    "predeploy": [
+      "node scripts/clean-next-artifacts.mjs"
+    ],
     "site": "togethertr-curriculum-map",
     "source": ".",
     "ignore": [
@@ -9,7 +12,11 @@
       "**/node_modules/**"
     ],
     "redirects": [
-      { "source": "/", "destination": "/dev/curriculum-map", "type": 302 }
+      {
+        "source": "/",
+        "destination": "/dev/curriculum-map",
+        "type": 302
+      }
     ],
     "frameworksBackend": {
       "region": "asia-northeast3",

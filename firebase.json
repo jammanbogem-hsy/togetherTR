@@ -7,6 +7,9 @@
     "rules": "storage.rules"
   },
   "hosting": {
+    "predeploy": [
+      "node scripts/clean-next-artifacts.mjs"
+    ],
     "source": ".",
     "ignore": [
       "firebase.json",
