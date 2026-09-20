@@ -124,7 +124,13 @@ for (const [source, rawSource] of [[midSet, midRaw], [flatExtra, flatRaw], [grou
 }
 // Text-scan list: forbidden items long enough to be unambiguous and absent from the legitimate
 // elementary corpus (content items, content-system 핵심아이디어, graph standard texts/ideas/areas).
-const graphForCorpus = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'data', 'elementary_knowledge_graph.json'), 'utf-8'))
+// data/ 는 gitignore 라 새 clone 에는 없다 — 앱이 실제로 서빙하는 public/ 사본(추적됨)으로 폴백.
+const GRAPH_SOURCE = [
+  path.join(REPO_ROOT, 'data', 'elementary_knowledge_graph.json'),
+  path.join(REPO_ROOT, 'public', 'elementary_knowledge_graph.json'),
+].find(p => fs.existsSync(p))
+if (!GRAPH_SOURCE) { console.error('[verify] elementary_knowledge_graph.json 이 data/ 에도 public/ 에도 없음'); process.exit(1) }
+const graphForCorpus = JSON.parse(fs.readFileSync(GRAPH_SOURCE, 'utf-8'))
 const legitCorpus = [
   ...[...elemSet.values()].flatMap(cats => [...cats.values()].flatMap(set => [...set])),
   ...[...rawCoreIdeas.values()].flatMap(cats => [...cats.values()].flatMap(set => [...set])),
@@ -205,13 +211,13 @@ function fieldOf(cat) {
 // ───────────────────────────── D. data files ─────────────────────────────
 const DATA_GRAPH = path.join(REPO_ROOT, 'data', 'elementary_knowledge_graph.json')
 const PUBLIC_GRAPH = path.join(REPO_ROOT, 'public', 'elementary_knowledge_graph.json')
-const rawGraph = JSON.parse(fs.readFileSync(DATA_GRAPH, 'utf-8'))
+const rawGraph = JSON.parse(fs.readFileSync(GRAPH_SOURCE, 'utf-8'))
 
 {
   const failures = []
   const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
   if (!fs.existsSync(PUBLIC_GRAPH)) failures.push('public/elementary_knowledge_graph.json 없음 (앱은 public/을 먼저 읽음)')
-  else if (sha(DATA_GRAPH) !== sha(PUBLIC_GRAPH)) failures.push('data/ 와 public/ 의 elementary_knowledge_graph.json 내용이 다름 → npm run sanitize:knowledge-graph')
+  else if (fs.existsSync(DATA_GRAPH) && sha(DATA_GRAPH) !== sha(PUBLIC_GRAPH)) failures.push('data/ 와 public/ 의 elementary_knowledge_graph.json 내용이 다름 → npm run sanitize:knowledge-graph')
   const publicCs = path.join(REPO_ROOT, 'public', 'curriculum-content-systems')
   if (fs.existsSync(publicCs)) {
     for (const name of fs.readdirSync(CS_DIR).filter(n => n.endsWith('.json'))) {
