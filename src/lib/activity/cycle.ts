@@ -5,6 +5,8 @@ interface CycleState {
   cycleCount?: number
 }
 
+export type NextCycleChoice = 'A' | 'B'
+
 export function completedCycleNumberForTransition(state: CycleState): number {
   return state.currentCycle ?? state.cycleCount ?? 1
 }
@@ -36,6 +38,14 @@ export function shouldChooseEToTTransition(
   eStageCompleted: boolean,
 ): boolean {
   return eStageCompleted && fromStage === 'E' && toStage === 'T'
+}
+
+/** 모달에서 내린 명시적 선택을 E 단계 산출물의 이전 선택보다 우선한다. */
+export function resolveNextCycleChoice(
+  explicitChoice: NextCycleChoice | undefined,
+  artifactChoice: NextCycleChoice | undefined,
+): NextCycleChoice | undefined {
+  return explicitChoice ?? artifactChoice
 }
 
 export function hasNewCycleT11Artifact(

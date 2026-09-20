@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/store/project'
+import { isDemoObservationOnly } from '@/lib/demo/observer'
 import { ACTIVITY_META, STAGES, displayActivityCode, displaySectionLabel } from '@/types'
 import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
 import {
@@ -294,6 +295,7 @@ function RequiredSectionsChecklist({
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const setChatInputRequest = useProjectStore(s => s.setChatInputRequest)
+  const observationOnly = useProjectStore(s => isDemoObservationOnly(s.project))
   const isSolo = useProjectStore(s => s.project?.mode === 'solo')
   const meta = ACTIVITY_META[activityCode]
   // required 우선, 없으면 recommended fallback (동시 존재 케이스 없음 — Task #9 설계 결정).
@@ -551,6 +553,7 @@ function RequiredSectionsChecklist({
           {/* 가이드: AI 요청 문구를 채팅 입력창에 바로 주입 (기존 팁 텍스트 → 버튼) */}
           <button
             type="button"
+            disabled={observationOnly}
             onClick={() => {
               const labels = sections.map(s => displaySectionLabel(activityCode, s, isSolo)).join(' · ')
               const prompt = `"${labels}" 순서로 정리해줘`
@@ -1027,6 +1030,10 @@ function DsGuardrailCard({ a23Artifact }: { a23Artifact: { content: Record<strin
 }
 
 export function ArtifactPanel() {
+  return <InteractiveArtifactPanel />
+}
+
+function InteractiveArtifactPanel() {
   const { currentArtifact, viewingActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
   const activityMeta = ACTIVITY_META[viewingActivity]
   const [revisionNote, setRevisionNote] = useState('')
@@ -1040,8 +1047,9 @@ export function ArtifactPanel() {
   // 버전 dropdown — 현재 v 라벨 클릭 시 토글, 항목 클릭 시 rollback confirm.
   const [showVersionMenu, setShowVersionMenu] = useState(false)
 
-  const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
-  const stageColor = STAGE_COLOR[project?.currentStage ?? 'T']
+  const observationOnly = isDemoObservationOnly(project)
+  const isHost = !observationOnly && (project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid)
+  const stageColor = STAGE_COLOR[observationOnly ? activityMeta.stage : project?.currentStage ?? 'T']
 
   // Firestore 산출물 (팀 전체 소스)
   const firestoreArtifact = project?.artifacts?.[viewingActivity]
@@ -1533,7 +1541,7 @@ export function ArtifactPanel() {
                             <button
                               type="button"
                               onClick={() => handleRollback(v.version)}
-                              disabled={isSaving}
+                              disabled={isSaving || !isHost}
                               className="ml-2 text-[10px] font-semibold text-[#1A73E8] hover:text-[#1557B0] disabled:opacity-50 flex-shrink-0"
                             >
                               되돌리기
@@ -1817,7 +1825,7 @@ export function ArtifactPanel() {
               <div className="flex items-center gap-2 text-xs text-[#137333] bg-[#E6F4EA] rounded-full px-4 py-2">
                 <CheckCircle size={16} weight="fill" className="text-[#34A853]" />
                 <span>
-                  {firestoreArtifact.confirmedBy === userProfile?.uid
+                  {observationOnly ? '교사 AI팀이 합의함 · 시뮬레이션' : firestoreArtifact.confirmedBy === userProfile?.uid
                     ? '내가 확정함'
                     : (project?.memberInfo?.[firestoreArtifact.confirmedBy]?.displayName ?? '팀장') + '이 확정함'}
                   {firestoreArtifact.confirmedAt && (
@@ -1894,7 +1902,12 @@ export function ArtifactPanel() {
               {artifactError}
             </div>
           )}
-          {isHost ? (
+          {observationOnly ? (
+            <div className="flex items-center gap-2 text-[#137333] py-1">
+              <CheckCircle size={16} weight="fill" />
+              <span className="text-sm font-semibold">{isConfirmed ? '교사 AI팀이 합의한 산출물입니다' : '교사 AI팀이 검토 중입니다'}</span>
+            </div>
+          ) : isHost ? (
             isConfirmed ? (
               <>
                 <div className="flex items-center gap-2 text-[#137333] mb-1">

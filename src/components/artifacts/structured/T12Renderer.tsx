@@ -1,6 +1,38 @@
 'use client'
 
 import type { T12Structured } from '@/lib/artifacts/schemas'
+import type { JSONContent } from '@tiptap/core'
+import type { ReactNode } from 'react'
+
+function RichNode({ node }: { node: JSONContent }) {
+  const children = (node.content ?? []).map((child, i) => <RichNode key={i} node={child} />)
+  if (node.type === 'text') {
+    let text: ReactNode = node.text ?? ''
+    for (const mark of node.marks ?? []) {
+      if (mark.type === 'bold') text = <strong>{text}</strong>
+      if (mark.type === 'italic') text = <em>{text}</em>
+      if (mark.type === 'underline') text = <u>{text}</u>
+      if (mark.type === 'strike') text = <s>{text}</s>
+      if (mark.type === 'code') text = <code>{text}</code>
+    }
+    return <>{text}</>
+  }
+  switch (node.type) {
+    case 'hardBreak': return <br />
+    case 'heading': return <h4 className="text-lg font-semibold">{children}</h4>
+    case 'bulletList': return <ul className="list-disc pl-6">{children}</ul>
+    case 'orderedList': return <ol className="list-decimal pl-6" start={Number(node.attrs?.start) || 1}>{children}</ol>
+    case 'listItem': return <li>{children}</li>
+    case 'blockquote': return <blockquote className="border-l-2 pl-3">{children}</blockquote>
+    case 'table': return <div className="overflow-x-auto"><table className="border-collapse w-full"><tbody>{children}</tbody></table></div>
+    case 'tableRow': return <tr>{children}</tr>
+    case 'tableHeader': return <th className="border p-2">{children}</th>
+    case 'tableCell': return <td className="border p-2">{children}</td>
+    case 'codeBlock': return <pre>{children}</pre>
+    case 'horizontalRule': return <hr />
+    default: return <p className="whitespace-pre-wrap leading-relaxed">{children}</p>
+  }
+}
 
 interface Props {
   data: T12Structured
@@ -58,6 +90,25 @@ export function T12Renderer({ data }: Props) {
           </div>
         )}
       </div>
+      {(data.manualWorkspace?.blocks ?? []).some(block => block.content?.trim() || block.table) && (
+        <section className="space-y-3 px-4 py-3" aria-label="공동 편집 본문">
+          <h3 className="text-sm font-semibold text-[#5F6368]">공동 편집 본문</h3>
+          {(data.manualWorkspace?.blocks ?? []).filter(block => block.includeInArtifact !== false).map(block => (
+            block.richContent ? <RichNode key={block.id} node={block.richContent} /> : block.type === 'table' && block.table ? (
+              <div key={block.id} className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead><tr>{block.table.columns.map(column => <th key={column.id} className="border p-2 text-left">{column.label}</th>)}</tr></thead>
+                  <tbody>{block.table.rows.map(row => <tr key={row.id}>{block.table!.columns.map(column => <td key={column.id} className="border p-2 whitespace-pre-wrap">{row.cells[column.id]}</td>)}</tr>)}</tbody>
+                </table>
+              </div>
+            ) : block.type === 'heading' || block.type === 'subheading' ? (
+              <h4 key={block.id} className="text-lg font-semibold whitespace-pre-wrap">{block.content}</h4>
+            ) : block.type === 'quote' ? (
+              <blockquote key={block.id} className="border-l-2 pl-3 whitespace-pre-wrap text-[#5F6368]">{block.content}</blockquote>
+            ) : <p key={block.id} className="text-sm whitespace-pre-wrap leading-relaxed">{block.content}</p>
+          ))}
+        </section>
+      )}
     </div>
   )
 }

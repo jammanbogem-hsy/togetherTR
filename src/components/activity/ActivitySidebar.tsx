@@ -352,9 +352,9 @@ export function ActivitySidebar() {
   const [showAnalysis, setShowAnalysis] = useState(false)
   if (!project) return null
 
-  const isHost = project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid
+  const isHost = !project.demoRun && (project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid)
 
-  const currentStage = project.currentStage
+  const currentStage = project.demoRun ? ACTIVITY_META[viewingActivity].stage : project.currentStage
   const currentStageInfo = STAGES.find(s => s.code === currentStage)!
   const guide = STAGE_GUIDE[currentStage]
   const color = STAGE_COLOR[currentStage]
@@ -453,7 +453,7 @@ export function ActivitySidebar() {
         <div className="mx-3 mt-2 rounded-xl bg-[#FFF8E1] border border-[#FFD54F] px-3 py-2 flex items-center gap-2">
           <Crown size={14} weight="fill" className="text-[#F9AB00] flex-shrink-0" />
           <p className="flex-1 text-[11px] text-[#E65100] leading-snug">
-            탐색 중 — 채팅은 방장 진행 활동에서 계속됩니다
+            {project.demoRun ? '다시 보기 — 선택한 활동의 대화·산출물을 표시합니다' : '탐색 중 — 채팅은 방장 진행 활동에서 계속됩니다'}
           </p>
           <button
             onClick={() => setViewingActivity(currentActivity)}
@@ -552,7 +552,7 @@ export function ActivitySidebar() {
         )}
 
         {/* 단계 분석 버튼 — 모든 산출물 확정 시 활성화 */}
-        {completedCount === totalCount && totalCount > 0 && (
+        {!project.demoRun && completedCount === totalCount && totalCount > 0 && (
           <div className="px-1 pt-3 pb-1">
             <button
               onClick={() => {

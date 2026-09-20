@@ -302,7 +302,11 @@ export interface Project {
     config: unknown
     activityIndex: number
     activityCode?: ActivityCode
-    phase?: 'orchestrator-intro' | 'teacher-contribution' | 'teacher-response' | 'orchestrator-synthesis'
+    phase?: 'orchestrator-intro' | 'teacher-contribution' | 'teacher-response' | 'orchestrator-synthesis' | 'teacher-review' | 'orchestrator-revision'
+    engineVersion?: 2
+    stepId?: string
+    round?: number
+    lease?: { runId: string; expiresAt: number } | null
     completedTurns: number
     totalTurns: number
     startedAt?: number
@@ -418,6 +422,7 @@ export interface Project {
     version: number
     confirmedBy?: string
     confirmedAt?: number
+    demoReview?: { approvedBy: string[]; round: number; simulated: true; evidence?: Array<{ speakerId: string; speakerName: string; quote: string }> }
     revisionNote?: string      // 팀원이 보낸 수정 요청 메모
     revisionRequestedBy?: string
     revisionRequestedAt?: number
@@ -574,6 +579,8 @@ export interface TeamVisionWorkspaceBlock {
   id: string
   type: TeamVisionWorkspaceBlockType
   content: string
+  /** Rich document node; plain content remains available for legacy exports. */
+  richContent?: import('@tiptap/core').JSONContent
   table?: TeamVisionWorkspaceTableData
   color?: string
   checked?: boolean

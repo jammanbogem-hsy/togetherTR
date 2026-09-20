@@ -8,6 +8,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import { getElementaryContentLists } from './elementaryContentLists'
 import type { CurriculumStandard } from './graphReader'
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
@@ -107,6 +108,10 @@ export function loadAllJsonStandards(): CurriculumStandard[] {
         for (const ss of cig.standard_sets ?? []) {
           const gradeBand = normalizeGradeBand(ss.school_level, ss.grade_band)
 
+          // [strict-elementary 2026-09-18] cig.knowledge/functions는 초·중 공통 그룹 목록(대부분 중학교).
+          // 초등 학년군의 내용체계 항목으로 대체하고, 비초등 학년군은 빈 목록.
+          const contentLists = getElementaryContentLists(subjectId, cig.area, gradeBand)
+
           for (const std of ss.standards ?? []) {
             const code = std.code.replace(/[\[\]]/g, '')
             standards.push({
@@ -120,9 +125,9 @@ export function loadAllJsonStandards(): CurriculumStandard[] {
               text: std.text,
               keywords: std.concepts ?? [],
               concepts: std.concepts ?? [],
-              functions: cig.functions ?? [],
-              knowledge: cig.knowledge ?? [],
-              competencies: [],
+              functions: contentLists.functions,
+              knowledge: contentLists.knowledge,
+              competencies: contentLists.attitudes,
               normalized_text_for_similarity: std.text,
             })
           }

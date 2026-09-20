@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CheckCircle, ChatCircleDots, CheckSquare, FileText, FloppyDisk, PaperPlaneRight, Plus, Square, Sparkle, Trash, X, TextH, TextHTwo, TextAlignLeft, Quotes, ListChecks, Table as TableIcon, DotsSixVertical, type Icon } from '@phosphor-icons/react'
 import { CollaborativePromptModal } from './CollaborativePromptModal'
+import { CollaborativeDocument } from './CollaborativeDocument'
 import type {
   LessonDesignDirectionWorkspace,
   LessonDesignDirectionWorkspaceBlock,
@@ -288,6 +289,7 @@ export function LessonDesignDirectionWorkspaceModal({
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
   const [editingKey, setEditingKey] = useState<string | null>(null)
+  const documentFlushRef = useRef<(() => Promise<void>) | null>(null)
   const [showInsertMenu, setShowInsertMenu] = useState(false)
   const [tableDraft, setTableDraft] = useState({ open: false, rows: 3, columns: 2 })
   const [showExample, setShowExample] = useState(false)
@@ -421,6 +423,7 @@ export function LessonDesignDirectionWorkspaceModal({
     }
     setSaving(true)
     try {
+      await documentFlushRef.current?.()
       const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace, updatedBy: currentUserName }) as LessonDesignDirectionWorkspacePatch
       const saved = await onPatchSave(cleanPatch)
       if (saved) setWorkspace(normalizeWorkspace(saved))
@@ -656,9 +659,10 @@ export function LessonDesignDirectionWorkspaceModal({
     if (!isHost) return
     setSending(true)
     try {
+      await documentFlushRef.current?.()
       const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace, updatedBy: currentUserName }) as LessonDesignDirectionWorkspacePatch
       const saved = await onPatchSave(cleanPatch)
-      const finalWorkspace = saved ?? workspace
+      const finalWorkspace = normalizeWorkspace(saved ?? workspace)
       const structured = workspaceToArtifact(finalWorkspace)
       await onSendArtifact(stripUndefinedDeep(structured) as T12Structured)
       setMessage('T-1-2 산출물로 보냈습니다.')
@@ -734,7 +738,10 @@ export function LessonDesignDirectionWorkspaceModal({
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={async () => {
+              try { await documentFlushRef.current?.(); onClose() }
+              catch { setMessage('본문을 저장하지 못했습니다. 창을 유지합니다. 본문의 저장 재시도를 눌러주세요.') }
+            }}
             className="w-10 h-10 rounded-full hover:bg-black/[0.08] active:bg-black/[0.12] text-[#5F6368] flex items-center justify-center transition-colors"
             aria-label="닫기"
           >
@@ -858,6 +865,7 @@ export function LessonDesignDirectionWorkspaceModal({
               </section>
 
               {/* 추가 블록 + 삽입 영역 */}
+              {projectId ? <CollaborativeDocument key={projectId} projectId={projectId} flushRef={documentFlushRef} /> : <>
               <div className="space-y-2">
                 {workspace.blocks.length > 0 && workspace.blocks.map((block, blockIdx) => {
                   const table = block.type === 'table' ? getBlockTable(block) : null
@@ -1099,6 +1107,7 @@ export function LessonDesignDirectionWorkspaceModal({
                 aria-label="빈 곳을 눌러 내용 추가"
                 className="min-h-[240px] w-full cursor-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0B57D0]/30"
               />
+              </>}
             </article>
 
             {/* 우측: AI 추천 패널 */}

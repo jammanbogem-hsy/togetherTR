@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, SOLO_HIDDEN_ACTIVITIES, type StageCode } from '@/types'
 import {
@@ -64,11 +64,100 @@ export function StageMoveModal() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [showAnalysis, setShowAnalysis] = useState(false)
+  const [analysisReady, setAnalysisReady] = useState(false)
   const submittingRef = useRef(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
+  const analysisOpenRef = useRef(showAnalysis)
 
   const currentUid = auth.currentUser?.uid ?? userProfile?.uid
   const isHost = project?.hostUid === currentUid || project?.createdBy === currentUid
   const isSameStageMove = !!project && !!pendingStageMove && project.currentStage === pendingStageMove
+  const isModalOpen = !!project && !!pendingStageMove && isHost && !isSameStageMove
+
+  useEffect(() => {
+    analysisOpenRef.current = showAnalysis
+  }, [showAnalysis])
+
+  useEffect(() => {
+    if (!isModalOpen) return
+
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    const activeElement = document.activeElement
+    restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null
+
+    const getFocusableElements = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    )).filter(element => element.offsetParent !== null && element.getAttribute('aria-hidden') !== 'true')
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      dialog.focus({ preventScroll: true })
+    })
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // 위에 분석 모달이 열린 동안에는 해당 모달이 키보드 입력을 처리한다.
+      if (analysisOpenRef.current) return
+
+      if (event.key === 'Escape' && !submittingRef.current) {
+        event.preventDefault()
+        setPendingStageMove(null)
+        setEToTMoveChoice(null)
+        setSubmitError(null)
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const focusableElements = getFocusableElements()
+      if (focusableElements.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = focusableElements[0]
+      const last = focusableElements[focusableElements.length - 1]
+      const focused = document.activeElement
+
+      if (!dialog.contains(focused)) {
+        event.preventDefault()
+        const focusTarget = event.shiftKey ? last : first
+        focusTarget.focus()
+      } else if (event.shiftKey && (focused === first || focused === dialog)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && focused === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('keydown', handleKeyDown)
+
+      const elementToRestore = restoreFocusRef.current
+      restoreFocusRef.current = null
+      const canRestoreOriginalFocus = !!elementToRestore
+        && elementToRestore !== document.body
+        && elementToRestore.isConnected
+        && elementToRestore.offsetParent !== null
+        && !elementToRestore.closest('[aria-hidden="true"]')
+      if (canRestoreOriginalFocus) {
+        elementToRestore.focus({ preventScroll: true })
+      } else {
+        // 이동 완료로 순환 화살표가 사라진 경우 새 현재 단계 버튼으로 포커스를 잇는다.
+        window.requestAnimationFrame(() => {
+          document.querySelector<HTMLElement>(`[data-stage-code="${pendingStageMove}"]`)
+            ?.focus({ preventScroll: true })
+        })
+      }
+    }
+  }, [isModalOpen, pendingStageMove, setPendingStageMove])
 
   if (!project || !pendingStageMove || !isHost || isSameStageMove) return null
 
@@ -203,15 +292,25 @@ export function StageMoveModal() {
 
   return (
     <>
-    {showAnalysis && <StageAnalysisModal onClose={() => {
-      setShowAnalysis(false)
-      if (project?.id) setAnalysisOpen(project.id, false).catch(console.error)
-    }} />}
+    {showAnalysis && (
+      <StageAnalysisModal
+        onReady={() => setAnalysisReady(true)}
+        onClose={() => {
+          analysisOpenRef.current = false
+          setAnalysisReady(false)
+          setShowAnalysis(false)
+          if (project?.id) setAnalysisOpen(project.id, false).catch(console.error)
+        }}
+      />
+    )}
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="stage-move-title"
+        aria-hidden={showAnalysis && analysisReady ? true : undefined}
+        tabIndex={-1}
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
       >
         {/* 헤더 */}
@@ -337,7 +436,7 @@ export function StageMoveModal() {
 
           {/* 이력 저장 실패 등 제출 에러 (인라인 표시 — 모달은 닫지 않음) */}
           {submitError && (
-            <div className="flex gap-2 items-start bg-[#FCE8E6] border border-[#F28B82] rounded-2xl p-3">
+            <div role="alert" className="flex gap-2 items-start bg-[#FCE8E6] border border-[#F28B82] rounded-2xl p-3">
               <Warning size={16} weight="fill" className="text-[#C5221F] flex-shrink-0 mt-0.5" />
               <p className="text-xs text-[#C5221F]">{submitError}</p>
             </div>
@@ -364,6 +463,8 @@ export function StageMoveModal() {
                 </div>
                 <button
                   onClick={() => {
+                    analysisOpenRef.current = true
+                    setAnalysisReady(false)
                     setShowAnalysis(true)
                     if (project?.id) setAnalysisOpen(project.id, true).catch(console.error)
                   }}

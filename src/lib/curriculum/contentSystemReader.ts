@@ -10,6 +10,8 @@ import fs from 'fs'
 import path from 'path'
 import type { ActivityCode } from '@/types'
 import { loadGraph } from './graphReader'
+import { getPrefixedElementaryLists } from './elementaryContentLists'
+import { filterContentItemsByGrade } from './curriculumFilters'
 
 type CategoryKey = '지식⋅이해' | '과정⋅기능' | '가치⋅태도'
 
@@ -134,7 +136,7 @@ export function loadElementaryContentSystems(): ContentSystemRecord[] {
   if (CACHE_ENABLED && elementaryContentSystemCache) return elementaryContentSystemCache
 
   const rawRecords = loadContentSystems()
-  const graphRecords = buildElementaryGraphContentSystems(rawRecords)
+  const graphRecords = buildElementaryGraphContentSystems()
   const graphSubjects = new Set(graphRecords.map(record => normalizeSubject(record.subject)))
   const supplementalRecords = rawRecords
     .filter(record => !record.curriculum.trim().startsWith('선택 중심 교육과정'))
@@ -155,7 +157,7 @@ export function loadContentSystemsForGradeGroup(gradeGroup?: string | null): Con
   return loadContentSystems().filter(record => matchesGradeGroup(record, gradeGroup))
 }
 
-function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = []): ContentSystemRecord[] {
+function buildElementaryGraphContentSystems(): ContentSystemRecord[] {
   const graph = loadGraph()
   if (!graph) return []
 
@@ -205,16 +207,18 @@ function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = 
       const coreIdeas = unique(normalizeCoreIdeas(group.ideas))
       if (coreIdeas.length === 0) return null
       const gradeBands = unique(group.standards.map(s => formatGradeBand(s.grade_band)).filter(Boolean))
-      const rawRecord = findRawContentSystemRecord(rawRecords, group.subject, group.area)
       // [절대 규칙 2026-05-14] graph의 standard-레벨 knowledge/functions는 학년군 매핑이 부정확하다.
       // 예: data/elementary_knowledge_graph.json의 모든 수학 standards(초1-2/3-4/5-6)에 동일하게
       //     ['대푯값','도수분포표와 상대도수','경우의 수와 확률','산포도','상자그림과 산점도'](중학교 내용)
       //     이 잘못 복제되어 있어, prefixedContentByGrade가 "5-6학년군: 대푯값" 같이 잘못 라벨링.
-      // → 큐레이션된 PDF 데이터(rawRecord = data/curriculum-content-systems/*.json)만 사용.
-      //   rawRecord가 없으면 빈 배열을 반환해 자동 매핑을 안 함이 잘못된 자동 매핑보다 안전.
-      const rawKnowledge = cleanContentItems(rawRecord?.knowledge ?? [])
-      const rawFunctions = cleanContentItems(rawRecord?.functions ?? [])
-      const rawAttitudes = cleanContentItems(rawRecord?.attitudes ?? [])
+      // → 큐레이션된 PDF 데이터(data/curriculum-content-systems/*.json)만 사용.
+      // [2026-09-18] rawRecord.knowledge는 평면 '내용요소'(표 전체 열: 중학교 항목·소제목 포함)와
+      //   '중학교' 학년군까지 섞여 있었다. 초등 학년군(1-2/3-4/5-6)의 '학년군별' 항목만 접두사 형태로 싣는다.
+      //   내용체계 기록이 없으면 빈 배열 — 잘못된 자동 매핑보다 공란이 안전.
+      const bandLists = getPrefixedElementaryLists(group.subject, group.area)
+      const rawKnowledge = cleanContentItems(bandLists.knowledge)
+      const rawFunctions = cleanContentItems(bandLists.functions)
+      const rawAttitudes = cleanContentItems(bandLists.attitudes)
 
       return {
         id: `elementary_knowledge_graph.json#${group.coreIdeaIds.join('+')}`,
@@ -234,59 +238,14 @@ function buildElementaryGraphContentSystems(rawRecords: ContentSystemRecord[] = 
     .filter((record): record is ContentSystemRecord => Boolean(record))
 }
 
-function findRawContentSystemRecord(
-  records: ContentSystemRecord[],
-  subject: string,
-  area: string,
-): ContentSystemRecord | undefined {
-  return records.find(record =>
-    !record.curriculum.trim().startsWith('선택 중심 교육과정') &&
-    sameSubject(record.subject || record.course, subject) &&
-    sameArea(record.area, area)
-  )
-}
 
-function sameSubject(a: string, b: string): boolean {
-  const na = normalizeSubject(a)
-  const nb = normalizeSubject(b)
-  return !!na && !!nb && (na === nb || na.includes(nb) || nb.includes(na))
-}
 
-function sameArea(a: string, b: string): boolean {
-  const na = normalizeAreaForMatch(a)
-  const nb = normalizeAreaForMatch(b)
-  return !!na && !!nb && (na === nb || na.includes(nb) || nb.includes(na))
-}
 
-function normalizeAreaForMatch(value: string): string {
-  return normalizeKeyword(value.replace(/\([^)]*\)/g, ''))
-}
 
 function cleanContentItems(items: string[]): string[] {
   return unique(items.map(cleanContentText).filter(Boolean))
 }
 
-function prefixedContentByGrade(
-  standards: Array<{ grade_band?: string; knowledge?: string[]; functions?: string[]; competencies?: string[] }>,
-  field: 'knowledge' | 'functions' | 'competencies',
-  fallback: string[],
-): string[] {
-  const byGrade = new Map<string, string[]>()
-  for (const standard of standards) {
-    const gradeBand = formatGradeBand(standard.grade_band)
-    if (!gradeBand) continue
-    const current = byGrade.get(gradeBand) ?? []
-    current.push(...((standard[field] ?? []) as string[]))
-    byGrade.set(gradeBand, unique(current.map(cleanContentText).filter(Boolean)))
-  }
-
-  const prefixed = [...byGrade.entries()]
-    .sort(([a], [b]) => a.localeCompare(b, 'ko'))
-    .flatMap(([gradeBand, items]) => items.map(item => `${gradeBand}: ${item}`))
-
-  if (prefixed.length > 0) return prefixed
-  return unique(fallback.map(cleanContentText).filter(Boolean))
-}
 
 function formatGradeBand(value?: string): string {
   const normalized = (value ?? '').replace(/^초/, '').replace(/~/g, '-').trim()
@@ -398,6 +357,13 @@ export function searchContentSystems({
     .filter((hit): hit is ContentSystemHit => !!hit && hit.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
+    // 프롬프트에 실리는 항목은 프로젝트 학년군 것만 (접두사 없는 기록은 그대로).
+    .map(hit => ({
+      ...hit,
+      knowledge: filterContentItemsByGrade(hit.knowledge, gradeGroup),
+      functions: filterContentItemsByGrade(hit.functions, gradeGroup),
+      attitudes: filterContentItemsByGrade(hit.attitudes, gradeGroup),
+    }))
 }
 
 export function isElementaryGradeGroup(gradeGroup?: string | null): boolean {

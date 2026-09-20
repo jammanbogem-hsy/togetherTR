@@ -245,6 +245,27 @@ function heuristicScore(query: string, candidate: string): number {
   return score / q.size
 }
 
+/**
+ * 여러 질의 × 여러 후보의 유사도 행렬. 임베딩 호출 1회로 처리하고, 실패 시 휴리스틱으로 폴백.
+ * 반환값 [i][j] = sources[i] 와 targets[j] 의 유사도.
+ */
+async function rankMatrix(sources: string[], targets: string[]): Promise<number[][]> {
+  if (sources.length === 0 || targets.length === 0) return sources.map(() => [])
+  try {
+    const embeddings = await embedTexts([...sources, ...targets])
+    if (embeddings.length === sources.length + targets.length) {
+      return sources.map((_, i) => targets.map((__, j) => cosineSim(embeddings[i], embeddings[sources.length + j])))
+    }
+  } catch (error) {
+    console.error('[autofill embedding matrix]', error)
+  }
+  return sources.map(source => targets.map(target => heuristicScore(source, target)))
+}
+
+function standardEmbeddingText(std: CurriculumStandard): string {
+  return `${std.area} ${std.text} ${(std.keywords ?? []).join(' ')}`
+}
+
 async function rankTexts(query: string, texts: string[]): Promise<number[]> {
   if (texts.length === 0) return []
   try {
@@ -417,10 +438,29 @@ async function buildCoreIdeaProposal(params: {
         idea,
         score: 0,
         standardsCount: groupStandards.length,
-        sampleStandards: groupStandards.slice(0, 3).map(formatStandard),
+        sampleStandards: [],
       })
     }
   }
+
+  // [2026-09-19] 그래프는 성취기준을 핵심아이디어 '그룹'(영역)에만 연결하므로 문장별 짝이 없다.
+  // 문장 ↔ 그룹 성취기준 유사도로 문장마다 관련 성취기준 상위 3개를 고른다
+  // (예전에는 그룹의 앞 3개를 모든 문장에 동일하게 붙여 후보 간 구분이 되지 않았음).
+  const standardIndex = new Map(standards.map((std, index) => [std.id, index]))
+  const ideaToStandard = await rankMatrix(
+    allOptions.map(option => `${option.area} ${option.idea}`),
+    standards.map(standardEmbeddingText),
+  )
+  const relatedStandards = new Map<CoreIdeaOption, CurriculumStandard[]>()
+  allOptions.forEach((option, optionIndex) => {
+    const related = (byCoreIdeaId.get(option.coreIdeaId) ?? [])
+      .map(std => ({ std, sim: ideaToStandard[optionIndex]?.[standardIndex.get(std.id) ?? -1] ?? 0 }))
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, 3)
+      .map(item => item.std)
+    relatedStandards.set(option, related)
+    option.sampleStandards = related.map(formatStandard)
+  })
 
   // 내용체계 원문(지식·이해/과정·기능)으로 해소되는 후보만 남긴다. 하나도 없으면
   // 기능을 막지 않도록 전체 후보로 폴백한다.
@@ -431,10 +471,12 @@ async function buildCoreIdeaProposal(params: {
 
   if (options.length === 0) return null
 
+  // 후보 점수: 영역 + 문장 + 그 문장과 관련된 성취기준(그룹 전체가 아님)으로 주제와 비교.
+  // 그룹 전체를 넣으면 같은 영역 문장끼리 점수가 거의 같아진다.
   const query = queryForSubject(subject, focus, topic, chatContext)
   const scores = await rankTexts(query, options.map(option => {
-    const groupStandards = byCoreIdeaId.get(option.coreIdeaId) ?? []
-    return `${option.area} ${option.idea} ${groupStandards.map(s => `${s.text} ${(s.keywords ?? []).join(' ')}`).join(' ')}`
+    const related = relatedStandards.get(option) ?? []
+    return `${option.area} ${option.idea} ${related.map(standardEmbeddingText).join(' ')}`
   }))
 
   const existingNormalized = normalizeText(existingCoreIdea ?? '')
@@ -725,13 +767,19 @@ async function buildRowsFromSelections(params: {
 
     let rankedStandards = standards
     if (standards.length > 1) {
-      const scores = await rankTexts(query, standards.map(std => `${std.area} ${std.text} ${(std.keywords ?? []).join(' ')}`))
+      // [2026-09-19] 주제 질의와 교사가 고른 핵심아이디어 문장을 절반씩 반영.
+      // 문장을 빼면 "물의 순환" 문장을 골라도 그룹 안의 다른 성취기준이 뽑힐 수 있었다.
+      const [topicScores, ideaScores] = await rankMatrix(
+        [query, `${option.area} ${option.idea}`],
+        standards.map(standardEmbeddingText),
+      )
       rankedStandards = standards
         .map((std, index) => {
           const code = codeWithoutBrackets(std.code)
           const existingBoost = existingCodes.has(code) ? 1 : 0
           const savedBoost = savedIds.has(std.id) ? 0.25 : 0
-          return { std, score: scores[index] + existingBoost + savedBoost }
+          const relevance = 0.5 * (topicScores[index] ?? 0) + 0.5 * (ideaScores[index] ?? 0)
+          return { std, score: relevance + existingBoost + savedBoost }
         })
         .sort((a, b) => b.score - a.score)
         .map(item => item.std)

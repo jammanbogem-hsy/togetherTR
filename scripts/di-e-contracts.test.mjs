@@ -59,6 +59,7 @@ test('the first completed cycle transitions from cycle 1 to cycle 2 exactly once
     completedCycleNumberForTransition,
     nextCycleNumber,
     resolveStageTransitionDirection,
+    resolveNextCycleChoice,
     shouldChooseEToTTransition,
   } = await import('../src/lib/activity/cycle.ts')
 
@@ -72,6 +73,10 @@ test('the first completed cycle transitions from cycle 1 to cycle 2 exactly once
   assert.equal(shouldChooseEToTTransition('E', 'T', true), true)
   assert.equal(shouldChooseEToTTransition('E', 'T', false), false)
   assert.equal(shouldChooseEToTTransition('A', 'T', true), false)
+  assert.equal(resolveNextCycleChoice('A', 'B'), 'A')
+  assert.equal(resolveNextCycleChoice('B', 'A'), 'B')
+  assert.equal(resolveNextCycleChoice(undefined, 'B'), 'B')
+  assert.equal(resolveNextCycleChoice(undefined, undefined), undefined)
 })
 
 test('stage movement asks for an E-to-T choice without asking for a written reason', async () => {
@@ -83,6 +88,20 @@ test('stage movement asks for an E-to-T choice without asking for a written reas
   assert.match(source, /type="radio"/)
   assert.match(source, /T 단계로 이동/)
   assert.match(source, /새 주기 시작/)
+  assert.match(source, /event\.key === 'Escape'/)
+  assert.match(source, /dialog\.focus/)
+  assert.match(source, /resolveStageTransitionDirection\(fromStage, toStage, isStartingNewCycle\)/)
+  assert.match(source, /needsEToTMoveChoice && !eToTMoveChoice/)
+
+  const persistenceSource = await readFile(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  assert.match(persistenceSource, /finalizeCycleTransition\(projectId, data\.cycleNumber, 'A'\)/)
+  assert.match(persistenceSource, /resolveNextCycleChoice\(\s*explicitNextCycleChoice,/)
+
+  const analysisSource = await readFile(new URL('../src/components/modals/StageAnalysisModal.tsx', import.meta.url), 'utf8')
+  assert.match(analysisSource, /aria-labelledby="stage-analysis-title"/)
+  assert.match(analysisSource, /event\.key === 'Escape'/)
+  assert.match(analysisSource, /onReadyRef\.current\?\.\(\)/)
+  assert.match(source, /showAnalysis && analysisReady/)
 })
 
 test('E completion requires official reflection outputs while next-cycle choice stays optional', async () => {

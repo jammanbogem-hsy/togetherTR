@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run sync:runtime-assets && next build && npm run verify:runtime-assets",
+    "build": "npm run sync:runtime-assets && npm run verify:curriculum && next build && npm run verify:runtime-assets",
     "sync:runtime-assets": "node scripts/sync-runtime-assets.mjs",
     "verify:runtime-assets": "node scripts/verify-runtime-assets.mjs",
     "test:runtime-assets": "node --experimental-strip-types --test scripts/contentSystemBundle.test.mjs",
@@ -13,11 +13,19 @@
     "eval:knowledge-graph": "node scripts/evaluate-knowledge-graph.mjs",
     "check:hwpx": "node scripts/check-hwpx.mjs",
     "sample:hwpx": "node scripts/generate-hwpx-sample.mjs",
-    "validate:curriculum-content-systems": "node scripts/validate-curriculum-content-systems.mjs"
+    "validate:curriculum-content-systems": "node scripts/validate-curriculum-content-systems.mjs",
+    "verify:curriculum": "node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs scripts/verify-curriculum-linkage.mjs",
+    "sanitize:knowledge-graph": "node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs scripts/sanitize-knowledge-graph.mjs",
+    "export:knowledge-graph-xlsx": "python3 scripts/export-knowledge-graph-xlsx.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@phosphor-icons/react": "^2.1.10",
+    "@tiptap/extension-collaboration": "^3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "@tiptap/y-tiptap": "^3.0.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.11.0",
@@ -33,6 +41,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
+    "yjs": "^13.6.32",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

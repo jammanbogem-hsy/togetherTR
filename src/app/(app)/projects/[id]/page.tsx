@@ -18,6 +18,8 @@ import type { UserProfile } from '@/lib/auth'
 import { StageBar } from '@/components/stage/StageBar'
 import { ActivitySidebar } from '@/components/activity/ActivitySidebar'
 import { ChatPanel } from '@/components/chat/ChatPanel'
+import { DemoProjectToolbar } from '@/components/demo/DemoObserverPanels'
+import { MD3Button } from '@/components/ui/MD3Button'
 import { ArtifactPanel, CollapsedArtifactStrip } from '@/components/artifacts/ArtifactPanel'
 import { StageMoveModal } from '@/components/modals/StageMoveModal'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
@@ -577,6 +579,7 @@ export default function ProjectPage() {
   const keyNotesMigratedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!project || !userProfile) return
+    if (project.demoRun) return
     const isHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
     if (!isHost) return
     if (keyNotesMigratedRef.current === projectId) return
@@ -589,6 +592,7 @@ export default function ProjectPage() {
   const soloAutoStartRef = useRef<string | null>(null)
   useEffect(() => {
     if (!project || !userProfile) return
+    if (project.demoRun) return
     if (project.mode !== 'solo' || project.started) return
     const isHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
     if (!isHost) return
@@ -602,7 +606,8 @@ export default function ProjectPage() {
     if (!project?.currentActivity) return
     if (project.currentActivity !== currentActivity) {
       setCurrentActivity(project.currentActivity)
-      setViewingActivity(project.currentActivity)  // 방장 이동 시 뷰도 함께 이동
+      // A demo observer reviewing an earlier activity must not be pulled away by the runner.
+      if (!project.demoRun || viewingActivity === currentActivity) setViewingActivity(project.currentActivity)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.currentActivity])
@@ -621,6 +626,7 @@ export default function ProjectPage() {
   // 한 번 띄운 뒤에는 sessionStorage로 무시 표시 (per-user, per-session, per-project)
   useEffect(() => {
     if (!project) return
+    if (project.demoRun) return
     if (project.currentStage !== 'E') return
     if (pendingStageMove) return
     if (typeof window === 'undefined') return
@@ -645,6 +651,7 @@ export default function ProjectPage() {
   // 방장이 단독으로 write하며, `clearECompleted`는 idempotent하므로 race condition 무해.
   useEffect(() => {
     if (!project) return
+    if (project.demoRun) return
     if (project.isECompleted !== true) return
     if (!hasNewCycleT11Artifact(
       project.cycleStartT11Version,
@@ -757,7 +764,7 @@ export default function ProjectPage() {
   }
 
   const uid = userProfile?.uid ?? ''
-  const isHost = project.demoExperience?.scenarioId
+  const isHost = project.demoRun ? false : project.demoExperience?.scenarioId
     ? project.hostUid === uid
     : project.hostUid === uid || project.createdBy === uid
 
@@ -769,7 +776,7 @@ export default function ProjectPage() {
   }
 
   // 대기실
-  if (!project.started) {
+  if (!project.started && !project.demoRun) {
     // 개인 설계: 대기실 대신 자동 시작(soloAutoStart effect)이 적용되는 동안 짧은 로딩만 노출.
     if (project.mode === 'solo') {
       return (
@@ -793,7 +800,7 @@ export default function ProjectPage() {
     )
   }
 
-  const currentStage = project?.currentStage ?? 'T'
+  const currentStage = project.demoRun ? ACTIVITY_META[viewingActivity].stage : project.currentStage ?? 'T'
   const isTeamMode = discussionMode === 'team_discussion'
 
   function panelBorder(panelId: string) {
@@ -819,7 +826,8 @@ export default function ProjectPage() {
         {layout.sidebar ? (
           <>
             {/* 좌측 상단: 내비게이션 — 컴팩트 홈 버튼 + 제목 + 방장 칩 + 팀원·패널토글 */}
-            <div className="flex items-center gap-1.5 px-2.5 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
+            <div className="flex flex-col gap-2 px-3 py-3 bg-white border-b border-[#DADCE0] flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => router.push('/dashboard')}
                 title="대시보드로"
@@ -830,43 +838,45 @@ export default function ProjectPage() {
                 <House size={15} weight="bold" />
                 홈
               </button>
-              <h1 className="text-[13px] font-semibold text-[#202124] truncate max-w-[140px] flex-1 min-w-0">{project.title}</h1>
+              <h1 title={project.title} className="text-[15px] font-semibold text-[#202124] truncate flex-1 min-w-0">{project.title}</h1>
+              <PanelToggle direction="left" onClick={() => layout.toggle('sidebar')} label="활동 목록 접기" />
+              </div>
+              <div className="flex items-center gap-2">
               {isHost ? (
                 <span
                   title="방장"
-                  className="flex items-center justify-center w-7 h-7 rounded-full bg-[#FEF7E0] text-[#B06000] flex-shrink-0"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#FFE7C7] px-4 text-[13px] font-medium text-[#8A3D00] flex-shrink-0"
                 >
-                  <Crown size={14} weight="fill" className="text-[#F9AB00]" />
+                  <Crown size={18} weight="fill" />
+                  방장
                 </span>
-              ) : (
-                <button
+              ) : !project.demoRun ? (
+                <MD3Button
                   onClick={handleClaimHost}
                   disabled={claimingHost}
                   title={claimingHost ? '처리 중...' : '방장 되기'}
                   aria-label="방장 되기"
-                  className="flex items-center justify-center w-7 h-7 rounded-full border border-[#FBBC04] text-[#B06000]
-                    hover:bg-[#FEF7E0] transition-all disabled:opacity-50 flex-shrink-0"
+                  variant="outlined" tone="amber" size="sm"
+                  icon={<Crown size={18} weight="fill" />}
                 >
-                  <Crown size={14} weight="fill" className="text-[#F9AB00]" />
-                  <span className="sr-only">
                   {claimingHost ? '처리 중...' : '방장 되기'}
-                  </span>
-                </button>
-              )}
+                </MD3Button>
+              ) : <span className="inline-flex h-10 items-center gap-2 rounded-full bg-[#D3E3FD] px-4 text-[13px] font-medium text-[#0842A0]"><Sparkle size={18} weight="fill" />AI 팀</span>}
               <div className="ml-auto flex items-center gap-1">
                 {/* 팀원 수·목록 — 버튼만 인라인, 팝오버는 createPortal로 body에 렌더(좌측 overflow-hidden 탈출) */}
-                <button
+                <MD3Button
                   ref={membersBtnRef}
                   onClick={() => setShowMembers(v => !v)}
                   title="팀원 목록"
                   aria-label={`팀원 ${project.memberUids?.length ?? 1}명 보기`}
-                  className="flex items-center gap-1 text-[11px] bg-[#F1F3F4] text-[#5F6368]
-                    px-2 py-1.5 rounded-full font-semibold hover:bg-[#E8F0FE] hover:text-[#1A73E8] transition-colors flex-shrink-0"
+                  aria-expanded={showMembers}
+                  variant="tonal" tone="blue" size="sm" selected={showMembers}
+                  icon={<Users size={18} weight="regular" />}
+                  trailing={<CaretDown size={14} weight="bold" />}
                 >
-                  <Users size={13} weight="regular" />
-                  {project.memberUids?.length ?? 1}명
-                </button>
-                <PanelToggle direction="left" onClick={() => layout.toggle('sidebar')} label="활동 목록 접기" />
+                  팀원 {project.memberUids?.length ?? 1}명
+                </MD3Button>
+              </div>
               </div>
             </div>
             {/* 좌측 하단: 활동 사이드바 */}
@@ -1143,6 +1153,7 @@ export default function ProjectPage() {
         {/* 우측 상단: 프로젝트 정보 — 자료함은 일단 숨김. 보고서·초대코드는 텍스트 유지. */}
         <div className="flex items-center justify-end gap-1.5 px-2 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
           <PanelToggle direction="right" onClick={() => layout.toggle('artifact')} label="산출물 패널 접기" className="mr-auto" />
+          {project.demoRun && <DemoProjectToolbar />}
           {/* 구조도 버튼은 중앙 단계 섹션으로 이동됨 */}
           {project.stageReports && Object.keys(project.stageReports).length > 0 && (
             <button
@@ -1169,7 +1180,7 @@ export default function ProjectPage() {
               {project.publicStatus?.isPublic ? '공개 중' : '공개'}
             </button>
           )}
-          {project.mode !== 'solo' && project.inviteCode && (
+          {!project.demoRun && project.mode !== 'solo' && project.inviteCode && (
             <button
               type="button"
               onClick={() => setShowInviteCode(true)}
@@ -1197,7 +1208,7 @@ export default function ProjectPage() {
         )}
       </div>
 
-      {pendingStageMove && <StageMoveModal />}
+      {!project.demoRun && pendingStageMove && <StageMoveModal />}
 
       {showReports && (
         <StageReportsModal onClose={() => setShowReports(false)} />
@@ -1284,7 +1295,7 @@ export default function ProjectPage() {
       )}
 
       {/* 팀원: 방장이 분석 모달을 열면 동기화하여 표시 */}
-      {!isHost && project?.analysisOpen && (
+      {!project.demoRun && !isHost && project?.analysisOpen && (
         <StageAnalysisModal
           isHost={false}
           onClose={() => setAnalysisOpen(projectId, false).catch(console.error)}

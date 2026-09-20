@@ -384,7 +384,7 @@ function extractPersonalVisionsFromChat(
 // ─── T-1-2 수업설계 방향 설정 ─────────────────────────────────────────────
 
 export interface T12DesignPrinciple {
-  principle: string   // 설계 원칙 (구체적 방법론 포함)
+  principle: string   // 설계 원칙 (조건과 실천 행동, 방법론 이름은 선택 사항)
   rationale: string   // 근거
 }
 
@@ -417,14 +417,27 @@ export function buildT12Structured(
 function parseDesignPrinciples(raw: string): T12DesignPrinciple[] {
   const entries: T12DesignPrinciple[] = []
 
-  // 마크다운 표: | 설계 원칙 | 근거 |
+  // 이전 2열 표와 번호·멈춤 신호가 추가된 표 모두 헤더로 해석한다.
+  // 저장 스키마는 유지하고 멈춤 신호는 근거 본문에 보존한다.
   const lines = raw.split('\n').filter(l => l.trim().startsWith('|'))
   if (lines.length >= 3) {
+    const parseCells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(s => s.trim())
+    const headers = parseCells(lines[0]).map(cell => cell.replace(/\*\*/g, ''))
+    const matchedPrincipleIndex = headers.findIndex(header => /원칙|방향/.test(header))
+    const principleIndex = matchedPrincipleIndex >= 0 ? matchedPrincipleIndex : 0
+    const matchedRationaleIndex = headers.findIndex(header => /근거|이유|배경/.test(header))
+    const rationaleIndex = matchedRationaleIndex >= 0 ? matchedRationaleIndex : headers.length === 2 ? 1 : -1
+    const stopIndex = headers.findIndex(header => /멈춤|중단|보류|거부/.test(header))
     const dataLines = lines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1)
     for (const line of dataLines) {
-      const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
-      if (cells.length >= 2 && cells[0]) {
-        entries.push({ principle: cells[0], rationale: cells[1] || '' })
+      const cells = parseCells(line)
+      if (cells.length >= 2 && cells[principleIndex]) {
+        const rationale = rationaleIndex !== principleIndex ? cells[rationaleIndex] || '' : ''
+        const stopCondition = cells[stopIndex]
+        entries.push({
+          principle: cells[principleIndex],
+          rationale: [rationale, stopCondition ? `멈춤 신호: ${stopCondition}` : ''].filter(Boolean).join('\n'),
+        })
       }
     }
     if (entries.length > 0) return entries

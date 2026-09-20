@@ -17,7 +17,6 @@ import {
   Users,
 } from 'lucide-react'
 import { getProject } from '@/lib/firebase/projects'
-import { patchLiveDemoRun } from '@/lib/demo/engine/project'
 import { runLiveMultiAgentDemo, type DemoEngineEvent } from '@/lib/demo/engine/run'
 import {
   parseDemoEngineConfig,
@@ -31,7 +30,9 @@ const PHASE_LABELS: Record<string, string> = {
   'orchestrator-intro': '총괄 AI 활동 제시',
   'teacher-contribution': '교사별 독립 제안',
   'teacher-response': '동료 의견 검토·조정',
-  'orchestrator-synthesis': '합의 정리·산출물 생성',
+  'orchestrator-synthesis': '공동 산출물 초안 제시',
+  'teacher-review': '교사별 산출물 검토·동의 확인',
+  'orchestrator-revision': '검토 의견 반영·산출물 수정',
   'activity-complete': '활동 저장 완료',
   complete: '전체 실행 완료',
 }
@@ -42,6 +43,10 @@ function messageOf(reason: unknown): string {
 
 function isAbort(reason: unknown): boolean {
   return reason instanceof DOMException && reason.name === 'AbortError'
+}
+
+function requiresNewSetupAfterError(error: string | null): boolean {
+  return Boolean(error && /2회 수정 후에도|이전 버전/.test(error))
 }
 
 export default function DemoRunPage() {
@@ -103,6 +108,9 @@ export default function DemoRunPage() {
     abortRef.current = controller
     setStatus('running')
     setError(null)
+    // Durable turns are replayed with deterministic IDs on resume. Clear only
+    // this tab's display list; the saved project dialogue remains untouched.
+    setEvents([])
 
     try {
       await runLiveMultiAgentDemo(
@@ -130,12 +138,10 @@ export default function DemoRunPage() {
     } catch (reason) {
       if (isAbort(reason) || controller.signal.aborted) {
         setStatus('paused')
-        await patchLiveDemoRun(id, { status: 'paused' }).catch(() => undefined)
       } else {
         const nextError = messageOf(reason)
         setStatus('failed')
         setError(nextError)
-        await patchLiveDemoRun(id, { status: 'failed', error: nextError }).catch(() => undefined)
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null
@@ -163,6 +169,7 @@ export default function DemoRunPage() {
     ? 100
     : Math.min(99, Math.round((completedTurns / Math.max(totalTurns, 1)) * 100))
   const latestEvent = events.at(-1)
+  const requiresNewSetup = status === 'failed' && requiresNewSetupAfterError(error)
 
   if (isLoading) {
     return (
@@ -205,12 +212,13 @@ export default function DemoRunPage() {
                 <CirclePause className="h-4 w-4" /> 일시정지
               </button>
             )}
-            {(status === 'paused' || status === 'failed') && (
+            {(status === 'paused' || status === 'failed') && !requiresNewSetup && (
               <button type="button" onClick={resumeRun} className="flex items-center gap-1.5 rounded-xl bg-[#137333] px-3 py-2 text-xs font-bold text-white hover:bg-[#0D652D]">
                 {status === 'failed' ? <RefreshCw className="h-4 w-4" /> : <CirclePlay className="h-4 w-4" />}
-                {status === 'failed' ? '현재 활동 다시 실행' : '계속 실행'}
+                {status === 'failed' ? '저장 지점에서 재시도' : '계속 실행'}
               </button>
             )}
+            {requiresNewSetup && <button type="button" onClick={() => router.push('/demo')} className="rounded-xl bg-[#7C3AED] px-3 py-2 text-xs font-bold text-white">새 데모 설정</button>}
             <a href={`/projects/${id}`} target="_blank" rel="noreferrer" className="hidden items-center gap-1.5 rounded-xl bg-[#1A73E8] px-3 py-2 text-xs font-bold text-white hover:bg-[#1557B0] sm:flex">
               프로젝트 보기 <ExternalLink className="h-3.5 w-3.5" />
             </a>
@@ -235,11 +243,11 @@ export default function DemoRunPage() {
             </div>
             <div className="mt-3 flex justify-between text-[11px] font-semibold text-[#5F6368]">
               <span>활동 {Math.min(activityIndex + 1, 19)}/19</span>
-              <span>에이전트 턴 {completedTurns}/{totalTurns}</span>
+              <span>에이전트 턴 {completedTurns} · 예상 {totalTurns}</span>
             </div>
             <p className="mt-3 rounded-xl bg-[#F8F9FA] px-3 py-2 text-xs leading-5 text-[#5F6368]">
               {status === 'running' && (latestEvent ? `${latestEvent.activityLabel} · ${PHASE_LABELS[latestEvent.phase]}` : '총괄 AI가 첫 활동을 준비하고 있습니다.')}
-              {status === 'paused' && '일시정지되었습니다. 현재 미완료 활동부터 안전하게 다시 시작할 수 있습니다.'}
+              {status === 'paused' && '일시정지되었습니다. 저장된 활동·대화를 유지하고 이어서 진행합니다.'}
               {status === 'failed' && '오류가 발생했습니다. 저장이 끝난 이전 활동은 유지됩니다.'}
               {status === 'completed' && '모든 활동의 대화·산출물·단계 보고서가 저장되었습니다.'}
             </p>
@@ -269,9 +277,11 @@ export default function DemoRunPage() {
             <ol className="mt-2 space-y-1.5">
               <li>1. 총괄 AI가 활동과 쟁점을 먼저 제시</li>
               <li>2. 각 교사가 페르소나 관점으로 독립 제안</li>
-              <li>3. 모든 1차 발언을 읽고 동료에게 응답·수정</li>
-              <li>4. 총괄 AI가 긴장도 보존해 합의·산출물 저장</li>
+              <li>3. 활동의 세부 절차에 따라 동료 의견에 응답·조정</li>
+              <li>4. 공동 산출물 초안을 교사 AI가 각각 검토</li>
+              <li>5. 수정 요청을 반영하고 전원 동의·형식을 확인한 뒤 저장</li>
             </ol>
+            <p className="mt-3 border-t pt-3">사용자는 관찰자입니다. 교사 발언·동의와 수업 실행·성찰은 AI 시뮬레이션이며 실제 교사 승인이나 학습 효과가 아닙니다. 추가 검토에 따라 실행 시간과 예상 턴 수가 달라집니다.</p>
           </section>
         </aside>
 
@@ -299,6 +309,7 @@ export default function DemoRunPage() {
           {error && (
             <div role="alert" className="m-5 rounded-2xl border border-[#F4C7C3] bg-[#FCE8E6] px-4 py-3 text-sm text-[#B3261E]">
               <strong>실행 오류:</strong> {error}
+              {requiresNewSetup && <p className="mt-2 text-xs leading-5">기존 대화·초안·검토 의견은 보존되어 있습니다. 같은 기록을 재생해 강제로 승인하지 않습니다. <a href={`/projects/${id}`} className="underline">프로젝트에서 이견과 산출물을 확인</a>한 뒤, 수업 조건이나 페르소나를 조정하여 새 데모를 시작하세요.</p>}
             </div>
           )}
 
@@ -333,7 +344,7 @@ export default function DemoRunPage() {
           {status === 'completed' && (
             <div className="border-t border-[#B7E1CD] bg-[#E6F4EA] p-5 text-center">
               <p className="font-extrabold text-[#137333]">튜토리얼 프로젝트가 완성되었습니다.</p>
-              <p className="mt-1 text-xs text-[#3C6142]">프로젝트 화면에서 19개 활동별 실제 대화와 확정 산출물을 검토할 수 있습니다.</p>
+              <p className="mt-1 text-xs text-[#3C6142]">프로젝트 화면에서 19개 활동의 AI 교사 협의, 검토·수정 기록과 산출물을 확인하고 전체 튜토리얼을 내려받을 수 있습니다. 수업 실행 자료는 시뮬레이션입니다.</p>
               <button type="button" onClick={() => router.push(`/projects/${id}`)} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#137333] px-5 py-2.5 text-sm font-extrabold text-white hover:bg-[#0D652D]">
                 완성된 프로젝트 열기 <ExternalLink className="h-4 w-4" />
               </button>

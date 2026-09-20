@@ -10,6 +10,7 @@ import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/
 import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
 import { extractImprovementText, parseNextCycleChoice } from '@/lib/activity/completion'
+import { resolveNextCycleChoice, type NextCycleChoice } from '@/lib/activity/cycle'
 import { sanitizeArtifactSections } from '@/lib/artifacts/schemas'
 import { mergeMessagesForCycle } from '@/lib/chat/messageCycles'
 
@@ -1460,16 +1461,23 @@ export async function patchLessonDesignDirectionWorkspace(
   patch: LessonDesignDirectionWorkspacePatch,
 ): Promise<LessonDesignDirectionWorkspace> {
   const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyLessonDesignDirectionWorkspacePatch(data.lessonDesignDirectionWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
-  await updateDoc(ref, {
-    lessonDesignDirectionWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  return runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const base = { ...emptyLessonDesignDirectionWorkspace(), ...data.lessonDesignDirectionWorkspace }
+    const nextWorkspace = applyLessonDesignDirectionWorkspacePatch(base, patch)
+    // Once migrated, legacy whole-workspace saves must not overwrite CRDT text.
+    if (snap.data().lessonDesignDirectionDocument?.state) {
+      nextWorkspace.blocks = data.lessonDesignDirectionWorkspace?.blocks ?? []
+    }
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+    transaction.update(ref, {
+      lessonDesignDirectionWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type LessonDesignDirectionPresenceEntry = {
@@ -3204,7 +3212,8 @@ export async function logStageTransition(
     createdAt: serverTimestamp(),
   })
   if (data.direction === 'cycle') {
-    await finalizeCycleTransition(projectId, data.cycleNumber)
+    // cycle 방향은 사용자가 모달에서 "새 주기 시작"을 명시적으로 고른 경우에만 생성된다.
+    await finalizeCycleTransition(projectId, data.cycleNumber, 'A')
   }
 }
 
@@ -3216,10 +3225,12 @@ export async function logStageTransition(
  *
  * 추출 실패는 cycle 전환 자체를 막지 않음. best-effort.
  * 레거시(_schemaVersion !== 'v2-sections') 산출물도 best-effort로 시도.
+ * 모달의 명시적 선택은 E-2-1 산출물에 남아 있던 이전 선택보다 우선한다.
  */
 export async function finalizeCycleTransition(
   projectId: string,
-  completedCycleNumber: number
+  completedCycleNumber: number,
+  explicitNextCycleChoice?: NextCycleChoice,
 ): Promise<void> {
   // 현재 프로젝트 상태를 읽어 산출물 추출. 실패해도 cycle 자체는 이미 기록됐으므로 throw 금지.
   const update: Record<string, unknown> = {
@@ -3229,6 +3240,12 @@ export async function finalizeCycleTransition(
     cycleStartT11Version: 0,
     updatedAt: serverTimestamp(),
   }
+  const improvements: Record<string, unknown> = {
+    cycleNumber: completedCycleNumber,
+    extractedAt: serverTimestamp(),
+  }
+  if (explicitNextCycleChoice) improvements.nextCycleChoice = explicitNextCycleChoice
+  let hasImprovementData = !!explicitNextCycleChoice
 
   try {
     const snap = await getDoc(doc(db, 'projects', projectId))
@@ -3244,26 +3261,24 @@ export async function finalizeCycleTransition(
       const e21Improvement = extractImprovementText(e21, ['팀 개선안', '개선안', '수정안', '다음 주기'])
       // E-2-1: '다음 주기 선택' 섹션에서 A/B 판정
       const nextCycleText = extractImprovementText(e21, ['다음 주기 선택', '다음주기', '선택', '다음 주기'])
-      const nextCycleChoice = parseNextCycleChoice(nextCycleText)
+      const nextCycleChoice = resolveNextCycleChoice(
+        explicitNextCycleChoice,
+        parseNextCycleChoice(nextCycleText),
+      )
 
       // undefined 필드는 Firestore 저장 불가 → 조건부로만 포함
-      const improvements: Record<string, unknown> = {
-        cycleNumber: completedCycleNumber,
-        extractedAt: serverTimestamp(),
-      }
       if (e11Improvement) improvements.e11Improvement = e11Improvement
       if (e21Improvement) improvements.e21Improvement = e21Improvement
       if (nextCycleChoice) improvements.nextCycleChoice = nextCycleChoice
-
-      // 추출된 내용이 하나라도 있으면 기록. 전부 비었으면 필드 생략(덮어쓰기만 방지).
-      if (e11Improvement || e21Improvement || nextCycleChoice) {
-        update.previousCycleImprovements = improvements
-      }
+      hasImprovementData = !!(e11Improvement || e21Improvement || nextCycleChoice)
     }
   } catch (err) {
     // 추출 실패는 로그만 남기고 cycle 전환 자체는 계속 진행
     console.warn('[finalizeCycleTransition] extract failed, continuing without improvements:', err)
   }
+
+  // 추출된 내용 또는 모달의 명시적 선택이 있으면 기록한다.
+  if (hasImprovementData) update.previousCycleImprovements = improvements
 
   await updateDoc(doc(db, 'projects', projectId), update)
 }

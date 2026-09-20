@@ -6,6 +6,7 @@
 import fs from 'fs'
 import path from 'path'
 import OpenAI from 'openai'
+import { applyElementaryContentLists } from './elementaryContentLists'
 
 export interface CurriculumStandard {
   id: string
@@ -139,6 +140,10 @@ export function loadGraph(): KnowledgeGraph | null {
     if (Array.isArray(parsed.links_cross_subject)) {
       parsed.links_cross_subject = parsed.links_cross_subject.filter(l => isElementaryLevel(undefined, l.grade_band))
     }
+    // [strict-elementary 2026-09-18] 그래프 파일의 knowledge/functions/competencies는
+    // 초·중 공통 핵심아이디어 그룹 목록(대부분 중학교 열)을 복사한 것이라 신뢰하지 않는다.
+    // 내용체계(학년군별) 항목으로 강제 교체 — scripts/verify-curriculum-linkage.mjs가 검증.
+    applyElementaryContentLists(parsed)
     _cache = parsed
     _cacheAt = Date.now()
     return _cache

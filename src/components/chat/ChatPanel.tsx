@@ -3,6 +3,9 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
+import { isDemoObservationOnly } from '@/lib/demo/observer'
+import { hasDeferredDecision, deferredResponse, discussionContributions } from '@/lib/activity/conversation-flow'
+import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows } from '@/lib/firebase/projects'
@@ -15,7 +18,8 @@ import { TeamDiscussionProposal } from './TeamDiscussionProposal'
 import { HelpCard } from './HelpCard'
 import { ArtifactSaveProposal } from './ArtifactSaveProposal'
 import { ActionCard as ActionCardComponent } from './ActionCard'
-import { ChatFontScaleControl, useChatFontScale } from '@/components/accessibility/FontScaleControl'
+import { useChatFontScale } from '@/components/accessibility/FontScaleControl'
+import { ChatPanelHeader } from '@/components/chat/ChatPanelHeader'
 import { StandardsFinderModal } from './StandardsFinderModal'
 import { CoreIdeaFinderModal } from './CoreIdeaFinderModal'
 import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
@@ -288,7 +292,7 @@ function OptionsMessage({
   votes, memberInfo, currentUid, isHost, isClosed,
 }: ParsedOptions & {
   messageId: string
-  onSelect: (label: string, content: string) => void
+  onSelect: (label: string, content: string) => Promise<void>
   onDiscuss: () => Promise<void>
   votes: Record<string, string>
   memberInfo: MemberInfoMap
@@ -302,7 +306,7 @@ function OptionsMessage({
   function handleFinalSelect(label: string, content: string) {
     if (selected) return
     setSelected(label)
-    onSelect(label, content)
+    void onSelect(label, content).catch(() => setSelected(null))
   }
 
   function handleDiscuss() {
@@ -894,7 +898,7 @@ function ContextMenuWrapper({ children, className, asArticle = false, ariaLabel 
 }
 
 // ─── 메시지 버블 ──────────────────────────────────────
-function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage, standardTextMap }: {
+export function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage, standardTextMap, simulated = false }: {
   role: 'user' | 'assistant'
   content: string
   activityType?: ActivityType
@@ -906,6 +910,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
   onReply?: () => void
   stage?: string
   standardTextMap?: Record<string, string>
+  simulated?: boolean
 }) {
   const isUser = role === 'user'
   const alignRight = isUser && isSelf
@@ -944,11 +949,11 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
         'flex flex-col',
       )}>
         {isUser && !isSelf && senderName && (
-          <span className="text-xs font-bold px-1 text-gray-700">{senderName}</span>
+          <span className="text-xs font-bold px-1 text-gray-700">{senderName}{simulated && ' · 교사 AI'}</span>
         )}
         {!isUser && (
           <div className="flex items-center gap-1.5 px-1">
-            <span className="text-xs font-bold text-[#3C4043]">AI 공동설계자</span>
+            <span className="text-xs font-bold text-[#3C4043]">{simulated ? '총괄 AI' : 'AI 공동설계자'}</span>
             {activityType && <ActivityTag type={activityType} />}
           </div>
         )}
@@ -979,7 +984,7 @@ function MessageBubble({ role, content, activityType, senderName, senderColor, i
               })()
           }
         >
-          {isUser
+          {isUser && !simulated
             ? <span className="whitespace-pre-wrap">{content}</span>
             : <MarkdownContent text={content} standardTextMap={standardTextMap} />
           }
@@ -1162,6 +1167,11 @@ function CoeditButton({ label, title, onClick, showHint }: {
 // ─── 메인 ChatPanel ───────────────────────────────────
 export function ChatPanel() {
   const project = useProjectStore(state => state.project)
+  return isDemoObservationOnly(project) ? <DemoObserverChat /> : <InteractiveChatPanel />
+}
+
+function InteractiveChatPanel() {
+  const project = useProjectStore(state => state.project)
   if (!project) return null
   return <ChatPanelContent />
 }
@@ -1201,6 +1211,8 @@ function ChatPanelContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isIdle, setIsIdle] = useState(false)
+  const [flowNotice, setFlowNotice] = useState<string | null>(null)
+  useEffect(() => { setIsIdle(false) }, [discussionMode])
   const [chatError, setChatError] = useState<string | null>(null)
   const [showDiscussionConfirm, setShowDiscussionConfirm] = useState(false)
   const [showStandardsBrowser, setShowStandardsBrowser] = useState(false)
@@ -1392,6 +1404,7 @@ function ChatPanelContent() {
   // 활동 전환 시 해당 활동에만 속하는 로컬 UI 상태 초기화
   useEffect(() => {
     setPendingAdvance(null)
+    setFlowNotice(null)
     setChatError(null)
     setIsIdle(false)
     setHelpCardMap({})
@@ -1409,29 +1422,6 @@ function ChatPanelContent() {
     return proj.mode === 'solo' ? { teacherName: userProfile?.displayName } : undefined
   }
 
-  // 구조화 산출물 fallback 자동 저장 — ARTIFACT_UPDATE 실패 시 채팅에서 직접 추출
-  function tryStructuredFallbackSave(responseText: string, activity: ActivityCode) {
-    if (!/저장/.test(responseText)) return
-    // A안/B안 선택지·"저장/진행하겠습니다" 절차 문구가 추출기로 새지 않도록 ctx 정제
-    const ctx = sanitizeChatForExtraction([...messages, { role: 'assistant' as const, content: responseText }])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let structured: any = null
-
-    if (activity === 'T-1-1' && responseText.includes('|')) { const s = artifactSchemas.buildT11Structured({}, ctx, soloT11Opts()); if (s.teamVision || s.personalVisions.length > 0) structured = s }
-    else if (activity === 'T-1-2' && (responseText.includes('|') || /원칙|방향/.test(responseText))) { const s = artifactSchemas.buildT12Structured({}, ctx); if (s.designPrinciples.length > 0) structured = s }
-    else if (activity === 'T-2-1' && responseText.includes('|')) { const s = artifactSchemas.buildT21Structured({}, ctx); if (s.roles.length > 0) structured = s }
-    else if (activity === 'T-2-2' && /규칙|소통|시간|조율|태도/.test(responseText)) { const s = artifactSchemas.buildT22Structured({}, ctx); if (s.rules.length > 0) structured = s }
-    else if (activity === 'T-2-3' && responseText.includes('|')) { const s = artifactSchemas.buildT23Structured({}, ctx); if (s.schedule.length > 0) structured = s }
-    else if (activity === 'A-1-2' && /주제|선정/.test(responseText)) { const s = artifactSchemas.buildA12Structured({}, ctx); if (s.selectedTopic || s.criteria.length > 0) structured = s }
-    else if (activity === 'A-2-1' && (responseText.includes('|') || /핵심.*아이디어|지식.*이해/.test(responseText))) { const s = artifactSchemas.buildA21Structured({}, ctx); if (s.rows.length > 0) structured = s }
-    else if (activity === 'A-2-2' && /목표|학습/.test(responseText)) { const s = artifactSchemas.buildA22Structured({}, ctx); if (s.subjectGoals.length > 0 || s.integratedGoal) structured = s }
-    else if (activity === 'A-2-3' && /학습자|프로필|선수/.test(responseText)) { const s = artifactSchemas.buildA23Structured({}, ctx); if (s.commonProfile.length > 0) structured = s }
-    else if (activity === 'Ds-1-1' && (responseText.includes('|') || /평가|루브릭|상.*중.*하/.test(responseText))) { const s = artifactSchemas.buildDs11Structured({}, ctx); if (s.rubric.length > 0) structured = s }
-    else if (activity === 'Ds-1-2' && /문제\s*상황|시나리오|실제성|핵심\s*질문/.test(responseText)) { const s = artifactSchemas.buildDs12Structured({}, ctx); if (s.scenario.title || s.scenario.authenticity || s.scenario.contentProduct || s.drivingQuestion) structured = s }
-    else if (activity === 'Ds-2-1' && /자료|도구|탐색|개발|담당|일정/.test(responseText)) { const s = artifactSchemas.buildDs21Structured({}, ctx); if (s.materials.length > 0) structured = s }
-
-    if (structured) void applyArtifactUpdates(structured as Record<string, string>, activity)
-  }
 
   // ARTIFACT_UPDATE 신호를 아티팩트 패널에 반영 + Firestore 저장
   // latestText: 현재 턴의 assistant 응답 원문 (Zustand에 아직 반영 안 됐을 수 있어 직접 전달)
@@ -2059,6 +2049,11 @@ function ChatPanelContent() {
     onChunk: (text: string) => void,
     onDone: (fullText: string) => void | Promise<void>,
   ) {
+    const decisionDeferred = hasDeferredDecision(msgs)
+    if (decisionDeferred) onChunk = () => {} // Validate deferred responses before displaying gates.
+    const commitResponse = onDone
+    onDone = (text) => commitResponse(decisionDeferred ? deferredResponse(text) : text)
+    if (decisionDeferred) msgs = [...msgs, { role: 'user', content: '현재 결정은 보류 중입니다. 같은 선택지나 저장 확인을 다시 제시하지 말고 자유 대화를 이어가세요. 산출물 저장·확정·활동 이동 신호를 출력하지 마세요. 교사가 명시적으로 결정 또는 저장을 요청하기 전까지 유지하세요.' }]
     // 스마트 "청크 간 공백" 타임아웃 — 60초 동안 새 청크가 오지 않으면 abort.
     // 정상적으로 길게 생성되는 응답(여러 분)은 청크 도착마다 타이머 리셋 → 끊기지 않음.
     const INACTIVITY_MS = 60_000
@@ -2241,8 +2236,8 @@ function ChatPanelContent() {
       const currentIdx = allActivities.indexOf(currentActivity)
       const nextIdx = allActivities.indexOf(nextActivity)
       if (nextIdx <= currentIdx) return
-      await advanceActivity(proj.id, allActivities, currentActivity, nextActivity)
-        .catch((err) => { console.error(err); setChatError('다음 활동으로 이동하지 못했습니다. 다시 시도해주세요.') })
+      try { await advanceActivity(proj.id, allActivities, currentActivity, nextActivity) }
+      catch { setChatError('다음 활동으로 이동하지 못했습니다. 현재 활동을 유지합니다. 다시 시도해 주세요.'); return }
       setCurrentActivity(nextActivity)
     } else {
       // 크로스 스테이지: StageMoveModal을 통해 이동 (단계 분석 기회 제공)
@@ -2526,6 +2521,10 @@ function ChatPanelContent() {
 
     setDiscussionMode('ai_facilitated')
     const noticeContent = '기존 안 선택과 팀원별 지지 요청을 종료하고, 기본 대화에서 다시 논의하겠습니다.'
+    setIsIdle(false)
+    setPendingAdvance(null)
+    setPendingTeamDiscussion(null)
+    setFlowNotice('결정은 보류했습니다. 산출물은 그대로 두고 대화를 이어가세요.')
     const noticeId = generateMessageId(proj.id, currentActivity)
     const noticeMessage = {
       id: noticeId,
@@ -2562,13 +2561,15 @@ function ChatPanelContent() {
   // ─── 팀 토의 종료 → AI 분석 ──────────────────────────
   async function handleEndDiscussion() {
     setDiscussionMode('ai_facilitated')
+    setIsIdle(false)
     clearStreamingText()
 
-    const visibleMessages = messages.filter(m => m.role !== 'system')
-    const discussionMessages = visibleMessages.slice(teamDiscussionStartIdx)
+    const discussionMessages = discussionContributions(messages, teamDiscussionStartIdx)
 
     if (discussionMessages.length === 0) {
       setIsAnalyzing(false)
+      setIsLoading(false)
+      setFlowNotice('새로운 팀 대화가 없어 분석하지 않았습니다. 이전 대화를 이어가세요.')
       return
     }
 
@@ -3553,12 +3554,13 @@ ${discussionSummary}
 
   // ─── 직접 메시지 전송 (HelpCard 등 버튼에서 호출) ──────
   async function sendMessageDirectly(text: string) {
-    if (!text.trim() || isLoading || !project) return
+    if (!text.trim() || isLoading || isAnalyzing || !project) return
     setIsIdle(false)
     setChatError(null)
     const senderDisplayName = userProfile?.displayName
+    const directMessageId = generateMessageId(proj.id, currentActivity)
     const tempUserMsg = {
-      id: Date.now().toString(),
+      id: directMessageId,
       role: 'user' as const,
       content: text,
       activityCode: currentActivity,
@@ -3574,13 +3576,14 @@ ${discussionSummary}
       userId: userProfile?.uid,
       displayName: senderDisplayName,
       cycleNumber: proj.currentCycle ?? 1,
-    }).catch(console.error)
+    }, directMessageId).catch(console.error)
 
     if (handleA21SheetArtifactRequest(text)) return
 
     setIsLoading(true)
     clearStreamingText()
     streamingAccumRef.current = ''
+    if (userProfile?.uid) setStreamingState(proj.id, currentActivity, '', userProfile.uid).catch(() => {})
     streamingFlushRef.current = setInterval(() => {
       if (streamingAccumRef.current && userProfile?.uid) {
         setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid).catch(() => {})
@@ -3638,7 +3641,6 @@ ${discussionSummary}
           await processArtifactSignals(upd, cCodes, finalText)
 
           // 구조화 산출물 자동 저장 fallback
-          if (upd.length === 0) tryStructuredFallbackSave(finalText, currentActivity)
 
           // P0-phil2 (Task #30): parseSaveIntent fallback 제거.
           // A안/B안 OptionsMessage가 이미 저장 결정을 묻는 중에 텍스트 패턴 매칭으로
@@ -3700,6 +3702,11 @@ ${discussionSummary}
         })()
       : ''
     const userMessage = replyPrefix + input.trim()
+    setFlowNotice(null)
+    if (hasDeferredDecision([...messages, { role: 'user', content: userMessage }])) {
+      setPendingAdvance(null)
+      setPendingTeamDiscussion(null)
+    }
     setInput('')
     setIsIdle(false)  // 사용자 입력 시 idle 해제
     setChatError(null)  // 새 메시지 전송 시 이전 에러 초기화
@@ -3832,14 +3839,13 @@ ${discussionSummary}
           await processArtifactSignals(updates, confirmCodes2, displayText)
 
           // 구조화 산출물 자동 저장 fallback (A안/B안 선택 후 AI 응답)
-          if (updates.length === 0) tryStructuredFallbackSave(displayText, currentActivity)
 
           // [ARTIFACT_UPDATE] 없이 저장 처리
           // P0-phil2 (Task #30): A-2-1 외 활동의 parseSaveIntent fallback 제거.
           // 일반 활동의 저장 경로는 (a) A안/B안 명시 선택 → ARTIFACT_UPDATE,
           // (b) ACTION_CARD primary 클릭 → 다음 턴 ARTIFACT_UPDATE 둘만 허용.
           // A-2-1: 구조화 스키마 전환 이후 extractA21TableForSave 특수 경로 비활성화.
-          // 저장은 tryStructuredFallbackSave 또는 ARTIFACT_UPDATE 경로로 처리.
+          // 저장은 명시적인 ARTIFACT_UPDATE 신호로만 처리.
 
           if (advance?.nextActivity) {
             // 저장 여부와 무관하게 항상 pendingAdvance 배너로 막음
@@ -3954,8 +3960,11 @@ ${discussionSummary}
 
   // 팀 채팅 시작 확인 → Firestore 업데이트 (방장/팀원 모두)
   async function handleConfirmStartDiscussion() {
+    if (isLoading || isAnalyzing) return
     setShowDiscussionConfirm(false)
-    await setTeamDiscussion(proj.id, currentActivity, true).catch(console.error)
+    try { await setTeamDiscussion(proj.id, currentActivity, true) }
+    catch { setChatError('팀채팅을 시작하지 못했습니다. 다시 시도해 주세요.'); return }
+    setIsIdle(false)
     // 로컬 즉시 반영 (Firestore 감지 전 UX)
     setDiscussionMode('team_discussion')
     setTeamDiscussionStartIdx(messages.filter(m => m.role !== 'system').length)
@@ -3970,8 +3979,10 @@ ${discussionSummary}
       })
     }
 
-    await setTeamDiscussion(proj.id, currentActivity, false).catch(console.error)
+    try { await setTeamDiscussion(proj.id, currentActivity, false) }
+    catch { setChatError('팀채팅을 종료하지 못했습니다. 다시 시도해 주세요.'); return }
     setDiscussionMode('ai_facilitated')
+    setIsIdle(false)
     if (isLegacyOptionRestart) return
     void handleEndDiscussion()
   }
@@ -3997,25 +4008,7 @@ ${discussionSummary}
       )}
 
       {/* 헤더 */}
-      <div className={cn(
-        'px-4 border-b flex items-center gap-2 flex-shrink-0',
-        GRAPH_ACTIVITIES.includes(currentActivity) && !showWorkspace ? 'pt-12 pb-3' : 'py-3',
-        isTeamMode ? 'bg-[#E0F2F1] border-[#80CBC4]' : 'bg-white border-[#DADCE0]',
-      )}>
-        <div className={cn('w-2 h-2 rounded-full animate-pulse flex-shrink-0', isTeamMode ? 'bg-[#00897B]' : 'bg-[#34A853]')} />
-        <span className="text-[15px] font-semibold text-[#202124] truncate min-w-0">{activityMeta.label}</span>
-        {activityMeta.isGuardrailSource && (
-          <span className="flex items-center gap-1 text-[10px] bg-[#F3E5F5] text-[#7B1FA2] px-1.5 py-0.5 rounded-full">
-            <Shield size={11} weight="fill" /> 가드레일 소스
-          </span>
-        )}
-        {activityMeta.isBackwardDesignFirst && (
-          <span className="flex items-center gap-1 text-[10px] bg-[#FFF3E0] text-[#E65100] px-1.5 py-0.5 rounded-full">
-            <Star size={11} weight="fill" /> 평가 먼저
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-          <ChatFontScaleControl />
+      <ChatPanelHeader activity={currentActivity} teamMode={isTeamMode} extraTopSpace={GRAPH_ACTIVITIES.includes(currentActivity) && !showWorkspace}>
           {/* 중요 노트 버튼 */}
           <MD3Button
             onClick={() => setShowKeyNotes(true)}
@@ -4206,8 +4199,7 @@ ${discussionSummary}
               팀 자유 토의 중
             </span>
           )}
-        </div>
-      </div>
+      </ChatPanelHeader>
 
       {/* 팀 토의 배너 */}
       {isTeamMode && (
@@ -4446,84 +4438,17 @@ ${discussionSummary}
                   }
                   currentUid={userProfile?.uid ?? ''}
                   isHost={isHost}
-                  isClosed={proj.closedOptionMessages?.[msg.id] === true}
+                  isClosed={proj.closedOptionMessages?.[msg.id] === true || msg.id !== lastAIMsg?.id || isLoading || isAnalyzing}
                   onDiscuss={() => handleRestartOptionDiscussion(msg.id)}
-                  onSelect={(label, content) => {
-                    closeOptionChoice(proj.id, msg.id).catch(console.error)
-                    // 이전 AI 메시지에서 현재 활동과 다른 활동 코드 언급을 추출 → 크로스 활동 힌트
-                    const actCodeRegex = /\b(T-[12]-[123]|A-[12]-[123]|Ds-[12]-[123]|DI-[12]-1|E-[12]-1)\b/g
-                    const mentionedCodes = [...(msg.content ?? '').matchAll(actCodeRegex)]
-                      .map(m => m[1] as ActivityCode)
-                      .filter(c => c !== currentActivity)
-                    const uniqueOther = [...new Set(mentionedCodes)]
-                    // 화면 표시용 (힌트 없음), API 전송용 (힌트 포함)
-                    const displayReply = `${label}을 선택하겠습니다. "${content}"`
-                    const apiReply = uniqueOther.length > 0
-                      ? `${displayReply} (수정/확정 대상 활동: ${uniqueOther[0]} — 반드시 [ARTIFACT_UPDATE@${uniqueOther[0]}:] 신호 사용)`
-                      : displayReply
-                    setInput('')
-                    // 직접 handleSend 호출
-                    const userMsg = {
-                      id: Date.now().toString(),
-                      role: 'user' as const,
-                      content: displayReply, // 저장·표시에는 깔끔한 버전
-                      activityCode: currentActivity,
-                      userId: userProfile?.uid,
-                      displayName: userProfile?.displayName,
-                      createdAt: Timestamp.now(),
+                  onSelect={async (label, content) => {
+                    if (isLoading || isAnalyzing || !isHost || msg.id !== lastAIMsg?.id) return
+                    try { await closeOptionChoice(proj.id, msg.id) }
+                    catch (error) {
+                      setChatError('선택을 기록하지 못했습니다. 다시 시도해 주세요.')
+                      throw error
                     }
-                    addMessage(userMsg)
-                    saveMessage(proj.id, currentActivity, {
-                      role: 'user', content: displayReply,
-                      activityCode: currentActivity,
-                      userId: userProfile?.uid,
-                      cycleNumber: proj.currentCycle ?? 1,
-                    }).catch(console.error)
-                    setIsLoading(true)
-                    clearStreamingText()
-                    // API에는 힌트 포함 버전으로 전송
-                    const apiMsg = { ...userMsg, content: apiReply }
-                    streamFromAPI(
-                      [...messages, apiMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
-                      (text) => appendStreamingText(text),
-                      async (fullText) => {
-                        if (await discardResponseAfterActivityChange(currentActivity)) return
-                        const sig = parseDiscussionSignal(fullText)
-                        const t1 = sig ? sig.cleanText : fullText
-                        const adv = parseActivityAdvance(t1)
-                        const t2 = adv ? adv.cleanText : t1
-                        const ret = parseActivityReturn(t2)
-                        const t3 = ret ? ret.cleanText : t2
-                        const { codes: selConfirmCodes, cleanText: t2c } = parseArtifactConfirm(t3)
-                        const { updates: selUpdates, cleanText: t2d } = parseArtifactUpdates(t2c)
-                        // Phase 1-b: 옵션 선택 응답에 ACTION_CARD는 의미 없음 — stray 블록 제거
-                        const cleanText = t2d.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
-                        addMessage({
-                          id: (Date.now() + 1).toString(),
-                          role: 'assistant', content: cleanText,
-                          activityCode: currentActivity, activityType: '판단',
-                          agentType: 'orchestrator',
-                          createdAt: Timestamp.now(),
-                        })
-                        clearStreamingText()
-                        saveMessage(proj.id, currentActivity, {
-                          role: 'assistant', content: cleanText,
-                          activityCode: currentActivity, activityType: '판단', agentType: 'orchestrator',
-                          cycleNumber: proj.currentCycle ?? 1,
-                        }).catch(console.error)
-                        if (sig) setPendingTeamDiscussion({ topic: sig.topic })
-                        await processArtifactSignals(selUpdates, selConfirmCodes, cleanText)
-                        // 구조화 산출물 자동 저장 fallback (선택지 응답 경로)
-                        if (selUpdates.length === 0) tryStructuredFallbackSave(cleanText, currentActivity)
-                        if (adv?.nextActivity) setPendingAdvance(adv.nextActivity)
-                        else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
-                      }
-                    ).catch((err) => {
-                      console.error('Option-select chat error:', err)
-                      const msg = err instanceof Error ? err.message : 'AI 응답 중 오류가 발생했습니다.'
-                      setChatError(`${msg} 다시 시도해주세요.`)
-                      clearStreamingText()
-                    }).finally(() => setIsLoading(false))
+                    setInput('')
+                    await sendMessageDirectly(`${label}을 선택하겠습니다. "${content}"`)
                   }}
                 />
                 </ContextMenuWrapper>
@@ -5624,6 +5549,7 @@ ${discussionSummary}
       )}
 
       {/* 입력창 */}
+      {flowNotice && <p role="status" className="px-4 py-2 text-sm text-[#00695C] bg-[#E0F2F1]">{flowNotice}</p>}
       <div className="px-4 py-3 border-t"
         style={isTeamMode
           ? { background: 'linear-gradient(90deg, #E0F2F1 0%, #F1F8F7 100%)', borderColor: '#80CBC4' }

@@ -6,6 +6,7 @@ import {
   type SchoolLevel,
   type StageCode,
 } from '@/types'
+import { getDemoActivityContract, validateDemoArtifactContent } from '@/lib/activity/demo-contracts'
 
 export const DEMO_TEACHER_COUNT_MIN = 2
 export const DEMO_TEACHER_COUNT_MAX = 5
@@ -15,6 +16,8 @@ export const DEMO_TURN_PHASES = [
   'teacher-contribution',
   'teacher-response',
   'orchestrator-synthesis',
+  'teacher-review',
+  'orchestrator-revision',
 ] as const
 
 export type DemoTurnPhase = (typeof DEMO_TURN_PHASES)[number]
@@ -83,6 +86,40 @@ export interface DemoDiscussionTurn {
   speakerId: string
   speakerName: string
   content: string
+  stepId?: string
+  round?: number
+  review?: DemoTeacherReview
+  references?: DemoTurnReference[]
+}
+
+export interface DemoTeacherReview {
+  decision: 'approve' | 'revise'
+  reason: string
+  // Optional only for reading previously stored reviews. New model responses require both.
+  blockers?: DemoReviewBlocker[]
+  suggestions?: string[]
+}
+
+export interface DemoReviewBlocker {
+  criterionId: string
+  sectionKey: string
+  evidence: string
+  issue: string
+  change: string
+}
+
+export function getDemoReviewCriteria(activityCode: ActivityCode): Array<{ id: string; description: string }> {
+  return [
+    ...getDemoActivityContract(activityCode).completionCriteria.map((description, index) => ({ id: `activity-${index + 1}`, description })),
+    { id: 'format', description: '현재 활동에서 요구한 산출물 섹션·형식을 충족한다.' },
+    { id: 'alignment', description: '초안이 교사의 실제 제안·확정 공동 비전·입력 수업 조건과 모순되지 않는다. 이후 단계의 상세 설계 미완성은 모순이 아니다.' },
+    { id: 'safety', description: '초안의 구체적 내용이 학생 안전·개인정보·접근성을 해치거나 합성 자료를 실제 사실로 잘못 제시하지 않는다. 막연한 우려나 새 행정 절차 요구는 해당하지 않는다.' },
+  ]
+}
+
+export interface DemoTurnReference {
+  speakerId: string
+  quote: string
 }
 
 export interface DemoTurnInput {
@@ -92,6 +129,10 @@ export interface DemoTurnInput {
   priorArtifacts: DemoPriorArtifacts
   discussion: DemoDiscussionTurn[]
   teacherId?: string
+  stepId?: string
+  round?: number
+  candidateArtifact?: DemoGeneratedArtifact
+  validationFeedback?: string[]
 }
 
 export interface DemoGeneratedArtifact {
@@ -109,6 +150,8 @@ export interface DemoTurnResponse {
   content: string
   artifact?: DemoGeneratedArtifact
   stageReport?: DemoGeneratedStageReport
+  review?: DemoTeacherReview
+  references?: DemoTurnReference[]
 }
 
 export type DemoRunStatus = 'ready' | 'running' | 'paused' | 'completed' | 'failed'
@@ -125,11 +168,18 @@ export interface DemoRunState {
   updatedAt: number
   completedAt?: number
   error?: string | null
+  engineVersion?: 2
+  stepId?: string
+  round?: number
+  lease?: { runId: string; expiresAt: number } | null
+  journal?: Record<string, DemoTurnResponse>
 }
 
 /** Raw shape required from the model before section arrays are normalized for Firestore. */
 export interface DemoTurnModelOutput {
   content: string
+  review: DemoTeacherReview | null
+  references: DemoTurnReference[]
   artifact: null | {
     title: string
     sections: Array<{ key: string; value: string }>
@@ -441,7 +491,7 @@ function parseDiscussion(value: unknown, config: DemoEngineConfig): DemoDiscussi
   const turns = value.map((item, index): DemoDiscussionTurn => {
     const path = `request.discussion[${index}]`
     const record = asRecord(item, path)
-    assertExactKeys(record, ['phase', 'speakerId', 'speakerName', 'content'], [], path)
+    assertExactKeys(record, ['phase', 'speakerId', 'speakerName', 'content'], ['stepId', 'round', 'review', 'references'], path)
     const phase = asTurnPhase(record.phase, `${path}.phase`)
     const speakerId = asString(record.speakerId, `${path}.speakerId`, {
       max: 64,
@@ -467,66 +517,129 @@ function parseDiscussion(value: unknown, config: DemoEngineConfig): DemoDiscussi
       phase,
       speakerId,
       speakerName,
-      content: asString(record.content, `${path}.content`, { max: 8_000 }),
+      content: asString(record.content, `${path}.content`, { max: 12_000 }),
+      ...(record.stepId === undefined ? {} : { stepId: asString(record.stepId, `${path}.stepId`, { max: 80 }) }),
+      ...(record.round === undefined ? {} : { round: asInteger(record.round, `${path}.round`, 0, 2) }),
+      ...(record.review === undefined ? {} : { review: parseReview(record.review, `${path}.review`) }),
+      ...(record.references === undefined ? {} : { references: parseReferences(record.references, `${path}.references`) }),
     }
   })
-  if (turns.reduce((sum, turn) => sum + turn.content.length, 0) > 60_000) {
-    fail('request.discussion', '대화 본문 합계는 60,000자를 넘을 수 없습니다.')
+  if (turns.reduce((sum, turn) => sum + turn.content.length, 0) > 180_000) {
+    fail('request.discussion', '대화 본문 합계는 180,000자를 넘을 수 없습니다.')
   }
   return turns
 }
 
 function assertTurnPrerequisites(input: DemoTurnInput): void {
-  const intros = input.discussion.filter((turn) => turn.phase === 'orchestrator-intro')
-  const contributions = input.discussion.filter((turn) => turn.phase === 'teacher-contribution')
-  const responses = input.discussion.filter((turn) => turn.phase === 'teacher-response')
-  const syntheses = input.discussion.filter((turn) => turn.phase === 'orchestrator-synthesis')
-  const expectedIds = input.config.personas.map((persona) => persona.id)
-
-  const countFor = (turns: DemoDiscussionTurn[], id: string) => (
-    turns.filter((turn) => turn.speakerId === id).length
-  )
-
-  if (input.phase === 'orchestrator-intro' && input.discussion.length > 0) {
-    fail('request.discussion', '총괄 AI의 활동 제시 전에는 현재 활동 대화를 보낼 수 없습니다.')
+  const steps = getDemoActivityContract(input.activityCode).steps
+  const stepId = input.stepId ?? steps[0].id
+  const stepIndex = steps.findIndex(step => step.id === stepId)
+  if (stepIndex < 0) fail('request.stepId', '활동에 없는 작업 단계입니다.')
+  const matching = (phase: DemoTurnPhase, id?: string) => input.discussion.filter(turn =>
+    turn.phase === phase && (id === undefined || (turn.stepId ?? steps[0].id) === id))
+  const allTeachers = (turns: DemoDiscussionTurn[]) => input.config.personas.every(persona =>
+    turns.filter(turn => turn.speakerId === persona.id).length === 1)
+  const completeStep = (id: string) => matching('orchestrator-intro', id).length === 1
+    && allTeachers(matching('teacher-contribution', id))
+  const isWork = input.phase === 'orchestrator-intro' || input.phase === 'teacher-contribution'
+  const requiredSteps = isWork ? steps.slice(0, stepIndex) : steps
+  if (!requiredSteps.every(step => completeStep(step.id))) {
+    fail('request.discussion', '이전 작업 단계마다 총괄 AI 제시와 모든 교사의 활동이 필요합니다.')
   }
-
-  if (input.phase === 'teacher-contribution') {
-    if (intros.length !== 1 || contributions.length > 0 || responses.length > 0 || syntheses.length > 0) {
-      fail('request.discussion', '교사 1차 발언에는 총괄 AI의 활동 제시 한 턴만 필요합니다.')
+  if (isWork) {
+    if (input.discussion.some(turn => !['orchestrator-intro', 'teacher-contribution'].includes(turn.phase))) {
+      fail('request.discussion', '작업 단계에 후속 검토 턴을 섞을 수 없습니다.')
     }
+    if (steps.slice(stepIndex + 1).some(step => matching('orchestrator-intro', step.id).length)) {
+      fail('request.discussion', '미래 작업 단계의 대화를 포함할 수 없습니다.')
+    }
+    const expectedIntros = input.phase === 'teacher-contribution' ? 1 : 0
+    if (matching('orchestrator-intro', stepId).length !== expectedIntros || matching('teacher-contribution', stepId).length) {
+      fail('request.discussion', '현재 작업은 AI 제시 후 동료의 현재 답변을 보지 않고 개별 활동해야 합니다.')
+    }
+    return
   }
+  const responses = matching('teacher-response')
   if (input.phase === 'teacher-response') {
-    const invalidContributions = expectedIds.filter((id) => countFor(contributions, id) !== 1)
-    if (intros.length !== 1 || invalidContributions.length > 0 || responses.length > 0 || syntheses.length > 0) {
-      fail(
-        'request.discussion',
-        `모든 교사의 1차 발언이 정확히 한 번씩 필요합니다. 확인 필요: ${invalidContributions.join(', ') || '대화 순서'}`,
-      )
+    if (responses.length || input.discussion.some(turn => ['orchestrator-synthesis', 'orchestrator-revision', 'teacher-review'].includes(turn.phase))) {
+      fail('request.discussion', '동료 응답은 작업 완료 시점의 동일한 대화를 검토합니다.')
     }
+    return
   }
+  if (!allTeachers(responses)) fail('request.discussion', '모든 교사의 동료 응답이 필요합니다.')
   if (input.phase === 'orchestrator-synthesis') {
-    const invalidContributions = expectedIds.filter((id) => countFor(contributions, id) !== 1)
-    const invalidResponses = expectedIds.filter((id) => countFor(responses, id) !== 1)
-    if (
-      intros.length !== 1
-      || invalidContributions.length > 0
-      || invalidResponses.length > 0
-      || syntheses.length > 0
-    ) {
-      fail(
-        'request.discussion',
-        `종합 전 모든 교사 턴이 정확히 한 번씩 필요합니다. 1차 확인: ${invalidContributions.join(', ') || '없음'}, 2차 확인: ${invalidResponses.join(', ') || '없음'}`,
-      )
+    if (input.discussion.some(turn => ['orchestrator-synthesis', 'orchestrator-revision', 'teacher-review'].includes(turn.phase))) {
+      fail('request.discussion', '초안은 한 번 생성하고 이후에는 수정 단계를 사용합니다.')
+    }
+    return
+  }
+  if (!input.candidateArtifact) fail('request.candidateArtifact', '검토할 산출물 원문이 필요합니다.')
+  const round = input.round ?? 0
+  if (input.phase === 'teacher-review') {
+    const proposalPhase = round === 0 ? 'orchestrator-synthesis' : 'orchestrator-revision'
+    if (!input.discussion.some(turn => turn.phase === proposalPhase && (turn.round ?? 0) === round)) {
+      fail('request.discussion', '검토 회차와 일치하는 산출물 제안이 필요합니다.')
+    }
+    if (matching('teacher-review').some(turn => (turn.round ?? 0) === round)) {
+      fail('request.discussion', '교사 검토는 다른 교사의 같은 회차 결정 없이 독립 수행합니다.')
+    }
+  } else {
+    const reviews = matching('teacher-review').filter(turn => (turn.round ?? 0) === round - 1)
+    if (round < 1 || !allTeachers(reviews) || !reviews.some(turn => turn.review?.decision === 'revise')) {
+      fail('request.discussion', '수정은 이전 회차 모든 교사의 검토와 실제 수정 요청이 있어야 합니다.')
     }
   }
+}
+
+function parseReview(value: unknown, path: string): DemoTeacherReview {
+  const record = asRecord(value, path)
+  assertExactKeys(record, ['decision', 'reason'], ['blockers', 'suggestions'], path)
+  if (record.decision !== 'approve' && record.decision !== 'revise') fail(path, 'approve 또는 revise 결정이 필요합니다.')
+  let blockers: DemoReviewBlocker[] | undefined
+  if (record.blockers !== undefined) {
+    if (!Array.isArray(record.blockers) || record.blockers.length > 5) fail(path, '필수 수정은 최대 5개 배열이어야 합니다.')
+    blockers = record.blockers.map((item, index) => {
+      const at = `${path}.blockers[${index}]`, block = asRecord(item, at)
+      assertExactKeys(block, ['criterionId', 'sectionKey', 'evidence', 'issue', 'change'], [], at)
+      return {
+        criterionId: asString(block.criterionId, `${at}.criterionId`, { max: 40 }),
+        sectionKey: asString(block.sectionKey, `${at}.sectionKey`, { max: 100 }),
+        evidence: asString(block.evidence, `${at}.evidence`, { min: 5, max: 300 }),
+        issue: asString(block.issue, `${at}.issue`, { min: 5, max: 600 }),
+        change: asString(block.change, `${at}.change`, { min: 5, max: 1000 }),
+      }
+    })
+  }
+  return { decision: record.decision, reason: asString(record.reason, `${path}.reason`, { min: 5, max: 2000 }),
+    ...(blockers === undefined ? {} : { blockers }),
+    ...(record.suggestions === undefined ? {} : { suggestions: asStringArray(record.suggestions, `${path}.suggestions`, { maxItems: 5, itemMax: 600 }) }),
+  }
+}
+
+function parseReferences(value: unknown, path: string): DemoTurnReference[] {
+  if (!Array.isArray(value) || value.length > 5) fail(path, '인용은 최대 5개 배열이어야 합니다.')
+  return value.map((item, index) => {
+    const ref = asRecord(item, `${path}[${index}]`)
+    assertExactKeys(ref, ['speakerId', 'quote'], [], path)
+    return { speakerId: asString(ref.speakerId, `${path}.speakerId`, { max: 64 }), quote: asString(ref.quote, `${path}.quote`, { min: 5, max: 300 }) }
+  })
+}
+
+function parseCandidate(value: unknown, code: ActivityCode): DemoGeneratedArtifact {
+  const record = asRecord(value, 'request.candidateArtifact')
+  assertExactKeys(record, ['activityCode', 'title', 'content'], [], 'request.candidateArtifact')
+  if (record.activityCode !== code) fail('request.candidateArtifact', '현재 활동 산출물이어야 합니다.')
+  const content = asRecord(record.content, 'request.candidateArtifact.content')
+  assertExactKeys(content, getDemoArtifactSectionKeys(code), [], 'request.candidateArtifact.content')
+  return { activityCode: code, title: asString(record.title, 'request.candidateArtifact.title', { max: 200 }),
+    content: Object.fromEntries(Object.entries(content).map(([key, value]) => [key, asString(value, `candidate.${key}`, { max: 12_000 })])) }
 }
 
 export function parseDemoTurnInput(value: unknown): DemoTurnInput {
   const record = asRecord(value, 'request')
   assertExactKeys(record, [
     'phase', 'activityCode', 'config', 'priorArtifacts', 'discussion',
-  ], ['teacherId'], 'request')
+  ], ['teacherId', 'stepId', 'round', 'candidateArtifact', 'validationFeedback'], 'request')
   const phase = asTurnPhase(record.phase, 'request.phase')
   const config = parseDemoEngineConfig(record.config, 'request.config')
   const teacherId = record.teacherId === undefined
@@ -535,7 +648,7 @@ export function parseDemoTurnInput(value: unknown): DemoTurnInput {
       max: 64,
       pattern: /^[a-z0-9][a-z0-9-]*$/,
     })
-  const isTeacherPhase = phase === 'teacher-contribution' || phase === 'teacher-response'
+  const isTeacherPhase = phase.startsWith('teacher-')
   if (isTeacherPhase && !teacherId) {
     fail('request.teacherId', `${phase} 단계에는 teacherId가 필요합니다.`)
   }
@@ -552,6 +665,10 @@ export function parseDemoTurnInput(value: unknown): DemoTurnInput {
     priorArtifacts: parsePriorArtifacts(record.priorArtifacts),
     discussion: parseDiscussion(record.discussion, config),
     ...(teacherId ? { teacherId } : {}),
+    ...(record.stepId === undefined ? {} : { stepId: asString(record.stepId, 'request.stepId', { max: 80 }) }),
+    ...(record.round === undefined ? {} : { round: asInteger(record.round, 'request.round', 0, 2) }),
+    ...(record.candidateArtifact === undefined ? {} : { candidateArtifact: parseCandidate(record.candidateArtifact, asActivityCode(record.activityCode, 'request.activityCode')) }),
+    ...(record.validationFeedback === undefined ? {} : { validationFeedback: asStringArray(record.validationFeedback, 'request.validationFeedback', { maxItems: 30, itemMax: 1000 }) }),
   }
   assertTurnPrerequisites(input)
   return input
@@ -573,13 +690,41 @@ export function parseDemoTurnModelOutput(
   input: DemoTurnInput,
 ): DemoTurnResponse {
   const record = asRecord(value, 'response')
-  assertExactKeys(record, ['content', 'artifact', 'stageReport'], [], 'response')
+  assertExactKeys(record, ['content', 'artifact', 'stageReport'], ['review', 'references'], 'response')
   const content = asString(record.content, 'response.content', { max: 12_000 })
-  const isSynthesis = input.phase === 'orchestrator-synthesis'
+  const exposedField = content.match(/\[(?:ARTIFACT_UPDATE|ACTIVITY_ADVANCE|ACTIVITY_RETURN|ACTION_CARD)\b|\b(?:artifact|stageReport|candidateArtifact|currentWorkStep|priorArtifacts|visibleDiscussion|completionCriteria|reviewCriteria|review\.decision|references)/i)
+  if (exposedField) {
+    fail('response.content', `대화 본문에 내부 필드명 '${exposedField[0]}'을 쓰지 마세요. 해당 단어를 '산출물/단계 보고서/현재 과제' 등의 한국어로 바꾸고 null이나 JSON 필드를 설명하는 문장은 삭제하세요. JSON 최상위 키는 스키마대로 유지합니다.`)
+  }
+  const isSynthesis = input.phase === 'orchestrator-synthesis' || input.phase === 'orchestrator-revision'
+  const references = parseReferences(record.references ?? [], 'response.references')
+  for (const ref of references) {
+    if (!input.discussion.some(turn => turn.speakerId === ref.speakerId && turn.content.includes(ref.quote))) {
+      fail('response.references', '인용문과 발화자는 실제 입력 대화에 정확히 일치해야 합니다.')
+    }
+  }
+  const review = input.phase === 'teacher-review' ? parseReview(record.review, 'response.review') : undefined
+  if (review) {
+    if (!review.blockers || !review.suggestions) fail('response.review', '필수 수정 blockers와 후속 제안 suggestions를 각각 배열로 구분하세요.')
+    if ((review.decision === 'revise') !== (review.blockers.length > 0)) fail('response.review', '필수 수정이 있을 때만 revise이며, approve에는 필수 수정이 없어야 합니다. 후속 제안은 승인 조건이 아닙니다.')
+    const criteria = new Set(getDemoReviewCriteria(input.activityCode).map(item => item.id))
+    for (const blocker of review.blockers) {
+      if (!criteria.has(blocker.criterionId)) fail('response.review', '필수 수정은 제공된 고정 검토 기준의 ID에 연결해야 합니다. 새 기준을 추가하지 마세요.')
+      const section = input.candidateArtifact?.content[blocker.sectionKey]
+      if (!section || !section.includes(blocker.evidence)) fail('response.review', '필수 수정의 증거는 지정한 초안 섹션에서 5~300자를 원문 그대로 인용하세요. 누락 문제는 그 내용을 포함해야 할 인접 문구를 인용하세요.')
+    }
+  }
+  if (input.phase !== 'teacher-review' && record.review != null) fail('response.review', '교사 검토 이외 턴은 null이어야 합니다.')
 
   if (!isSynthesis) {
     if (record.artifact !== null || record.stageReport !== null) {
       fail('response', '종합 이외 턴의 artifact와 stageReport는 null이어야 합니다.')
+    }
+    if (input.phase === 'orchestrator-intro' && input.activityCode === 'T-1-2' && input.stepId === 'priorities-veto') {
+      const principleLines = content.split('\n').filter(line => /(?:하려면|되려면).+해야/.test(line) && /^\s*\|?\s*(?:\*\*)?[1-5](?:[.)\s|]|\*\*)/.test(line))
+      if (principleLines.length < 3 || principleLines.length > 5) {
+        fail('response.content', 'T-2 원칙 조정에서는 교사가 판단할 3~5개의 번호 있는 조건-행동 원칙 초안을 지금 제시해야 합니다. 번호 목록 또는 표에 각 원칙을 한 줄씩 쓰세요. 표를 나중에 제공하겠다는 약속으로 대체하지 마세요.')
+      }
     }
     if (input.phase === 'orchestrator-intro' && input.activityCode === 'T-1-1') {
       const missingInvitees = input.config.personas
@@ -596,8 +741,11 @@ export function parseDemoTurnModelOutput(
       if (!peerNames.some((name) => content.includes(name))) {
         fail('response.content', '2차 발언에는 다른 교사 에이전트의 이름을 직접 언급해야 합니다.')
       }
+      if (!references.some(ref => ref.speakerId !== input.teacherId && input.config.personas.some(p => p.id === ref.speakerId))) {
+        fail('response.references', '실제 동료 교사의 발언을 최소 1개 정확히 인용해야 합니다.')
+      }
     }
-    return { content }
+    return { content, ...(review ? { review } : {}), ...(references.length ? { references } : {}) }
   }
 
   if (record.artifact === null) fail('response.artifact', '종합 턴에는 산출물이 필요합니다.')
@@ -637,6 +785,17 @@ export function parseDemoTurnModelOutput(
     )
   }
 
+  const artifactContent = Object.fromEntries(sections.map(section => [section.key, section.value]))
+  if (input.activityCode === 'E-1-1') {
+    const observedIds = new Set(JSON.stringify(input.priorArtifacts['DI-2-1']?.content ?? {}).match(/SIM-\d+/g) ?? [])
+    const citedIds = Object.values(artifactContent).join('\n').match(/SIM-\d+/g) ?? []
+    if (!citedIds.length || citedIds.some(id => !observedIds.has(id))) {
+      fail('response.artifact', `성찰은 DI의 실제 저장 장면 ID만 인용해야 합니다. 사용 가능: ${[...observedIds].join(', ') || '없음'}`)
+    }
+  }
+  const issues = validateDemoArtifactContent(input.activityCode, artifactContent, input.config.personas.map(persona => persona.displayName))
+  if (issues.length) throw new DemoValidationError(issues)
+
   let stageReport: DemoGeneratedStageReport | undefined
   if (isStageBoundary(input.activityCode)) {
     if (record.stageReport === null) fail('response.stageReport', '단계 마지막 활동에는 단계 보고서가 필요합니다.')
@@ -659,9 +818,10 @@ export function parseDemoTurnModelOutput(
     artifact: {
       activityCode: input.activityCode,
       title: asString(artifactRecord.title, 'response.artifact.title', { max: 200 }),
-      content: Object.fromEntries(sections.map((section) => [section.key, section.value])),
+      content: artifactContent,
     },
     ...(stageReport ? { stageReport } : {}),
+    ...(references.length ? { references } : {}),
   }
 }
 

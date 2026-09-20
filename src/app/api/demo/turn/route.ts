@@ -13,7 +13,7 @@ import {
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
-const MAX_REQUEST_BYTES = 180_000
+const MAX_REQUEST_BYTES = 700_000
 
 function jsonResponse(body: unknown, status = 200): Response {
   return Response.json(body, {
@@ -67,10 +67,13 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const client = new OpenAI({ apiKey })
+    const client = new OpenAI({ apiKey, maxRetries: 0 })
     const model = process.env.OPENAI_DEMO_MODEL || process.env.OPENAI_CHAT_MODEL || 'gpt-4o'
     const isGpt5 = model.startsWith('gpt-5')
-    const maxTokens = input.phase === 'orchestrator-synthesis' ? 8_192 : 2_048
+    const isArtifactTurn = input.phase === 'orchestrator-synthesis' || input.phase === 'orchestrator-revision'
+    const isReviewTurn = input.phase === 'teacher-review'
+    const isIntroTurn = input.phase === 'orchestrator-intro'
+    const maxTokens = isArtifactTurn ? (input.activityCode === 'DI-1-1' ? 16_384 : 10_240) : isReviewTurn && isGpt5 ? 8_192 : 4_096
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await client.chat.completions.create({
       model,
@@ -87,9 +90,10 @@ export async function POST(request: Request): Promise<Response> {
         },
       },
       ...(isGpt5
-        ? { max_completion_tokens: maxTokens, reasoning_effort: 'minimal' }
+        // The live T-2 regression produced contradictory blockers with minimal reasoning.
+        ? { max_completion_tokens: maxTokens, reasoning_effort: isReviewTurn ? 'medium' : isArtifactTurn || isIntroTurn ? 'low' : 'minimal' }
         : { max_tokens: maxTokens, temperature: 0.5 }),
-    }, { timeout: 110_000 })
+    }, { timeout: 110_000, signal: request.signal })
     const responseText = response.choices[0]?.message?.content?.trim() ?? ''
 
     if (!responseText) {
@@ -124,12 +128,15 @@ export async function POST(request: Request): Promise<Response> {
           activityCode: input.activityCode,
           issues: error.issues,
         })
-        return jsonResponse({ error: '에이전트 응답이 검증을 통과하지 못했습니다. 다시 시도해 주세요.' }, 502)
+        return jsonResponse({ error: `에이전트 응답 검증 실패: ${error.issues.join(' ')}`, issues: error.issues }, 502)
       }
       throw error
     }
   } catch (error) {
-    console.error('[demo/turn] OpenAI request failed', error)
+    console.error('[demo/turn] OpenAI request failed', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      status: error instanceof OpenAI.APIError ? error.status : undefined,
+    })
     return jsonResponse({ error: '에이전트 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.' }, 502)
   }
 }

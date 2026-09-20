@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useProjectStore } from '@/store/project'
-import { STAGES, type StageCode, type StageStatus, type ActivityCode } from '@/types'
+import { STAGES, ACTIVITY_META, type StageCode, type StageStatus, type ActivityCode } from '@/types'
 import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
 import { cn } from '@/lib/utils'
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
@@ -204,7 +204,7 @@ function StageChip({
 
   if (isCurrent) {
     return (
-      <button onClick={onClick} className="flex flex-col items-center gap-1 select-none group">
+      <button data-stage-code={stage.code} onClick={onClick} className="flex flex-col items-center gap-1 select-none group">
         <div className={cn('relative', NODE_SLOT)}>
           <div
             className={cn('relative w-14 h-14 flex items-center justify-center overflow-hidden', color.bg)}
@@ -227,7 +227,7 @@ function StageChip({
 
   if (isDone) {
     return (
-      <button onClick={onClick} title="클릭해서 이 단계로 돌아가기"
+      <button data-stage-code={stage.code} onClick={onClick} title="클릭해서 이 단계로 돌아가기"
         className="flex flex-col items-center gap-1 select-none hover:scale-105 active:scale-95 transition-transform duration-150"
       >
         <div className={cn('relative', NODE_SLOT)}>
@@ -248,7 +248,7 @@ function StageChip({
   }
 
   return (
-    <button onClick={onClick}
+    <button data-stage-code={stage.code} onClick={onClick}
       className="flex flex-col items-center gap-1 select-none opacity-60 hover:opacity-85 active:scale-95 transition-all duration-200"
     >
       <div className={cn('relative', NODE_SLOT)}>
@@ -306,7 +306,7 @@ function summarizeA23(content: Record<string, unknown> | undefined): string | nu
 }
 
 export function StageBar() {
-  const { project, activityStatus, setPendingStageMove, userProfile } = useProjectStore()
+  const { project, activityStatus, setPendingStageMove, userProfile, viewingActivity, setViewingActivity } = useProjectStore()
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const eNodeRef = useRef<HTMLDivElement | null>(null)
@@ -322,8 +322,8 @@ export function StageBar() {
 
   if (!project) return null
 
-  const isHost = project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid
-  const currentStage = project.currentStage
+  const isHost = !project.demoRun && (project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid)
+  const currentStage = project.demoRun ? ACTIVITY_META[viewingActivity].stage : project.currentStage
 
   function getStageStatus(stageCode: StageCode): StageStatus {
     const info = STAGES.find(s => s.code === stageCode)!
@@ -353,7 +353,7 @@ export function StageBar() {
   // 이동 후 현재 주기 유지/새 주기 시작은 모달에서 선택한다.
   const eStage = STAGES.find(stage => stage.code === 'E')!
   const eStageDone = eStage.activities.every(activity => isEffectivelyDone(activity))
-  const canOpenCycleMove = currentStage === 'E' && eStageDone
+  const canOpenCycleMove = !project.demoRun && currentStage === 'E' && eStageDone
   const showCycleArrow = canOpenCycleMove
 
   return (
@@ -379,7 +379,10 @@ export function StageBar() {
                 isCurrent={stage.code === currentStage}
                 completedCount={getCompletedCount(stage.code)}
                 totalCount={stage.activities.length}
-                onClick={() => { if (isHost && stage.code !== currentStage) setPendingStageMove(stage.code) }}
+                onClick={() => {
+                  if (project.demoRun) setViewingActivity(stage.activities[0])
+                  else if (isHost && stage.code !== currentStage) setPendingStageMove(stage.code)
+                }}
                 showGuardrail={stage.code === 'Ds' && hasGuardrail}
                 guardrailSummary={guardrailSummary}
               />

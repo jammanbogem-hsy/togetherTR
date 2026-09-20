@@ -20,7 +20,7 @@ import {
   getCrossLinks,
   getSubjectName,
   loadGraph,
-  CurriculumStandard,
+  type CurriculumStandard,
 } from './graphReader'
 import { searchJsonStandards } from './curriculumJsonReader'
 import { filterContentItemsByGrade, isUsableCoreIdea } from './curriculumFilters'

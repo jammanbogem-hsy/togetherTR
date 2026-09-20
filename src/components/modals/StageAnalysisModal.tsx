@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
 import remarkGfm from 'remark-gfm'
@@ -23,7 +23,15 @@ const STAGE_LABELS: Record<string, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
 }
 
-export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => void; isHost?: boolean }) {
+export function StageAnalysisModal({
+  onClose,
+  onReady,
+  isHost = true,
+}: {
+  onClose: () => void
+  onReady?: () => void
+  isHost?: boolean
+}) {
   const { project, setPendingStageMove, userProfile } = useProjectStore()
   const callerUid = userProfile?.uid
   const [markdown, setMarkdown] = useState('')
@@ -32,12 +40,95 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
+  const restoreFocusFrameRef = useRef<number | null>(null)
+  const onCloseRef = useRef(onClose)
+  const onReadyRef = useRef(onReady)
   // 마운트 시점의 project 스냅샷 — Firestore 업데이트로 인한 재실행 방지
   const projectSnapshotRef = useRef(project)
   const hasStartedRef = useRef(false)
 
   const stage = project?.currentStage ?? 'T'
   const color = STAGE_COLOR[stage]
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+    onReadyRef.current = onReady
+  }, [onClose, onReady])
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    // Strict Mode의 setup→cleanup→setup 사이에 예약된 복원을 취소하고 최초 호출 요소를 보존한다.
+    if (restoreFocusFrameRef.current !== null) {
+      window.cancelAnimationFrame(restoreFocusFrameRef.current)
+      restoreFocusFrameRef.current = null
+    }
+    if (!restoreFocusRef.current) {
+      const activeElement = document.activeElement
+      restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null
+    }
+
+    const getFocusableElements = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    )).filter(element => element.offsetParent !== null && element.getAttribute('aria-hidden') !== 'true')
+
+    dialog.focus({ preventScroll: true })
+    onReadyRef.current?.()
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const focusableElements = getFocusableElements()
+      if (focusableElements.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = focusableElements[0]
+      const last = focusableElements[focusableElements.length - 1]
+      const focused = document.activeElement
+
+      if (!dialog.contains(focused)) {
+        event.preventDefault()
+        const focusTarget = event.shiftKey ? last : first
+        focusTarget.focus()
+      } else if (event.shiftKey && (focused === first || focused === dialog)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && focused === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+
+      const elementToRestore = restoreFocusRef.current
+      restoreFocusFrameRef.current = window.requestAnimationFrame(() => {
+        restoreFocusFrameRef.current = null
+        const canRestoreOriginalFocus = !!elementToRestore
+          && elementToRestore !== document.body
+          && elementToRestore.isConnected
+          && elementToRestore.offsetParent !== null
+          && !elementToRestore.closest('[aria-hidden="true"]')
+        if (canRestoreOriginalFocus) elementToRestore.focus({ preventScroll: true })
+        if (restoreFocusRef.current === elementToRestore) restoreFocusRef.current = null
+      })
+    }
+  }, [])
 
   // 다음 단계 코드 계산
   const nextStage = (() => {
@@ -316,7 +407,13 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
       style={{ backgroundColor: 'rgba(32,33,36,0.6)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stage-analysis-title"
+        tabIndex={-1}
+        className="bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden"
         style={{ width: '780px', maxWidth: '96vw', height: '86vh' }}
       >
         {/* 헤더 */}
@@ -328,7 +425,7 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
             </div>
             <div>
               <p className={cn('text-[11px] font-bold uppercase tracking-widest', color.text)}>{stage} 단계</p>
-              <h2 className="text-[16px] font-extrabold text-[#202124]">
+              <h2 id="stage-analysis-title" className="text-[16px] font-extrabold text-[#202124]">
                 {STAGE_LABELS[stage]} 단계 분석 보고서
               </h2>
             </div>
@@ -361,7 +458,7 @@ export function StageAnalysisModal({ onClose, isHost = true }: { onClose: () => 
                 </button>
               </>
             )}
-            <button onClick={onClose}
+            <button type="button" onClick={onClose} aria-label="단계 분석 보고서 닫기"
               className="w-8 h-8 rounded-full flex items-center justify-center text-[#9AA0A6] hover:bg-[#F1F3F4] hover:text-[#202124] transition-colors ml-1"
             >
               <X size={18} weight="bold" />

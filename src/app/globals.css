@@ -773,3 +773,45 @@ details.faq-item[open] > summary .material-symbols-rounded { transform: rotate(1
     radial-gradient(farthest-side at 100% 50%, rgba(55,53,47,0.10), transparent) right / 14px 100% no-repeat;
   background-attachment: local, local, scroll, scroll;
 }
+
+/* Free-text blocks read as document paragraphs, not rounded form fields.
+   Keep native textarea editing/IME, auto-height, and existing drag handles.
+   This deliberately excludes table cells and form inputs. */
+textarea[data-block-input],
+textarea[data-block-input]:hover,
+textarea[data-block-input]:focus {
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  resize: none;
+  caret-color: #0b57d0;
+}
+
+/* Retain the semantic quote marker without surrounding the text in a box. */
+textarea[data-block-input].italic {
+  border-left-color: #dadce0 !important;
+}
+
+/* The document caret and a subtle placeholder replace the form-field ring. */
+textarea[data-block-input]::placeholder {
+  color: #9b9a97;
+}
+
+.collaborative-document-body { min-height: 240px; outline: none; padding: 12px 4px; font-size: 18px; line-height: 1.8; color: #202124; }
+.collaborative-document-body p { margin: 0 0 0.6em; }
+.collaborative-document-body ul { list-style: disc; padding-left: 1.5em; }
+.collaborative-document-body ol { list-style: decimal; padding-left: 1.5em; }
+.document-selection-menu, .document-slash-menu { background: white; border: 1px solid #dadce0; border-radius: 12px; padding: 6px; box-shadow: 0 6px 24px #0002; z-index: 80; }
+.document-selection-menu [role=toolbar] { display: flex; flex-wrap: wrap; max-width: 440px; }
+.document-slash-menu { position: sticky; bottom: 0; max-width: 320px; }
+.document-tool[aria-pressed=true], .document-tool[data-active=true] { background: #e8f0fe; color: #174ea6; }
+.collaborative-document-body h1 { font-size: 32px; font-weight: 600; }
+.collaborative-document-body h2 { font-size: 24px; font-weight: 600; }
+.collaborative-document-body blockquote { border-left: 3px solid #dadce0; padding-left: 16px; color: #5f6368; }
+.collaborative-document-body table { border-collapse: collapse; width: 100%; }
+.collaborative-document-body td, .collaborative-document-body th { border: 1px solid #dadce0; padding: 8px; }
+.document-tool { border-radius: 16px; padding: 6px 10px; font-size: 13px; color: #5f6368; }
+.document-tool:hover { background: #e8f0fe; color: #0b57d0; }
+.document-tool:focus-visible { outline: 2px solid #0b57d0; outline-offset: 2px; }
