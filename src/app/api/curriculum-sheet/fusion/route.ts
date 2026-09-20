@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
 import OpenAI from 'openai'
 
 export const runtime = 'nodejs'
@@ -196,13 +197,13 @@ JSON:
   ]
 }`
 
+    const model = resolveOpenAIModel('utility')
+    const startedAt = performance.now()
     const completion = await client.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 2500,
-      temperature: 0.7,
-      response_format: { type: 'json_object' },
+      ...generationParams(model, { maxTokens: 2500, temperature: 0.7, effort: 'light', json: true }),
       messages: [{ role: 'user', content: prompt }],
-    })
+    } as never)
+    logLlmUsage('curriculum-sheet/fusion', model, completion.usage, performance.now() - startedAt)
 
     const result = JSON.parse(completion.choices[0]?.message?.content ?? '{}') as { fusionIdeas?: FusionIdea[] }
 

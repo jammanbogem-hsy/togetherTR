@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { buildSystemPrompt } from '@/lib/prompts/system'
+import { generationParams, logLlmUsage, resolveOpenAIModel, chatEffort } from '@/lib/llm/openai'
 import { buildCurriculumContext } from '@/lib/curriculum/contextInject'
 import { buildA21DirectAnswer } from '@/lib/curriculum/a21DirectAnswer'
 import { buildProjectMaterialContext, searchProjectMaterials } from '@/lib/rag/search'
@@ -159,37 +160,40 @@ ${sections.join('\n\n')}
 
         try {
           // 채팅 모델은 env(OPENAI_CHAT_MODEL)로 토글 — 미설정 시 gpt-4o(기존 동작 유지).
-          // gpt-5 계열은 API가 달라 분기: max_tokens 미지원→max_completion_tokens,
-          // 기본 reasoning은 스트리밍 첫 토큰 지연↑·추론토큰 TPM 소모라 'minimal'로 고정. (temperature는 원래 미사용)
-          const chatModel = process.env.OPENAI_CHAT_MODEL || 'gpt-4o'
-          const isGpt5 = chatModel.startsWith('gpt-5')
+          // [2026-09-20] 모델 계열별 파라미터는 lib/llm/openai 가 만든다: gpt-5-mini 는 reasoning 'minimal',
+          // gpt-5.6-luna 는 'low'('minimal' 은 400). temperature 는 원래 미사용.
+          const chatModel = resolveOpenAIModel('chat')
+          const effort = chatEffort(chatModel)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const createParams: any = {
-            model: chatModel,
+            ...generationParams(chatModel, { maxTokens: 8192, effort: effort ? { raw: effort } : undefined, stream: true, cacheKey: `tcid-chat-${activityCode}` }),
             messages: [
               { role: 'system', content: systemPrompt },
               ...messages,
             ],
-            stream: true,
-            ...(isGpt5
-              ? { max_completion_tokens: 8192, reasoning_effort: 'minimal' }
-              : { max_tokens: 8192 }),
           }
+          const startedAt = performance.now()
+          let finalUsage: unknown = null
+          let finishReasonSeen: string | null = null
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const response: any = await client.chat.completions.create(createParams)
 
           for await (const chunk of response) {
-            const text = chunk.choices[0]?.delta?.content ?? ''
+            const text = chunk.choices?.[0]?.delta?.content ?? ''
             if (text) {
               const data = JSON.stringify({ type: 'text', text })
               controller.enqueue(encoder.encode(`data: ${data}\n\n`))
             }
-            const finishReason = chunk.choices[0]?.finish_reason
+            const finishReason = chunk.choices?.[0]?.finish_reason
             if (finishReason) {
+              finishReasonSeen = finishReason
               // 'stop' 뿐 아니라 'length' (max_tokens 초과) 등도 완료 처리
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
             }
+            // stream_options.include_usage: 마지막 청크에 usage 만 실려 온다(choices 비어 있음)
+            if (chunk.usage) finalUsage = chunk.usage
           }
+          logLlmUsage('chat/stream', chatModel, finalUsage as never, performance.now() - startedAt, { activity: activityCode, effort: effort ?? null, finish: finishReasonSeen })
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Unknown error'
           controller.enqueue(

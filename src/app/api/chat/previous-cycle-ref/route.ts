@@ -19,6 +19,7 @@
  */
 
 import OpenAI from 'openai'
+import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
 import { getAdminDb } from '@/lib/firebase/admin'
 import { buildPreviousCycleRefPrompt, type PreviousCycleRefInput } from '@/lib/prompts/previousCycleRef'
 import type { ActivityCode, Project } from '@/types'
@@ -132,28 +133,32 @@ export async function POST(request: Request) {
         }
 
         try {
-          const response = await client.chat.completions.create({
-            model: 'gpt-4o',
-            max_tokens: 512,  // 2~3문장 카드용 — 짧게 제한
-            temperature: 0.5, // 교차 감수 권고: 카드용 분산 축소 (synthesize 0.3보다는 약간 여유, 톤 안정 우선)
+          const model = resolveOpenAIModel('utility')
+          const startedAt = performance.now()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const response: any = await client.chat.completions.create({
+            // 2~3문장 카드용 — 짧게 제한. temperature 0.5 는 gpt-4o 계열에만 적용(추론 모델은 거부)
+            ...generationParams(model, { maxTokens: 512, temperature: 0.5, effort: 'light', stream: true }),
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: triggerUserMessage },
             ],
-            stream: true,
-          })
+          } as never)
 
+          let usage: unknown = null
           for await (const chunk of response) {
-            const text = chunk.choices[0]?.delta?.content ?? ''
+            const text = chunk.choices?.[0]?.delta?.content ?? ''
             if (text) {
               flushSafe(text, false)
             }
-            const finishReason = chunk.choices[0]?.finish_reason
+            const finishReason = chunk.choices?.[0]?.finish_reason
             if (finishReason) {
               flushSafe('', true) // 잔여 pending까지 strip 후 flush
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
             }
+            if (chunk.usage) usage = chunk.usage
           }
+          logLlmUsage('chat/previous-cycle-ref', model, usage as never, performance.now() - startedAt)
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Unknown error'
           controller.enqueue(

@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { reasoningEffortFor } from '@/lib/llm/openai'
 import {
   assertExpandedConfigMatchesSetup,
   isDemoValidationError,
@@ -88,7 +89,7 @@ export async function POST(request: Request): Promise<Response> {
         },
       },
       ...(isGpt5
-        ? { max_completion_tokens: 6_000, reasoning_effort: 'minimal' }
+        ? { max_completion_tokens: 6_000, reasoning_effort: reasoningEffortFor(model, 'fastest') as never }
         : { max_tokens: 6_000, temperature: 0.4 }),
     }, { timeout: 110_000 })
     const responseText = response.choices[0]?.message?.content?.trim() ?? ''

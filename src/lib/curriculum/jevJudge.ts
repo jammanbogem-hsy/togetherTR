@@ -31,6 +31,8 @@ export function modeFor(confidence: number): JudgeMode {
 
 /** 판정 사용 여부: 키가 있고 CURRICULUM_JUDGE 로 임베딩을 강제하지 않았을 때. */
 export function jevJudgeEnabled(): boolean {
+  // JEV_JUDGE=off 는 모든 라우트의 Jev 판정을 끄는 전역 스위치(폴백 경로로 즉시 복귀).
+  if (process.env.JEV_JUDGE === 'off') return false
   if (process.env.CURRICULUM_JUDGE === 'embedding') return false
   return isJevConfigured()
 }

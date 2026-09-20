@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -79,25 +80,29 @@ ${openaiScenario ?? '(생성 중 또는 없음)'}
         }, KEEP_ALIVE_INTERVAL)
 
         try {
-          const response = await client.chat.completions.create({
-            model: 'gpt-4o',
-            max_tokens: 2048,
+          const model = resolveOpenAIModel('utility')
+          const startedAt = performance.now()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const response: any = await client.chat.completions.create({
+            ...generationParams(model, { maxTokens: 2048, effort: 'light', stream: true }),
             messages: [
               { role: 'system', content: systemPrompt },
               ...messages,
             ],
-            stream: true,
-          })
+          } as never)
 
+          let usage: unknown = null
           for await (const chunk of response) {
-            const text = chunk.choices[0]?.delta?.content ?? ''
+            const text = chunk.choices?.[0]?.delta?.content ?? ''
             if (text) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text })}\n\n`))
             }
-            if (chunk.choices[0]?.finish_reason === 'stop') {
+            if (chunk.choices?.[0]?.finish_reason) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
             }
+            if (chunk.usage) usage = chunk.usage
           }
+          logLlmUsage('problem-situation/chat', model, usage as never, performance.now() - startedAt)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`))

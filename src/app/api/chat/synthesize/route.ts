@@ -28,6 +28,7 @@
  */
 
 import OpenAI from 'openai'
+import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
 import { ACTIVITY_META, type ActivityCode } from '@/types'
 import {
   SYNTHESIZE_SYSTEM_PROMPT,
@@ -212,28 +213,31 @@ export async function POST(request: Request) {
       }
 
       try {
-        const response = await client.chat.completions.create({
-          model: 'gpt-4o',
-          temperature: 0.3,
-          max_tokens: 800,
+        const model = resolveOpenAIModel('utility')
+        const startedAt = performance.now()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response: any = await client.chat.completions.create({
+          ...generationParams(model, { maxTokens: 800, temperature: 0.3, effort: 'light', stream: true }),
           messages: [
             { role: 'system', content: SYNTHESIZE_SYSTEM_PROMPT },
             { role: 'user', content: userMessage },
           ],
-          stream: true,
-        })
+        } as never)
 
+        let usage: unknown = null
         for await (const chunk of response) {
-          const text = chunk.choices[0]?.delta?.content ?? ''
+          const text = chunk.choices?.[0]?.delta?.content ?? ''
           if (text) {
             buffer += text
             flushLines(false)
           }
-          if (chunk.choices[0]?.finish_reason) {
+          if (chunk.choices?.[0]?.finish_reason) {
             flushLines(true)
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
           }
+          if (chunk.usage) usage = chunk.usage
         }
+        logLlmUsage('chat/synthesize', model, usage as never, performance.now() - startedAt)
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error'
         console.error('[synthesize] LLM error:', err)

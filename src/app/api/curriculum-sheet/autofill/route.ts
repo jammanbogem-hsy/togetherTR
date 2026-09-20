@@ -10,6 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
 import OpenAI from 'openai'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
 import { isElementaryGradeGroup, loadContentSystemsForGradeGroup, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
@@ -980,13 +981,13 @@ ${rows.map(r => `[${r.subject}${r.isCenter ? ' ★중심' : ''}]
 
 JSON: { "descriptions": { "교과명": "설명" } }`
 
+    const model = resolveOpenAIModel('utility')
+    const startedAt = performance.now()
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 1500,
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
+      ...generationParams(model, { maxTokens: 1500, temperature: 0.3, effort: 'light', json: true }),
       messages: [{ role: 'user', content: prompt }],
-    })
+    } as never)
+    logLlmUsage('curriculum-sheet/autofill:describe', model, completion.usage, performance.now() - startedAt, { subjects: rows.length })
     return (JSON.parse(completion.choices[0]?.message?.content ?? '{}')).descriptions ?? {}
   } catch (error) {
     console.error('[autofill GPT desc]', error)

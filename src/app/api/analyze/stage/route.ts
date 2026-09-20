@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
 import type { StageCode } from '@/types'
 import { STAGES, ACTIVITY_META } from '@/types'
 
@@ -297,22 +298,27 @@ export async function POST(request: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const response = await client.chat.completions.create({
-            model: 'gpt-4o',
-            max_tokens: 8000,
+          const model = resolveOpenAIModel('utility')
+          const startedAt = performance.now()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const response: any = await client.chat.completions.create({
+            ...generationParams(model, { maxTokens: 8000, effort: 'balanced', stream: true }),
             messages: [{ role: 'user', content: prompt }],
-            stream: true,
-          })
+          } as never)
 
+          let usage: unknown = null
           for await (const chunk of response) {
-            const text = chunk.choices[0]?.delta?.content ?? ''
+            const text = chunk.choices?.[0]?.delta?.content ?? ''
             if (text) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text })}\n\n`))
             }
-            if (chunk.choices[0]?.finish_reason === 'stop') {
+            // 'length'(출력 한도) 등으로 끝나도 done 을 보내 UI 가 멈추지 않게 한다
+            if (chunk.choices?.[0]?.finish_reason) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
             }
+            if (chunk.usage) usage = chunk.usage
           }
+          logLlmUsage('analyze/stage', model, usage as never, performance.now() - startedAt)
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown error'
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`))

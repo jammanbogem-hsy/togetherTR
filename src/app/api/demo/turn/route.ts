@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { reasoningEffortFor } from '@/lib/llm/openai'
 import {
   isDemoValidationError,
   parseDemoTurnInput,
@@ -91,7 +92,7 @@ export async function POST(request: Request): Promise<Response> {
       },
       ...(isGpt5
         // The live T-2 regression produced contradictory blockers with minimal reasoning.
-        ? { max_completion_tokens: maxTokens, reasoning_effort: isReviewTurn ? 'medium' : isArtifactTurn || isIntroTurn ? 'low' : 'minimal' }
+        ? { max_completion_tokens: maxTokens, reasoning_effort: reasoningEffortFor(model, isReviewTurn ? 'balanced' : isArtifactTurn || isIntroTurn ? 'light' : 'fastest') as never }
         : { max_tokens: maxTokens, temperature: 0.5 }),
     }, { timeout: 110_000, signal: request.signal })
     const responseText = response.choices[0]?.message?.content?.trim() ?? ''
