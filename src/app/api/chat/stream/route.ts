@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { buildSystemPrompt } from '@/lib/prompts/system'
 import { generationParams, logLlmUsage, resolveOpenAIModel, chatEffort } from '@/lib/llm/openai'
+import { judgeProgress } from '@/lib/chat/progressJudge'
 import { buildCurriculumContext } from '@/lib/curriculum/contextInject'
 import { buildA21DirectAnswer } from '@/lib/curriculum/a21DirectAnswer'
 import { buildProjectMaterialContext, searchProjectMaterials } from '@/lib/rag/search'
@@ -175,12 +176,14 @@ ${sections.join('\n\n')}
           const startedAt = performance.now()
           let finalUsage: unknown = null
           let finishReasonSeen: string | null = null
+          let fullText = ''
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const response: any = await client.chat.completions.create(createParams)
 
           for await (const chunk of response) {
             const text = chunk.choices?.[0]?.delta?.content ?? ''
             if (text) {
+              fullText += text
               const data = JSON.stringify({ type: 'text', text })
               controller.enqueue(encoder.encode(`data: ${data}\n\n`))
             }
@@ -194,6 +197,11 @@ ${sections.join('\n\n')}
             if (chunk.usage) finalUsage = chunk.usage
           }
           logLlmUsage('chat/stream', chatModel, finalUsage as never, performance.now() - startedAt, { activity: activityCode, effort: effort ?? null, finish: finishReasonSeen })
+          // [2026-09-20] 진행 판정(로그 전용): 'done' 을 보낸 뒤라 UI 지연 없음. 3초 상한.
+          const lastUser = [...messages].reverse().find(m => m.role === 'user')
+          if (lastUser && fullText) {
+            await judgeProgress({ activityCode, userMessage: String(lastUser.content ?? ''), aiText: fullText })
+          }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Unknown error'
           controller.enqueue(

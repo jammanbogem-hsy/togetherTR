@@ -384,3 +384,39 @@ export async function verifyTeachingNotes(
   })
   return { byCandidateId, elapsedMs: response.elapsedMs }
 }
+
+// ── 주제 ↔ 성취기준 관련도 (검색 재순위) ────────────────────────────────────
+
+export interface TopicRelevanceJudgement {
+  /** 성취기준 id → 관련도 0~1 (Score 0~3 을 3으로 나눔) */
+  scores: Record<string, number>
+  elapsedMs: number
+}
+
+/**
+ * 온톨로지 검색 상위 후보를 주제 기준으로 재순위한다(reranking). 임베딩·규칙 점수는 후보를
+ * 좁히는 데 쓰고, 최종 순서는 Jev 관련도와 절반씩 섞는다(코드가 결정).
+ */
+export async function judgeTopicRelevance(
+  theme: string,
+  gradeGroup: string | undefined,
+  standards: Array<{ id: string; code: string; subject: string; text: string }>,
+): Promise<TopicRelevanceJudgement | null> {
+  if (standards.length === 0) return null
+  const questions: Record<string, JevQuestion> = {}
+  standards.forEach((std, index) => {
+    questions[`r${index}`] = {
+      type: 'score',
+      instructions: `다음 성취기준이 이 수업 주제의 중심 성취기준이 될 만큼 관련 있는가? ${std.code} (${std.subject}) ${std.text}`,
+      criteria: RELEVANCE_LEVELS,
+    }
+  })
+  const response = await callJev({ 학년군: gradeGroup ?? '', 수업주제: theme }, questions)
+  if (!response) return null
+  const scores: Record<string, number> = {}
+  standards.forEach((std, index) => {
+    const answer = response.answers[`r${index}`] as JevScoreAnswer | undefined
+    if (answer?.type === 'score') scores[std.id] = Math.max(0, Math.min(1, answer.score / 3))
+  })
+  return { scores, elapsedMs: response.elapsedMs }
+}

@@ -20,6 +20,7 @@ import OpenAI from 'openai'
 import fs from 'fs'
 import path from 'path'
 import { loadGraph, type CurriculumStandard, type CrossSubjectLink } from './graphReader'
+import { jevJudgeEnabled, judgeTopicRelevance } from '@/lib/curriculum/jevJudge'
 import type { GraphRelationType } from '@/lib/knowledge-graph/domain'
 import { DEFAULT_GRAPH_RELATION_TYPE, normalizeGraphRelationType } from '@/lib/knowledge-graph/domain'
 
@@ -746,11 +747,30 @@ export async function searchOntology(
   )
 
   // Stage 5: 상위 20개 CenterScore 기준
-  const top20 = filtered2
+  let top20 = filtered2
     .sort((a, b) => b.cs - a.cs)
     .slice(0, 20)
 
   if (top20.length === 0) return null
+
+  // [2026-09-20] Stage 5b: Jev 재순위 — 임베딩·규칙 점수는 후보를 좁히는 데만 쓰고,
+  // 중심 성취기준 선택 순서는 Jev 관련도(0~1)와 정규화한 cs 를 절반씩 섞어 정한다.
+  // 실측에서 임베딩 순위는 교과별 기본값 쏠림이 있었다(docs/eval-2026-09-20). 실패 시 그대로.
+  if (jevJudgeEnabled()) {
+    const subjectName = new Map(graph.subjects.map(s => [s.id, s.name_ko]))
+    // 창체(sub_extra) 노드는 핵심아이디어가 없어 그래프 중심으로 부적합 — 재순위 대상에서 제외(원래 순위 유지).
+    const judgeable = top20.filter(s => s.std.subject_id !== 'sub_extra')
+    const judgement = await judgeTopicRelevance(theme, gradeGroup, judgeable.map(s => ({
+      id: s.std.id, code: s.std.code, subject: subjectName.get(s.std.subject_id) ?? s.std.subject_id, text: s.std.text,
+    })))
+    if (judgement) {
+      const maxCs = Math.max(...top20.map(s => s.cs)) || 1
+      top20 = top20
+        .map(s => ({ ...s, cs: 0.5 * (s.cs / maxCs) + 0.5 * (judgement.scores[s.std.id] ?? (s.std.subject_id === 'sub_extra' ? 0 : 0)) }))
+        .sort((a, b) => b.cs - a.cs)
+      console.log('[ontology-search] jev rerank', JSON.stringify({ theme: theme.slice(0, 40), ms: judgement.elapsedMs, top: top20.slice(0, 3).map(s => s.std.code) }))
+    }
+  }
 
   // ── 중심 성취기준 결정 ───────────────────────────────────────────────────
   let centerEntry = top20[0]
