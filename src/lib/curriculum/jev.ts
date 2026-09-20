@@ -71,9 +71,12 @@ export function isJevConfigured(): boolean {
 }
 
 export class JevError extends Error {
-  constructor(message: string, readonly status?: number) {
+  readonly status?: number
+  // 매개변수 프로퍼티(constructor(readonly x))는 Node strip-only TS 로더가 못 읽어 스크립트에서 import 불가 → 풀어서 씀.
+  constructor(message: string, status?: number) {
     super(message)
     this.name = 'JevError'
+    this.status = status
   }
 }
 

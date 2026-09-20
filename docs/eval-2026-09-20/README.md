@@ -1,0 +1,26 @@
+# gpt-5-mini vs GPT-5.6 Luna 성능 비교 (2026-09-20)
+
+실행: `node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs scripts/eval/luna-run.mjs <출력폴더>` → `scripts/eval/luna-judge.mjs <출력폴더>` (Fable 블라인드 심사) → `scripts/eval/luna-describe.mjs`.
+실제 `buildSystemPrompt` 로 만든 채팅 프롬프트(입력 16~19k 토큰) 6개 시나리오 × 3구성.
+
+## 채팅 퍼실리테이션 (Fable 블라인드 심사, 25점 만점 = 절차 준수·간결성·정확성·협력 촉진·신호 태그)
+| 구성 | 평균 | 1위 | 절차 | 간결 | 정확 | 협력 | 신호 | 총 지연 | 출력 토큰 |
+|---|---|---|---|---|---|---|---|---|---|
+| gpt-5-mini (reasoning minimal, 현재) | 12.8 | 1/6 | 2.2 | 1.7 | 3.0 | 2.7 | 3.3 | 2.1~7.8 s | 148~963 |
+| gpt-5.6-luna (none) | 20.7 | 2/6 | 4.2 | 4.0 | 4.3 | 3.8 | 4.3 | 1.6~3.2 s | 115~179 |
+| gpt-5.6-luna (low) | **21.5** | 3/6 | 4.2 | 4.5 | 4.7 | 3.8 | 4.3 | 2.3~6.4 s | 148~579 (추론 54~130) |
+
+객관 지표: gpt-5-mini 는 매 턴 활동 소개·표 반복(1,000~1,600자), 성취기준 코드 환각 1건([6사03-04]), 내부 활동 코드 노출 3건. Luna 는 환각 0, 내부 코드 노출 1건(low, Ds-1-1), `[TEAM_DISCUSSION_READY]`·`[HELP_CARD]` 신호를 상황에 맞게 사용.
+
+## 수업내용 설명 작성 (gpt-4o 라우트 대체 검토, Jev Noul 범위 검증)
+| 모델 | Jev 범위내 (실과/수학/도덕) | 지연 | 호출 비용 |
+|---|---|---|---|
+| gpt-4o (현재) | 0.87 / 0.88 / 0.84 | 2.0 s | $0.00346 |
+| gpt-5-mini (minimal) | 0.89 / 0.90 / 0.86 | 2.4 s | $0.00058 |
+| gpt-5.6-luna (low) | **0.92 / 0.91 / 0.90** | 2.7 s | $0.00046 |
+
+## 부작용 (실측)
+- Luna 는 `reasoning_effort: 'minimal'` 을 400 으로 거부 (지원값 none/low/medium/high/xhigh/max) — `/api/chat/stream` 은 'minimal' 하드코딩이라 env 만 바꾸면 채팅 전체 오류.
+- 프롬프트 캐시는 모델별 — 전환 직후 캐시 적중 0 에서 다시 시작(비용 소폭 증가, 일시적).
+- Luna(none) 은 매우 짧게 답해 안내가 빈약할 수 있음 → low 권장.
+- 자료가 없으면 성취기준 추천을 거절함(정확성↑, 대신 교육과정 컨텍스트 주입/Jev 판정이 있어야 답을 냄).

@@ -1,0 +1,703 @@
+[
+  {
+    "scenario": "T11-keywords",
+    "label": "T-1 비전 키워드 수집 중",
+    "model": "luna(none)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "none"
+    },
+    "ttft": 1227,
+    "total": 2220,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18596,
+      "completion_tokens": 115,
+      "total_tokens": 18711,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 18593,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "김교사께서 **협력·탐구·지역사회·실천**을 중요하게 여기시는군요. 학생들이 지역의 물 문제를 함께 탐구하고, 알아낸 내용을 실제 행동으로 이어가길 바라는 방향으로 느껴집니다. 😊\n\n> **지금 할 일**  \n> 이 수업을 통해 학생들이 어떤 모습으로 성장하길 바라시는지 한 장면으로 표현해 주세요. 예: “우리 동네 물 문제를 조사하고 해결 방법을 함께 실천하는 모습”",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 208,
+    "systemChars": 32580,
+    "historyText": "AI: 먼저 각자 우리 팀 수업의 비전을 떠올리게 하는 키워드를 3~5개씩 적어 주세요.\n김교사: 저는 협력, 탐구, 지역사회, 실천 네 가지요."
+  },
+  {
+    "scenario": "T11-keywords",
+    "label": "T-1 비전 키워드 수집 중",
+    "model": "luna(low)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "low"
+    },
+    "ttft": 1991,
+    "total": 2990,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18596,
+      "completion_tokens": 184,
+      "total_tokens": 18780,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 18593,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 74,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "김교사께서는 **협력·탐구·지역사회·실천**을 통해 학생들이 지역 문제를 함께 살피고 행동으로 이어가길 바라시는 것으로 느껴집니다. 😊\n\n> **지금 할 일**\n> 이교사께서는 학생들이 이 수업에서 경험하거나 성장하길 바라는 키워드 3~5개를 말씀해 주세요.\n\n[TEAM_DISCUSSION_READY: 각 교사의 개인 비전 키워드 공유]",
+    "signals": [
+      "[TEAM_DISCUSSION_READY: 각 교사의 개인 비전 키워드 공유]"
+    ],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 190,
+    "systemChars": 32580,
+    "historyText": "AI: 먼저 각자 우리 팀 수업의 비전을 떠올리게 하는 키워드를 3~5개씩 적어 주세요.\n김교사: 저는 협력, 탐구, 지역사회, 실천 네 가지요."
+  },
+  {
+    "scenario": "T11-confirm",
+    "label": "T-1 비전 확정 → 다음 활동 신호",
+    "model": "gpt-5-mini(minimal, 현재)",
+    "modelId": "gpt-5-mini",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "minimal"
+    },
+    "ttft": 1149,
+    "total": 2091,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18723,
+      "completion_tokens": 148,
+      "total_tokens": 18871,
+      "prompt_tokens_details": {
+        "cached_tokens": 18432,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "1. 새 내용 반영 (1줄)\n- 김교사·이교사·박교사 모두 **1안: \"지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다\"**로 합의하셨습니다.\n\n2. 다음 질문\n> **지금 할 일**\n> 팀 비전을 산출물로 저장하겠습니다. 그대로 저장할까요, 아니면 조금 다듬고 저장할까요?\n\n**A안:** \"이 내용으로 산출물에 저장하겠습니다\"  \n**B안:** \"조금 더 다듬고 저장하겠습니다\"\n\n(미발언 팀원 없음 — 바로 선택해 주세요)",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 242,
+    "systemChars": 32580,
+    "historyText": "AI: 세 분의 키워드를 묶어 비전 후보 3안을 제안합니다. 1안: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다 / 2안: 질문으로 시작해 행동으로 끝나는 배움 / 3안: 서로의 다름을 힘으로 바꾸는 협력 학습. 어느 안이 가장 마음에 드시나요?\n김교사: 1안이 좋아요. 이교사: 저도 1안이요. 박교사: 1안으로 확정하고 다음으로 가죠."
+  },
+  {
+    "scenario": "T11-confirm",
+    "label": "T-1 비전 확정 → 다음 활동 신호",
+    "model": "luna(none)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "none"
+    },
+    "ttft": 708,
+    "total": 1630,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18723,
+      "completion_tokens": 161,
+      "total_tokens": 18884,
+      "prompt_tokens_details": {
+        "cached_tokens": 18533,
+        "cache_write_tokens": 187,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "확정하신 비전은 **“지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다”**입니다.\n\n> 📋 **저장할 내용**\n> - 개인 비전: 김교사(사회), 이교사(과학), 박교사(국어)의 키워드와 정교화 문장\n> - 팀 공통 비전: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다\n> - 핵심 키워드: 지역사회, 문제 탐구, 협력, 실천, 시민성\n\n**A안:** \"이 비전으로 산출물에 바로 저장하겠습니다\"  \n**B안:** \"조금 더 다듬고 저장하겠습니다\"",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 258,
+    "systemChars": 32580,
+    "historyText": "AI: 세 분의 키워드를 묶어 비전 후보 3안을 제안합니다. 1안: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다 / 2안: 질문으로 시작해 행동으로 끝나는 배움 / 3안: 서로의 다름을 힘으로 바꾸는 협력 학습. 어느 안이 가장 마음에 드시나요?\n김교사: 1안이 좋아요. 이교사: 저도 1안이요. 박교사: 1안으로 확정하고 다음으로 가죠."
+  },
+  {
+    "scenario": "T11-keywords",
+    "label": "T-1 비전 키워드 수집 중",
+    "model": "gpt-5-mini(minimal, 현재)",
+    "modelId": "gpt-5-mini",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "minimal"
+    },
+    "ttft": 1550,
+    "total": 5639,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18596,
+      "completion_tokens": 629,
+      "total_tokens": 19225,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "안녕하세요! 저는 협력적 수업 설계를 도와드리는 AI 공동설계자입니다. 😊\n\n오늘은 [팀준비 > T-1: 공동 비전 설정] 활동을 함께 진행합니다.\n협력적 수업설계는 단순한 업무 분담이 아닌 공동의 교육 가치를 실현하는 과정입니다. 먼저 각자의 참여 배경과 기대를 간단히 나누고, 다음 4단계로 공통 비전을 완성해 나갈게요!\n\n①참여 목적·학생 맥락 공유 → ②개인 키워드 외현화 → ③키워드 묶기·팀 비전 후보 조정 → ④합의 비전 명문화 및 기록\n\n지금은 🟦 스텝 1: 개인 비전 구상·공유 단계입니다.\n\n| 항목 | 내용 |\n|-----|-----|\n| 개념 | 팀원 각자가 이 수업을 통해 실현하고 싶은 교육 목적을 자유롭게 나누는 단계입니다. 서로 다른 관점이 모여 팀 비전의 재료가 됩니다. |\n| 방법/절차 | ① 각자 머릿속에 떠오르는 키워드 3~5개 또는 비유·은유를 자유롭게 공유 → ② AI가 각 키워드를 비전 문장으로 정교화 |\n| 유의사항 | 딱딱한 교육 용어보다 편안한 비유나 은유도 환영합니다! 정답을 맞추는 게 아니라 각자의 교육 철학을 나누는 과정입니다. |\n| 예시 | \"협력\", \"실생활 연계\", \"문제 해결\", \"나침반 같은 수업\", \"학생 주도\" |\n\n> 💡 협력 UP (#활성화): 첫 모임은 보통 '무엇을 가르칠지'부터 정하며 시작되곤 합니다. 순서를 바꿔 '올해 우리 학생들에게 꼭 전하고 싶은 가치'를 먼저 이야기해 보세요.\n\n💬 핵심 질문: 선생님께서 이 수업을 통해 학생들이 경험하거나 성장하길 바라는 것을 키워드나 비유로 표현한다면 무엇인가요? 완성된 문장이 아니어도 좋으니 3~5개 자유롭게 말씀해 주세요! 🙌\n\n감사합니다, 김교사님! 말씀하신 키워드 4개를 받았습니다:\n- 협력\n- 탐구\n- 지역사회\n- 실천\n\n새 내용 반영: 김교사님 키워드를 바탕으로 1문장 개인 비전 초안을 만들어 드릴게요. 다른 선생님들도 키워드를 공유해 주시면 각자에 대해 동일 방식으로 정교화하겠습니다.\n\n> 지금 할 일\n> 다음 선생님(이교사 또는 박교사)께서 키워드 3~5개를 공유해 주세요.",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 1027,
+    "systemChars": 32580,
+    "historyText": "AI: 먼저 각자 우리 팀 수업의 비전을 떠올리게 하는 키워드를 3~5개씩 적어 주세요.\n김교사: 저는 협력, 탐구, 지역사회, 실천 네 가지요."
+  },
+  {
+    "scenario": "T11-confirm",
+    "label": "T-1 비전 확정 → 다음 활동 신호",
+    "model": "luna(low)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "low"
+    },
+    "ttft": 1497,
+    "total": 2265,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18723,
+      "completion_tokens": 148,
+      "total_tokens": 18871,
+      "prompt_tokens_details": {
+        "cached_tokens": 18533,
+        "cache_write_tokens": 187,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 54,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "세 분 모두 **1안**에 동의하셨습니다.\n\n> 📋 **저장할 내용**\n> - 팀 공통 비전: “지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다”\n\n**A안:** \"이 비전으로 산출물에 바로 저장하겠습니다\"  \n**B안:** \"문장을 조금 더 다듬고 저장하겠습니다\"",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 152,
+    "systemChars": 32580,
+    "historyText": "AI: 세 분의 키워드를 묶어 비전 후보 3안을 제안합니다. 1안: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다 / 2안: 질문으로 시작해 행동으로 끝나는 배움 / 3안: 서로의 다름을 힘으로 바꾸는 협력 학습. 어느 안이 가장 마음에 드시나요?\n김교사: 1안이 좋아요. 이교사: 저도 1안이요. 박교사: 1안으로 확정하고 다음으로 가죠."
+  },
+  {
+    "scenario": "T22-rules",
+    "label": "T-4 팀 규칙 초안 요청",
+    "model": "luna(none)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "none"
+    },
+    "ttft": 2020,
+    "total": 3167,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 17850,
+      "completion_tokens": 138,
+      "total_tokens": 17988,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 17847,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "김교사 선생님, 팀원들의 실제 의견을 먼저 모은 뒤 초안을 만들도록 되어 있어요. 아직 이교사·박교사 선생님의 경험과 제약을 듣지 못했으므로, 먼저 두 분의 의견을 받아 보겠습니다.\n\n> **지금 할 일**\n> 이교사·박교사 선생님, 협업에서 불편했던 점이나 꼭 지키고 싶은 약속을 한 가지씩 말씀해 주세요. 예: “응답 기한”, “업무 분담”, “의견 충돌 해결”\n\n[TEAM_DISCUSSION_READY: 팀 규칙 후보 자유 제안]",
+    "signals": [
+      "[TEAM_DISCUSSION_READY: 팀 규칙 후보 자유 제안]"
+    ],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 244,
+    "systemChars": 31290,
+    "historyText": "김교사: 우리 팀 규칙 5개 정도 초안을 만들어 주세요. 갈등 상황 규칙도 하나 넣어 주세요. (팀 규칙 활동 시작 직후, 다른 교사 발언 아직 없음)"
+  },
+  {
+    "scenario": "T22-rules",
+    "label": "T-4 팀 규칙 초안 요청",
+    "model": "luna(low)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "low"
+    },
+    "ttft": 2382,
+    "total": 5664,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 17850,
+      "completion_tokens": 465,
+      "total_tokens": 18315,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 17847,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 122,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "김교사께서 요청하신 **팀 규칙 초안**입니다. 최종 합의 전 후보로만 살펴봐 주세요.\n\n- **[소통] 의견을 끝까지 듣고, 반대할 때는 이유와 대안을 함께 말하기**: 서로의 생각을 안전하게 나누기 위해 지킵니다.\n- **[소통] 회의 후 결정 사항과 각자 할 일을 공동 문서에 기록하기**: 마감 혼선과 역할 중복을 줄이기 위해 지킵니다.\n- **[시간] 회의 시작과 종료 시간을 지키고, 참석이 어려우면 가능한 한 미리 알리기**: 모든 구성원의 시간을 배려하기 위해 지킵니다.\n- **[태도] 업무가 몰리거나 일정이 빠듯할 때 현재 상황을 솔직히 공유하고 도움을 요청하기**: 한 사람에게 부담이 쏠리지 않게 하기 위해 지킵니다.\n- **[조율] 의견이 부딪치면 공동 비전과 학생에게 도움이 되는지를 기준으로 비교하고, 필요하면 숙고 후 다시 결정하기**: 갈등을 개인 간 대립이 아닌 설계 기준에 따른 협의로 풀기 위해 지킵니다.\n\n김교사께서 말씀하신 초안에 대해 **이교사, 박교사**께서는 꼭 지키고 싶은 규칙이나 수정할 규칙이 무엇인지 의견을 나눠 주세요.\n\n[TEAM_DISCUSSION_READY: 팀 규칙 초안 검토 및 갈등 상황 규칙 보완]",
+    "signals": [
+      "[TEAM_DISCUSSION_READY: 팀 규칙 초안 검토 및 갈등 상황 규칙 보완]"
+    ],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 595,
+    "systemChars": 31290,
+    "historyText": "김교사: 우리 팀 규칙 5개 정도 초안을 만들어 주세요. 갈등 상황 규칙도 하나 넣어 주세요. (팀 규칙 활동 시작 직후, 다른 교사 발언 아직 없음)"
+  },
+  {
+    "scenario": "T22-rules",
+    "label": "T-4 팀 규칙 초안 요청",
+    "model": "gpt-5-mini(minimal, 현재)",
+    "modelId": "gpt-5-mini",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "minimal"
+    },
+    "ttft": 936,
+    "total": 7830,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 17850,
+      "completion_tokens": 963,
+      "total_tokens": 18813,
+      "prompt_tokens_details": {
+        "cached_tokens": 13056,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "안녕하세요! 저는 협력적 수업 설계를 도와드리는 AI 공동설계자입니다. 😊\n오늘 함께 진행할 T-2: 팀 규칙 결정은 총 6스텝으로 구성됩니다: ①개인 의견 수집 → ②규칙 후보 군집화 → ③현실성 점검(누가 가장 힘든지 확인) → ④최종 규칙 확정 → ⑤AI 기록(저장 제안) → ⑥다음 활동 준비. 이 과정을 통해 교사팀의 실천 가능한 팀 규칙(갈등 상황 규칙 포함)을 한 문장씩 정리해 저장할 거예요!\n지금은 🟦 스텝 3: 교사팀·AI가 규칙 현실성 따져보기 단계입니다.\n\n| 항목 | 내용 |\n|-----|-----|\n| 개념 | 설계 과정에서 팀이 지킬 구체적 행동 규칙을 5개 내외로 정하고, 갈등 상황 처리 규칙을 반드시 포함한다 |\n| 방법/절차 | ①초안 제시 → ②김교사(사회), 이교사(과학), 박교사(국어)께서 각 규칙별로 지키기 어려운 사람(혹은 상황)을 알려주세요 → ③조정안 제시 후 최종 확정 |\n| 유의사항 | 갈등 규칙은 처벌 대신 실천 가능성·배려 중심으로 구성; 부정 표현 대신 긍정 행동 문장 사용 |\n| 예시 | 예: \"회의 5분 전 모이기\" / \"의견 충돌 시 하루 숙고 후 재논의\" |\n\n💬 핵심 질문: \"각 규칙 초안에 대해 누가 가장 지키기 어려울 것 같은지 각자 한 명씩만 알려주세요.\"\n\n아래는 요청하신 초안 5개(필수: 갈등 규칙 포함)입니다. 각 항목에 간단한 배경(왜 필요한지)을 덧붙였습니다.\n\n- **[소통] 회의 전 핵심 공유**: 회의 24시간 전까지 논의할 안건과 필요한 자료의 핵심 요약을 공동 문서에 올려 사전 숙지를 돕습니다.  \n  이유: 준비 부족으로 논의가 중복되거나 시간이 낭비되는 것을 막습니다.\n\n- **[시간] 회의 시간 엄수**: 회의는 최대 60분으로 하고, 시작 5분 전까지 온라인(또는 교무실)에서 접속해 자리를 준비합니다.  \n  이유: 긴 회의로 인한 피로를 줄이고 교육 현장 일정과 충돌을 최소화합니다.\n\n- **[태도] Yes, and 화법 사용**: 동료 의견에 먼저 수용의 표현을 한 뒤 자신의 관점을 더해 말합니다(예: \"그 점 좋네요, 거기에 …\").  \n  이유: 반박 대신 확장하는 화법은 대화 흐름을 부드럽게 하고 의견 가로막힘을 줄입니다.\n\n- **[조율] 갈등 시 숙고의 시간 두기 (필수 규칙)**: 핵심 이견이 생기면 즉시 결론 내지 않고, 각자 하루 숙고 후 다음 회의에서 재논의합니다.  \n  이유: 즉각적 감정적 결정을 피하고 더 성숙한 합의를 도출하기 위함이며, 실천 가능성을 위해 '하루' 대신 팀이 합의한 기간으로 조정 가능함.\n\n- **[태도] 업무 부담 배려 표기**: 각자 맡은 역할과 주간 여건(예: 출장·가정 사정)을 간단히 공유해 역할 분담 시 해당 상황을 배려합니다.  \n  이유: 특정 교사에게 부담이 쏠리지 않도록 사전에 조정하기 위함입니다.\n\n> ⚠️ 미결: 각 규칙별로 \"누가 가장 지키기 어려운 사람인지\"와 규칙 문구(예: '하루'를 '48시간'으로 바꿀지 등)를 확인해야 합니다.\n\n이 분류가 맞나요? 추가하거나 수정할 내용이 있으면 말씀해 주세요.\n\n> **지금 할 일**\n> 각 규칙 옆에 '가장 지키기 어려운 사람(김교사/이교사/박교사 중 한 명 또는 없음)'을 한 명씩 적어 주세요.",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 1593,
+    "systemChars": 31290,
+    "historyText": "김교사: 우리 팀 규칙 5개 정도 초안을 만들어 주세요. 갈등 상황 규칙도 하나 넣어 주세요. (팀 규칙 활동 시작 직후, 다른 교사 발언 아직 없음)"
+  },
+  {
+    "scenario": "A12-topic",
+    "label": "A-2 주제 제안 평가",
+    "model": "luna(none)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "none"
+    },
+    "ttft": 858,
+    "total": 2759,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18223,
+      "completion_tokens": 179,
+      "total_tokens": 18402,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 18220,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "이교사께서는 **지역 하천의 물 문제**를 학생들이 함께 탐구하고 실천할 수 있는 주제로 제안하셨네요. 이는 지역사회와 연결되고, 문제를 조사한 뒤 해결을 실천한다는 점에서 팀 비전 **“지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다”**와 이어질 가능성이 있어 보입니다.\n\n다만 최종 판단 전, 이교사께서 바라시는 학생들의 구체적인 활동을 먼저 드러내면 다른 교과와의 연결점도 살펴볼 수 있습니다.\n\n> **지금 할 일**\n> 이 주제로 학생들이 무엇을 탐구하고, 어떤 실천 결과물을 만들기를 바라시나요?\n\n[TEAM_DISCUSSION_READY: 주제 후보의 학생 활동과 비전 부합성 논의]",
+    "signals": [
+      "[TEAM_DISCUSSION_READY: 주제 후보의 학생 활동과 비전 부합성 논의]"
+    ],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 337,
+    "systemChars": 32119,
+    "historyText": "(확정된 팀 비전: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다)\n이교사: 우리 지역 하천 물 문제를 주제로 하면 어떨까요? 비전이랑 잘 맞는지 봐 주세요."
+  },
+  {
+    "scenario": "A12-topic",
+    "label": "A-2 주제 제안 평가",
+    "model": "luna(low)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "low"
+    },
+    "ttft": 2287,
+    "total": 3402,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18223,
+      "completion_tokens": 247,
+      "total_tokens": 18470,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 18220,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 107,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "이교사께서 제안하신 **‘우리 지역 하천 물 문제’**는 비전의 **지역사회·탐구·실천**과 연결될 가능성이 큰 후보로 보입니다. 아직 최종 판단은 하지 않고, 학생들이 이 주제로 무엇을 탐구하고 실천할지 의도를 먼저 살펴보겠습니다.\n\n> **지금 할 일**\n> 이 주제로 학생들이 하천의 어떤 문제를 알아보고, 어떤 변화를 직접 만들어 보길 바라시나요?\n\n[TEAM_DISCUSSION_READY: 우리 지역 하천 물 문제 주제의 학생 탐구·실천 방향]",
+    "signals": [
+      "[TEAM_DISCUSSION_READY: 우리 지역 하천 물 문제 주제의 학생 탐구·실천 방향]"
+    ],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 254,
+    "systemChars": 32119,
+    "historyText": "(확정된 팀 비전: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다)\n이교사: 우리 지역 하천 물 문제를 주제로 하면 어떨까요? 비전이랑 잘 맞는지 봐 주세요."
+  },
+  {
+    "scenario": "A12-topic",
+    "label": "A-2 주제 제안 평가",
+    "model": "gpt-5-mini(minimal, 현재)",
+    "modelId": "gpt-5-mini",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "minimal"
+    },
+    "ttft": 916,
+    "total": 7366,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18223,
+      "completion_tokens": 831,
+      "total_tokens": 19054,
+      "prompt_tokens_details": {
+        "cached_tokens": 13056,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "안녕하세요! 저는 협력적 수업 설계를 도와드리는 AI 공동설계자입니다. 😊\n오늘 함께 진행할 A-2(비전 기반 주제 선정)은 총 5스텝으로 구성됩니다: ①주제 유형 안내 및 후보 수집 → ②개별 후보 설명 수집 → ③기준 기반 평가 및 비교 → ④최종 주제 선정 및 근거 정리 → ⑤저장 확인(산출물 저장). 이 과정을 통해 주제 선정 기준표·후보 비교표·최종 주제를 확정할 거예요!\n지금은 🟦 스텝 2: 개인별 주제 후보 나열 및 설명 단계입니다.\n\n| 항목 | 내용 |\n|-----|-----|\n| 개념 | 팀 비전(지역 탐구·실천)에 맞는 프로젝트 주제를 교과 관점에서 후보로 제시하고 그 의도를 설명합니다 |\n| 방법/절차 | ①각 교사가 주제 후보 1~2개 제시 → ②제안 의도(학생이 무엇을 하길 바라는지) 한 문장 설명 → ③다른 교과 선생님은 의도에 대해 질문하거나 확장 아이디어 제안 |\n| 유의사항 | 즉시 점수화·배제하지 않기; 낯선 주제는 의도부터 묻기 (#외현화) |\n| 예시 | \"우리 지역 하천의 물 상태 조사해 문제 원인과 개선안 제안하기\" / \"하천 글쓰기 프로젝트로 주민 인식변화 캠페인 만들기\" |\n\n💬 핵심 질문: \"이 주제가 팀 비전 '지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다'와 어떻게 연결되는지 의도를 한 문장으로 설명해 주세요\"  \n\n감사합니다, 이교사님! 제안하신 \"우리 지역 하천 물 문제\" 주제에서 다음과 같이 이해했습니다:\n- 요약: **지역 하천의 물 문제를 탐구해 원인 분석과 실천 방안을 모색하는 주제**  \n- 의도(제가 읽은 바): 학생들이 지역 문제의 원인을 탐구하고(탐구), 지역 주민과 협력해 실천 방안을 제안·시도함으로써(실천) 시민성 역량을 기르는 목표와 정합합니다.\n\n누락 체크:\n1. 교과 관점별로 어떤 역할(사회·과학·국어)로 참여할지 명시되어 있지 않음  \n2. 주제의 유형(내용요소형/기능요소형/혼합형) 미표시  \n3. 예상 학습 활동(조사·실험·캠페인 등) 구체 문장 없음\n\n다음으로 선택지로 확장해 볼게요. 아래 안 중 어느 방식으로 이 주제를 더 설명·정리해 드릴까요? (각 안에 근거 한 줄 포함)\n\n**A안:** \"이 주제를 혼합형으로 정리하고, 사회·과학·국어 각 교과의 구체 역할과 학생 활동 예시 1개씩을 제시하겠습니다\" — 근거: 팀 비전과 교과 융합을 바로 연결해 통합 목표 수립에 도움됩니다  \n**B안:** \"이 주제를 우선 의도 중심으로만 한 문장으로 다듬고, 교사들 의견을 기다리는 형태로 정리하겠습니다\" — 근거: 빠르게 팀 합의 여부를 확인할 수 있습니다\n\n> 지금 할 일\n> 이교사님이 A안·B안 중 어느 방식을 원하시는지 선택해 주세요\n\n(필요하시면 먼저 \"학생들이 이 주제에서 무엇을 하길 바라냐\"는 성찰형 질문도 드리겠습니다.)",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 1376,
+    "systemChars": 32119,
+    "historyText": "(확정된 팀 비전: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다)\n이교사: 우리 지역 하천 물 문제를 주제로 하면 어떨까요? 비전이랑 잘 맞는지 봐 주세요."
+  },
+  {
+    "scenario": "A21-standards",
+    "label": "A-3 성취기준 추천 (환각 검사)",
+    "model": "luna(none)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "none"
+    },
+    "ttft": 889,
+    "total": 1878,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 16450,
+      "completion_tokens": 126,
+      "total_tokens": 16576,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 16447,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "현재 제공된 자료에는 사회과 성취기준의 **코드와 원문이 포함되어 있지 않아** 임의로 추천할 수 없습니다. 정확한 분석을 위해 사회과 5~6학년군 성취기준 중 관련 후보의 **코드와 원문**을 입력해 주세요.\n\n> **지금 할 일**\n> 사회과 성취기준 후보를 코드와 원문으로 붙여 넣어 주세요. 예: `[코드] 성취기준 원문`\n\n[HELP_CARD: 사회과 성취기준 원문과 코드 확인]",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 217,
+    "systemChars": 29093,
+    "historyText": "(확정 주제: 우리 지역의 물 문제와 해결 방안 / 시스템 프롬프트에 성취기준 원문·코드는 제공되지 않음)\n김교사: 이 주제에 맞는 사회과 5-6학년군 성취기준을 코드와 함께 3개 추천해 주세요."
+  },
+  {
+    "scenario": "A21-standards",
+    "label": "A-3 성취기준 추천 (환각 검사)",
+    "model": "luna(low)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "low"
+    },
+    "ttft": 1612,
+    "total": 2823,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 16450,
+      "completion_tokens": 223,
+      "total_tokens": 16673,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 16447,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 65,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "선정 주제 **「우리 지역의 물 문제와 해결 방안」**과 관련된 사회과 성취기준을 추천하려면, 현재 제공된 교육과정 자료에 **사회과 5~6학년군 성취기준 원문과 코드가 없습니다.** 임의로 코드를 만들거나 다른 자료로 대체하지 않겠습니다.\n\n> **지금 할 일**  \n> 사회과 5~6학년군에서 관련 있다고 보시는 성취기준의 **코드와 원문 3개**를 입력해 주세요. 이를 바탕으로 주제 적합성, 지식·이해, 과정·기능, 가치·태도를 분석하겠습니다.",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 252,
+    "systemChars": 29093,
+    "historyText": "(확정 주제: 우리 지역의 물 문제와 해결 방안 / 시스템 프롬프트에 성취기준 원문·코드는 제공되지 않음)\n김교사: 이 주제에 맞는 사회과 5-6학년군 성취기준을 코드와 함께 3개 추천해 주세요."
+  },
+  {
+    "scenario": "Ds11-eval",
+    "label": "Ds-1 평가 설계 시작",
+    "model": "luna(none)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "none"
+    },
+    "ttft": 781,
+    "total": 2296,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18964,
+      "completion_tokens": 140,
+      "total_tokens": 19104,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 18961,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "박교사님, 아직 하나를 정하기보다 **학생이 무엇을 만들어 보여주면 목표에 도달했다고 볼 수 있을지** 먼저 펼쳐 보겠습니다. 현재 목표인 “지역 물 문제의 원인을 조사하고 해결 방안을 제안하는 캠페인을 실행한다”와 연결해 떠올려 주세요.\n\n예: **지역 물 문제 해결 제안서**, **주민 대상 캠페인 발표**, **물 절약 실천 안내물**\n\n> **지금 할 일**\n> 학생이 조사한 원인과 해결 방안을 어떤 수행과제나 산출물로 보여주면 좋을지 한 가지 제안해 주세요.",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [],
+    "chars": 263,
+    "systemChars": 33455,
+    "historyText": "(확정: 주제=우리 지역의 물 문제와 해결 방안, 통합 목표=지역 물 문제의 원인을 조사하고 해결 방안을 제안하는 캠페인을 실행한다)\n박교사: 평가를 먼저 설계하라고 하셨는데, 우리 주제로 어떤 수행과제를 평가하면 좋을지 방향을 잡아 주세요."
+  },
+  {
+    "scenario": "A21-standards",
+    "label": "A-3 성취기준 추천 (환각 검사)",
+    "model": "gpt-5-mini(minimal, 현재)",
+    "modelId": "gpt-5-mini",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "minimal"
+    },
+    "ttft": 937,
+    "total": 7467,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 16450,
+      "completion_tokens": 821,
+      "total_tokens": 17271,
+      "prompt_tokens_details": {
+        "cached_tokens": 13056,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "안녕하세요! 저는 협력적 수업 설계를 도와드리는 AI 공동설계자입니다. 😊\n오늘 함께 진행할 A-2-1 주제의 상세 내용 분석은 총 4스텝으로 구성됩니다: ①교과별 교육과정 확인 → ②교과의 고유 기여 외현화 → ③공통 요소 조정(팀 토의) → ④재구조화 성취기준 확정·저장. 이 과정을 통해 \"교과별 성취기준 분석표\"와 \"재구조화 성취기준 초안\"을 만듭니다.\n지금은 🟦 스텝 1: 교과별 교육과정 확인 단계입니다.\n\n| 항목 | 내용 |\n|-----|-----|\n| 개념 | 선정된 주제(우리 지역의 물 문제와 해결 방안)에 대해 사회과 교육과정에서 관련되는 성취기준을 확보하여 지식·이해·과정·가치 차원으로 분석하는 단계입니다 |\n| 방법/절차 | ① 김교사(사회) 성취기준 후보 3개 제시 → ② 각 성취기준의 원문(코드 포함)을 팀에 확인 요청 → ③ 팀과 함께 지식·이해·과정·가치로 분류 |\n| 유의사항 | 교육과정 성취기준은 제공된 공식 코드·원문만 사용합니다; 원문이 없다면 코드와 원문을 팀이 입력해 주세요 |\n| 예시 | 예: \"우리 지역의 물 문제를 탐구하여 원인과 해결 방안을 제안한다\" |\n\n💬 핵심 질문: 김교사님, 사회과 관련 성취기준 3개 후보를 아래 안처럼 코드와 원문 한 줄로 확인해 주시겠어요?\n\n아래는 \"우리 지역의 물 문제와 해결 방안\" 주제와 직접 연계 가능한 사회과(초5-6) 성취기준 후보 3개입니다. (원문은 교육과정 표준 문구를 그대로 가져와야 하므로, 코드와 대표적인 한 줄 설명 형태로 제안드립니다. 원문 확인이 필요하면 제공해 주세요.)\n\n- **A안:** \"[6사03-01] 지역사회의 문제와 변화 요인을 다양한 자료로 탐색하고, 지역 문제의 원인을 분석한다\" — 지역 문제 분석 역량과 원인 규명을 다룸 (사회과적 탐구의 기초)\n- **B안:** \"[6사03-04] 지역사회의 자원과 환경을 지속가능하게 관리하기 위한 방안을 탐색하고 토론한다\" — 자원관리와 지속가능성 관련 해결 방안 탐구에 직접 연결\n- **C안:** \"[6사02-02] 다양한 정보와 자료를 바탕으로 공동체의 역할과 책임을 이해하고 참여 방법을 제안한다\" — 공동체 참여·책임과 행동 제안 측면 기여\n\n이 안들 가운데 어떤 조합이나 문구로 원문을 찾아 반영할지 결정해 주세요. 원문(교육과정에 실린 정확한 문장)을 복사해서 올려주시면, 다음에 각 성취기준을 지식·이해 / 과정·기능 / 가치·태도 세 칸으로 분해해 표로 정리해 드리겠습니다.\n\n> 지금 할 일\n> 김교사님께서는 위 세 후보 중 유지할 안(복수 가능)과 원문 제공 여부를 선택해 주세요\n\n**A안:** \"A안·B안·C안 모두 유지하고 각 원문을 팀에 확인하겠습니다\"  \n**B안:** \"B안(자원관리·지속가능성) 중심으로 3개를 확정하겠습니다\"",
+    "signals": [],
+    "codes": [
+      "6사03-01",
+      "6사03-04",
+      "6사02-02"
+    ],
+    "hallucinated": [
+      "6사03-04"
+    ],
+    "internalLeak": [
+      "A-2-1"
+    ],
+    "chars": 1366,
+    "systemChars": 29093,
+    "historyText": "(확정 주제: 우리 지역의 물 문제와 해결 방안 / 시스템 프롬프트에 성취기준 원문·코드는 제공되지 않음)\n김교사: 이 주제에 맞는 사회과 5-6학년군 성취기준을 코드와 함께 3개 추천해 주세요."
+  },
+  {
+    "scenario": "Ds11-eval",
+    "label": "Ds-1 평가 설계 시작",
+    "model": "gpt-5-mini(minimal, 현재)",
+    "modelId": "gpt-5-mini",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "minimal"
+    },
+    "ttft": 937,
+    "total": 5264,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18964,
+      "completion_tokens": 534,
+      "total_tokens": 19498,
+      "prompt_tokens_details": {
+        "cached_tokens": 13056,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "안녕하세요! 저는 협력적 수업 설계를 도와드리는 AI 공동설계자입니다. 😊\n오늘 함께 진행할 Ds-1-1(평가 설계)은 총 4스텝으로 구성됩니다: ①평가 결과 아이디어 발산 → ②최종 평가 내용 결정(필수/보조 구분) → ③과정 평가 아이디어 구안 → ④평가 방법·시점·주체 정리 및 저장 제안. 이 과정을 통해 \"평가 계획(확인 지점·평가 요소·방법·시점·주체)\" 표와 필요 시 루브릭 초안을 완성할 거예요!\n지금은 🟦 스텝 1: 최종 결과 평가 아이디어 나열 단계입니다.\n\n| 항목 | 내용 |\n|-----|-----|\n| 개념 | 결과평가는 수업 말미에 학생이 '무엇을, 어떤 모습으로' 보여주어야 하는지를 규정합니다. |\n| 방법/절차 | ① A-2-2 통합 목표(지역 물 문제 원인 조사·해결 캠페인) 재확인 → ② 가능한 수행과제 아이디어 자유 제안(교과별 관점 포함) → ③ 각 아이디어와 목표의 연결 한 줄 표기 |\n| 유의사항 | • 처음엔 양을 늘리세요(최소 5개 이상) • '협력' 등 추상어 대신 산출물·행동 중심으로 적기 |\n| 예시 | 예: \"지역 물 오염 원인 조사 보고서와 해결 캠페인 포스터 제작\" / 예: \"모둠별 인터뷰 영상과 실행 계획서 제출\" |\n\n💬 핵심 질문: \"학생이 수업 말미에 반드시 보여줘야 할 수행 산출물(또는 발표·행동)은 무엇인가요? 어떤 교과별 관점(사회·과학·국어)으로 보완되면 좋을까요? 우선 부담 적은 아이디어 1개만 적어보세요.\"\n\n> **지금 할 일**\n> 박교사님 한 줄 아이디어 입력(저부담 예: \"포스터\" 또는 표준 예: \"지역 물문제 해결 캠페인 포스터+발표\")\n\n박교사님, 제안해 주시면 바로 요약하고 다른 선택지(예: 더 확장된 수행과제 예시)를 추가로 드리겠습니다.",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [
+      "Ds-1-1",
+      "A-2-2"
+    ],
+    "chars": 866,
+    "systemChars": 33455,
+    "historyText": "(확정: 주제=우리 지역의 물 문제와 해결 방안, 통합 목표=지역 물 문제의 원인을 조사하고 해결 방안을 제안하는 캠페인을 실행한다)\n박교사: 평가를 먼저 설계하라고 하셨는데, 우리 주제로 어떤 수행과제를 평가하면 좋을지 방향을 잡아 주세요."
+  },
+  {
+    "scenario": "Ds11-eval",
+    "label": "Ds-1 평가 설계 시작",
+    "model": "luna(low)",
+    "modelId": "gpt-5.6-luna",
+    "params": {
+      "max_completion_tokens": 8192,
+      "reasoning_effort": "low"
+    },
+    "ttft": 2481,
+    "total": 6430,
+    "finish": "stop",
+    "error": null,
+    "usage": {
+      "prompt_tokens": 18964,
+      "completion_tokens": 579,
+      "total_tokens": 19543,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 18961,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 130,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "text": "안녕하세요! 저는 협력적 수업 설계를 도와드리는 AI 공동설계자입니다. 😊\n\n오늘 함께 진행할 **Ds-1-1: 평가 설계**는 총 3스텝으로 구성됩니다: ①최종 수행과제 발산 → ②결과·과정 평가 요소 조정 → ③평가 방법·시점·주체 구체화. 이 과정을 통해 평가 계획을 완성해 나갈 거예요!\n\n지금은 🟦 **스텝 1: 최종 수행과제 발산** 단계입니다.\n\n| 항목 | 내용 |\n|---|---|\n| 개념 | 통합 목표인 **“지역 물 문제의 원인을 조사하고 해결 방안을 제안하는 캠페인을 실행한다”**를 학생이 실제로 보여 주는 수행을 먼저 떠올립니다. |\n| 방법/절차 | ① 학생이 수업 마지막에 만들거나 발표할 결과를 자유롭게 제안합니다. ② 각 결과가 ‘물 문제 조사’, ‘해결 방안 제안’, ‘캠페인 실행’ 중 어디와 연결되는지 덧붙입니다. |\n| 유의사항 | 현재 제공된 자료에는 성취기준과 학습자 프로필이 아직 없어, 우선 목표에 근거해 아이디어를 모읍니다. ‘열심히 참여함’보다 관찰할 수 있는 결과와 행동으로 말해 주세요. |\n| 예시 | 예: “우리 지역 물 문제를 알리는 포스터를 제작하고 근거를 설명한다.”<br>예: “조사 자료를 바탕으로 물 절약 캠페인을 기획하고 발표한다.” |\n\n**💬 핵심 질문: 학생이 지역 물 문제를 조사하고 해결 방안을 제안했다는 것을 어떤 결과물이나 수행으로 확인하면 좋을까요?**  \n박교사께서 먼저 **한두 가지 아이디어**를 자유롭게 말씀해 주세요. 예를 들면 “캠페인 문구 만들기”처럼 짧게 적어도 됩니다.",
+    "signals": [],
+    "codes": [],
+    "hallucinated": [],
+    "internalLeak": [
+      "Ds-1-1"
+    ],
+    "chars": 770,
+    "systemChars": 33455,
+    "historyText": "(확정: 주제=우리 지역의 물 문제와 해결 방안, 통합 목표=지역 물 문제의 원인을 조사하고 해결 방안을 제안하는 캠페인을 실행한다)\n박교사: 평가를 먼저 설계하라고 하셨는데, 우리 주제로 어떤 수행과제를 평가하면 좋을지 방향을 잡아 주세요."
+  }
+]
