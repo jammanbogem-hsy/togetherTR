@@ -6,6 +6,10 @@
 //   .next/dev            — `next dev` 산출물. 런타임에 쓰이지 않는다.
 //   .next/cache/webpack  — 예전 webpack 빌드 캐시. 지금 빌드는 Turbopack 이라 다시 생기지도 않는다.
 // 둘 다 지워도 `next build` 결과(server/static/build)에는 영향이 없다.
+//
+// 또한 firebase-tools 는 .firebase/<site>/functions/.next 에 덮어쓰기만 하고 비우지 않아
+// 예전 배포에서 복사된 dev/·cache/ 가 그대로 남아 다시 업로드된다(2026-09-20 재확인).
+// 그 디렉터리의 .next 는 매 배포 때 다시 만들어지므로 통째로 지운다(node_modules 는 남겨 재사용).
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -13,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TARGETS = ['.next/dev', '.next/cache/webpack']
+const STAGING_ROOT = path.join(ROOT, '.firebase')
 
 function sizeOf(dir) {
   let total = 0
@@ -31,12 +36,18 @@ function sizeOf(dir) {
 }
 
 let freed = 0
-for (const relative of TARGETS) {
-  const target = path.join(ROOT, relative)
-  if (!fs.existsSync(target)) continue
+function remove(target, label) {
+  if (!fs.existsSync(target)) return
   const bytes = sizeOf(target)
   fs.rmSync(target, { recursive: true, force: true })
   freed += bytes
-  console.log(`[clean-next-artifacts] removed ${relative} (${(bytes / 1024 / 1024).toFixed(0)} MB)`)
+  console.log(`[clean-next-artifacts] removed ${label} (${(bytes / 1024 / 1024).toFixed(0)} MB)`)
+}
+for (const relative of TARGETS) remove(path.join(ROOT, relative), relative)
+if (fs.existsSync(STAGING_ROOT)) {
+  for (const site of fs.readdirSync(STAGING_ROOT, { withFileTypes: true })) {
+    if (!site.isDirectory()) continue
+    remove(path.join(STAGING_ROOT, site.name, 'functions', '.next'), `.firebase/${site.name}/functions/.next`)
+  }
 }
 console.log(`[clean-next-artifacts] freed ${(freed / 1024 / 1024).toFixed(0)} MB before deploy`)
