@@ -1,0 +1,640 @@
+[
+  {
+    "scenario": "T11-keywords",
+    "model": "luna-low",
+    "ttft": 1979,
+    "total": 3183,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18584,
+      "completion_tokens": 157,
+      "total_tokens": 18741,
+      "prompt_tokens_details": {
+        "cached_tokens": 18581,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 42,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32580,
+    "text": "김교사께서는 **협력, 탐구, 지역사회, 실천**을 중요하게 여기시는군요. 학생들이 지역사회의 물 문제를 함께 탐구하고, 실제 행동으로 이어 가길 바라는 방향으로 느껴집니다. 😊\n\n> **지금 할 일**\n> 이교사 선생님께서는 학생들이 이 수업을 통해 무엇을 경험하거나 성장하길 바라시나요? 키워드 3~5개 또는 비유로 말씀해 주세요.",
+    "problems": [],
+    "len": 188,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "T11-next",
+    "model": "luna-low",
+    "ttft": 860,
+    "total": 1009,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18657,
+      "completion_tokens": 58,
+      "total_tokens": 18715,
+      "prompt_tokens_details": {
+        "cached_tokens": 18654,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 27,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32724,
+    "text": "알겠습니다. 다음 활동으로 넘어가겠습니다.\n[ACTIVITY_ADVANCE: T-1-2]",
+    "problems": [],
+    "len": 24,
+    "adv": "T-1-2",
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "T11-saveA",
+    "model": "luna-low",
+    "ttft": 3621,
+    "total": 6149,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18646,
+      "completion_tokens": 492,
+      "total_tokens": 19138,
+      "prompt_tokens_details": {
+        "cached_tokens": 18643,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 180,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32580,
+    "text": "저장됐습니다. 조정이 필요하면 말씀해 주세요.\n\n[ARTIFACT_UPDATE: 개인 비전=| 교사명 | 개인 비전 키워드 | AI 정교화 비전 |\n|---|---|---|\n| 김교사(사회) | 대화에서 확인되지 않음 | 대화에서 확인되지 않음 |\n| 이교사(과학) | 대화에서 확인되지 않음 | 대화에서 확인되지 않음 |\n| 박교사(국어) | 대화에서 확인되지 않음 | 대화에서 확인되지 않음 |]\n[ARTIFACT_UPDATE: 팀 공통 비전=지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다]\n[ARTIFACT_UPDATE: 핵심 키워드=지역 문제, 함께 탐구, 실천, 시민성]\n[ARTIFACT_UPDATE: AI 분석=비전 통합 의미: 지역의 문제를 학생들이 함께 탐구하고 실제 행동으로 이어 가기를 바라는 방향으로 통합되었습니다. 교육적 의의: 학생들이 우리 지역의 문제를 자신의 삶과 연결해 살펴보고, 협력하여 해결 방안을 탐색하며 시민으로서 실천할 수 있습니다. 향후 가드레일 역할: 이후 주제와 활동을 정할 때 지역과의 연결성, 학생 협력, 실제 실천 가능성을 판단 기준으로 활용할 수 있습니다.]\n[ARTIFACT_CONFIRM]",
+    "problems": [],
+    "len": 27,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [
+      "개인 비전",
+      "팀 공통 비전",
+      "핵심 키워드",
+      "AI 분석"
+    ],
+    "codes": []
+  },
+  {
+    "scenario": "T12-principles",
+    "model": "luna-low",
+    "ttft": 1524,
+    "total": 2353,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 19151,
+      "completion_tokens": 182,
+      "total_tokens": 19333,
+      "prompt_tokens_details": {
+        "cached_tokens": 19148,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 72,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 33482,
+    "text": "이교사께서는 **학생이 직접 조사하는 수업이 되려면 교사가 답을 먼저 주지 말아야 한다**는 원칙을 제안하셨네요. 학생이 지역 물 문제를 스스로 탐구하도록 돕는 방향으로 이해했습니다.  \n김교사, 박교사께서는 이 원칙에 덧붙이거나 다르게 보고 싶은 점이 있으신가요? 예: “학생이 먼저 질문을 만들게 해야 한다.”",
+    "problems": [],
+    "len": 175,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "T11-cluster",
+    "model": "luna-low",
+    "ttft": 2723,
+    "total": 7070,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18646,
+      "completion_tokens": 500,
+      "total_tokens": 19146,
+      "prompt_tokens_details": {
+        "cached_tokens": 18643,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 82,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32580,
+    "text": "세 분의 키워드가 모였습니다. 먼저 각자의 관점을 보존해 개인 비전 문장으로 다듬고, 공통 가치를 구조화하겠습니다.\n\n| 교사 | 핵심 키워드 | 개인 비전 초안 |\n|---|---|---|\n| 김교사 | 협력, 탐구, 지역사회, 실천 | 학생들이 협력하여 지역사회의 물 문제를 탐구하고, 함께 실천 가능한 해결 방법을 만들어 가는 수업을 설계한다. |\n| 이교사 | 호기심, 실험, 데이터, 협력 | 학생들이 호기심을 바탕으로 실험과 데이터를 활용해 물 문제를 탐구하고, 협력적으로 근거 있는 해결 방법을 찾아가는 수업을 설계한다. |\n| 박교사 | 표현, 소통, 공감, 실천 | 학생들이 지역사회의 물 문제에 공감하고, 자신의 생각을 표현하며 소통한 뒤, 배운 내용을 실제 실천으로 이어 가는 수업을 설계한다. |\n\n🎯 **공통 가치 구조**\n- **탐구와 근거**: 탐구, 호기심, 실험, 데이터\n- **협력과 소통**: 협력, 표현, 소통, 공감\n- **지역사회와 실천**: 지역사회, 공감, 실천\n\n세 분의 개인 비전에서 공통으로 드러나는 중심은 **지역사회 물 문제를 함께 탐구하고, 근거를 바탕으로 소통하며, 실제 실천으로 이어 가는 학생 경험**으로 이해됩니다. 이 해석이 세 분의 의도를 잘 반영하는지 먼저 살펴봐 주세요.\n\n💬 **핵심 질문:** 이 공통 구조에서 빠졌거나 더 강조하고 싶은 교육적 가치가 있나요?\n\n[TEAM_DISCUSSION_READY: 개인 비전의 공통 가치와 강조점 조정]",
+    "problems": [
+      "기대 내용 없음 /1안|후보|군집|묶/"
+    ],
+    "len": 693,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "T22-saveA",
+    "model": "luna-low",
+    "ttft": 1990,
+    "total": 4339,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18090,
+      "completion_tokens": 352,
+      "total_tokens": 18442,
+      "prompt_tokens_details": {
+        "cached_tokens": 18087,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 67,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 31520,
+    "text": "저장됐습니다. 조정이 필요하면 말씀해 주세요.\n\n[ARTIFACT_UPDATE: 팀 규칙=**[소통] 회의 24시간 전 안건 공유**: 회의 전에 안건과 준비할 내용을 미리 공유하여 모든 팀원이 논의에 참여할 수 있도록 합니다. **[소통] 의견은 끝까지 듣고 반대할 때 대안 제시**: 서로의 의견을 끝까지 들은 뒤 반대할 때는 판단 근거와 실행 가능한 대안을 함께 제시합니다. **[시간] 회의 시간 60분 엄수**: 정해진 회의 시간을 지키고, 제한된 시간 안에 핵심 안건에 집중합니다. **[태도] 업무가 몰리면 솔직히 알리고 나누기**: 업무가 특정 교사에게 몰리지 않도록 어려움이나 일정 부담을 미리 알리고, 팀이 함께 업무량을 조정합니다. **[조율] 갈등 시 비전과 학생 이익을 기준으로 재논의**: 의견이 강하게 부딪칠 때는 개인의 선호보다 ‘지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다’는 공동 비전과 학생에게 도움이 되는지를 기준으로 차분히 다시 논의합니다.]",
+    "problems": [],
+    "len": 25,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [
+      "팀 규칙"
+    ],
+    "codes": []
+  },
+  {
+    "scenario": "T21-roles",
+    "model": "luna-low",
+    "ttft": 3657,
+    "total": 7265,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 17692,
+      "completion_tokens": 553,
+      "total_tokens": 18245,
+      "prompt_tokens_details": {
+        "cached_tokens": 17689,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 199,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 31179,
+    "text": "세 분의 희망 과업을 다음과 같이 정리했습니다. 아직 확정 전인 **역할 배분 초안**입니다.\n\n| 선생님 | 발언 직접 인용 | 추천 역할(1차) | 추천 이유 | 2차 검토 역할 |\n|---|---|---|---|---|\n| 박교사 | “글쓰기 지도와 발표 준비를 맡고 싶어요.” | 발표·표현 및 피드백 담당 | 학생 결과물의 글쓰기와 발표 구성을 연결하고, 표현을 다듬는 역할에 적합합니다. | 기록자 |\n| 이교사 | “실험·데이터 정리요.” | 자료조사·실험 및 데이터 분석 담당 | 물 관련 실험을 설계하고 결과를 표나 그래프로 정리하는 역할에 적합합니다. | 평가 검토자 |\n| 김교사 | “지역 조사와 일정 관리요.” | 지역 조사 및 사회자·촉진자 | 지역 문제를 조사하고 전체 일정과 회의 흐름을 관리하는 역할에 적합합니다. | 기록자 |\n\n현재는 **설계 공간 준비, 공동 기록, 인공지능 도구 활용** 역할이 별도로 드러나지 않았습니다. 세 분의 주 역할은 유지하되, 이 역할들을 고정으로 둘지 활동마다 돌아가며 맡을지 함께 정해 보아야 합니다.\n\n> **지금 할 일**  \n> 세 분의 주 역할 외에 빠진 과업과 역할을 누가 맡으면 좋을지 팀에서 이야기해 주세요.\n\n[TEAM_DISCUSSION_READY: 역할 강점 및 희망 공유]",
+    "problems": [],
+    "len": 611,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "T22-rules",
+    "model": "luna-low",
+    "ttft": 2817,
+    "total": 7233,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 17976,
+      "completion_tokens": 495,
+      "total_tokens": 18471,
+      "prompt_tokens_details": {
+        "cached_tokens": 17973,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 101,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 31520,
+    "text": "김교사님 요청에 따라 **초안**으로 제안드립니다. 최종 규칙은 이교사님·박교사님과 실제 여건을 살펴 수정해 주세요.\n\n- **[소통] 의견과 진행 상황을 공동 문서에 공유하기**: 회의 전후에 각자 준비한 내용과 도움이 필요한 점을 짧게 남깁니다. 바쁠 때는 핵심 문장 한 개만 먼저 공유합니다.\n- **[시간] 회의 목적과 종료 시간을 먼저 정하기**: 회의 시작 때 오늘 결정할 일을 확인하고, 정한 종료 시간 안에 마무리합니다. 참석이 어려우면 가능한 한 미리 알립니다.\n- **[태도] 먼저 이해하고 덧붙여 말하기**: 다른 사람의 의견을 끊지 않고 요지를 확인한 뒤, 동의하거나 다른 생각을 근거와 함께 덧붙입니다.\n- **[조율] 의견이 부딪치면 공동 비전과 학생의 배움을 기준으로 결정하기**: 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다는 비전에 더 잘 맞는 안을 우선 검토합니다. 바로 결정하기 어려우면 각자 근거를 정리한 뒤 다시 논의합니다.\n- **[배려] 업무 부담을 살피며 역할과 기한 조정하기**: 진행 상황을 공유하고, 특정 사람에게 일이 몰리면 역할이나 기한을 함께 조정합니다. 가장 일정이 빠듯한 사람도 실천할 수 있는 수준으로 정합니다.\n\n> **지금 할 일**  \n> 이 초안에서 실제로 지키기 어렵거나 우리 팀 상황에 맞지 않는 규칙은 무엇인가요?\n\n[TEAM_DISCUSSION_READY: 팀 규칙 초안 검토와 수정]",
+    "problems": [],
+    "len": 670,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "T23-schedule",
+    "model": "luna-low",
+    "ttft": 1315,
+    "total": 2562,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18674,
+      "completion_tokens": 211,
+      "total_tokens": 18885,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 18671,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 65,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32894,
+    "text": "실행일 **11월 20일**과 정기 회의 **매주 수요일 오후 3시 30분**을 기준으로 역산하겠습니다. 김교사님 일정은 우선 이렇게 반영해 둘게요.\n\n> **지금 할 일**  \n> 이교사님과 박교사님께서 참여하기 어려운 기간이나 주당 투입 가능한 시간을 알려 주세요. (예: “10월 둘째 주 출장”, “주 2시간 가능”)  \n[TEAM_DISCUSSION_READY: 11월 20일 수업 실행을 위한 각 교사의 가용 시간과 협업 불가능 기간 공유]",
+    "problems": [],
+    "len": 184,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "A11-skip",
+    "model": "luna-low",
+    "ttft": 754,
+    "total": 1245,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 17198,
+      "completion_tokens": 57,
+      "total_tokens": 17255,
+      "prompt_tokens_details": {
+        "cached_tokens": 17195,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 30262,
+    "text": "알겠습니다. 학교 차원에서 주제가 이미 **지역 물 문제**로 정해져 있으므로, 기준 논의는 건너뛰고 주제 선정 활동으로 바로 넘어가겠습니다.  \n[ACTIVITY_ADVANCE: A-1-2]",
+    "problems": [],
+    "len": 82,
+    "adv": "A-1-2",
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "A12-topic",
+    "model": "luna-low",
+    "ttft": 2194,
+    "total": 3222,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18210,
+      "completion_tokens": 242,
+      "total_tokens": 18452,
+      "prompt_tokens_details": {
+        "cached_tokens": 18207,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 112,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32084,
+    "text": "이교사께서 **“우리 지역 하천 물 문제”**를 제안하셨네요. 지역의 실제 문제를 함께 탐구하고 실천하는 시민으로 자란다는 팀 비전과 연결될 가능성이 큽니다.\n\n이 주제로 학생들이 **무엇을 탐구하고, 어떤 실천까지 해보길** 바라시나요? 예: 하천 오염 원인 조사, 물의 상태 분석, 지역사회 개선안 제안\n\n[TEAM_DISCUSSION_READY: 우리 지역 하천 물 문제에서 학생들이 탐구하고 실천할 내용]",
+    "problems": [],
+    "len": 173,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "T23-nextA",
+    "model": "luna-low",
+    "ttft": 1053,
+    "total": 5386,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18670,
+      "completion_tokens": 766,
+      "total_tokens": 19436,
+      "prompt_tokens_details": {
+        "cached_tokens": 18620,
+        "cache_write_tokens": 47,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 53,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32894,
+    "text": "T단계를 마무리하기 전에, 아래 체크리스트로 함께 점검해볼까요? 제가 산출물을 분석한 결과를 먼저 채워두었습니다. 선생님들께서도 각 항목을 확인해 주세요! ✅\n\n| 단계 | 핵심 점검 항목 | AI 분석 | 팀 확인 |\n|---|---|---|---|\n| T-1 비전 설정 | 팀의 궁극적 목적과 핵심 가치가 명확한 한 문장으로 기술되었는가? | ✅ 「지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다」 | □ |\n| T-1 비전 설정 | 팀원 모두가 논의하고 공감하여 합의했는가? | ⚠️ 토의 이력이 충분히 확인되지 않음 | □ |\n| T-2 설계 방향 | 구체적인 수업 설계 원칙 3~5가지가 확정되었는가? | ⚠️ 확정된 설계 방향 산출물이 없음 | □ |\n| T-2 설계 방향 | 학교 교육 목표 및 교육과정 방향과 정합적인가? | ⚠️ 설계 방향 산출물이 없어 판단할 수 없음 | □ |\n| T-2 설계 방향 | 원칙의 우선순위를 타당성 검토 후 결정했는가? | ⚠️ 토의 이력이 확인되지 않음 | □ |\n| T-3 역할 배분 | 세부 과업을 빠짐없이 도출했는가? | ⚠️ 역할 배분 산출물이 없음 | □ |\n| T-3 역할 배분 | 팀원의 강점·관심·업무 여력을 고려했는가? | ⚠️ 역할 배분 산출물이 없음 | □ |\n| T-3 역할 배분 | 역할 분담을 공식 기록했는가? | ⚠️ 저장된 역할 분담이 없음 | □ |\n| T-4 팀 규칙 | 회의·소통·갈등 해결 규칙을 정했는가? | ⚠️ 팀 규칙 산출물이 없음 | □ |\n| T-4 팀 규칙 | 팀원들의 다양한 상황을 배려했는가? | ⚠️ 토의 이력이 확인되지 않음 | □ |\n| T-5 팀 일정 | 전체 기간과 단계별 목표일을 설정했는가? | ⚠️ 현재 활동의 일정 산출물이 저장되지 않음 | □ |\n| T-5 팀 일정 | 협업이 어려운 기간을 파악하고 회의 시간을 조율했는가? | ⚠️ 관련 논의가 확인되지 않음 | □ |\n| T-5 팀 일정 | 공유 공간에 최종 일정을 등록했는가? | ⚠️ 시스템 외부 확인 필요 | □ |\n\n> ⚠️ 현재 확인되는 미충족 항목이 많습니다. **현재 상태로 A단계로 넘어갈지**, 또는 필요한 항목을 보완할지 팀에서 판단해 주세요. 김교사께서는 확정 의사를 밝혀 주셨고, 이교사·박교사의 확인도 함께 필요합니다.\n\n**A안:** \"현재 상태를 감안하고 A단계로 넘어가겠습니다\"  \n**B안:** \"T단계의 미충족 항목을 먼저 보완하겠습니다\"",
+    "problems": [],
+    "len": 1203,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "A12-saveA",
+    "model": "luna-low",
+    "ttft": 1952,
+    "total": 4411,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18280,
+      "completion_tokens": 438,
+      "total_tokens": 18718,
+      "prompt_tokens_details": {
+        "cached_tokens": 18277,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 84,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32084,
+    "text": "저장하겠습니다.\n\n[ARTIFACT_UPDATE: 주제 선정 기준=| 기준명 | 설명 | 우선순위 |\n|---|---|---|\n| 학습자 삶과의 연결성 | 학생들이 생활 속에서 지역의 물 문제를 발견하고 자신의 경험과 연결할 수 있는가 | 높음 |\n| 교과 융합 가능성 | 사회·과학·국어의 학습 내용과 활동이 하나의 탐구 과정으로 연결되는가 | 높음 |\n| 실행 가능성 | 학생들이 지역의 물 문제를 조사하고 해결 방안을 표현·실천할 수 있는가 | 보통 |\n| 팀 비전 정합성 | 지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다는 비전을 실현하는가 | 높음 |]\n\n[ARTIFACT_UPDATE: 최종 선정 주제=우리 지역의 물 문제와 해결 방안]\n\n[ARTIFACT_UPDATE: 주제 유형=혼합형(내용+기능)]\n\n[ARTIFACT_UPDATE: 선정 근거=이 주제는 학생들이 지역에서 실제로 마주하는 물 문제를 탐구하고, 그 원인과 해결 방안을 함께 찾아보게 한다는 점에서 팀의 비전인 ‘지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다’와 연결됩니다. 사회·과학·국어의 관점에서 지역 문제를 조사하고, 근거를 바탕으로 해결 방안을 제안하며, 이를 다른 사람에게 표현하고 실천하는 통합 활동으로 발전시킬 수 있습니다.]\n\n✅ 주제가 저장됐습니다. 수정이 필요하면 말씀해 주세요.",
+    "problems": [],
+    "len": 41,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [
+      "주제 선정 기준",
+      "최종 선정 주제",
+      "주제 유형",
+      "선정 근거"
+    ],
+    "codes": []
+  },
+  {
+    "scenario": "A21-standards",
+    "model": "luna-low",
+    "ttft": 1877,
+    "total": 3617,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 27463,
+      "completion_tokens": 343,
+      "total_tokens": 27806,
+      "prompt_tokens_details": {
+        "cached_tokens": 27460,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 89,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 46671,
+    "text": "현재 제공된 사회과 성취기준 자료 중 5~6학년군 코드는 다음 3개입니다. 다만 모두 **한국사 영역**이라 ‘우리 지역의 물 문제와 해결 방안’과 직접 연결되지는 않습니다.\n\n- **[6사05-02]** 조선 후기 사회·문화적 변화와 개항기 근대 문물 수용 과정에서 달라진 사람들의 생활을 이해한다.\n- **[6사06-01]** 일제의 식민 통치와 이에 대한 저항이 사회와 생활에 미친 영향을 이해한다.\n- **[6사06-02]** 8·15 광복과 6·25 전쟁이 사회와 생활에 미친 영향을 파악한다.\n\n따라서 이 3개를 물 문제 수업의 사회과 성취기준으로 확정하기보다는, **사회과 정치·일반사회 영역의 5~6학년군 성취기준 원문과 코드**를 추가로 확인해야 합니다. 해당 자료를 제공해 주시면 주제와의 적합성을 비교해 3개를 다시 추천하겠습니다.",
+    "problems": [],
+    "len": 420,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": [
+      "6사05-02",
+      "6사06-01",
+      "6사06-02"
+    ]
+  },
+  {
+    "scenario": "Ds11-return",
+    "model": "luna-low",
+    "ttft": 1333,
+    "total": 1580,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 19014,
+      "completion_tokens": 89,
+      "total_tokens": 19103,
+      "prompt_tokens_details": {
+        "cached_tokens": 19011,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 47,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 33555,
+    "text": "알겠습니다. 통합 목표를 다시 다듬기 위해 A-4 활동으로 돌아가겠습니다.\n[ACTIVITY_RETURN: A-2-2]",
+    "problems": [],
+    "len": 42,
+    "adv": null,
+    "ret": "A-2-2",
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "A22-goal",
+    "model": "luna-low",
+    "ttft": 2508,
+    "total": 4319,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 25465,
+      "completion_tokens": 264,
+      "total_tokens": 25729,
+      "prompt_tokens_details": {
+        "cached_tokens": 25462,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 93,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 43074,
+    "text": "이교사께서 **세 교과의 공통 수행**을 하나의 문장에 담자는 방향을 제안하셨네요. 현재 주제와 팀 비전을 바탕으로 한 **초안**은 다음과 같습니다.\n\n> **학생은 우리 지역의 물 문제를 사회·과학적 자료로 탐구하고, 해결 방안을 근거 있게 판단하여, 다른 사람과 소통할 수 있는 글과 말로 제안할 수 있다.**\n\n과학의 **자료 탐구**, 사회의 **지역 문제와 시민적 판단**, 국어의 **근거를 갖춘 의사소통**을 연결한 문장입니다. 이교사께서 보시기에 과학에서 꼭 드러나야 할 학생 수행은 무엇인가요?",
+    "problems": [],
+    "len": 286,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "Ds11-eval",
+    "model": "luna-low",
+    "ttft": 2325,
+    "total": 5700,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 19016,
+      "completion_tokens": 676,
+      "total_tokens": 19692,
+      "prompt_tokens_details": {
+        "cached_tokens": 19013,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 172,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 33555,
+    "text": "안녕하세요! 저는 협력적 수업 설계를 도와드리는 AI 공동설계자입니다. 😊\n\n오늘 함께 진행할 **Ds-1: 평가 설계**는 총 5스텝으로 구성됩니다: ①최종 결과 평가 아이디어 → ②최종 평가 내용 결정 → ③활동 과정 평가 → ④평가 방법·시점 조정 → ⑤평가 계획 점검·확정. 이 과정을 통해 **평가 계획**을 완성해 나갈 거예요!\n\n지금은 🟦 **스텝 1: 최종 결과 평가 아이디어** 단계입니다.\n\n| 항목 | 내용 |\n|---|---|\n| 개념 | 학생이 수업 끝에 무엇을 만들어 내고, 어떤 행동으로 배움을 보여줄지 먼저 정합니다. |\n| 방법/절차 | ① 통합 목표에 연결된 결과물을 떠올립니다. ② 결과물과 함께 발표·실천·의사결정 근거를 생각합니다. |\n| 유의사항 | 활동을 많이 넣기보다, 학생이 **지역 물 문제의 원인을 조사하고 해결 방안을 제안하는 캠페인**에서 실제로 보여줄 증거를 중심으로 봅니다. 성취기준 코드는 아직 제공되지 않아 임의로 제시하지 않겠습니다. |\n| 예시 | “지역 물 문제의 원인과 자료를 근거로 해결 방안을 제안하는 캠페인 자료를 만든다.”<br>“자신의 제안이 왜 필요한지 발표하고 질문에 답한다.” |\n\n현재까지의 설계 근거는 **지역의 문제를 함께 탐구하고 실천하는 시민으로 자란다**는 비전과, **지역 물 문제의 원인을 조사하고 해결 방안을 제안하는 캠페인을 실행한다**는 통합 목표입니다.  \n박교사님께서는 학생이 수업 말미에 보여주어야 할 **결과물이나 수행 모습**을 먼저 한 가지 떠올려 주세요. 예: “캠페인 포스터”, “지역 주민에게 보내는 제안문”, “해결 방안 발표”\n\n> **지금 할 일**  \n> 학생이 지역 물 문제를 탐구한 뒤 무엇을 만들어 발표하거나 실천하면, 목표에 도달했다고 볼 수 있을까요?",
+    "problems": [],
+    "len": 888,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "Ds12-activities",
+    "model": "luna-low",
+    "ttft": 1333,
+    "total": 2975,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18870,
+      "completion_tokens": 279,
+      "total_tokens": 19149,
+      "prompt_tokens_details": {
+        "cached_tokens": 18867,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 60,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 33085,
+    "text": "이교사께서 제안하신 **하천 수질 조사 실험**은 “지역 물 문제의 원인을 조사하고 해결 방안을 제안한다”는 목표와 잘 연결될 수 있습니다. 특히 학생이 **자료를 직접 모으고, 지역 물 문제의 원인을 추론하는 과정**이 핵심이에요.\n\n과학 관점의 후보는 다음과 같습니다.\n\n- **수질 지표 비교**: 여러 지점의 물 색, 냄새, 탁도, 산도 등을 비교해 차이를 설명하기\n- **오염 원인 추론**: 조사 결과와 주변 환경 자료를 연결해 오염 원인을 추론하기\n- **개선안 검토**: 조사 자료를 근거로 실천 가능한 물 환경 개선안을 제안하기\n\n> **지금 할 일**  \n> 세 활동 중 학생들이 실제로 자료를 모으고 해결 방안까지 이어 가기 가장 적합한 활동은 무엇이라고 보시나요?",
+    "problems": [],
+    "len": 383,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "offtopic",
+    "model": "luna-low",
+    "ttft": 1053,
+    "total": 1940,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18555,
+      "completion_tokens": 117,
+      "total_tokens": 18672,
+      "prompt_tokens_details": {
+        "cached_tokens": 18552,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 16,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 32580,
+    "text": "저는 협력적 수업설계 전용 AI라서 회식 장소 결정은 도와드리기 어렵습니다. 😊  \n지금 **T-1: 공동 비전 설정** 활동에서 우리 지역 물 문제 탐구 프로젝트의 교육적 방향을 정하고 있습니다.\n\n**A안:** \"수업설계를 계속 진행할게요\"  \n**B안:** \"잠깐 쉬고 나서 돌아올게요\"",
+    "problems": [],
+    "len": 164,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  },
+  {
+    "scenario": "DI11-lesson",
+    "model": "luna-low",
+    "ttft": 2847,
+    "total": 4724,
+    "finish": "stop",
+    "usage": {
+      "prompt_tokens": 18117,
+      "completion_tokens": 321,
+      "total_tokens": 18438,
+      "prompt_tokens_details": {
+        "cached_tokens": 18114,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 160,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "systemChars": 31983,
+    "text": "1차시 도입은 **지역의 물 문제를 학생 자신의 경험과 연결하는 장면**에서 시작하면 좋겠습니다. 다만 먼저 김교사님의 수업 의도를 살려 보겠습니다.\n\n예를 들면, **“우리 동네에서 물이 불편했던 순간이 있었나요?”**라고 묻거나, 물이 흐려진 하천 사진을 보고 **“이 물을 우리가 사용해도 될까요?”**라고 질문할 수 있습니다.  \n김교사님은 학생들이 어떤 장면에서 문제의식을 느끼길 바라시나요?\n\n[TEAM_DISCUSSION_READY: 1차시 도입에서 학생의 관심과 문제의식을 이끌어 낼 구체적인 장면]",
+    "problems": [],
+    "len": 226,
+    "adv": null,
+    "ret": null,
+    "artifactKeys": [],
+    "codes": []
+  }
+]
