@@ -9,7 +9,10 @@
 //
 // 또한 firebase-tools 는 .firebase/<site>/functions/.next 에 덮어쓰기만 하고 비우지 않아
 // 예전 배포에서 복사된 dev/·cache/ 가 그대로 남아 다시 업로드된다(2026-09-20 재확인).
-// 그 디렉터리의 .next 는 매 배포 때 다시 만들어지므로 통째로 지운다(node_modules 는 남겨 재사용).
+//
+// 실행 순서 주의: hosting.predeploy 훅은 프레임워크 빌드·복사가 끝난 뒤, 업로드 직전에 돈다.
+// 그래서 스테이징 .next 를 통째로 지우면 방금 만든 server/ 까지 사라져 함수가 500 을 낸다
+// (2026-09-20 검증 사이트에서 실제 발생). 스테이징에서도 dev/·cache/webpack 만 지운다.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -47,7 +50,9 @@ for (const relative of TARGETS) remove(path.join(ROOT, relative), relative)
 if (fs.existsSync(STAGING_ROOT)) {
   for (const site of fs.readdirSync(STAGING_ROOT, { withFileTypes: true })) {
     if (!site.isDirectory()) continue
-    remove(path.join(STAGING_ROOT, site.name, 'functions', '.next'), `.firebase/${site.name}/functions/.next`)
+    for (const relative of TARGETS) {
+      remove(path.join(STAGING_ROOT, site.name, 'functions', relative), `.firebase/${site.name}/functions/${relative}`)
+    }
   }
 }
 console.log(`[clean-next-artifacts] freed ${(freed / 1024 / 1024).toFixed(0)} MB before deploy`)
