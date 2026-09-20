@@ -302,7 +302,7 @@ export async function POST(request: Request) {
           const startedAt = performance.now()
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const response: any = await client.chat.completions.create({
-            ...generationParams(model, { maxTokens: 8000, effort: 'balanced', stream: true }),
+            ...generationParams(model, { maxTokens: 8000, effort: 'light', stream: true }),
             messages: [{ role: 'user', content: prompt }],
           } as never)
 
