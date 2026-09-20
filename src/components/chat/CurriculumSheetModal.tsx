@@ -1365,7 +1365,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm"
               title={!a12Artifact?.selectedTopic && !graphSavedData ? 'A-1-2 주제 선정 또는 지식 그래프 데이터 필요' : '핵심아이디어 후보를 먼저 확인하고 DB 기반으로 자동 채우기'}>
               {autofillLoading ? (
-                <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> {autofillReview ? '분석표 생성 중...' : '핵심아이디어 판정 중...'}</>
+                <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> {({ coreIdeas: '핵심아이디어 판정 중...', rows: '성취기준·내용 요소 판정 중...', describe: '설명 작성·검증 중...' } as Record<string, string>)[autofillProgress.find(step => step.status === 'running')?.id ?? ''] ?? '진행 중...'}</>
               ) : 'AI 자동 채우기'}
             </button>
             {onSwitchToGraph && hasGraphRows && (
