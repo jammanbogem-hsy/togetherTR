@@ -32,3 +32,17 @@
 | gpt-5.6-luna (low) | 19/20 (남은 1건은 기대 정규식 문제로 실제 정상) | 체크리스트 표에 내부 코드 노출 1건 → 프롬프트 템플릿을 표시 번호(T-1~T-5)로 수정 |
 
 산출물 신호 형식: 두 모델 모두 `[ARTIFACT_UPDATE: 섹션=값]` 다중 섹션(개인 비전 표·팀 공통 비전·핵심 키워드·AI 분석)을 파서가 정상 파싱. gpt-5-mini 는 대화에 없던 개인 키워드를 지어내 표에 넣었고, Luna 는 "이 대화에서 제시되지 않음"으로 남김.
+
+## 종단 점검 (검증용 사이트, `scripts/eval/e2e-hybrid.mjs`, 2026-09-20)
+| 점검 | 결과 | 소요 | 비고 |
+|---|---|---|---|
+| chat/stream 논의 턴 (Luna) | ✅ | 10.0s | 712자 · 내부코드 노출 0 |
+| chat/stream 저장 턴 → ARTIFACT_UPDATE 파싱 | ✅ | 6.7s | 섹션 주제 선정 기준·최종 선정 주제·주제 유형·선정 근거(스키마 키와 일치) · ADVANCE 동시방출 없음 |
+| autofill coreIdeas (Jev) | ✅ | 1.6s | 실과 제시 0.94 · 수학 확인 0.74 · 도덕 확인 0.77 |
+| autofill rows (Jev) | ✅ | 1.5s | 행 3 · 누락 필드 0 · 코드 환각 0 |
+| autofill describe (Luna → Jev 검증) | ✅ | 3.1s | 검증 0.93/0.92/0.91 |
+| ontology/relate (Jev → haiku → Jev) | ✅ | 14.9s | 문제-해결 0.82(검증 0.77) · 개념-적용 0.85(0.82) |
+| ontology/search (Jev 재순위) | ✅ | 1.6s | 중심 [6과16-01] (재순위 전 [6과14-04] 연소) |
+| topic-selection/suggest (sonnet-5 + 검증) | ✅ | 16.6s | gradeFit 0.83 · goalFit 0.71 |
+| analyze/stage (Luna SSE) | ✅ | 32.4s | 6,776자 — 60초 한도의 절반, 여유 감시 필요 |
+| curriculum-sheet/fusion (Luna JSON) | ✅ | 13.5s | 아이디어 3 |
