@@ -1,0 +1,36 @@
+{
+  "previousCommit": "34f6e0e82d1e0e07e9d3531e84125d1f936870f7",
+  "updatedCommit": "5349975dc76f030f7815458b5966b6ccde1f8a59",
+  "files": [
+    {
+      "path": "scripts/collaborativeGradePersistence.test.mjs",
+      "previousSha256": "322d96e3ab87f5a269620b5828af65af2f03ee70cba2060a7732734ebf0721b6",
+      "updatedSha256": "23fcf43a8ccde2a976437fc19504be9ecf6824588290839cb99b67c4f23a2fe6"
+    },
+    {
+      "path": "scripts/rowDescriptions.test.mjs",
+      "previousSha256": null,
+      "updatedSha256": "601db04ad3d156106c2b24a8edc15d363bbdf761407cd61301ecb2cebfdba790"
+    },
+    {
+      "path": "src/components/chat/CurriculumSheetModal.tsx",
+      "previousSha256": "fbaa327c1b191ad79c6da62bbe4809e23fdca457f0b67fc6d97314dcd1ebc874",
+      "updatedSha256": "95cf9b54ac0de87d9356e27b2f7d4a151fba585b1414f063213a99410b45da38"
+    },
+    {
+      "path": "src/components/chat/curriculum-sheet/BridgePicker.tsx",
+      "previousSha256": "1384e53175d0092fe92daeeb0e4e7f32d57bee6afbaca81c75203f242fbbfff3",
+      "updatedSha256": "40c50b719e1d4ef6a9da6e67114e9bc8762f6f42d53e531f37b38c31a7a96bc0"
+    },
+    {
+      "path": "src/lib/curriculum/rowDescriptions.ts",
+      "previousSha256": null,
+      "updatedSha256": "a562937ff243757e52f4c7b2af2bc83a97fefa464fbd6655e9dae03ad6fe29d8"
+    },
+    {
+      "path": "src/lib/firebase/projects.ts",
+      "previousSha256": "aef685f0ea1bd3743608a77be5b79a69e6fda83927df21cd2837ad4586b697f5",
+      "updatedSha256": "8ae3b5c9e7e25c5bfb16970763e87cfbcce96521bfa38ae37a4ae2b37237551a"
+    }
+  ]
+}
