@@ -16,7 +16,7 @@ import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/c
 import { isElementaryGradeGroup, loadContentSystemsForGradeGroup, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
 import { gradeBandNeedle, isUsableCoreIdea, toCanonicalGradeBand } from '@/lib/curriculum/curriculumFilters'
 import { chooseBandCenters, includeTeamSubjects, resolveAutofillGradeBands } from '@/lib/curriculum/collaborativeBands'
-import { normalizeTeamGradeBands } from '@/lib/curriculum/teamGradeBands'
+import { normalizeTeamGradeBands, subjectAvailableInGradeBand } from '@/lib/curriculum/teamGradeBands'
 import {
   canonicalSubjectName,
   graphSubjectIdsForSubject,
@@ -27,7 +27,7 @@ import {
   chunkItems,
   clampBridgeLimit,
   dedupeByStandardCode,
-  sortBridgeCandidates,
+  selectBridgeCandidates,
   type BridgeLevel,
 } from '@/lib/curriculum/bridgeStandards'
 import {
@@ -1412,10 +1412,12 @@ async function handleBridgeStandards(params: {
     candidates.forEach((item, index) => scores.set(item.standard.id, relevance[index] ?? 0))
   }
 
-  const ranked = sortBridgeCandidates(candidates.map(item => ({
+  const preferIntegrated = targetBand === '1-2학년군' && !subjectAvailableInGradeBand(sourceSubject, targetBand)
+  if (preferIntegrated) notes.push(`${targetBand}에는 ${sourceSubject} 교과가 따로 없어 ${subjectsSearched.includes('통합교과') ? '통합교과 등' : subjectsSearched.join('·')} 이 학년군의 실제 성취기준을 찾았습니다.`)
+  const ranked = selectBridgeCandidates(candidates.map(item => ({
     ...item,
     score: Math.round((scores.get(item.standard.id) ?? 0) * 100) / 100,
-  }))).slice(0, clampBridgeLimit(params.limit))
+  })), clampBridgeLimit(params.limit), preferIntegrated ? '통합교과' : undefined)
 
   // 내용체계 원문은 화면에 보이는 후보에 대해서만 찾는다(교과×영역 스캔 비용 절감).
   const contentSystems = loadContentSystemsForGradeGroup(targetBand)

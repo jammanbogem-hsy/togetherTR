@@ -77,3 +77,15 @@ export function sortBridgeCandidates<T extends { score: number; code: string }>(
     b.score - a.score || normalizeStandardCode(a.code).localeCompare(normalizeStandardCode(b.code)),
   )
 }
+
+/** 상위 N개를 자르면서 저학년 대체 교과 후보가 전부 사라지지 않게 한다. 점수는 유지한다. */
+export function selectBridgeCandidates<T extends { score: number; code: string; subject: string }>(
+  items: readonly T[], limit: number, preferredSubject?: string,
+): T[] {
+  const ranked = sortBridgeCandidates(dedupeByStandardCode(items))
+  const count = clampBridgeLimit(limit)
+  const preferred = preferredSubject
+    ? ranked.filter(item => item.subject === preferredSubject).slice(0, Math.ceil(count / 2))
+    : []
+  return sortBridgeCandidates(dedupeByStandardCode([...preferred, ...ranked]).slice(0, count))
+}

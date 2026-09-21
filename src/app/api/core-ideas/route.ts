@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { isElementaryGradeGroup, loadContentSystemsForGradeGroup } from '@/lib/curriculum/contentSystemReader'
+import { isElementaryGradeGroup, loadContentSystemsForGradeGroup, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
 import { filterContentItemsByGrade, gradeBandNeedle, sliceContentItemsPerBand } from '@/lib/curriculum/curriculumFilters'
+import { loadElementaryContentEntries } from '@/lib/curriculum/elementaryContentLists'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,7 +32,27 @@ export async function GET(request: Request) {
    * apply per band so later bands are not crowded out by the earlier ones.
    */
   const allBands = ['1', 'true', 'yes'].includes((searchParams.get('allBands') ?? '').toLowerCase())
-  const records = loadContentSystemsForGradeGroup(gradeGroup)
+  let records = loadContentSystemsForGradeGroup(gradeGroup)
+  // 시트는 성취기준 코드(2바/2슬/2즐)별 내용 요소를 골라야 한다.
+  // 그래프용 통합 레코드를 그대로 쓰면 세 과목이 합쳐지고, 항상 앞쪽 바른 생활 요소가 선택된다.
+  if (allBands && (!gradeGroup || isElementaryGradeGroup(gradeGroup))) {
+    const canonicalIdeas = new Map(records.filter(record => record.subject === '통합교과')
+      .flatMap(record => record.coreIdeas).map(idea => [idea.replace(/\s+/g, ''), idea]))
+    const integrated: ContentSystemRecord[] = loadElementaryContentEntries()
+      .filter(entry => entry.subject === '통합교과')
+      .map((entry, index) => {
+        const prefixed = (field: 'knowledge' | 'functions' | 'attitudes') =>
+          Object.entries(entry.bands).flatMap(([band, lists]) => (lists?.[field] ?? []).map(value => `${band}: ${value}`))
+        return {
+          id: `${entry.file}#course-${index}`, sourceFile: entry.file, sourcePages: entry.pages,
+          curriculum: '공통 교육과정', subject: entry.subject, course: entry.course, area: entry.area,
+          gradeBands: Object.keys(entry.bands),
+          coreIdeas: entry.coreIdeas.map(idea => canonicalIdeas.get(idea.replace(/\s+/g, '')) ?? idea.replace(/\s+/g, ' ').trim()),
+          knowledge: prefixed('knowledge'), functions: prefixed('functions'), attitudes: prefixed('attitudes'),
+        }
+      })
+    records = [...records.filter(record => record.subject !== '통합교과'), ...integrated]
+  }
   const matchingRecords = allBands
     ? records
     : records.filter(r => recordMatchesGrade(r.gradeBands, gradeGroup))

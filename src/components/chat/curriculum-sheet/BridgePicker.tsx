@@ -85,7 +85,7 @@ export function BridgePicker({
           <p className="mt-0.5 text-[13px] leading-relaxed text-[#5F6368] line-clamp-2" title={sourceCoreIdea}>
             {sourceSubject} 핵심아이디어: {sourceCoreIdea}
           </p>
-          <p className="mt-1 text-[13px] leading-relaxed text-[#5F6368]">성취기준을 선택하면 빈 수업내용 설명도 함께 채웁니다.</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-[#5F6368]">선택한 교과·학년군에 맞게 핵심아이디어와 내용 요소를 반영하고, 빈 수업내용 설명도 함께 채웁니다.</p>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {judge && (

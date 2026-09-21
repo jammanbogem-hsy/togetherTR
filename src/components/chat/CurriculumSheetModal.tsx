@@ -34,6 +34,7 @@ import type { SheetGradeMode } from '@/lib/curriculum/sheetGradeBands'
 import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 import { canFillRowDescription, requestRowDescription } from '@/lib/curriculum/rowDescriptions'
+import { needsRowBridge, rowBridgeSource, canApplyRowBridge, rowBridgeSelection, filterContentByStandardCourse } from '@/lib/curriculum/rowBridge'
 
 // ─── 교육과정 데이터 타입 ─────────────────────────────────
 
@@ -139,15 +140,6 @@ function isSameCoreIdeaGroup(row: CurriculumSheetRow, prevRow?: CurriculumSheetR
   if (prevRow.subject === link.subject && prevIdea === link.coreIdea.trim()) return true
   const prevLink = prevRow.linkedCoreIdea
   return !!prevLink && prevLink.subject === link.subject && prevLink.coreIdea.trim() === link.coreIdea.trim()
-}
-
-/** 연결 후보의 교과명을 시트 과목 선택지(SUBJECTS) 값으로 맞춘다. */
-function toSheetSubject(name?: string): string {
-  const raw = (name ?? '').trim()
-  if (!raw) return ''
-  return SUBJECTS.find(subject => subject === raw)
-    ?? SUBJECTS.find(subject => raw.includes(subject) || subject.includes(raw))
-    ?? raw
 }
 
 /** 행별 Jev 채우기가 다루는 칸 — 핵심아이디어 → 성취기준 → 내용 요소 매핑 사슬. */
@@ -487,7 +479,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const [pendingGradeSettings, setPendingGradeSettings] = useState<{ gradeMode?: SheetGradeMode; gradeBand?: string } | null>(null)
   // 행별 Jev 채우기 상태 (판정기 배지 · 진행 · 오류)
   // 연결 줄 팝오버 — 한 번에 하나만 열린다.
-  const [bridgeTarget, setBridgeTarget] = useState<{ rowId: string; rect: DOMRect } | null>(null)
+  const [bridgeTarget, setBridgeTarget] = useState<{ rowId: string; rect: DOMRect; band: string; source: { subject: string; coreIdea: string }; snapshot: CurriculumSheetRow } | null>(null)
   const [bridgeQuery, setBridgeQuery] = useState<{
     loading: boolean
     candidates: BridgeCandidate[]
@@ -497,6 +489,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     error?: string
   }>({ loading: false, candidates: [], subjectsSearched: [], notes: [] })
   const [bridgeSubjectFilter, setBridgeSubjectFilter] = useState('')
+  const bridgeRequestRef = useRef(0)
   // 표시 전용 — 도움말 토글, 표 스크롤 시 앱 바 승격
   const [helpOpen, setHelpOpen] = useState(false)
   const [tableScrolled, setTableScrolled] = useState(false)
@@ -535,9 +528,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   )
   /** 행의 학년군에 그 교과 성취기준이 없으면 true — 성취기준·내용 요소가 모두 비는 상태. */
   const rowBandHasNoStandards = useCallback((row: CurriculumSheetRow) => {
-    if (!row.subject || standards.length === 0) return false
+    if (!row.subject) return false
     const band = rowBandOf(row)
     if (!band) return false
+    if (needsRowBridge({ subject: row.subject }, band)) return true
+    if (standards.length === 0) return false
     return !bandsWithStandardsFor(row.subject).some(item => item === band)
   }, [bandsWithStandardsFor, rowBandOf, standards.length])
 
@@ -995,10 +990,12 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
   /** 연결 줄의 '유사 성취기준 찾기' — 원본 핵심아이디어에 가까운 그 학년군 성취기준 후보. */
   async function openBridgePicker(row: CurriculumSheetRow, rect: DOMRect) {
-    const link = row.linkedCoreIdea
+    const link = rowBridgeSource(row)
     const band = rowBandOf(row)
     if (!link || !band) return
-    setBridgeTarget({ rowId: row.id, rect })
+    const requestId = ++bridgeRequestRef.current
+    setBridgeTarget({ rowId: row.id, rect, band, source: link, snapshot: { ...row } })
+    setRowFillState(prev => ({ ...prev, [row.id]: {} }))
     setBridgeSubjectFilter('')
     setBridgeQuery({ loading: true, candidates: [], subjectsSearched: [], notes: [] })
     try {
@@ -1021,6 +1018,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         notes?: string[]
         error?: string
       }
+      if (requestId !== bridgeRequestRef.current) return
       if (!resp.ok) {
         setBridgeQuery({
           loading: false,
@@ -1033,7 +1031,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       }
       const subjectsSearched = data.subjectsSearched ?? []
       // 기본 필터: 통합교과가 있으면 그것(1-2학년군 전용 교과라 연결 후보로 가장 적절), 없으면 전체.
-      setBridgeSubjectFilter(subjectsSearched.includes('통합교과') ? '통합교과' : '')
+      setBridgeSubjectFilter((data.candidates ?? []).some(candidate => candidate.subject === '통합교과') ? '통합교과' : '')
       setBridgeQuery({
         loading: false,
         candidates: data.candidates ?? [],
@@ -1042,6 +1040,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         judge: data.judge,
       })
     } catch (e) {
+      if (requestId !== bridgeRequestRef.current) return
       setBridgeQuery({ loading: false, candidates: [], subjectsSearched: [], notes: [], error: '요청 중 오류가 발생했습니다' })
       console.error('[bridge standards]', e)
     }
@@ -1055,19 +1054,24 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
    */
   async function applyBridgeCandidate(rowId: string, candidate: BridgeCandidate) {
     const row = rowsRef.current.find(r => r.id === rowId)
-    if (!row) return
-    const band = rowBandOf(row)
-    const selected = {
-      ...row,
-      subject: toSheetSubject(candidate.subject),
-      coreIdea: candidate.contentCoreIdea || candidate.coreIdea,
-      standard: candidate.standard,
-      ...(band ? { gradeBand: band } : {}),
+    const target = bridgeTarget
+    if (!row || !target || target.rowId !== rowId) return
+    if (rowBandOf(row) !== target.band || !canApplyRowBridge(row, target.snapshot)) {
+      setBridgeTarget(null)
+      setRowFillState(prev => ({ ...prev, [rowId]: { message: '행이 변경되어 현재 입력 내용을 유지했습니다. 다시 검색해 주세요.' } }))
+      return
     }
-    const fields: SheetFieldPatch = { subject: selected.subject, coreIdea: selected.coreIdea, standard: selected.standard, gradeBand: selected.gradeBand }
-    // Include the actual selected row's content elements in the description request.
+    const selection = rowBridgeSelection(row, candidate, target.band)
+    if (!selection) {
+      setBridgeQuery(prev => ({ ...prev, error: '이 학년군에 맞는 성취기준을 다시 선택해 주세요.' }))
+      return
+    }
+    const selected = { ...row, ...selection }
+    const fields: SheetFieldPatch = { ...selection }
+    const changedSubject = selected.subject !== row.subject || selected.coreIdea !== row.coreIdea
+    // 교과가 바뀌면 기존 교과의 내용 요소를 가져오지 않는다. 자유 입력 설명은 보존한다.
     for (const [field, cap] of [['knowledge', 3], ['processFunction', 2], ['valueAttitude', 2]] as const) {
-      if (!row[field]?.trim()) fields[field] = joinValues(matchContentElementsForRow(selected, field).slice(0, cap))
+      if (changedSubject || !row[field]?.trim()) fields[field] = joinValues(matchContentElementsForRow(selected, field).slice(0, cap))
     }
     setBridgeTarget(null)
     setRowFillState(prev => ({ ...prev, [rowId]: { loading: true, message: '성취기준 적용 중…' } }))
@@ -1370,10 +1374,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
    * 지식·이해/과정·기능/가치·태도 매핑을 서버 판정(mode: 'rows')으로 한 행만 받아온다.
    * 비어 있는 칸만 채우고 교사가 직접 넣은 값은 절대 덮어쓰지 않는다. 선택창은 그대로 쓸 수 있다.
    */
-  async function handleRowJevFill(row: CurriculumSheetRow) {
+  async function handleRowJevFill(row: CurriculumSheetRow, rect: DOMRect) {
     const band = rowBandOf(row)
     setRowFillState(prev => ({ ...prev, [row.id]: { loading: true } }))
     try {
+      if (rowBandHasNoStandards(row) || (row.linkedCoreIdea && !row.standard?.trim())) {
+        await openBridgePicker(row, rect)
+        return
+      }
       if (row.standard?.trim()) {
         const message = await fillRowDescription(row)
         setRowFillState(prev => ({ ...prev, [row.id]: { message } }))
@@ -1390,8 +1398,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       })
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({})) as { error?: string; notes?: string[] }
-        // 404의 error 문구가 곧 사유("사회: 1-2학년군 성취기준이 … 제외했습니다.")다.
-        // 행 칸은 좁아 잘리므로 상단 안내 스트립에 전문을 띄운다.
+        if (resp.status === 404 && rowBridgeSource(row) && band) {
+          await openBridgePicker(row, rect)
+          return
+        }
+        // 다른 오류는 좁은 행 칸과 상단 안내 스트립에 함께 표시한다.
         const reasons = err.notes?.length ? err.notes : (err.error ? [err.error] : [])
         if (reasons.length > 0) setAutofillNotes(reasons)
         setRowFillState(prev => ({ ...prev, [row.id]: { error: err.error ?? '제안을 받지 못했습니다', notes: err.notes } }))
@@ -1479,7 +1490,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   function matchContentElementsForRow(row: CurriculumSheetRow, field: 'knowledge' | 'processFunction' | 'valueAttitude'): string[] {
     const subj = row.subject ?? ''; const ci = row.coreIdea ?? ''
     if (!ci) return []
-    const si = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
+    const si = filterContentByStandardCourse(subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems, row)
     const selectedAreas = unique(splitValues(row.standard)
       .map(value => {
         const code = normalizeStandardCode(value)
@@ -1500,7 +1511,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
   function getPickerOptions(rowId: string, field: PickerField): string[] {
     const row = rows.find(r => r.id === rowId); const subj = row?.subject ?? ''; const ci = row?.coreIdea ?? ''
-    const si = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
+    const subjectItems = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
+    const si = row ? filterContentByStandardCourse(subjectItems, row) : subjectItems
     const rowBand = row ? rowBandOf(row) : sheetBand
     const gradeFiltered = (items: string[]) => filterByGradeBand(items, rowBand)
     const selectedAreas = row ? unique(splitValues(row.standard)
@@ -1636,13 +1648,16 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       : []
     const fill = rowFillState[row.id]
     const noStandards = rowBandHasNoStandards(row)
+    const bridgeSource = rowBridgeSource(row)
+    const showBridgeSearch = !!rowBand && !!bridgeSource && (noStandards || !!row.linkedCoreIdea)
     // Previously selected standards can also have their missing description filled or retried.
     const showAiStandard = !!row.subject
       && !!(row.coreIdea ?? '').trim()
       && (!(row.standard ?? '').trim() || !(row.description ?? '').trim())
       && !noStandards
+      && (!showBridgeSearch || !!row.standard?.trim())
     const noStandardsMessage = noStandards
-      ? `${row.subject}는 ${rowBand} 성취기준이 없습니다${withStandards.length > 0 ? ` · ${withStandards.map(band => band.replace('학년군', '')).join('·')}학년군만` : ''}`
+      ? `${rowBand}에는 ${row.subject} 교과가 따로 없습니다. 유사 성취기준에서 ${rowBand === '1-2학년군' ? '통합교과 등' : '다른 교과'}의 기준을 찾아 연결하세요.`
       : ''
 
     return (
@@ -1695,7 +1710,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           >
             {allowedBands.map(band => (
               <option key={band} value={band}>
-                {withStandards.some(item => item === band) ? band : `${band} (성취기준 없음)`}
+                {withStandards.some(item => item === band) ? band : `${band} (다른 교과 연결)`}
               </option>
             ))}
           </select>
@@ -1726,11 +1741,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             <span className="truncate">{band.replace('학년군', '')} 연결 줄</span>
           </button>
         ))}
-        {inBandCell && !!row.linkedCoreIdea && !!rowBand && (
+        {showBridgeSearch && bridgeSource && (
           <button
             onClick={e => { void openBridgePicker(row, (e.currentTarget as HTMLElement).getBoundingClientRect()) }}
             disabled={!!fill?.loading}
-            title={`${row.linkedCoreIdea.subject} 핵심아이디어에 맞는 ${rowBand} 성취기준을 선택하면 수업내용 설명도 함께 채웁니다`}
+            title={`${bridgeSource.subject} 핵심아이디어에 맞는 ${rowBand} 성취기준을 선택하면 수업내용 설명도 함께 채웁니다`}
             className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-tertiary-container)] transition-colors duration-150"
           >
             <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>search</span>
@@ -1739,7 +1754,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         )}
         {showAiStandard && (
           <button
-            onClick={() => { void handleRowJevFill(row) }}
+            onClick={e => { void handleRowJevFill(row, (e.currentTarget as HTMLElement).getBoundingClientRect()) }}
             disabled={!!fill?.loading}
             title="이 학년군의 성취기준과 비어 있는 내용 요소·수업내용 설명을 함께 채웁니다"
             className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg bg-[var(--md-primary-container)] px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-primary-container)] transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40"
@@ -2352,13 +2367,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       {/* 연결 줄 — 유사 성취기준 후보 팝오버 */}
       {bridgeTarget && (() => {
         const row = rows.find(r => r.id === bridgeTarget.rowId)
-        if (!row?.linkedCoreIdea) return null
+        if (!row) return null
         return (
           <BridgePicker
             anchorRect={bridgeTarget.rect}
-            sourceSubject={row.linkedCoreIdea.subject}
-            sourceCoreIdea={row.linkedCoreIdea.coreIdea}
-            targetBand={rowBandOf(row)}
+            sourceSubject={bridgeTarget.source.subject}
+            sourceCoreIdea={bridgeTarget.source.coreIdea}
+            targetBand={bridgeTarget.band}
             loading={bridgeQuery.loading}
             error={bridgeQuery.error}
             notes={bridgeQuery.notes}
