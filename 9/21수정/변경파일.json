@@ -1,0 +1,152 @@
+{
+  "baseCommit": "3bd4e2e7e70509b7b9fe7c08340dc402fd5197a0",
+  "backupCommit": "0c5884511b2d00014f1c0cbfb9ccdbf732c20cf7",
+  "backupBranch": "codex/2026-09-21-before-grade-fix",
+  "fixBranch": "codex/2026-09-21-grade-bands",
+  "untrackedIncluded": [
+    "src/components/curriculum-map/MapTooltip.tsx",
+    "src/components/curriculum-map/forceMath.ts",
+    "src/components/curriculum-map/useForceLayout.ts"
+  ],
+  "date": "2026-09-21",
+  "scope": "협력적 수업설계의 팀 학년군→분석시트 연결, 방장 승인, 학년군별 중심 교과·성취기준",
+  "files": [
+    {
+      "path": "firestore.rules",
+      "change": "modified",
+      "beforeSha256": "8e864bb18aaa0f87abbb4842c055e9a3a3505924a4c79060490442fe2633a536",
+      "afterSha256": "14e811777a3f3099083e7bdd1d416f7a1d34a01dbb34faf191d0cea68e706f8a"
+    },
+    {
+      "path": "src/app/api/chat/stream/route.ts",
+      "change": "modified",
+      "beforeSha256": "a48cd3ff68a4e55081ddb7bd5f91889a8ba1e68f1d203f10617f05a29a3d806a",
+      "afterSha256": "23df59db78f8f9250f8f7ffd3be6b852f14fe798e82ca77418028678e2d7fc4c"
+    },
+    {
+      "path": "src/app/api/curriculum-sheet/autofill/route.ts",
+      "change": "modified",
+      "beforeSha256": "3b10c96290369d56e903905d5a3ed9888aac67a02c544da8748aae1e00d73512",
+      "afterSha256": "774ef71a939b142e8519929732aee5d12b73180ece773b22ff4f405d00e8e2d2"
+    },
+    {
+      "path": "src/components/artifacts/structured/A21Renderer.tsx",
+      "change": "modified",
+      "beforeSha256": "f9aa0db72d36636b203cf9f516756a857a403d6a1e8e52b25920d3928718b45c",
+      "afterSha256": "5bb309a3c9f63b4a494992b39a66d900d0306dd9fd114cf872b58b0fae56b201"
+    },
+    {
+      "path": "src/components/chat/ChatPanel.tsx",
+      "change": "modified",
+      "beforeSha256": "1e0541ec98cf8aefce874511fc315f7c46eb39d73cbb5293f818cddb79c68ca8",
+      "afterSha256": "5eccb04604a09080dfdf7747f74ffbe3262d1f9437ce885cda2f071c0e2856b8"
+    },
+    {
+      "path": "src/components/chat/CurriculumSheetModal.tsx",
+      "change": "modified",
+      "beforeSha256": "e683145bd847ab3cc7bbbd7ab4d4cedfb4122c21075d49c6492bd7e97dd71ea5",
+      "afterSha256": "fbaa327c1b191ad79c6da62bbe4809e23fdca457f0b67fc6d97314dcd1ebc874"
+    },
+    {
+      "path": "src/components/chat/CurriculumWorkspaceModal.tsx",
+      "change": "modified",
+      "beforeSha256": "bc776a525adc4009c5a9a84a987afc4578f0a5425b411d95b21c7e63ae2e6f1f",
+      "afterSha256": "73373bd2c92de0e7799118cedaa67f32e70c78db52f170c15e3b949ad4673510"
+    },
+    {
+      "path": "src/components/chat/curriculum-sheet/SheetToolbar.tsx",
+      "change": "modified",
+      "beforeSha256": "1331b172c9ab3f676e82e0cd11578602bad16e77822f2091405657aa878daa5b",
+      "afterSha256": "7dc105cb151eecf49e03193eb766d7a7de7d5895331a9bfdd93ecda6086d559d"
+    },
+    {
+      "path": "src/lib/curriculum/a21DirectAnswer.ts",
+      "change": "modified",
+      "beforeSha256": "87b05385d2e8bfe1192e126b954235c4d90dcf1b56d4307b63dee14d198ccb07",
+      "afterSha256": "413f48c879be497d4c3d280d723d5430dea617c65e0477fb4e0fddfdfe5c36ea"
+    },
+    {
+      "path": "src/lib/curriculum/contextInject.ts",
+      "change": "modified",
+      "beforeSha256": "b9da8351752a43f6affc50011e53b044251d6e140dd8ffd434c97dc27ae30969",
+      "afterSha256": "36268b2c536a7434841dcf2a8de12c96261cd227e76f374b4f58defcc03aa62b"
+    },
+    {
+      "path": "src/lib/curriculum/graphSheetBridge.ts",
+      "change": "modified",
+      "beforeSha256": "22db899a5abaa8e7fadd8fb9382b64c3d852b681f2bba0bfa0b6afa3ba2ad206",
+      "afterSha256": "07eca288d6172e14665702fffb2c2ed1ece7797312a9ae7c7fa2c564400c14a3"
+    },
+    {
+      "path": "src/lib/firebase/projects.ts",
+      "change": "modified",
+      "beforeSha256": "aee526eef1a82119ab0d4b82c5d9f4f7bcd3d6b63e2d6b5d98f67b533ab8c15b",
+      "afterSha256": "aef685f0ea1bd3743608a77be5b79a69e6fda83927df21cd2837ad4586b697f5"
+    },
+    {
+      "path": "src/lib/prompts/system.ts",
+      "change": "modified",
+      "beforeSha256": "559d6b0c23634445cde0b642b85d90745f4cc266739f5227a6829d2e21c27845",
+      "afterSha256": "a2ca328a6995e4393abd9b989bf7eeca2da457d411ceb2dc9f1f1a404bd48927"
+    },
+    {
+      "path": "src/types/index.ts",
+      "change": "modified",
+      "beforeSha256": "3162e60875dd175be3b742be105d88f7427649107e9a46e78aa32e11150b736f",
+      "afterSha256": "19a8e239b0de9a81d55020430f16a138ca90392f4f8877cf93ca866cd04391ab"
+    },
+    {
+      "path": "src/lib/curriculum/collaborativeBands.ts",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "8c7501471d532e4477bdf16794c7c0c6dd3c09ddf0af585dfd8a46d3d3a160b8"
+    },
+    {
+      "path": "src/lib/curriculum/graphGradeBands.ts",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "f6499f89edafd2cd70ede4406a5dbe37007420ae00920caf18fba0b613c91df6"
+    },
+    {
+      "path": "src/lib/curriculum/teamGradeBandState.ts",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "be63a38985c9bd6dc27080680f4b9254fabdb35abdf8963fd6bc59968bcc0d2a"
+    },
+    {
+      "path": "scripts/collaborativeGradeBands.test.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "b4108ab000f32870567469af7d02df7c9a80bc1f45daa402a169edafd388a8f4"
+    },
+    {
+      "path": "scripts/collaborativeAutofillRoute.test.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "335bebce6a2eb3279046a12fdbc15354653df4ca6e3bf748f0b3f266d7067591"
+    },
+    {
+      "path": "scripts/collaborativeGradePersistence.test.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "322d96e3ab87f5a269620b5828af65af2f03ee70cba2060a7732734ebf0721b6"
+    },
+    {
+      "path": "scripts/collaborativeGradeArtifact.test.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "b996343492dd7cf33194f3a08570469b33a1ba7d9c31427b2e029e8d1635877a"
+    },
+    {
+      "path": "scripts/collaborativeGradeRules.test.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "021d54b4ec115d7d991e06e3a8ca7c45bd2482c6ef1c05d7c54806a2ff6bdbf2"
+    }
+  ],
+  "fixCommit": "75173b16dc48cfcc6cae4e942d8ab0a7a2a72eba",
+  "fixCommits": [
+    "32806c9d116215c3ec161f2385bf5c690cbaba7e",
+    "75173b16dc48cfcc6cae4e942d8ab0a7a2a72eba"
+  ]
+}
