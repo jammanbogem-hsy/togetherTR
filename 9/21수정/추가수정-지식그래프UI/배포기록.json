@@ -1,0 +1,56 @@
+{
+  "url": "https://togethertr.web.app",
+  "codeCommit": "aefc4fdecc6eee1523dabfdfb23dcf0e7b0a7e48",
+  "releaseTime": "2026-09-21T23:06:49.531Z",
+  "hostingVersion": "projects/togethertr/sites/togethertr/versions/1413bcadf04d3db6",
+  "hostingRelease": "projects/togethertr/sites/togethertr/channels/live/releases/1790032009531000",
+  "previousHostingVersion": "projects/togethertr/sites/togethertr/versions/24da5d766a2e1570",
+  "buildId": "0SjYrNaUavwUG4tDoq5EQ",
+  "runtime": "nodejs24",
+  "checks": {
+    "sourceCommit": "aefc4fdecc6eee1523dabfdfb23dcf0e7b0a7e48",
+    "regressionTestsPassed": 11,
+    "typescript": "passed",
+    "productionBuild": "passed",
+    "lint": {
+      "errors": 0,
+      "existingWarnings": 9
+    },
+    "curriculum": {
+      "pass": 16,
+      "existingWarnings": 3,
+      "fail": 0
+    },
+    "runtimeAssets": "passed",
+    "browser": {
+      "environment": "isolated local preview using production components, graph APIs replaced with fixtures and saves in memory",
+      "viewports": [
+        [
+          1600,
+          1000
+        ],
+        [
+          390,
+          844
+        ]
+      ],
+      "passed": [
+        "topic search and search mode",
+        "relation filtering",
+        "node visibility toggle",
+        "node drag without popup",
+        "keyboard node detail and Escape",
+        "zoom and fit",
+        "sidebar expand and collapse",
+        "automatic fit after resize",
+        "detail dialog focus and return",
+        "generation disables save",
+        "save failure and retry, 6 selected standards retained",
+        "member has no save action",
+        "return to sheet"
+      ]
+    },
+    "productionProjectDataModified": false
+  },
+  "productionClientMatchesBuild": true
+}

@@ -1,0 +1,33 @@
+{
+  "url": "https://togethertr.web.app",
+  "checkedAt": "2026-09-21T23:06:56.493Z",
+  "sourceCommit": "aefc4fdecc6eee1523dabfdfb23dcf0e7b0a7e48",
+  "checks": [
+    {
+      "page": "/login",
+      "status": 200,
+      "fontSubset": true
+    },
+    {
+      "label": "graphWorkspace",
+      "path": "/_next/static/chunks/0ljb7mz~nd42x.js",
+      "sha256": "c6530c9147231d2b7b59b8e368554e458fefd7cf813ac94f6cf9fd069e14f547",
+      "matchesBuild": true
+    },
+    {
+      "label": "sharedHeader",
+      "path": "/_next/static/chunks/0ik8s6y_1i-.c.js",
+      "sha256": "62eebe22b949b0d2646eeffbb4d260ea9b56b02456ddb7c9b05de8e9731ff89a",
+      "matchesBuild": true
+    },
+    {
+      "label": "responsiveLayout",
+      "path": "/_next/static/chunks/10m59p~d37c4n.css",
+      "sha256": "03f09a04c19cd07a16f62ed88cb68a260945749df44b8dc19f8d97b5c881e160",
+      "matchesBuild": true
+    },
+    {
+      "backendRuntime": "nodejs24"
+    }
+  ]
+}
