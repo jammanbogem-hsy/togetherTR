@@ -5,10 +5,11 @@ import { createPortal } from 'react-dom'
 import type { GNode, GEdge, GraphRelationAnalysis, GraphPinnedStandard, GraphRelationFilter } from './types'
 import {
   RELATION_COLORS, subjectColor, subjectName, normCode, nodeRadius, nodeImportance,
-  edgeColor, edgeRelationLabel, hasCompletedRelationAnalysis,
+  hasCompletedRelationAnalysis,
   getRelationDisplayState, getRelationStatusMeta, buildFallbackRelationExplanation,
 } from './constants'
-import { DEFAULT_GRAPH_RELATION_TYPE } from '@/lib/knowledge-graph/domain'
+import { ICON_FONT_FAMILY, ICON_FONT_SPEC, ICON_SIZE_RATIO, subjectIcon } from '@/components/curriculum-map/subjectIcons'
+import { graphEdgeSegment, graphEdgeAppearance } from './graphPresentation'
 
 interface GraphCanvasProps {
   svgRef: React.RefObject<SVGSVGElement | null>
@@ -63,6 +64,17 @@ export default function GraphCanvas({
   const [viewTransform, setViewTransform] = useState<ViewTransform>({ x: 0, y: 0, scale: 1 })
   const [dragging, setDragging] = useState<string | null>(null)
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
+  const [iconFontReady, setIconFontReady] = useState(false)
+
+  // curriculum-map과 같은 아이콘 에셋. 폰트 실패 시 리거처 이름 대신 과목 약칭을 표시한다.
+  useEffect(() => {
+    if (!document.fonts) return
+    let cancelled = false
+    document.fonts.load(ICON_FONT_SPEC).then(faces => {
+      if (!cancelled && faces.length > 0) setIconFontReady(true)
+    }).catch(() => { /* 과목 약칭 유지 */ })
+    return () => { cancelled = true }
+  }, [])
 
   // 이벤트 핸들러에서 최신 transform을 읽기 위한 ref (렌더 중 쓰지 않음 — 커밋 후 동기화)
   const viewRef = useRef(viewTransform)
@@ -370,91 +382,42 @@ export default function GraphCanvas({
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
       >
-        <defs>
-          {[
-            { id: 'arrow', fill: '#94A3B8' },
-            { id: 'arrow-purple', fill: '#7C3AED' },
-            { id: 'arrow-blue', fill: '#2563EB' },
-            { id: 'arrow-red', fill: '#EF4444' },
-            { id: 'arrow-orange', fill: '#F97316' },
-            { id: 'arrow-green', fill: '#22C55E' },
-          ].map(({ id, fill }) => (
-            <marker key={id} id={id} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill={fill} />
-            </marker>
-          ))}
-        </defs>
-
         <g transform={`translate(${viewTransform.x},${viewTransform.y}) scale(${viewTransform.scale})`}>
-          {/* 엣지 (곡선 · 저투명도 · 가중치 반영 · 1홉 강조) */}
-          <g>
+          {/* curriculum-map과 같은 관계선: 색=분석된 유형, 굵기=강도, 회색 점선=추정 */}
+          <g aria-hidden="true" style={{ pointerEvents: 'none' }}>
             {visibleEdges.map(edge => {
               const src = nodeById.get(edge.source)
               const tgt = nodeById.get(edge.target)
               if (!src || !tgt) return null
-
-              const isManual = edge.method === 'manual'
-              const isCross = isManual || edge.method.includes('tfidf') || edge.method.includes('hybrid')
-              const color = edgeColor(edge.method, edge.relation)
-              const markerSuffix = isManual
-                ? edge.relation === '도구-활용' ? '-red' : edge.relation === '현상-가치' ? '-orange' : edge.relation === '내용-표현' ? '-green' : '-purple'
-                : isCross ? '-purple' : edge.method === 'rule_based' ? '-blue' : ''
-              const markerId = `arrow${markerSuffix}`
-
               const srcIsCenter = src.id === centerNodeId
               const tgtIsCenter = tgt.id === centerNodeId
-              const isCenterEdge = srcIsCenter || tgtIsCenter
-              const touchesFocus = focusId ? (edge.source === focusId || edge.target === focusId) : false
-              const dimmed = !!emphasis && !touchesFocus
-
-              // 강조/일반 상태별 투명도
-              const baseOpacity = isManual ? (isCenterEdge ? 0.5 : 0.3) : isCross ? 0.36 : 0.2
-              const opacity = dimmed ? 0.05 : touchesFocus ? 0.85 : baseOpacity
-
-              // 가중치 반영 두께
-              const w = Math.max(0, Math.min(1, edge.weight))
-              const strokeW = (isManual && edge.relation === DEFAULT_GRAPH_RELATION_TYPE)
-                ? 1
-                : Math.max(0.8, 0.8 + w * 2.4) + (touchesFocus ? 1 : 0)
-
-              const showArrow = touchesFocus || (!emphasis && isCenterEdge)
-              const showLabel = (touchesFocus || (!emphasis && isCenterEdge)) && scale > 0.55
-
-              const dx = tgt.x - src.x
-              const dy = tgt.y - src.y
-              const dist = Math.sqrt(dx * dx + dy * dy) || 1
-              const srcR = nodeRadius(src.type, src.similarityScore, srcIsCenter) + 2
-              const tgtR = nodeRadius(tgt.type, tgt.similarityScore, tgtIsCenter) + (showArrow ? 9 : 3)
-              const x1 = src.x + (dx / dist) * srcR
-              const y1 = src.y + (dy / dist) * srcR
-              const x2 = tgt.x - (dx / dist) * tgtR
-              const y2 = tgt.y - (dy / dist) * tgtR
-
-              const mx = (x1 + x2) / 2
-              const my = (y1 + y2) / 2
-              const curvature = isManual ? 0.16 : 0.13
-              const perpX = -dy / dist * dist * curvature
-              const perpY = dx / dist * dist * curvature
-              const cpX = mx + perpX
-              const cpY = my + perpY
-              const labelX = 0.25 * x1 + 0.5 * cpX + 0.25 * x2
-              const labelY = 0.25 * y1 + 0.5 * cpY + 0.25 * y2
-              const labelText = edgeRelationLabel(edge)
-              const charW = 7.9
+              const touchesFocus = edge.source === focusId || edge.target === focusId
+              const analysis = claudeRelations.get([edge.source, edge.target].sort().join('||'))
+              const appearance = graphEdgeAppearance(edge, analysis, !!focusId, touchesFocus)
+              const segment = graphEdgeSegment(
+                src, tgt,
+                nodeRadius(src.type, src.similarityScore, srcIsCenter),
+                nodeRadius(tgt.type, tgt.similarityScore, tgtIsCenter),
+              )
+              if (!segment) return null
+              const { x1, y1, x2, y2 } = segment
+              const labelText = appearance.label
+              const labelWidth = labelText.length * 9 + 16
+              const showLabel = (touchesFocus || (!focusId && (srcIsCenter || tgtIsCenter)))
+                && scale > 0.55 && segment.length > labelWidth + 16
 
               return (
-                <g key={edge.id}>
-                  <path
-                    d={`M ${x1},${y1} Q ${cpX},${cpY} ${x2},${y2}`}
-                    fill="none" stroke={color} strokeWidth={strokeW} strokeLinecap="round"
-                    strokeOpacity={opacity}
-                    markerEnd={showArrow ? `url(#${markerId})` : undefined}
-                    strokeDasharray={(!isManual && !isCross) ? '4,4' : undefined}
+                <g key={edge.id} data-edge-id={edge.id} data-relation-state={appearance.analyzed ? 'analyzed' : 'estimated'}>
+                  <line
+                    x1={x1} y1={y1} x2={x2} y2={y2}
+                    stroke={appearance.color} strokeWidth={appearance.width} strokeLinecap="round"
+                    strokeOpacity={appearance.opacity} strokeDasharray={appearance.dash}
+                    vectorEffect="non-scaling-stroke"
                   />
-                  {showLabel && labelText && (
-                    <g transform={`translate(${labelX},${labelY})`}>
-                      <rect x={-labelText.length * charW / 2 - 6} y={-10} width={labelText.length * charW + 12} height={20} rx={10} fill="rgba(255,255,255,0.92)" stroke="rgba(226,232,240,0.9)" />
-                      <text textAnchor="middle" dy={4} fontSize={12} fontWeight="600" fill={color} style={{ userSelect: 'none', pointerEvents: 'none', fontFamily: 'system-ui, sans-serif' }}>
+                  {showLabel && (
+                    <g transform={`translate(${(x1 + x2) / 2},${(y1 + y2) / 2})`}>
+                      <rect x={-labelWidth / 2} y={-11} width={labelWidth} height={22} rx={11} fill="rgba(255,255,255,0.96)" stroke="rgba(226,232,240,0.9)" />
+                      <text textAnchor="middle" dy={4} fontSize={12} fontWeight="600" fill={appearance.color} style={{ userSelect: 'none', fontFamily: 'system-ui, sans-serif' }}>
                         {labelText}
                       </text>
                     </g>
@@ -464,13 +427,14 @@ export default function GraphCanvas({
             })}
           </g>
 
-          {/* 노드 (작은 위성 + 뚜렷한 중심 · 부드러운 halo · 라벨 정리) */}
+          {/* 과목 아이콘 + 성취기준 코드 · 중심/키보드 선택은 링으로 구분 */}
           <g>
             {visibleNodes.map(node => {
               const isCenter = node.id === centerNodeId
               const r = nodeRadius(node.type, node.similarityScore, isCenter)
               const color = subjectColor(node.subject_id)
               const sName = subjectName(node.subject_id)
+              const icon = subjectIcon(node.subject_id)
               const isPopup = popup?.id === node.id
               const isHovered = node.id === hoveredNodeIdProp
               const isFocused = node.id === focusedNodeId
@@ -482,11 +446,13 @@ export default function GraphCanvas({
               const dimmed = !!emphasis && !emphasis.has(node.id) && !isCenter
               const nodeOpacity = dimmed ? 0.22 : 1
               const showLabel = isCenter || isFocused || (emphasis?.has(node.id) ?? false)
+                || (visibleNodes.length <= 24 && scale >= 0.65)
                 || scale >= LABEL_ALL_SCALE || importance >= LABEL_IMPORTANCE_MIN
 
               return (
                 <g
                   key={node.id}
+                  data-node-id={node.id}
                   transform={`translate(${node.x},${node.y})`}
                   style={{ cursor: 'pointer', opacity: nodeOpacity, transition: 'opacity 140ms ease', outline: 'none' }}
                   role="button"
@@ -514,7 +480,7 @@ export default function GraphCanvas({
                   {(isHovered || isFocused) && !isCenter && <circle r={r + 9} fill={color} opacity={0.12} />}
 
                   {/* 상태 링 */}
-                  {isCenter && <circle r={r + 6} fill="none" stroke="#D97706" strokeWidth={2.5} strokeOpacity={0.85} />}
+                  {isCenter && <circle r={r + 6} fill="none" stroke="#1F2937" strokeWidth={2.5} strokeOpacity={0.85} />}
                   {isCenter && <circle r={r + 4} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.5} />}
                   {isFocused && <circle r={r + 7} fill="none" stroke="#111827" strokeWidth={2} strokeDasharray="3,3" strokeOpacity={0.7} />}
                   {isHovered && !isCenter && !isFocused && <circle r={r + 6} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.55} />}
@@ -531,10 +497,29 @@ export default function GraphCanvas({
                     strokeOpacity={0.92}
                   />
 
+                  {/* SVG 텍스트는 폰트가 준비된 뒤에만 아이콘 리거처로 렌더링 */}
+                  <text
+                    aria-hidden="true"
+                    data-subject-icon={icon || undefined}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="#FFFFFF"
+                    fontSize={iconFontReady && icon ? Math.round(r * ICON_SIZE_RATIO) : Math.min(r * 0.6, 15)}
+                    style={{
+                      fontFamily: iconFontReady && icon ? ICON_FONT_FAMILY : 'system-ui, sans-serif',
+                      fontWeight: iconFontReady && icon ? 400 : 700,
+                      fontFeatureSettings: "'liga'",
+                      fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24",
+                      userSelect: 'none', pointerEvents: 'none',
+                    }}
+                  >
+                    {iconFontReady && icon ? icon : (sName.slice(0, 2) || '?')}
+                  </text>
+
                   {/* 라벨 (노드 하단, 흰색 외곽선으로 가독성 확보) */}
                   {showLabel && (() => {
                     const label = node.label
-                    const fontSize = isCenter ? 13 : 10.5
+                    const fontSize = isCenter ? 13 : 11.5
                     return (
                       <text
                         y={r + (isCenter ? 15 : 12)}
@@ -552,9 +537,9 @@ export default function GraphCanvas({
                       </text>
                     )
                   })()}
-                  {isCenter && sName && (
+                  {showLabel && sName && (
                     <text y={r + 30} textAnchor="middle" fontSize={11} fontWeight="500" fill="#6B7280" stroke="#ffffff" strokeWidth={2.5} paintOrder="stroke" strokeLinejoin="round" style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                      ({sName})
+                      {sName}
                     </text>
                   )}
 

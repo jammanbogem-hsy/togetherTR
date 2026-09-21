@@ -189,14 +189,14 @@ export function normCode(label: string): string {
   return label.replace(/[\[\]]/g, '').trim()
 }
 
-// Obsidian 스타일: 중심은 크고 뚜렷, 위성 노드는 작고 중요도(유사도)에 비례.
+// 중심은 뚜렷하게, 주변 성취기준도 과목 아이콘을 읽을 수 있는 최소 반경을 보장한다.
 // 반환값은 그래프 렌더링·충돌 반경·엣지 트리밍의 단일 기준(SSOT)으로 쓰인다.
 export function nodeRadius(type: GNode['type'], score?: number, isCenter?: boolean): number {
   if (type === 'subject')   return 13
   if (type === 'core_idea') return 9
   if (isCenter) return 34
-  const s = score ?? 0.4
-  return Math.round(9 + s * 12) // 위성: 약 10–21px, 중요도에 따라 위성 크기 차등
+  const s = Number.isFinite(score) ? (toUnitGraphScore(score) ?? 0.4) : 0.4
+  return Math.round(22 + s * 8) // 주변 성취기준: 22–30px (충돌·연결선도 같은 반경 사용)
 }
 
 // 라벨 정리·강조 우선순위에 쓰는 노드 중요도(0–1). 중심은 항상 1.
