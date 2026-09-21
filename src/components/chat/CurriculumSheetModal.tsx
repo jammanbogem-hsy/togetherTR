@@ -33,6 +33,7 @@ import {
 import type { SheetGradeMode } from '@/lib/curriculum/sheetGradeBands'
 import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
+import { canFillRowDescription, requestRowDescription } from '@/lib/curriculum/rowDescriptions'
 
 // ─── 교육과정 데이터 타입 ─────────────────────────────────
 
@@ -499,7 +500,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   // 표시 전용 — 도움말 토글, 표 스크롤 시 앱 바 승격
   const [helpOpen, setHelpOpen] = useState(false)
   const [tableScrolled, setTableScrolled] = useState(false)
-  const [rowFillState, setRowFillState] = useState<Record<string, { loading?: boolean; judge?: 'jev' | 'embedding'; filled?: number; error?: string; notes?: string[] }>>({})
+  const [rowFillState, setRowFillState] = useState<Record<string, { loading?: boolean; judge?: 'jev' | 'embedding'; filled?: number; message?: string; error?: string; notes?: string[] }>>({})
   const [autofillError, setAutofillError] = useState('')
   // 서버가 돌려준 교사 안내 문구(학년군 조정·교과 제외·핵심아이디어 대체 사유).
   const [autofillNotes, setAutofillNotes] = useState<string[]>([])
@@ -838,6 +839,66 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   function updateRow(id: string, field: CurriculumSheetEditableField, value: string) {
     updateRowFields(id, { [field]: value } as SheetFieldPatch)
   }
+  // Save selected curriculum inputs before requesting their description. A fast model response
+  // must not race the normal 700 ms cell-save timers.
+  async function persistAutofillFields(rowId: string, fields: SheetFieldPatch) {
+    const row = rowsRef.current.find(item => item.id === rowId)
+    if (!row) return
+    const entries = Object.entries(fields) as Array<[CurriculumSheetEditableField, CurriculumSheetRow[CurriculumSheetEditableField]]>
+    if (!entries.length) return row
+    const next = { ...row, ...fields, updatedBy: currentUserName, updatedAt: Date.now() }
+    rowsRef.current = rowsRef.current.map(item => item.id === rowId ? next : item)
+    setRows(rowsRef.current)
+    if (!onPatchSave) { triggerSave(rowsRef.current); return next }
+    const versions = entries.map(([field]) => {
+      const key = `${rowId}:${field}`
+      clearTimeout(patchTimersRef.current[key])
+      delete patchTimersRef.current[key]
+      const version = (dirtyCellVersionsRef.current[key] ?? 0) + 1
+      dirtyCellVersionsRef.current[key] = version
+      return { key, version }
+    })
+    setDirty(true)
+    try {
+      const saved = await onPatchSave(serverRowIdsRef.current.has(rowId)
+        ? { type: 'update-cells', updates: entries.map(([field, value]) => ({ rowId, field, value })), updatedBy: currentUserName }
+        : { type: 'upsert-row', row: next, updatedBy: currentUserName })
+      for (const { key, version } of versions) {
+        if (dirtyCellVersionsRef.current[key] === version) delete dirtyCellVersionsRef.current[key]
+      }
+      applySavedRows(saved)
+      return next
+    } finally {
+      syncDirtyFromPending()
+    }
+  }
+
+  async function fillRowDescription(source: CurriculumSheetRow): Promise<string> {
+    if (source.description?.trim()) return '기존 설명 유지'
+    if (!source.standard?.trim()) return '성취기준을 선택해 주세요'
+    const band = rowBandOf(source)
+    setRowFillState(prev => ({ ...prev, [source.id]: { ...prev[source.id], loading: true, message: '수업내용 설명 작성 중…' } }))
+    const description = await requestRowDescription({ ...source, gradeBand: band }, {
+      targetGradeGroup: band || targetGradeGroup, a12Artifact, chatContext,
+    })
+    const current = rowsRef.current.find(item => item.id === source.id)
+    if (!description || !current || rowBandOf(current) !== band
+      || !canFillRowDescription(current, source)
+      || dirtyCellVersionsRef.current[`${source.id}:description`] !== undefined) {
+      return '현재 입력 내용 유지'
+    }
+    if (onPatchSave) {
+      const saved = await onPatchSave({ type: 'fill-descriptions', rows: [{ ...source, description }], updatedBy: currentUserName })
+      applySavedRows(saved)
+      if (saved && saved.find(item => item.id === source.id)?.description !== description) return '현재 입력 내용 유지'
+    } else {
+      const next = rowsRef.current.map(item => item.id === source.id ? { ...item, description } : item)
+      rowsRef.current = next
+      setRows(next)
+      triggerSave(next)
+    }
+    return '수업내용 설명 입력 완료'
+  }
   // 과목 변경 — 새 교과에 그 학년군 성취기준이 없으면(통합교과=1-2학년군 전용, 사회=1-2학년군 없음 …)
   // 쓸 수 있는 학년군으로 옮긴다. 시트 학년군이 가능하면 그것, 아니면 첫 번째.
   // 사용 가능한 학년군이면 학년군을 건드리지 않는다(값이 없으면 시트 학년군이라는 뜻 유지).
@@ -992,16 +1053,31 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
    * 엄격 학년군 규칙과 DB 검증이 그대로 유지되고, 팀 핵심아이디어는 linkedCoreIdea에 남는다.
    * 지식·이해/과정·기능/가치·태도는 기존 자동 보강 effect가 이어서 채운다.
    */
-  function applyBridgeCandidate(rowId: string, candidate: BridgeCandidate) {
+  async function applyBridgeCandidate(rowId: string, candidate: BridgeCandidate) {
     const row = rowsRef.current.find(r => r.id === rowId)
-    const band = row ? rowBandOf(row) : ''
-    updateRowFields(rowId, {
+    if (!row) return
+    const band = rowBandOf(row)
+    const selected = {
+      ...row,
       subject: toSheetSubject(candidate.subject),
       coreIdea: candidate.contentCoreIdea || candidate.coreIdea,
       standard: candidate.standard,
       ...(band ? { gradeBand: band } : {}),
-    })
+    }
+    const fields: SheetFieldPatch = { subject: selected.subject, coreIdea: selected.coreIdea, standard: selected.standard, gradeBand: selected.gradeBand }
+    // Include the actual selected row's content elements in the description request.
+    for (const [field, cap] of [['knowledge', 3], ['processFunction', 2], ['valueAttitude', 2]] as const) {
+      if (!row[field]?.trim()) fields[field] = joinValues(matchContentElementsForRow(selected, field).slice(0, cap))
+    }
     setBridgeTarget(null)
+    setRowFillState(prev => ({ ...prev, [rowId]: { loading: true, message: '성취기준 적용 중…' } }))
+    try {
+      const source = await persistAutofillFields(rowId, fields)
+      const message = source ? await fillRowDescription(source) : '행이 삭제되어 적용하지 않았습니다'
+      setRowFillState(prev => ({ ...prev, [rowId]: { message } }))
+    } catch (error) {
+      setRowFillState(prev => ({ ...prev, [rowId]: { error: error instanceof Error ? error.message : '수업내용 설명을 작성하지 못했습니다' } }))
+    }
   }
 
   function removeRow(id: string) {
@@ -1136,7 +1212,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     setAutofillLoading(true)
     setAutofillError('')
     setAutofillNotes([])
-    setAutofillProgress([{ id: 'coreIdeas', label: '핵심아이디어 판정 (Jev)', status: 'running' }])
+    setAutofillProgress([{ id: 'coreIdeas', label: '핵심아이디어 검토', status: 'running' }])
     const started = performance.now()
     try {
       const resp = await fetch('/api/curriculum-sheet/autofill', {
@@ -1183,9 +1259,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     setAutofillError('')
     setAutofillProgress(prev => [
       ...prev.filter(step => step.id === 'coreIdeas'),
-      { id: 'rows', label: '성취기준 · 지식·이해 · 과정·기능 · 가치·태도 판정 (Jev)', status: 'running' },
-      { id: 'describe', label: 'LLM 수업내용 설명 작성 (확정된 값만 사용)', status: 'pending' },
-      { id: 'verify', label: 'Jev 설명 범위 검증', status: 'pending' },
+      { id: 'rows', label: '성취기준 · 지식·이해 · 과정·기능 · 가치·태도 검토', status: 'running' },
+      { id: 'describe', label: '수업내용 설명 작성', status: 'pending' },
+      { id: 'verify', label: '성취기준과 설명 일치 여부 확인', status: 'pending' },
     ])
     const common = autofillCommonPayload()
     try {
@@ -1275,7 +1351,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         const lowest = Object.values(desc.verification ?? {})
         setProgressStep('verify', verifyStep
           ? { status: 'done', ms: (verifyStep.ms ?? 0) + (rewriteStep?.ms ?? 0), note: rewriteStep ? rewriteStep.label : (lowest.length ? `범위 내 ${Math.round(Math.min(...lowest) * 100)}% 이상` : undefined) }
-          : { status: 'done', note: 'Jev 미사용' })
+          : { status: 'done', note: '추가 검토 생략' })
       } catch (e) {
         setProgressStep('describe', { status: 'error', note: '설명은 비워 두었습니다' })
         setProgressStep('verify', { status: 'error' })
@@ -1298,6 +1374,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     const band = rowBandOf(row)
     setRowFillState(prev => ({ ...prev, [row.id]: { loading: true } }))
     try {
+      if (row.standard?.trim()) {
+        const message = await fillRowDescription(row)
+        setRowFillState(prev => ({ ...prev, [row.id]: { message } }))
+        return
+      }
       const resp = await fetch('/api/curriculum-sheet/autofill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1325,7 +1406,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       // 서버가 교과명을 별칭으로 돌려줄 수 있어 비교는 포함 관계까지 허용한다.
       const candidates = data.rows ?? []
       const subjectRows = candidates.filter(r => curriculumTextMatches(r.subject ?? '', row.subject))
-      const matched = subjectRows.find(r => !band || toGradeBandLabel(r.gradeBand) === band) ?? subjectRows[0]
+      const matched = subjectRows.find(r => !band || toGradeBandLabel(r.gradeBand) === band)
       if (!matched) {
         setRowFillState(prev => ({
           ...prev,
@@ -1338,7 +1419,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         return
       }
       // 최신 로컬 값 기준으로 "빈 칸"을 판정한다(요청 중 다른 팀원이 채웠을 수 있다).
-      const current = rowsRef.current.find(r => r.id === row.id) ?? row
+      const current = rowsRef.current.find(r => r.id === row.id)
+      if (!current || current.subject !== row.subject || current.coreIdea !== row.coreIdea || rowBandOf(current) !== band) {
+        setRowFillState(prev => ({ ...prev, [row.id]: { message: '현재 입력 내용 유지' } }))
+        return
+      }
       const prefixBand = resolveGradePrefixBandForMode({ ...current, standard: matched.standard }, sheetMode, sheetBand)
       const fields: SheetFieldPatch = {}
       for (const field of ROW_FILL_FIELDS) {
@@ -1348,10 +1433,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         fields[field] = field === 'standard' ? value : ensureGradePrefixesForValue(value, prefixBand)
       }
       const filled = Object.keys(fields).length
-      if (filled > 0) updateRowFields(row.id, fields)
-      setRowFillState(prev => ({ ...prev, [row.id]: { judge: data.judge, filled, notes: data.notes } }))
+      const source = await persistAutofillFields(row.id, fields)
+      const message = source ? await fillRowDescription(source) : '행이 삭제되어 적용하지 않았습니다'
+      setRowFillState(prev => ({ ...prev, [row.id]: { judge: data.judge, filled, message, notes: data.notes } }))
     } catch (e) {
-      setRowFillState(prev => ({ ...prev, [row.id]: { error: '요청 중 오류가 발생했습니다' } }))
+      setRowFillState(prev => ({ ...prev, [row.id]: { error: e instanceof Error ? e.message : '요청 중 오류가 발생했습니다' } }))
       console.error('[row jev fill]', e)
     }
   }
@@ -1550,10 +1636,10 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       : []
     const fill = rowFillState[row.id]
     const noStandards = rowBandHasNoStandards(row)
-    // AI 성취기준 제안 — 성취기준이 비어 있는 줄에만 보여 준다(채워진 줄에는 아예 없음).
+    // Previously selected standards can also have their missing description filled or retried.
     const showAiStandard = !!row.subject
       && !!(row.coreIdea ?? '').trim()
-      && !(row.standard ?? '').trim()
+      && (!(row.standard ?? '').trim() || !(row.description ?? '').trim())
       && !noStandards
     const noStandardsMessage = noStandards
       ? `${row.subject}는 ${rowBand} 성취기준이 없습니다${withStandards.length > 0 ? ` · ${withStandards.map(band => band.replace('학년군', '')).join('·')}학년군만` : ''}`
@@ -1643,7 +1729,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         {inBandCell && !!row.linkedCoreIdea && !!rowBand && (
           <button
             onClick={e => { void openBridgePicker(row, (e.currentTarget as HTMLElement).getBoundingClientRect()) }}
-            title={`${row.linkedCoreIdea.subject} 핵심아이디어에 맞는 ${rowBand} 성취기준 후보를 찾습니다`}
+            disabled={!!fill?.loading}
+            title={`${row.linkedCoreIdea.subject} 핵심아이디어에 맞는 ${rowBand} 성취기준을 선택하면 수업내용 설명도 함께 채웁니다`}
             className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-tertiary-container)] transition-colors duration-150"
           >
             <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>search</span>
@@ -1654,24 +1741,19 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           <button
             onClick={() => { void handleRowJevFill(row) }}
             disabled={!!fill?.loading}
-            title="이 학년군의 성취기준과 비어 있는 내용 요소를 AI 판정(Jev)으로 제안받습니다"
+            title="이 학년군의 성취기준과 비어 있는 내용 요소·수업내용 설명을 함께 채웁니다"
             className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg bg-[var(--md-primary-container)] px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-primary-container)] transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40"
           >
             <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>auto_awesome</span>
-            <span className="truncate">{fill?.loading ? '판정 중…' : 'AI 성취기준'}</span>
+            <span className="truncate">{fill?.loading ? '작성 중…' : row.standard?.trim() ? 'AI 수업내용' : 'AI 성취기준'}</span>
           </button>
         )}
-        {fill?.judge && !fill.error && (
+        {fill?.message && !fill.error && (
           <span
-            title={JUDGE_LABEL[fill.judge]}
-            className={cn(
-              'rounded-lg px-2 py-0.5 text-center text-[12px] font-medium leading-[16px]',
-              fill.judge === 'jev'
-                ? 'bg-[var(--md-tertiary-container)] text-[var(--md-on-tertiary-container)]'
-                : 'bg-[var(--md-surface-container-high)] text-[var(--md-on-surface-variant)]',
-            )}
+            role="status"
+            className="rounded-lg bg-[var(--md-tertiary-container)] px-2 py-0.5 text-center text-[12px] font-medium leading-[16px] text-[var(--md-on-tertiary-container)]"
           >
-            {fill.judge === 'jev' ? 'Jev' : '임베딩'} {fill.filled ? `${fill.filled}칸` : '추가 없음'}
+            {fill.message}
           </span>
         )}
         {fill?.error && (
@@ -1845,7 +1927,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             {proposal.judge === 'jev' && proposal.mode && (
                               <span
-                                title={`Jev confidence ${(proposal.confidence ?? 0).toFixed(2)} — 제시: 그대로 진행해도 됨 · 확인: 후보 비교 권장 · 명료화: 주제·맥락을 더 적어 주세요`}
+                                title={`추천 신뢰도 ${Math.round((proposal.confidence ?? 0) * 100)}% — 제시: 그대로 진행해도 됨 · 확인: 후보 비교 권장 · 명료화: 주제·맥락을 더 적어 주세요`}
                                 className={`px-2 py-0.5 rounded-full text-[12px] font-bold ${proposal.mode === '제시' ? 'bg-[#E6F4EA] text-[#137333]' : proposal.mode === '확인' ? 'bg-[#FEF7E0] text-[#B06000]' : 'bg-[#F1F3F4] text-[#5F6368]'}`}
                               >
                                 {proposal.mode} {(proposal.confidence ?? 0).toFixed(2)}
@@ -2149,7 +2231,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid var(--md-outline-variant)'
                         return (<>
                           <textarea value={row.description} onChange={e => updateRow(row.id, 'description', e.target.value)}
-                            onFocus={() => updatePresence(`${row.id}:description`)} placeholder="수업 내용 입력..." rows={2}
+                            onFocus={() => updatePresence(`${row.id}:description`)} placeholder={rowFillState[row.id]?.loading ? '수업내용 설명 작성 중…' : '수업 내용 입력...'} rows={2}
                             className="w-full resize-none rounded-xl bg-[var(--md-surface-container-lowest)] px-3 py-2 text-[14px] leading-[20px] text-[var(--md-on-surface)] placeholder:text-[var(--md-on-surface-variant)] focus:outline-none"
                             style={{ minHeight: 60, border: bdr }}
                             ref={el => { if (el && row.description) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
@@ -2285,7 +2367,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             subjectsSearched={bridgeQuery.subjectsSearched}
             subjectFilter={bridgeSubjectFilter}
             onSubjectFilterChange={setBridgeSubjectFilter}
-            onSelect={candidate => applyBridgeCandidate(row.id, candidate)}
+            onSelect={candidate => { void applyBridgeCandidate(row.id, candidate) }}
             onClose={() => setBridgeTarget(null)}
           />
         )

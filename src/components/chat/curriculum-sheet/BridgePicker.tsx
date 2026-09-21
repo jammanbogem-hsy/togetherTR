@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 /** 서버 판정기 표시 라벨 — 시트 전역에서 같은 문구를 쓴다. */
-export const JUDGE_LABEL: Record<'jev' | 'embedding', string> = { jev: 'Jev 판정', embedding: '임베딩 유사도(Jev 미사용)' }
+export const JUDGE_LABEL: Record<'jev' | 'embedding', string> = { jev: '수업 맥락 검토', embedding: '내용 유사도 비교' }
 
 /** 연결 줄 후보 — /api/curriculum-sheet/autofill mode:'bridgeStandards' 응답 항목. */
 export interface BridgeCandidate {
@@ -85,12 +85,13 @@ export function BridgePicker({
           <p className="mt-0.5 text-[13px] leading-relaxed text-[#5F6368] line-clamp-2" title={sourceCoreIdea}>
             {sourceSubject} 핵심아이디어: {sourceCoreIdea}
           </p>
+          <p className="mt-1 text-[13px] leading-relaxed text-[#5F6368]">성취기준을 선택하면 빈 수업내용 설명도 함께 채웁니다.</p>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {judge && (
             <span title={JUDGE_LABEL[judge]}
               className={cn('px-2 py-0.5 rounded-full text-[12px] font-bold', judge === 'jev' ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#F1F3F4] text-[#5F6368]')}>
-              {judge === 'jev' ? 'Jev' : '임베딩'}
+              {JUDGE_LABEL[judge]}
             </span>
           )}
           <button onClick={onClose} aria-label="닫기" title="닫기" className="m3-state flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--md-on-surface-variant)]">

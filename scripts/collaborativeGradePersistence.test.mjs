@@ -90,3 +90,19 @@ test('autofill transaction preserves unsynced peer edits and description-only/br
   assert.equal(state.curriculumSheet.find(r => r.id === 'peer').description, '다른 팀원의 최신 편집')
   assert.equal(state.curriculumSheet.find(r => r.id === 'low').description, '')
 })
+
+test('row descriptions persist only while the selected curriculum inputs remain unchanged', async () => {
+  reset()
+  const source = { id: 'low', subject: '통합교과', gradeBand: '1-2학년군', coreIdea: '마을', standard: '[2슬01-01]', knowledge: '마을 모습', description: '' }
+  state.curriculumSheet = [source]
+  await patchCurriculumSheet('p', { type: 'fill-descriptions', rows: [{ ...source, description: '함께 마을을 살펴본다.' }] })
+  assert.equal(state.curriculumSheet[0].description, '함께 마을을 살펴본다.')
+  for (const field of ['subject', 'gradeBand', 'knowledge']) {
+    state.curriculumSheet = [{ ...source, [field]: '동료 수정' }]
+    await patchCurriculumSheet('p', { type: 'fill-descriptions', rows: [{ ...source, description: '이전 내용으로 작성한 설명' }] })
+    assert.equal(state.curriculumSheet[0].description, '', field)
+  }
+  state.curriculumSheet = []
+  await patchCurriculumSheet('p', { type: 'fill-descriptions', rows: [{ ...source, description: '삭제된 행 설명' }] })
+  assert.deepEqual(state.curriculumSheet, [])
+})

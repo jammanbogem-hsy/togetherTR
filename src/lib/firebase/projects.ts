@@ -16,6 +16,7 @@ import { mergeMessagesForCycle } from '@/lib/chat/messageCycles'
 import { normalizeTeamGradeBands } from '@/lib/curriculum/teamGradeBands'
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 import { buildTeamGradeBandUpdate } from '@/lib/curriculum/teamGradeBandState'
+import { canFillRowDescription, type RowDescriptionUpdate } from '@/lib/curriculum/rowDescriptions'
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -772,7 +773,7 @@ export type CurriculumSheetPatch =
   | { type: 'reorder'; rowIds: string[] }
   | { type: 'set-center'; rowId: string | null; gradeBand?: string; updatedBy?: string }
   | { type: 'merge-autofill'; rows: CurriculumSheetRow[]; defaultBand?: string; updatedBy?: string }
-  | { type: 'fill-descriptions'; rows: Array<Pick<CurriculumSheetRow, 'id' | 'coreIdea' | 'standard' | 'description'>>; updatedBy?: string }
+  | { type: 'fill-descriptions'; rows: RowDescriptionUpdate[]; updatedBy?: string }
   | { type: 'replace-all'; rows: CurriculumSheetRow[]; updatedBy?: string }
 
 function cleanCurriculumSheetRow(row: CurriculumSheetRow): CurriculumSheetRow {
@@ -802,7 +803,7 @@ function applyCurriculumSheetPatch(
   if (patch.type === 'fill-descriptions') {
     return currentRows.map(row => {
       const incoming = patch.rows.find(item => item.id === row.id)
-      if (!incoming || row.description?.trim() || row.coreIdea !== incoming.coreIdea || row.standard !== incoming.standard) return row
+      if (!incoming?.description?.trim() || !canFillRowDescription(row, incoming)) return row
       return stampRow({ ...row, description: incoming.description }, patch.updatedBy)
     })
   }
