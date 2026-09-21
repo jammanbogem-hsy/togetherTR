@@ -46,6 +46,8 @@ export interface CurriculumMapNode {
   text: string
   x: number
   y: number
+  /** 월드 단위 반지름. degree 순위(원값 아님)로 8~26. 겹침 없음이 보장된다. */
+  r: number
   degree: number
 }
 
@@ -82,6 +84,27 @@ export const LAYOUT_MARGIN = 60
 
 /** 핵심아이디어 문장 최대 길이(노드 툴팁용). */
 export const CORE_IDEA_MAX_CHARS = 120
+
+/** 노드 반지름(월드 단위): 8 + 18 · degree순위(0~1). */
+export const NODE_MIN_RADIUS = 8
+export const NODE_RADIUS_RANGE = 18
+
+/** 두 노드 사이에 최소로 남겨야 하는 빈 간격. dist ≥ r_i + r_j + MIN_NODE_GAP. */
+export const MIN_NODE_GAP = 8
+
+/** 목표 평균 최근접거리 = 평균 반지름 × 이 배수(덩어리가 읽히도록 벌린다). */
+export const TARGET_NN_RADIUS_FACTOR = 3
+
+/** 충돌이 수렴하지 않을 때 전체를 키우는 배율과 재시도 한도. */
+export const LAYOUT_GROWTH_STEP = 1.25
+export const MAX_LAYOUT_GROWTH_ATTEMPTS = 10
+
+/**
+ * 충돌 해소는 계약(MIN_NODE_GAP)보다 이만큼 더 벌려 놓는다.
+ * 밀어내기는 필요 거리에 "정확히" 맞춰 멈추므로 뒤따르는 좌표 반올림(소수 1자리)
+ * 만으로도 경계에 놓인 쌍이 계약 아래로 내려갔다(scale 2에서 0쌍 → 반올림 후 99쌍).
+ */
+export const COLLISION_SAFETY_GAP = 0.5
 
 /** Jev Score 0~3 의 4단계 관련도 레이블. 낮은 쪽부터. */
 export const RELEVANCE_LEVELS = ['무관', '약함', '관련', '핵심'] as const
@@ -543,6 +566,377 @@ export function runForceLayout(
   )
   nodes.forEach((node, i) => result.set(node.id, normalized[i]))
   return result
+}
+
+// ─── 순수 헬퍼: 반지름 · 충돌 해소 · 맞춤 ───────────────────────────────────
+
+/**
+ * degree 순위를 0~1 로 정규화해 반지름을 준다: r = 8 + 18 · degreeNorm.
+ *
+ * 원 degree 가 아니라 순위를 쓴다. 차수 분포가 한쪽으로 몰려 있어(대부분 한 자리,
+ * 소수가 20 이상) 원값을 그대로 정규화하면 허브 몇 개만 커지고 나머지가 전부
+ * 최소 크기로 깔린다. 동점은 백분위 순위(같은 degree = 같은 반지름)로 묶어
+ * 같은 차수의 노드가 이유 없이 다른 크기로 보이지 않게 한다.
+ */
+export function nodeRadii(nodes: readonly { id: string; degree: number }[]): Map<string, number> {
+  const radii = new Map<string, number>()
+  const n = nodes.length
+  if (n === 0) return radii
+  if (n === 1) {
+    radii.set(nodes[0].id, round1(NODE_MIN_RADIUS + NODE_RADIUS_RANGE / 2))
+    return radii
+  }
+  // degree → (더 작은 노드 수, 같은 노드 수)
+  const sorted = [...nodes].map(node => node.degree).sort((a, b) => a - b)
+  const lessThan = new Map<number, number>()
+  const equalTo = new Map<number, number>()
+  for (let i = 0; i < sorted.length; i++) {
+    const degree = sorted[i]
+    if (!lessThan.has(degree)) lessThan.set(degree, i)
+    equalTo.set(degree, (equalTo.get(degree) ?? 0) + 1)
+  }
+  for (const node of nodes) {
+    const less = lessThan.get(node.degree) ?? 0
+    const equal = equalTo.get(node.degree) ?? 1
+    // 백분위 순위: 동점 구간의 중앙을 쓴다.
+    const degreeNorm = clamp01((less + (equal - 1) / 2) / (n - 1))
+    radii.set(node.id, round1(NODE_MIN_RADIUS + NODE_RADIUS_RANGE * degreeNorm))
+  }
+  return radii
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+/** 평균 최근접거리. 벌림 배율을 정할 때와 리포트에 쓴다. */
+export function meanNearestNeighbourDistance(points: readonly Point[]): number {
+  const n = points.length
+  if (n < 2) return 0
+  let sum = 0
+  for (let i = 0; i < n; i++) {
+    let best = Infinity
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue
+      const d = Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y)
+      if (d < best) best = d
+    }
+    sum += best
+  }
+  return sum / n
+}
+
+export interface OverlapReport {
+  /** dist < r_i + r_j + minGap 인 쌍의 수. 0 이어야 한다. */
+  violations: number
+  /** 가장 좁은 (dist − r_i − r_j). 음수면 원이 겹친 것. */
+  minGap: number
+}
+
+/** 겹침 검사. O(n²) 지만 627노드 빌드에서 수십 ms 다. */
+export function inspectOverlaps(
+  points: readonly Point[],
+  radii: readonly number[],
+  minGap: number = MIN_NODE_GAP,
+): OverlapReport {
+  let violations = 0
+  let worst = Infinity
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const d = Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y)
+      const gap = d - radii[i] - radii[j]
+      if (gap < worst) worst = gap
+      // 부동소수 오차로 경계에서 위반 판정되지 않게 아주 작은 허용치를 둔다.
+      if (gap < minGap - 1e-6) violations += 1
+    }
+  }
+  return { violations, minGap: Number.isFinite(worst) ? worst : Infinity }
+}
+
+export interface CollisionResult {
+  points: Point[]
+  /** 실제로 돈 패스 수. */
+  passes: number
+  /** 남은 위반 쌍 수. */
+  violations: number
+}
+
+/**
+ * 겹친 노드를 서로 밀어내 dist ≥ r_i + r_j + minGap 을 만든다.
+ *
+ * 공간 격자(cell = 최대 필요거리)로 3×3 이웃만 검사하므로 패스당 O(n)에 가깝다.
+ * Jacobi 방식(변위를 모아 한 번에 적용)이라 순회 순서와 무관하게 결정적이다.
+ * 변위는 접촉 평균이 아니라 감쇠(damping)를 곱한 합을 쓴다 — 덩어리 중심처럼
+ * 접촉이 10개씩 걸리는 노드를 평균으로 밀면 필요량의 1/10 만 움직여 120패스로도
+ * 수렴하지 않았다. 위반이 0 이 되면 즉시 멈춘다.
+ */
+export function resolveCollisions(
+  points: readonly Point[],
+  radii: readonly number[],
+  options: { minGap?: number; maxPasses?: number; damping?: number } = {},
+): CollisionResult {
+  const minGap = options.minGap ?? MIN_NODE_GAP
+  const maxPasses = options.maxPasses ?? 120
+  // 감쇠 1.0(필요량 전부 이동)이 실측에서 가장 빨랐다. 627노드 scale 1.6 에서
+  // 0.5 는 400패스, 1.0 은 같은 품질에 159ms·잔여 진동 없음.
+  const damping = options.damping ?? 1
+  const n = points.length
+  const xs = Float64Array.from(points.map(p => p.x))
+  const ys = Float64Array.from(points.map(p => p.y))
+  if (n < 2) {
+    return { points: points.map(p => ({ ...p })), passes: 0, violations: 0 }
+  }
+
+  const maxRadius = radii.reduce((max, r) => (r > max ? r : max), 0)
+  const cellSize = Math.max(1, 2 * maxRadius + minGap)
+  const dxs = new Float64Array(n)
+  const dys = new Float64Array(n)
+  const contacts = new Int32Array(n)
+  const grid = new Map<string, number[]>()
+
+  let passes = 0
+  let violations = 0
+  for (let pass = 0; pass < maxPasses; pass++) {
+    passes = pass + 1
+    dxs.fill(0)
+    dys.fill(0)
+    contacts.fill(0)
+    grid.clear()
+    for (let i = 0; i < n; i++) {
+      const key = `${Math.floor(xs[i] / cellSize)},${Math.floor(ys[i] / cellSize)}`
+      const bucket = grid.get(key)
+      if (bucket) bucket.push(i)
+      else grid.set(key, [i])
+    }
+
+    violations = 0
+    for (let i = 0; i < n; i++) {
+      const cx = Math.floor(xs[i] / cellSize)
+      const cy = Math.floor(ys[i] / cellSize)
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const bucket = grid.get(`${cx + ox},${cy + oy}`)
+          if (!bucket) continue
+          for (const j of bucket) {
+            if (j <= i) continue // 각 쌍 한 번만
+            const required = radii[i] + radii[j] + minGap
+            let dx = xs[j] - xs[i]
+            let dy = ys[j] - ys[i]
+            let d = Math.hypot(dx, dy)
+            if (d >= required - 1e-9) continue
+            violations += 1
+            if (d < 1e-9) {
+              // 완전히 겹친 쌍은 인덱스로 결정적인 방향을 준다.
+              const angle = ((i * 31 + j * 17) % 360) * (Math.PI / 180)
+              dx = Math.cos(angle)
+              dy = Math.sin(angle)
+              d = 1
+            }
+            const push = (required - d) / 2
+            const ux = dx / d
+            const uy = dy / d
+            dxs[i] -= ux * push
+            dys[i] -= uy * push
+            dxs[j] += ux * push
+            dys[j] += uy * push
+            contacts[i] += 1
+            contacts[j] += 1
+          }
+        }
+      }
+    }
+    if (violations === 0) break
+    for (let i = 0; i < n; i++) {
+      if (contacts[i] === 0) continue
+      xs[i] += dxs[i] * damping
+      ys[i] += dys[i] * damping
+    }
+  }
+
+  return {
+    points: Array.from({ length: n }, (_, i) => ({ x: xs[i], y: ys[i] })),
+    passes,
+    violations,
+  }
+}
+
+export interface FitResult {
+  points: Point[]
+  /** 최종 정사각형 한 변(월드 단위). size 보다 커질 수 있다. */
+  extent: number
+  /** 적용된 배율. 1 미만으로는 절대 줄이지 않는다. */
+  scale: number
+}
+
+/**
+ * 0..size 정사각형에 맞춘다. 단 축소는 하지 않는다.
+ *
+ * 축소 정규화(scale < 1)는 충돌 해소로 벌려 놓은 간격을 그대로 되돌려 겹침을
+ * 되살린다. 그래서 들어가지 않을 때는 줄이는 대신 정사각형을 키운다
+ * (프론트엔드가 bounds 에 맞춰 보므로 extent 가 2000 을 넘어도 된다).
+ * 확대(scale > 1)는 간격을 늘리기만 하므로 안전하다.
+ */
+export function fitToSquare(
+  points: readonly Point[],
+  options: { size?: number; margin?: number } = {},
+): FitResult {
+  const size = options.size ?? LAYOUT_SIZE
+  const margin = options.margin ?? LAYOUT_MARGIN
+  if (points.length === 0) return { points: [], extent: size, scale: 1 }
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  for (const p of points) {
+    if (p.x < minX) minX = p.x
+    if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.y > maxY) maxY = p.y
+  }
+  const spanX = maxX - minX
+  const spanY = maxY - minY
+  const span = Math.max(spanX, spanY)
+  const inner = Math.max(1, size - margin * 2)
+  if (!Number.isFinite(span) || span <= 0) {
+    return { points: points.map(() => ({ x: size / 2, y: size / 2 })), extent: size, scale: 1 }
+  }
+  const scale = Math.max(1, inner / span)
+  const scaledSpan = span * scale
+  const extent = Math.max(size, scaledSpan + margin * 2)
+  const offsetX = (extent - spanX * scale) / 2
+  const offsetY = (extent - spanY * scale) / 2
+  return {
+    points: points.map(p => ({
+      x: round1((p.x - minX) * scale + offsetX),
+      y: round1((p.y - minY) * scale + offsetY),
+    })),
+    extent: round1(extent),
+    scale,
+  }
+}
+
+// ─── 순수 헬퍼: 전체 배치 파이프라인 ───────────────────────────────────────
+
+export interface MapLayoutNode {
+  id: string
+  subjectId: string
+  degree: number
+}
+
+export interface MapLayoutStats {
+  extent: number
+  scale: number
+  /** 벌림 배율 × 확대 재시도 배율. */
+  spreadScale: number
+  /** 충돌 수렴을 위해 추가로 확대한 횟수. */
+  growthAttempts: number
+  meanRadius: number
+  meanNearestNeighbour: number
+  minGap: number
+  violations: number
+  collisionPasses: number
+  forceMs: number
+  collisionMs: number
+}
+
+export interface MapLayoutResult {
+  positions: Map<string, Point>
+  radii: Map<string, number>
+  stats: MapLayoutStats
+}
+
+/**
+ * 스프링·반발·교과 응집 시뮬레이션 → 반지름 기준 벌림 → 충돌 해소 → 정사각형 맞춤.
+ *
+ * 1단계는 0..size 로 정규화된 좌표를 쓴다. 시뮬레이션 원좌표의 자연 축척은
+ * 입력 규모에 따라 달라지고(627노드에서 한 변 약 17000) 반지름은 월드 단위
+ * 고정값이라, 정규화된 기준 축척 위에서만 "반지름의 3배" 같은 목표가 뜻을 갖는다.
+ *
+ * 벌림 단계가 있어야 충돌 해소가 "겨우 안 겹치는" 빽빽한 그림을 만들지 않는다.
+ * 평균 최근접거리를 평균 반지름의 TARGET_NN_RADIUS_FACTOR 배로 올려놓고 밀어낸다.
+ * 벌림·충돌 이후에는 절대 축소하지 않는다(fitToSquare 가 정사각형을 키운다).
+ */
+export function layoutCurriculumMap(
+  nodes: readonly MapLayoutNode[],
+  edges: readonly LayoutEdgeInput[],
+  options: LayoutOptions & { minGap?: number; maxCollisionPasses?: number; targetNnFactor?: number } = {},
+): MapLayoutResult {
+  const size = options.size ?? LAYOUT_SIZE
+  const margin = options.margin ?? LAYOUT_MARGIN
+  const minGap = options.minGap ?? MIN_NODE_GAP
+  const targetNnFactor = options.targetNnFactor ?? TARGET_NN_RADIUS_FACTOR
+
+  const radii = nodeRadii(nodes)
+  const radiusList = nodes.map(node => radii.get(node.id) ?? NODE_MIN_RADIUS)
+  const meanRadius = radiusList.length === 0
+    ? 0
+    : radiusList.reduce((sum, r) => sum + r, 0) / radiusList.length
+
+  // 1. 힘 기반 시뮬레이션 (0..size 기준 축척으로 정규화된 좌표)
+  const forceStartedAt = performance.now()
+  const simulated = runForceLayout(nodes, edges, options)
+  const forceMs = Math.round(performance.now() - forceStartedAt)
+  let points = nodes.map(node => simulated.get(node.id) ?? { x: 0, y: 0 })
+
+  // 2. 평균 최근접거리를 목표치까지 균일 확대 (겹침만 줄어든다)
+  const targetNn = meanRadius * targetNnFactor
+  const currentNn = meanNearestNeighbourDistance(points)
+  const spreadScale = currentNn > 0 ? Math.max(1, targetNn / currentNn) : 1
+  if (spreadScale > 1) {
+    points = points.map(p => ({ x: p.x * spreadScale, y: p.y * spreadScale }))
+  }
+
+  // 3~4. 충돌 해소 → 정사각형 맞춤 → 검증. 계약(겹침 0)을 못 맞추면 전체를
+  // 균일 확대해 밀도를 낮추고 다시 시도한다.
+  //
+  // 지역적 밀어내기만으로는 덩어리 중심의 밀도가 기하학적으로 불가능할 때
+  // 두더지잡기가 된다(벌림 없이 시작하면 400패스 후에도 800쌍 잔존). 균일 확대는
+  // 상대 구조·교과 응집을 그대로 두고 밀도만 낮추므로 반드시 수렴하며,
+  // 시드가 같으면 확대 횟수까지 같아 결정적이다.
+  //
+  // 검증은 반드시 "최종 출력"(맞춤·반올림까지 끝난 좌표)에 대고 계약 간격으로 한다.
+  // 밀어내기 단계의 자체 카운터는 안전 여유를 포함한 더 엄한 기준이라 그대로 쓰면
+  // 계약을 이미 만족한 배치를 불필요하게 확대한다.
+  const collisionStartedAt = performance.now()
+  let growthScale = 1
+  let collided = resolveCollisions(points, radiusList, {
+    minGap: minGap + COLLISION_SAFETY_GAP,
+    maxPasses: options.maxCollisionPasses,
+  })
+  let fitted = fitToSquare(collided.points, { size, margin })
+  let overlaps = inspectOverlaps(fitted.points, radiusList, minGap)
+  for (let attempt = 0; attempt < MAX_LAYOUT_GROWTH_ATTEMPTS && overlaps.violations > 0; attempt++) {
+    growthScale *= LAYOUT_GROWTH_STEP
+    const grown = points.map(p => ({ x: p.x * growthScale, y: p.y * growthScale }))
+    collided = resolveCollisions(grown, radiusList, {
+      minGap: minGap + COLLISION_SAFETY_GAP,
+      maxPasses: options.maxCollisionPasses,
+    })
+    fitted = fitToSquare(collided.points, { size, margin })
+    overlaps = inspectOverlaps(fitted.points, radiusList, minGap)
+  }
+  const collisionMs = Math.round(performance.now() - collisionStartedAt)
+
+  const positions = new Map<string, Point>()
+  nodes.forEach((node, i) => positions.set(node.id, fitted.points[i]))
+
+  return {
+    positions,
+    radii,
+    stats: {
+      extent: fitted.extent,
+      scale: fitted.scale,
+      spreadScale: Math.round(spreadScale * growthScale * 1000) / 1000,
+      growthAttempts: Math.round(Math.log(growthScale) / Math.log(LAYOUT_GROWTH_STEP)),
+      meanRadius: round1(meanRadius),
+      meanNearestNeighbour: round1(meanNearestNeighbourDistance(fitted.points)),
+      minGap: round1(overlaps.minGap),
+      violations: overlaps.violations,
+      collisionPasses: collided.passes,
+      forceMs,
+      collisionMs,
+    },
+  }
 }
 
 // ─── 서버 전용: 임베딩 로더 ─────────────────────────────────────────────────

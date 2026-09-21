@@ -2,12 +2,16 @@
 
 // 교육과정 분석맵 — 초등 성취기준 전체를 하나의 지식맵으로 보는 독립 화면.
 // (app) 레이아웃이 로그인 보호를 담당하므로 여기서는 인증을 다루지 않는다.
+// M3 토큰은 globals.css 의 .m3-map 스코프에서 공급된다.
 
+import 'material-symbols/rounded.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, Search, X } from 'lucide-react'
+import { MD3Button } from '@/components/ui/MD3Button'
 import CurriculumMapCanvas from '@/components/curriculum-map/CurriculumMapCanvas'
 import MapSidePanel from '@/components/curriculum-map/MapSidePanel'
+import { FilterChip } from '@/components/curriculum-map/MapPanelBits'
+import { formatCount } from '@/components/curriculum-map/mapMath'
 import { useCurriculumMap } from '@/components/curriculum-map/useCurriculumMap'
 
 export default function CurriculumMapPage(): React.ReactElement {
@@ -52,95 +56,139 @@ export default function CurriculumMapPage(): React.ReactElement {
     setPanelOpen(true)
   }, [map])
 
+  const panel = (
+    <MapSidePanel
+      subjectColors={subjectColors}
+      filters={map.filters}
+      onEdgeThresholdChange={map.setEdgeThreshold}
+      onAlwaysLabelsChange={map.setAlwaysLabels}
+      onResetFilters={map.resetFilters}
+      search={map.search}
+      onPickResult={focusNode}
+      selectedNode={selectedNode}
+      related={map.related}
+      onPickRelated={focusNode}
+      onRefetchRelated={map.refetchRelated}
+      onClearSelection={() => map.selectNode(null)}
+    />
+  )
+
   return (
-    <div className="flex h-screen flex-col bg-[#F8F9FA]">
-      {/* ── 상단 바 ───────────────────────────────────────────────────── */}
-      <header className="flex-shrink-0 border-b border-[#DADCE0] bg-white px-4 py-3">
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="m3-map flex h-screen flex-col bg-[var(--md-surface-container-low)]">
+      {/* ── M3 상단 앱 바 (64dp) ───────────────────────────────────────── */}
+      <header className="flex-shrink-0 border-b border-[var(--md-outline-variant)] bg-[var(--md-surface)]">
+        <div className="flex h-16 items-center gap-2 px-4">
           <button
             type="button"
             onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-1 text-[13px] font-bold text-[#5F6368] hover:text-[#1A73E8] transition-colors"
+            aria-label="대시보드로 돌아가기"
+            className="m3-state flex h-12 w-12 items-center justify-center rounded-full text-[var(--md-on-surface-variant)]"
           >
-            <ArrowLeft className="h-4 w-4" />
-            대시보드
+            <span className="material-symbols-rounded text-[24px] leading-none">arrow_back</span>
           </button>
-          <h1 className="text-[16px] font-extrabold text-[#202124]">교육과정 분석맵</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-[22px] font-normal leading-tight text-[var(--md-on-surface)]">
+              교육과정 분석맵
+            </h1>
+            {map.asset && (
+              <p className="text-[12px] font-medium text-[var(--md-on-surface-variant)]">
+                성취기준 {formatCount(map.asset.nodes.length)}개 · 연결 {formatCount(map.asset.edges.length)}개
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPanelOpen(o => !o)}
+            aria-label={panelOpen ? '분석 패널 접기' : '분석 패널 펼치기'}
+            aria-expanded={panelOpen}
+            className="m3-state ml-auto flex h-12 w-12 items-center justify-center rounded-full text-[var(--md-on-surface-variant)]"
+          >
+            <span className="material-symbols-rounded text-[24px] leading-none">
+              {panelOpen ? 'right_panel_close' : 'right_panel_open'}
+            </span>
+          </button>
+        </div>
 
-          <form onSubmit={onSubmitSearch} className="ml-auto flex items-center gap-2 order-3 w-full sm:order-none sm:w-auto">
-            <div className="relative flex-1 sm:w-[320px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9AA0A6]" />
+        {/* ── 도킹된 M3 검색 바 (56dp) ─────────────────────────────────── */}
+        <div className="px-4 pb-3">
+          <form onSubmit={onSubmitSearch} className="flex items-center gap-2">
+            <div className="flex h-14 min-w-0 flex-1 items-center gap-3 rounded-full bg-[var(--md-surface-container-high)] px-5">
+              <span className="material-symbols-rounded text-[24px] leading-none text-[var(--md-on-surface-variant)]">
+                search
+              </span>
               <input
                 value={map.query}
                 onChange={e => map.setQuery(e.target.value)}
                 placeholder="수업 주제나 키워드로 성취기준 찾기"
-                className="w-full rounded-xl border-2 border-[#DADCE0] bg-white py-2 pl-9 pr-8 text-[13px] font-medium text-[#202124] placeholder:text-[#BDC1C6] focus:border-[#1A73E8] focus:outline-none"
+                aria-label="성취기준 검색"
+                className="min-w-0 flex-1 bg-transparent text-[16px] text-[var(--md-on-surface)] placeholder:text-[var(--md-on-surface-variant)] focus:outline-none"
               />
               {map.query && (
                 <button
                   type="button"
                   onClick={map.clearSearch}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9AA0A6] hover:text-[#5F6368]"
                   aria-label="검색어 지우기"
+                  className="m3-state flex h-10 w-10 items-center justify-center rounded-full text-[var(--md-on-surface-variant)]"
                 >
-                  <X className="h-4 w-4" />
+                  <span className="material-symbols-rounded text-[20px] leading-none">close</span>
                 </button>
               )}
             </div>
-            <button
+            <MD3Button
               type="submit"
+              variant="filled"
+              size="md"
               disabled={map.search.status === 'loading' || !map.query.trim()}
-              className="flex items-center gap-1.5 rounded-xl bg-[#1A73E8] px-4 py-2 text-[13px] font-bold text-white hover:bg-[#1557B0] disabled:opacity-40 transition-colors"
             >
-              {map.search.status === 'loading' && <Loader2 className="h-4 w-4 animate-spin" />}
               찾기
-            </button>
-            <button
-              type="button"
-              onClick={() => setPanelOpen(o => !o)}
-              className="rounded-xl border-2 border-[#DADCE0] px-3 py-2 text-[12px] font-bold text-[#5F6368] hover:border-[#1A73E8] hover:text-[#1A73E8] transition-colors"
-              aria-expanded={panelOpen}
-            >
-              {panelOpen ? '패널 접기' : '패널 펼치기'}
-            </button>
+            </MD3Button>
           </form>
-        </div>
 
-        {/* 교과 범례 */}
-        {map.asset && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            {map.asset.subjects.map(s => (
-              <span key={s.id} className="flex items-center gap-1 text-[11px] font-semibold text-[#5F6368]">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
-                {s.name}
-              </span>
-            ))}
-            <span className="text-[11px] font-semibold text-[#BDC1C6]">
-              성취기준 {map.asset.nodes.length}개 · 연결 {map.asset.edges.length}개
-            </span>
-          </div>
-        )}
+          {/* 교과·학년군 범례 겸 필터 칩 */}
+          {map.asset && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {map.asset.subjects.map(s => (
+                <FilterChip
+                  key={s.id}
+                  label={s.name}
+                  active={!map.filters.hiddenSubjectIds.includes(s.id)}
+                  dotColor={s.color}
+                  onClick={() => map.toggleSubject(s.id)}
+                />
+              ))}
+              <span className="mx-1 h-6 w-px bg-[var(--md-outline-variant)]" aria-hidden="true" />
+              {map.asset.bands.map(b => (
+                <FilterChip
+                  key={b}
+                  label={b}
+                  active={!map.filters.hiddenBands.includes(b)}
+                  onClick={() => map.toggleBand(b)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </header>
 
       {/* ── 본문 ──────────────────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1">
         <main className="relative min-w-0 flex-1">
           {map.assetStatus === 'loading' && (
-            <div className="flex h-full flex-col items-center justify-center gap-2">
-              <Loader2 className="h-6 w-6 animate-spin text-[#1A73E8]" />
-              <p className="text-[13px] font-semibold text-[#5F6368]">분석맵을 불러오는 중…</p>
+            <div className="flex h-full flex-col items-center justify-center px-6">
+              <div className="w-full max-w-[280px]">
+                <div className="m3-progress mb-3" />
+                <p className="text-center text-[14px] text-[var(--md-on-surface-variant)]">
+                  분석맵을 불러오는 중…
+                </p>
+              </div>
             </div>
           )}
           {map.assetStatus === 'error' && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <p className="text-[13px] font-semibold text-[#C5221F]">{map.assetError}</p>
-              <button
-                type="button"
-                onClick={map.reloadAsset}
-                className="rounded-xl bg-[#1A73E8] px-4 py-2 text-[13px] font-bold text-white hover:bg-[#1557B0] transition-colors"
-              >
+            <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+              <p className="text-[14px] leading-[1.5] text-[var(--md-error)]">{map.assetError}</p>
+              <MD3Button variant="filled" size="sm" onClick={map.reloadAsset}>
                 다시 시도
-              </button>
+              </MD3Button>
             </div>
           )}
           {map.assetStatus === 'ready' && (
@@ -148,7 +196,6 @@ export default function CurriculumMapPage(): React.ReactElement {
               nodes={map.visibleNodes}
               edges={map.visibleEdges}
               subjectColors={subjectColors}
-              maxDegree={map.maxDegree}
               scoreById={map.scoreById}
               searchActive={map.searchActive}
               selectedId={map.selectedId}
@@ -160,62 +207,29 @@ export default function CurriculumMapPage(): React.ReactElement {
           )}
         </main>
 
-        {/* 데스크톱: 우측 패널 / 모바일: 하단 시트 */}
+        {/* 데스크톱: 우측 시트 380dp / 모바일: 하단 시트 */}
         {panelOpen && (
           <>
-            <aside className="hidden w-[360px] flex-shrink-0 border-l border-[#E8EAED] md:block">
-              <MapSidePanel
-                subjects={map.asset?.subjects ?? []}
-                bands={map.asset?.bands ?? []}
-                subjectColors={subjectColors}
-                filters={map.filters}
-                onToggleSubject={map.toggleSubject}
-                onToggleBand={map.toggleBand}
-                onEdgeThresholdChange={map.setEdgeThreshold}
-                onAlwaysLabelsChange={map.setAlwaysLabels}
-                onResetFilters={map.resetFilters}
-                search={map.search}
-                onPickResult={focusNode}
-                selectedNode={selectedNode}
-                related={map.related}
-                onPickRelated={focusNode}
-                onRefetchRelated={map.refetchRelated}
-                onClearSelection={() => map.selectNode(null)}
-              />
+            <aside className="hidden w-[380px] flex-shrink-0 border-l border-[var(--md-outline-variant)] md:block">
+              {panel}
             </aside>
 
-            <div className="fixed inset-x-0 bottom-0 z-30 max-h-[58vh] overflow-hidden rounded-t-2xl border-t border-[#E8EAED] bg-white shadow-2xl md:hidden">
-              <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-2">
-                <span className="text-[12px] font-extrabold text-[#5F6368]">분석 패널</span>
+            <div
+              className="fixed inset-x-0 bottom-0 z-30 max-h-[58vh] overflow-hidden rounded-t-[28px] border-t border-[var(--md-outline-variant)] bg-[var(--md-surface-container-low)] md:hidden"
+              style={{ boxShadow: '0 -2px 6px rgba(0,0,0,0.15), 0 -8px 24px rgba(0,0,0,0.1)' }}
+            >
+              <div className="flex items-center justify-between border-b border-[var(--md-outline-variant)] px-5 py-2.5">
+                <span className="text-[16px] font-medium text-[var(--md-on-surface)]">분석 패널</span>
                 <button
                   type="button"
                   onClick={() => setPanelOpen(false)}
-                  className="text-[#9AA0A6] hover:text-[#5F6368]"
                   aria-label="패널 닫기"
+                  className="m3-state flex h-10 w-10 items-center justify-center rounded-full text-[var(--md-on-surface-variant)]"
                 >
-                  <X className="h-4 w-4" />
+                  <span className="material-symbols-rounded text-[20px] leading-none">close</span>
                 </button>
               </div>
-              <div className="max-h-[calc(58vh-40px)] overflow-y-auto">
-                <MapSidePanel
-                  subjects={map.asset?.subjects ?? []}
-                  bands={map.asset?.bands ?? []}
-                  subjectColors={subjectColors}
-                  filters={map.filters}
-                  onToggleSubject={map.toggleSubject}
-                  onToggleBand={map.toggleBand}
-                  onEdgeThresholdChange={map.setEdgeThreshold}
-                  onAlwaysLabelsChange={map.setAlwaysLabels}
-                  onResetFilters={map.resetFilters}
-                  search={map.search}
-                  onPickResult={focusNode}
-                  selectedNode={selectedNode}
-                  related={map.related}
-                  onPickRelated={focusNode}
-                  onRefetchRelated={map.refetchRelated}
-                  onClearSelection={() => map.selectNode(null)}
-                />
-              </div>
+              <div className="max-h-[calc(58vh-53px)] overflow-y-auto">{panel}</div>
             </div>
           </>
         )}

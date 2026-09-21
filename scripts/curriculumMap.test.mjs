@@ -6,18 +6,29 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  COLLISION_SAFETY_GAP,
   LAYOUT_SIZE,
+  MIN_NODE_GAP,
+  NODE_MIN_RADIUS,
+  NODE_RADIUS_RANGE,
   SIMILAR_EDGE_MIN_SIM,
+  TARGET_NN_RADIUS_FACTOR,
   blendJevAndSim,
   buildUndirectedEdges,
   clamp01,
   cosineSim,
   edgeKey,
+  fitToSquare,
+  inspectOverlaps,
+  layoutCurriculumMap,
   levelForScore,
+  meanNearestNeighbourDistance,
   mulberry32,
+  nodeRadii,
   normalizeLayout,
   normalizeRelationType,
   resolveCandidateSource,
+  resolveCollisions,
   runForceLayout,
   springRestLength,
   standardBandLabel,
@@ -367,4 +378,230 @@ test('runForceLayout: ignores edges whose endpoints are not nodes', () => {
     const p = out.get(id)
     assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y))
   }
+})
+
+// ─── node radii ────────────────────────────────────────────────────────────
+
+test('nodeRadii: r = 8 + 18 x degree rank, spanning the full range', () => {
+  const radii = nodeRadii([
+    { id: 'lo', degree: 0 },
+    { id: 'mid', degree: 5 },
+    { id: 'hi', degree: 40 },
+  ])
+  assert.equal(radii.get('lo'), NODE_MIN_RADIUS)
+  assert.equal(radii.get('hi'), NODE_MIN_RADIUS + NODE_RADIUS_RANGE)
+  assert.equal(radii.get('mid'), 17)
+})
+
+test('nodeRadii: uses rank not raw degree, so one hub does not flatten the rest', () => {
+  // Raw-degree normalization would give the three low nodes r ~= 8.0-8.4.
+  const radii = nodeRadii([
+    { id: 'a', degree: 1 },
+    { id: 'b', degree: 2 },
+    { id: 'c', degree: 3 },
+    { id: 'hub', degree: 900 },
+  ])
+  assert.equal(radii.get('a'), 8)
+  assert.equal(radii.get('b'), 14)
+  assert.equal(radii.get('c'), 20)
+  assert.equal(radii.get('hub'), 26)
+})
+
+test('nodeRadii: equal degrees get equal radii (tie midpoint)', () => {
+  const radii = nodeRadii([
+    { id: 'a', degree: 4 },
+    { id: 'b', degree: 4 },
+    { id: 'c', degree: 9 },
+  ])
+  assert.equal(radii.get('a'), radii.get('b'))
+  assert.ok(radii.get('c') > radii.get('a'))
+})
+
+test('nodeRadii: rounded to one decimal, empty and single input handled', () => {
+  const many = nodeRadii(Array.from({ length: 7 }, (_, i) => ({ id: `n${i}`, degree: i })))
+  for (const r of many.values()) assert.equal(r, Math.round(r * 10) / 10)
+  assert.equal(nodeRadii([]).size, 0)
+  assert.equal(nodeRadii([{ id: 'only', degree: 3 }]).get('only'), 17)
+})
+
+// ─── overlap inspection ────────────────────────────────────────────────────
+
+test('inspectOverlaps: counts pairs closer than r_i + r_j + minGap', () => {
+  const points = [{ x: 0, y: 0 }, { x: 25, y: 0 }, { x: 200, y: 0 }]
+  const radii = [10, 10, 10]
+  // 0-1 are 25 apart but need 10+10+8 = 28 -> one violation.
+  const report = inspectOverlaps(points, radii, 8)
+  assert.equal(report.violations, 1)
+  assert.equal(report.minGap, 5)
+})
+
+test('inspectOverlaps: exact boundary separation is not a violation', () => {
+  const report = inspectOverlaps([{ x: 0, y: 0 }, { x: 28, y: 0 }], [10, 10], 8)
+  assert.equal(report.violations, 0)
+  assert.equal(report.minGap, 8)
+})
+
+// ─── collision resolution ─────────────────────────────────────────────────
+
+/** Deterministic clustered fixture: three tight clumps with mixed radii. */
+function collisionFixture() {
+  const rand = mulberry32(99)
+  const points = []
+  const radii = []
+  for (const centre of [{ x: 100, y: 100 }, { x: 140, y: 120 }, { x: 600, y: 600 }]) {
+    for (let i = 0; i < 12; i++) {
+      points.push({ x: centre.x + (rand() - 0.5) * 30, y: centre.y + (rand() - 0.5) * 30 })
+      radii.push(8 + Math.round(rand() * 18))
+    }
+  }
+  return { points, radii }
+}
+
+test('resolveCollisions: a heavily overlapping fixture ends with zero violations', () => {
+  const { points, radii } = collisionFixture()
+  const before = inspectOverlaps(points, radii, MIN_NODE_GAP)
+  assert.ok(before.violations > 50, `fixture should start overlapping, got ${before.violations}`)
+  assert.ok(before.minGap < 0, 'fixture circles should start intersecting')
+
+  const result = resolveCollisions(points, radii, { minGap: MIN_NODE_GAP })
+  const after = inspectOverlaps(result.points, radii, MIN_NODE_GAP)
+  assert.equal(after.violations, 0, `still overlapping after ${result.passes} passes`)
+  assert.ok(after.minGap >= MIN_NODE_GAP - 1e-6, `min gap ${after.minGap} below contract`)
+  assert.equal(result.violations, 0)
+  assert.ok(result.passes > 1 && result.passes <= 120)
+})
+
+test('resolveCollisions: deterministic for identical input', () => {
+  const a = resolveCollisions(collisionFixture().points, collisionFixture().radii, { minGap: MIN_NODE_GAP })
+  const b = resolveCollisions(collisionFixture().points, collisionFixture().radii, { minGap: MIN_NODE_GAP })
+  assert.deepEqual(a.points, b.points)
+  assert.equal(a.passes, b.passes)
+})
+
+test('resolveCollisions: already-separated input is left untouched in one pass', () => {
+  const points = [{ x: 0, y: 0 }, { x: 500, y: 0 }, { x: 0, y: 500 }]
+  const radii = [10, 10, 10]
+  const result = resolveCollisions(points, radii, { minGap: MIN_NODE_GAP })
+  assert.equal(result.passes, 1)
+  assert.equal(result.violations, 0)
+  assert.deepEqual(result.points, points)
+})
+
+test('resolveCollisions: coincident nodes are pushed apart deterministically', () => {
+  const points = [{ x: 50, y: 50 }, { x: 50, y: 50 }, { x: 50, y: 50 }]
+  const radii = [10, 10, 10]
+  const first = resolveCollisions(points, radii, { minGap: MIN_NODE_GAP })
+  const second = resolveCollisions(points, radii, { minGap: MIN_NODE_GAP })
+  assert.equal(inspectOverlaps(first.points, radii, MIN_NODE_GAP).violations, 0)
+  assert.deepEqual(first.points, second.points)
+})
+
+test('resolveCollisions: fewer than two nodes is a no-op', () => {
+  assert.deepEqual(resolveCollisions([], []).points, [])
+  const one = resolveCollisions([{ x: 3, y: 4 }], [10])
+  assert.deepEqual(one.points, [{ x: 3, y: 4 }])
+  assert.equal(one.violations, 0)
+})
+
+// ─── fitToSquare ───────────────────────────────────────────────────────────
+
+test('fitToSquare: grows a small layout to fill the square', () => {
+  const fit = fitToSquare([{ x: 0, y: 0 }, { x: 100, y: 100 }], { size: 2000, margin: 60 })
+  assert.ok(fit.scale > 1)
+  assert.equal(fit.extent, 2000)
+  assert.ok(Math.abs(fit.points[0].x - 60) < 0.2)
+  assert.ok(Math.abs(fit.points[1].x - 1940) < 0.2)
+})
+
+test('fitToSquare: never shrinks — it enlarges the square instead', () => {
+  // A 5000-unit span would need scale 0.376 to fit 2000; that would undo the
+  // gaps the collision pass just created, so the square grows instead.
+  const fit = fitToSquare([{ x: 0, y: 0 }, { x: 5000, y: 5000 }], { size: 2000, margin: 60 })
+  assert.equal(fit.scale, 1)
+  assert.equal(fit.extent, 5120)
+  const span = fit.points[1].x - fit.points[0].x
+  assert.ok(Math.abs(span - 5000) < 0.2, `span changed: ${span}`)
+})
+
+test('fitToSquare: enlarging preserves every pairwise gap', () => {
+  const { points, radii } = collisionFixture()
+  const resolved = resolveCollisions(points, radii, { minGap: MIN_NODE_GAP })
+  const fit = fitToSquare(resolved.points, { size: 2000, margin: 60 })
+  assert.equal(inspectOverlaps(fit.points, radii, MIN_NODE_GAP).violations, 0)
+})
+
+test('fitToSquare: degenerate and empty input', () => {
+  assert.deepEqual(fitToSquare([], { size: 900 }), { points: [], extent: 900, scale: 1 })
+  const same = fitToSquare([{ x: 5, y: 5 }, { x: 5, y: 5 }], { size: 800, margin: 10 })
+  assert.deepEqual(same.points, [{ x: 400, y: 400 }, { x: 400, y: 400 }])
+})
+
+// ─── full layout pipeline ──────────────────────────────────────────────────
+
+test('layoutCurriculumMap: output is overlap-free and every node has a radius', () => {
+  const nodes = Array.from({ length: 60 }, (_, i) => ({
+    id: `n${i}`,
+    subjectId: `s${i % 4}`,
+    degree: i % 11,
+  }))
+  const edges = nodes.slice(1).map((node, i) => ({ source: nodes[i].id, target: node.id, sim: 0.5 + (i % 5) * 0.1 }))
+  const result = layoutCurriculumMap(nodes, edges, { iterations: 150, seed: 5 })
+
+  assert.equal(result.positions.size, nodes.length)
+  assert.equal(result.radii.size, nodes.length)
+  assert.equal(result.stats.violations, 0)
+  assert.ok(result.stats.minGap >= MIN_NODE_GAP - 1e-6, `min gap ${result.stats.minGap}`)
+
+  const points = nodes.map(node => result.positions.get(node.id))
+  const radii = nodes.map(node => result.radii.get(node.id))
+  assert.equal(inspectOverlaps(points, radii, MIN_NODE_GAP).violations, 0)
+  for (const p of points) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y))
+})
+
+test('layoutCurriculumMap: spreads toward the target nearest-neighbour distance', () => {
+  const nodes = Array.from({ length: 50 }, (_, i) => ({ id: `n${i}`, subjectId: 's', degree: i % 7 }))
+  const result = layoutCurriculumMap(nodes, [], { iterations: 120, seed: 11 })
+  const points = nodes.map(node => result.positions.get(node.id))
+  const target = result.stats.meanRadius * TARGET_NN_RADIUS_FACTOR
+  // Collision resolution only pushes further apart, so the floor is the target.
+  assert.ok(
+    meanNearestNeighbourDistance(points) >= target * 0.9,
+    `mean NN ${result.stats.meanNearestNeighbour} far below target ${target}`,
+  )
+})
+
+test('layoutCurriculumMap: deterministic for the same seed', () => {
+  const nodes = Array.from({ length: 30 }, (_, i) => ({ id: `n${i}`, subjectId: `s${i % 3}`, degree: i % 5 }))
+  const edges = [{ source: 'n0', target: 'n1', sim: 0.9 }, { source: 'n2', target: 'n3', sim: 0.5 }]
+  const a = layoutCurriculumMap(nodes, edges, { iterations: 80, seed: 3 })
+  const b = layoutCurriculumMap(nodes, edges, { iterations: 80, seed: 3 })
+  for (const node of nodes) assert.deepEqual(a.positions.get(node.id), b.positions.get(node.id))
+  assert.deepEqual(a.stats, b.stats)
+})
+
+test('layoutCurriculumMap: keeps subjects as soft clusters after collision resolution', () => {
+  const nodes = []
+  for (let s = 0; s < 3; s++) {
+    for (let i = 0; i < 15; i++) nodes.push({ id: `s${s}n${i}`, subjectId: `s${s}`, degree: i % 6 })
+  }
+  const edges = []
+  for (let s = 0; s < 3; s++) {
+    for (let i = 1; i < 15; i++) edges.push({ source: `s${s}n${i - 1}`, target: `s${s}n${i}`, sim: 0.9 })
+  }
+  const { positions } = layoutCurriculumMap(nodes, edges, { iterations: 300, seed: 21 })
+  let intra = 0, intraN = 0, inter = 0, interN = 0
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = positions.get(nodes[i].id)
+      const b = positions.get(nodes[j].id)
+      const d = Math.hypot(a.x - b.x, a.y - b.y)
+      if (nodes[i].subjectId === nodes[j].subjectId) { intra += d; intraN++ } else { inter += d; interN++ }
+    }
+  }
+  assert.ok(inter / interN > intra / intraN, 'subjects stopped clustering after collision resolution')
+})
+
+test('COLLISION_SAFETY_GAP: leaves headroom above the contract for coordinate rounding', () => {
+  assert.ok(COLLISION_SAFETY_GAP > 0.15, 'must exceed the worst 1-decimal rounding error')
+  assert.equal(MIN_NODE_GAP, 8)
 })

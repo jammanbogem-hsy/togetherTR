@@ -104,7 +104,6 @@ export interface CurriculumMapController {
   nodeById: Map<string, MapNode>
   scoreById: Map<string, number>
   neighborIds: Set<string>
-  maxDegree: number
   searchActive: boolean
 }
 
@@ -198,12 +197,6 @@ export function useCurriculumMap(): CurriculumMapController {
     const map = new Map<string, MapNode>()
     for (const n of asset?.nodes ?? []) map.set(n.id, n)
     return map
-  }, [asset])
-
-  const maxDegree = useMemo(() => {
-    let max = 0
-    for (const n of asset?.nodes ?? []) if (n.degree > max) max = n.degree
-    return max
   }, [asset])
 
   const visibleNodes = useMemo(
@@ -386,7 +379,6 @@ export function useCurriculumMap(): CurriculumMapController {
     nodeById,
     scoreById,
     neighborIds,
-    maxDegree,
     searchActive,
   }
 }

@@ -17,11 +17,19 @@ export interface MapNode {
   coreIdeaId: string
   coreIdea: string
   text: string
-  /** 0..2000 좌표계로 사전 계산된 위치 */
+  /**
+   * 빌더가 사전 계산한 월드 좌표. 겹침 방지 레이아웃 때문에 범위는 고정이 아니다
+   * (현재 에셋은 약 0..3100) — 렌더러는 항상 fitToView 로 맞추므로 상한을 가정하지 않는다.
+   */
   x: number
   y: number
   /** 연결 차수 — 노드 반지름 산정 기준 */
   degree: number
+  /**
+   * 월드 단위 노드 반지름. 빌더가 겹침 방지 레이아웃을 계산할 때 쓴 값을
+   * 실어 보내면 렌더러가 그대로 따른다. 없으면 degree 순위로 계산한다.
+   */
+  r?: number
 }
 
 export type MapEdgeKind = 'similar' | 'cross' | 'both'

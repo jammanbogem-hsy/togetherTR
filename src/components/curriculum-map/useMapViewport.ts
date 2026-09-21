@@ -1,18 +1,24 @@
 'use client'
 
-// 분석맵 뷰포트 훅 — 크기 관찰, 팬/줌, 정착 이징, 히트 테스트 기반 호버·선택.
+// 분석맵 뷰포트 훅 — 크기 관찰, 팬/줌, 히트 테스트 기반 호버·선택.
 // 렌더링(그리기)은 CurriculumMapCanvas 가, 카메라·입력은 이 훅이 담당한다.
+//
+// 주의: 정착 연출(settle)의 진행도를 이 훅의 state 로 두면 안 된다. 예전 구현은
+// rAF 루프를 effect 가 소유했는데, ResizeObserver 가 매번 새 size 객체를 넣어
+// deps 가 흔들리면 cleanup 이 루프를 취소하고 fittedRef 가 재시작을 막아
+// 진행도가 0 에서 얼어붙었다(= 모든 노드가 한 점에 그려짐). 진행도는 캔버스가
+// 시계(performance.now)에서 직접 계산한다.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   FIT_PADDING,
-  SETTLE_DURATION_MS,
   centerOn,
   computeBounds,
   easeOutCubic,
   fitToView,
   lerpTransform,
   pickNodeAt,
+  sanitizeTransform,
   zoomAtPoint,
   type Point,
   type ViewTransform,
@@ -46,8 +52,6 @@ export interface MapViewport {
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   size: { width: number; height: number }
   view: ViewTransform
-  /** 0~1 — 로드 직후 노드가 제자리를 찾는 진행도 */
-  settle: number
   worldCenter: Point
   dragging: boolean
   hoverId: string | null
@@ -75,7 +79,6 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [view, setView] = useState<ViewTransform>({ x: 0, y: 0, scale: 1 })
-  const [settle, setSettle] = useState(1)
   const [dragging, setDragging] = useState(false)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [hoverScreen, setHoverScreen] = useState<Point | null>(null)
@@ -146,7 +149,11 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
     if (!el) return
     const apply = (): void => {
       const rect = el.getBoundingClientRect()
-      setSize({ width: Math.round(rect.width), height: Math.round(rect.height) })
+      const width = Math.round(rect.width)
+      const height = Math.round(rect.height)
+      // 값이 같으면 이전 객체를 그대로 반환 — 참조가 바뀌면 이 훅을 쓰는 쪽의
+      // effect 들이 불필요하게 재실행된다(과거 정착 연출이 취소된 원인).
+      setSize(prev => (prev.width === width && prev.height === height ? prev : { width, height }))
     }
     apply()
     const ro = new ResizeObserver(apply)
@@ -154,23 +161,14 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
     return () => ro.disconnect()
   }, [])
 
-  // ── 최초 로드: 전체 보기 + 1초 정착 이징 ────────────────────────────────
+  // ── 최초 로드: 전체 보기 ────────────────────────────────────────────────
+  // 애니메이션을 걸지 않는다. 여기서 rAF 루프를 돌리면 deps 변화로 취소될 수 있고,
+  // 그 경우 화면이 중간 상태에서 멈춘다. 정착 연출은 캔버스가 시계로 처리한다.
   useEffect(() => {
-    if (fittedRef.current || nodes.length === 0 || size.width === 0) return
+    if (fittedRef.current || nodes.length === 0 || size.width === 0 || size.height === 0) return
     fittedRef.current = true
     setView(fitToView(bounds, size, FIT_PADDING))
-    if (prefersReducedMotion()) return
-    setSettle(0)
-    let raf = 0
-    const t0 = performance.now()
-    const step = (now: number): void => {
-      const p = Math.min(1, (now - t0) / SETTLE_DURATION_MS)
-      setSettle(p)
-      if (p < 1) raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [bounds, nodes.length, size])
+  }, [bounds, nodes.length, size.width, size.height, size])
 
   // ── 외부 포커스 요청 ───────────────────────────────────────────────────
   useEffect(() => {
@@ -244,7 +242,7 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
       const dy = p.y - origin.pointer.y
       if (Math.abs(dx) > DRAG_SLOP_PX || Math.abs(dy) > DRAG_SLOP_PX) movedRef.current = true
       cancelAnimationFrame(animRef.current)
-      setView({ x: origin.view.x + dx, y: origin.view.y + dy, scale: origin.view.scale })
+      setView(sanitizeTransform({ x: origin.view.x + dx, y: origin.view.y + dy, scale: origin.view.scale }))
       return
     }
 
@@ -277,7 +275,6 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
     canvasRef,
     size,
     view,
-    settle,
     worldCenter,
     dragging,
     hoverId,
