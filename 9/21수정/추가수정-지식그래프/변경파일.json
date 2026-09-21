@@ -1,0 +1,36 @@
+{
+  "beforeCommit": "74c121d8622b1f47023ed9f86c87dca61e80234d",
+  "codeCommit": "d36589b2ea8e7091e805d6c52ce4aebcb141ed7d",
+  "files": [
+    {
+      "path": "scripts/knowledgeGraphPresentation.test.mjs",
+      "beforeSha256": null,
+      "afterSha256": "987e435e350c15f4a1344214487b257323c60e1a1c45061efeb842127b98ba86"
+    },
+    {
+      "path": "src/app/layout.tsx",
+      "beforeSha256": "c613a8a75b4f5ebc34f6fc6711f9743cd8267376e26c82d13b5c4f2cc7363760",
+      "afterSha256": "9919861e309e54db20ba79976fe61bd5c7f67dccd02ba8b19791779d5d9dc118"
+    },
+    {
+      "path": "src/components/curriculum-map/subjectIcons.ts",
+      "beforeSha256": null,
+      "afterSha256": "e9a99d9c8f5285a81196aaee6df8dd5ca3eb353be9a9a8139be8a7864523d988"
+    },
+    {
+      "path": "src/components/knowledge-graph/GraphCanvas.tsx",
+      "beforeSha256": "5e8f9cdc5c3cf1a5c22c981dece994b09762f851a8e557c9d483c537b563a274",
+      "afterSha256": "7aa1604feb442ae1788b95ac4abe5174cd8e71309eb0028469f5cd1bf7e10d24"
+    },
+    {
+      "path": "src/components/knowledge-graph/constants.ts",
+      "beforeSha256": "642b251cce42fb6cbba9734085e1dec7dd2172eb75b4cb58c2d8f4e27cecaaab",
+      "afterSha256": "aea7768f3906abbd35aca9ca6c3bbd20bc812e6d47331a638ac40f95bc9b95f2"
+    },
+    {
+      "path": "src/components/knowledge-graph/graphPresentation.ts",
+      "beforeSha256": null,
+      "afterSha256": "ba5ace9ab92f3d5e5d2e4653e67dd6598d4281c0c23c00a78b9b6af0b59c01d3"
+    }
+  ]
+}

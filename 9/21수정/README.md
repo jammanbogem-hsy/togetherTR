@@ -81,3 +81,7 @@ node --experimental-strip-types --experimental-test-module-mocks \
 ```
 
 권한 테스트는 Firestore Emulator 실행 환경에서 `TCID_RULES_TESTING_ROOT`를 임시 설치한 `@firebase/rules-unit-testing`의 루트 폴더로 지정한 후 `node --test scripts/collaborativeGradeRules.test.mjs`로 실행합니다.
+
+## 지식 그래프 후속 수정 (9/22)
+
+과목 아이콘·연결선 수정 전후 파일과 복원 방법은 [추가수정-지식그래프](./추가수정-지식그래프/README.md)에 보관합니다.
