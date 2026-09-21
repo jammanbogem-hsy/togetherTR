@@ -11,6 +11,10 @@
  *
  * Jev 가 꺼져 있거나 실패·시한 초과면 임베딩 점수만으로 응답한다(judge:'embedding').
  * OpenAI 키가 없으면 그래프의 키워드 점수로 후보를 만든다(빈 결과보다 낫다).
+ *
+ * 결과마다 근거(matchedTerms·reason)와 원점수(jevScore·sim)를 함께 준다.
+ * 또 상위 limit 개를 level 로 갈라 `results`(관련·핵심)와 `weak`(약함·무관)로
+ * 나눠 보낸다 — 화면이 약한 결과를 접어둘 수 있게.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -19,12 +23,14 @@ import { jevJudgeEnabled, judgeTopicRelevance } from '@/lib/curriculum/jevJudge'
 import { toCanonicalGradeBand } from '@/lib/curriculum/curriculumFilters'
 import {
   blendJevAndSim,
+  buildSearchReason,
   clamp01,
   cosineSim,
   embedQuery,
   filterStandards,
   levelForScore,
   loadStandardEmbeddings,
+  matchedQueryTerms,
   toStandardSummary,
   withDeadline,
   type RelevanceLevel,
@@ -54,7 +60,16 @@ interface SearchResult extends StandardSummary {
   sim: number
   score: number
   level: RelevanceLevel
+  /** Jev 원점수 0~1. 판정이 없으면 생략. */
+  jevScore?: number
+  /** 이 성취기준에 실제로 걸린 질의어(최대 6). */
+  matchedTerms: string[]
+  /** 근거 한 줄. 항상 비어 있지 않다. */
+  reason: string
 }
+
+/** results(관련·핵심) / weak(약함·무관) 경계. level 과 같은 기준이다. */
+const WEAK_SCORE_CUTOFF = 0.5
 
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -102,7 +117,7 @@ export async function POST(request: NextRequest) {
     const pool = filterStandards(graph.achievementStandards, { subjects, bands })
     if (pool.length === 0) {
       return NextResponse.json(
-        { results: [], judge: 'embedding', elapsedMs: Math.round(performance.now() - startedAt) },
+        { results: [], weak: [], judge: 'embedding', elapsedMs: Math.round(performance.now() - startedAt) },
         { headers: noStore },
       )
     }
@@ -159,22 +174,33 @@ export async function POST(request: NextRequest) {
     }
     const judgeMs = Math.round(performance.now() - judgeStartedAt)
 
-    // ── 3. 점수 혼합 · 정렬 ──
-    const results: SearchResult[] = candidates
+    // ── 3. 점수 혼합 · 근거 · 정렬 ──
+    const ranked: SearchResult[] = candidates
       .map(entry => {
         const jev = jevScores[entry.std.id]
         const hasJev = typeof jev === 'number'
-        const score = hasJev ? blendJevAndSim(jev, entry.sim) : clamp01(entry.sim)
+        const sim = Math.round(entry.sim * 1000) / 1000
+        const score = Math.round((hasJev ? blendJevAndSim(jev, entry.sim) : clamp01(entry.sim)) * 1000) / 1000
+        const jevScore = hasJev ? Math.round(jev * 1000) / 1000 : undefined
+        const matchedTerms = matchedQueryTerms(query, entry.std.keywords ?? [], entry.std.text ?? '', 6)
         return {
           ...toStandardSummary(entry.std, graph),
-          sim: Math.round(entry.sim * 1000) / 1000,
-          score: Math.round(score * 1000) / 1000,
-          // 등급은 의미 판정을 그대로 노출한다. Jev 가 없으면 코사인으로 근사.
-          level: levelForScore(hasJev ? jev : entry.sim),
+          sim,
+          score,
+          // 등급은 최종 점수(혼합) 기준 — results/weak 경계와 어긋나지 않게 한다.
+          // Jev 원점수는 jevScore 로 따로 노출한다.
+          level: levelForScore(score),
+          ...(jevScore === undefined ? {} : { jevScore }),
+          matchedTerms,
+          reason: buildSearchReason({ matchedTerms, sim, jevScore }),
         }
       })
       .sort((a, b) => b.score - a.score || b.sim - a.sim || (a.id < b.id ? -1 : 1))
+      // limit 은 종전처럼 합집합에 적용하고, 그 뒤에 강·약으로 가른다.
       .slice(0, limit)
+
+    const results = ranked.filter(item => item.score >= WEAK_SCORE_CUTOFF)
+    const weak = ranked.filter(item => item.score < WEAK_SCORE_CUTOFF)
 
     const elapsedMs = Math.round(performance.now() - startedAt)
     console.log('[curriculum-map/search]', JSON.stringify({
@@ -183,13 +209,14 @@ export async function POST(request: NextRequest) {
       pool: pool.length,
       candidates: candidates.length,
       returned: results.length,
+      weak: weak.length,
       elapsedMs,
       graphMs,
       embedMs,
       judgeMs,
     }))
 
-    return NextResponse.json({ results, judge, elapsedMs }, { headers: noStore })
+    return NextResponse.json({ results, weak, judge, elapsedMs }, { headers: noStore })
   } catch (error) {
     console.error('[curriculum-map/search] failed', {
       error: error instanceof Error ? error.message : String(error),

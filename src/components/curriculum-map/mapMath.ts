@@ -31,14 +31,6 @@ export const MIN_SCALE = 0.15
 export const MAX_SCALE = 6
 /** 이 배율 이상이면 (가림 검사를 거쳐) 모든 노드 라벨을 그린다 */
 export const LABEL_ZOOM_THRESHOLD = 1.2
-/** 로드 시 자리 잡는 이징 길이(ms) */
-export const SETTLE_DURATION_MS = 1000
-/**
- * 정착 연출이 노드를 중심으로 끌어당기는 최대 비율.
- * 1.0 이면 progress 0 에서 모든 노드가 한 점으로 붕괴한다 — 연출이 어떤 이유로든
- * 멈추면 지도가 못 쓰게 되므로, 최악의 경우에도 배치가 읽히도록 상한을 둔다.
- */
-export const SETTLE_MAX_PULL = 0.12
 export const FIT_PADDING = 56
 export const EDGE_THRESHOLD_MIN = 0.3
 export const EDGE_THRESHOLD_MAX = 0.8
@@ -52,9 +44,12 @@ export const NODE_R_RANGE = 18
 export const NODE_PADDING = 8
 /** 축소해도 클릭할 수 있는 최소 화면 반지름 */
 export const MIN_SCREEN_RADIUS = 2.5
+/** 화면에서 노드를 키우는 배수 — 너무 작아 안 읽힌다는 피드백 반영 */
+export const RENDER_RADIUS_SCALE = 1.6
 
-export const LABEL_FONT_PX = 13
-export const LABEL_FONT_PX_SMALL = 12
+export const LABEL_FONT_PX = 14
+/** 선택·검색 결과 라벨은 한 단계 크게 */
+export const LABEL_FONT_PX_FOCUS = 16
 /** 이 배율 이상에서 코드 + 본문 앞부분을 함께 보여 준다 */
 export const LABEL_DETAIL_ZOOM = 2
 export const LABEL_DETAIL_CHARS = 18
@@ -173,28 +168,6 @@ export function lerpTransform(from: ViewTransform, to: ViewTransform, p: number)
   })
 }
 
-/**
- * 로드 직후의 정착 연출. 에셋 좌표에 **가산되는** 오프셋만 적용하며,
- * progress 1 이면 에셋 좌표를 그대로(정확히) 돌려준다.
- * 연출이 중단돼도 최대 SETTLE_MAX_PULL 만큼만 당겨지므로 배치가 무너지지 않는다.
- */
-export function settlePosition(node: Point, center: Point, progress: number): Point {
-  const e = easeOutCubic(progress)
-  if (e >= 1) return { x: node.x, y: node.y }
-  const pull = (1 - e) * SETTLE_MAX_PULL
-  return {
-    x: node.x + (center.x - node.x) * pull,
-    y: node.y + (center.y - node.y) * pull,
-  }
-}
-
-/** 정착 진행도를 시계로부터 계산 — 리렌더·선택·검색에 영향받지 않는다. */
-export function settleProgress(startedAt: number | null, now: number): number {
-  if (startedAt === null || !Number.isFinite(startedAt)) return 1
-  if (SETTLE_DURATION_MS <= 0) return 1
-  return clamp((now - startedAt) / SETTLE_DURATION_MS, 0, 1)
-}
-
 // ─── 크기 규칙 (월드 단위) ────────────────────────────────────────────────
 
 /**
@@ -233,8 +206,13 @@ export function worldRadiusForScore(score: number): number {
 
 /** 월드 반지름을 화면 픽셀로 — 축소해도 최소 크기는 보장한다. */
 export function screenRadius(worldR: number, scale: number): number {
-  const r = worldR * clampScale(scale)
+  const r = worldR * clampScale(scale) * RENDER_RADIUS_SCALE
   return Number.isFinite(r) ? Math.max(MIN_SCREEN_RADIUS, r) : MIN_SCREEN_RADIUS
+}
+
+/** 엣지 선 굵기 — 유사도에 따라 1.2~2.5px. */
+export function edgeWidth(sim: number): number {
+  return 1.2 + clamp(sim, 0, 1) * 1.3
 }
 
 export function edgeAlpha(sim: number): number {

@@ -30,6 +30,8 @@ export interface MapNode {
    * 실어 보내면 렌더러가 그대로 따른다. 없으면 degree 순위로 계산한다.
    */
   r?: number
+  /** 성취기준 키워드 — 툴팁 근거 표시용 (에셋에 있을 때만) */
+  keywords?: string[]
 }
 
 export type MapEdgeKind = 'similar' | 'cross' | 'both'
@@ -70,10 +72,17 @@ export interface MapSearchResult {
   /** 0..1 종합 점수 — 검색 모드 노드 크기 기준 */
   score: number
   level: string
+  /** 왜 이 성취기준이 걸렸는지 한 줄 근거 (백엔드가 제공하면 표시) */
+  reason?: string
+  /** 질의와 실제로 맞은 표현들 */
+  matchedTerms?: string[]
 }
 
 export interface MapSearchResponse {
+  /** 관련·핵심 등급 */
   results: MapSearchResult[]
+  /** 약함·무관 등급 — 접힌 영역에 따로 보여 준다 */
+  weak?: MapSearchResult[]
   judge: MapJudge
   elapsedMs: number
 }
@@ -106,6 +115,19 @@ export interface MapRelatedItem {
   strength: number
   level: string
   source: string
+  /** ── 관계 근거 (백엔드가 제공하면 표시) ── */
+  /** 왜 관련 있는지 한 줄 설명 */
+  reason?: string
+  /** 두 성취기준이 공유하는 키워드 */
+  sharedKeywords?: string[]
+  sameArea?: boolean
+  sameCoreIdea?: boolean
+  /** 공통 핵심 아이디어가 속한 영역 */
+  coreIdeaArea?: string
+  /** 교육과정 문서상의 연결 근거 */
+  linkEvidence?: string
+  /** Jev 판정 원점수 (0..1) */
+  jevScore?: number
 }
 
 export interface MapRelatedResponse {
@@ -126,6 +148,8 @@ export interface MapFilters {
   edgeThreshold: number
   /** 라벨 항상 표시 */
   alwaysLabels: boolean
+  /** 힘 기반 레이아웃(움직임) 사용 여부 */
+  physics: boolean
 }
 
 export type AsyncStatus = 'idle' | 'loading' | 'ready' | 'error'

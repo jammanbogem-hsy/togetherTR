@@ -19,6 +19,7 @@ import {
   lerpTransform,
   pickNodeAt,
   sanitizeTransform,
+  screenToWorld,
   zoomAtPoint,
   type Point,
   type ViewTransform,
@@ -45,6 +46,14 @@ export interface MapViewportOptions {
   onSelect: (id: string | null) => void
   /** nonce 가 바뀔 때마다 해당 노드를 화면 중앙으로 */
   focusRequest: { id: string; nonce: number } | null
+  /** 노드를 끌 때 월드 좌표를 전달 (힘 레이아웃이 고정핀으로 받는다) */
+  onNodeDrag?: (id: string, worldX: number, worldY: number) => void
+  /** 끌기 종료 — 고정핀 해제 */
+  onNodeDragEnd?: (id: string) => void
+  /** 노드 끌기 허용 (움직임이 꺼져 있어도 위치 이동은 허용) */
+  nodeDragEnabled?: boolean
+  /** 첫 화면에만 적용하는 배율 가중 — 작아서 안 읽히는 문제 보정 */
+  initialZoomBoost?: number
 }
 
 export interface MapViewport {
@@ -74,7 +83,15 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOptions): MapViewport {
+export function useMapViewport({
+  nodes,
+  onSelect,
+  focusRequest,
+  onNodeDrag,
+  onNodeDragEnd,
+  nodeDragEnabled = true,
+  initialZoomBoost = 1.35,
+}: MapViewportOptions): MapViewport {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -91,6 +108,9 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
   const pinchRef = useRef<{ dist: number } | null>(null)
   const movedRef = useRef(false)
   const fittedRef = useRef(false)
+  /** 노드를 끌고 있는 중이면 그 id — 이때 화면 팬은 하지 않는다 */
+  const dragNodeRef = useRef<string | null>(null)
+  const dragStartRef = useRef<Point | null>(null)
 
   // 렌더 중 ref 를 쓰지 않도록 커밋 후에 동기화한다
   useEffect(() => {
@@ -167,8 +187,10 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
   useEffect(() => {
     if (fittedRef.current || nodes.length === 0 || size.width === 0 || size.height === 0) return
     fittedRef.current = true
-    setView(fitToView(bounds, size, FIT_PADDING))
-  }, [bounds, nodes.length, size.width, size.height, size])
+    const fit = fitToView(bounds, size, FIT_PADDING)
+    // 첫 화면은 조금 당겨서 보여 준다 ('전체 보기' 버튼은 정확한 fit 유지)
+    setView(zoomAtPoint(fit, { x: size.width / 2, y: size.height / 2 }, initialZoomBoost))
+  }, [bounds, initialZoomBoost, nodes.length, size.width, size.height, size])
 
   // ── 외부 포커스 요청 ───────────────────────────────────────────────────
   useEffect(() => {
@@ -214,9 +236,18 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
       panOriginRef.current = null
       return
     }
+    // 노드를 집었으면 노드를 끈다 (배경을 집었으면 화면을 끈다)
+    const hitId = hitTest(p)
+    if (hitId && nodeDragEnabled) {
+      dragNodeRef.current = hitId
+      dragStartRef.current = p
+      panOriginRef.current = null
+      setDragging(true)
+      return
+    }
     panOriginRef.current = { pointer: p, view: { ...viewRef.current } }
     setDragging(true)
-  }, [localPoint])
+  }, [hitTest, localPoint, nodeDragEnabled])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const p = localPoint(e)
@@ -236,6 +267,18 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
       return
     }
 
+    const dragId = dragNodeRef.current
+    if (dragId) {
+      // 임계값을 넘기 전에는 클릭으로 남겨 두어 '클릭=선택'이 유지된다
+      const start = dragStartRef.current
+      if (start && Math.hypot(p.x - start.x, p.y - start.y) > DRAG_SLOP_PX) movedRef.current = true
+      if (movedRef.current) {
+        const world = screenToWorld(p, viewRef.current)
+        onNodeDrag?.(dragId, world.x, world.y)
+      }
+      return
+    }
+
     const origin = panOriginRef.current
     if (origin) {
       const dx = p.x - origin.pointer.x
@@ -250,18 +293,27 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
     const id = hitTest(p)
     setHoverId(id)
     setHoverScreen(id ? p : null)
-  }, [hitTest, localPoint])
+  }, [hitTest, localPoint, onNodeDrag])
 
   const endPointer = useCallback((e: React.PointerEvent) => {
     const p = localPoint(e)
     pointersRef.current.delete(e.pointerId)
     if (pointersRef.current.size < 2) pinchRef.current = null
     const wasPanning = panOriginRef.current !== null
+    const draggedId = dragNodeRef.current
     panOriginRef.current = null
+    dragNodeRef.current = null
+    dragStartRef.current = null
     setDragging(false)
+    if (draggedId) {
+      // 거의 움직이지 않았으면 클릭으로 보고 선택, 움직였으면 고정핀 해제
+      if (movedRef.current) onNodeDragEnd?.(draggedId)
+      else onSelect(draggedId)
+      return
+    }
     // 움직이지 않았다면 클릭 = 선택 (빈 공간 클릭은 선택 해제)
     if (wasPanning && !movedRef.current) onSelect(hitTest(p))
-  }, [hitTest, localPoint, onSelect])
+  }, [hitTest, localPoint, onNodeDragEnd, onSelect])
 
   const onPointerLeave = useCallback(() => {
     setHoverId(null)

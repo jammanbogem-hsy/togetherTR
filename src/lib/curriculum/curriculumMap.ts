@@ -44,6 +44,8 @@ export interface CurriculumMapNode {
   /** 핵심아이디어 그룹의 첫 문장(120자 이내). */
   coreIdea: string
   text: string
+  /** 호버 툴팁용 대표 키워드(최대 8개, 기계 추출 잡음 제거). */
+  keywords: string[]
   x: number
   y: number
   /** 월드 단위 반지름. degree 순위(원값 아님)로 8~26. 겹침 없음이 보장된다. */
@@ -566,6 +568,222 @@ export function runForceLayout(
   )
   nodes.forEach((node, i) => result.set(node.id, normalized[i]))
   return result
+}
+
+// ─── 순수 헬퍼: 관련 근거(evidence) ─────────────────────────────────────────
+
+/**
+ * 근거로 보여주면 안 되는 키워드.
+ *
+ * 그래프의 keywords 는 성취기준 문장에서 기계 추출한 것이라 '수 있', '갖고 물체',
+ * '밀거나 당길 때 나타' 같은 조각이 섞여 있다. "왜 연결됐나"를 설명하는 자리에
+ * 이런 조각을 내놓으면 근거가 더 불분명해 보이므로(이 기능이 고치려는 바로 그
+ * 문제) 기능어·조각을 걸러낸다. 내용어는 남긴다.
+ */
+const KEYWORD_NOISE_RE = /(수\s*있|할\s*수|있음|있는|하는|나타|보고|갖고|통해|위해|대해|따라|관하)/
+const KEYWORD_STOPWORDS = new Set([
+  '이용', '활동', '관련', '흥미', '필요함', '알고', '여러', '가지', '다양', '각각',
+  '방법', '경우', '내용', '모습', '자신', '우리', '사람', '생각', '이해', '표현',
+  '비교', '설명', '조사', '탐구', '확인', '제시', '사용', '구성', '중요',
+])
+
+/** 어절 끝 조사를 떼되 2자 미만으로 줄어들면 원형을 유지한다. */
+const TRAILING_PARTICLE_RE = /(의|을|를|이|가|은|는|에|로|와|과|도|만|서|부터|까지)$/
+
+/**
+ * 활용된 동사 어절('알고', '가지고', '실천할'). 어간 목록 + 어미로만 매칭하므로
+ * '사고', '기후' 같은 명사를 잘못 걸러내지 않는다. 추출 키워드는 '알고 기후변화'
+ * 처럼 동사가 앞에 붙어 오는 경우가 많아 앞머리에서 떼어낸다.
+ */
+const VERB_FRAGMENT_RE = /^(알|갖|가지|하|되|보|찾|만들|살펴보|내보|이용|활용|통|대|위|비교|설명|조사|탐구|확인|수행|사용|실천|표현|파악|이해|관찰|측정|분류|구분|제작|발표|감상)(고|면|며|여|서|아|어|워|자|니|기|는|한|할|해|했|됨|됩|하여|하고|하면|한다)$/
+
+function stripParticle(token: string): string {
+  const stripped = token.replace(TRAILING_PARTICLE_RE, '')
+  return stripped.length >= 2 ? stripped : token
+}
+
+function isUsefulTerm(token: string): boolean {
+  if (token.length < 2) return false
+  if (KEYWORD_STOPWORDS.has(token)) return false
+  if (KEYWORD_NOISE_RE.test(token)) return false
+  if (VERB_FRAGMENT_RE.test(token)) return false
+  return true
+}
+
+/** 구(句)의 앞머리에 붙은 동사 어절을 떼어낸다: '알고 기후변화' → '기후변화'. */
+function stripLeadingVerbs(phrase: string): string {
+  const parts = phrase.split(' ')
+  let start = 0
+  while (start < parts.length - 1 && VERB_FRAGMENT_RE.test(parts[start])) start += 1
+  return parts.slice(start).join(' ')
+}
+
+/**
+ * 키워드 목록을 비교 가능한 내용어 집합으로 만든다.
+ * 키워드 전체와 공백으로 쪼갠 어절을 모두 후보로 넣어 '물의 상태' 와 '상태 변화'
+ * 가 '상태' 로 만나게 한다.
+ */
+export function normalizeKeywordTerms(keywords: readonly (string | null | undefined)[]): string[] {
+  const out = new Set<string>()
+  for (const raw of keywords ?? []) {
+    const normalized = (raw ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+    if (!normalized) continue
+    const phrase = stripLeadingVerbs(normalized)
+    const candidates = [phrase, ...phrase.split(' ')]
+    for (const candidate of candidates) {
+      const term = stripParticle(candidate)
+      if (isUsefulTerm(term)) out.add(term)
+    }
+  }
+  return [...out]
+}
+
+/** 더 긴 공통어에 포함된 짧은 공통어는 중복이므로 버린다. 길이 내림차순 정렬. */
+function dedupeNestedTerms(terms: readonly string[], cap: number): string[] {
+  const sorted = [...new Set(terms)].sort((a, b) => b.length - a.length || (a < b ? -1 : 1))
+  const kept: string[] = []
+  for (const term of sorted) {
+    if (kept.some(existing => existing.includes(term))) continue
+    kept.push(term)
+    if (kept.length >= cap) break
+  }
+  return kept
+}
+
+/**
+ * 두 성취기준의 공통 키워드(어간 기준). 완전 일치와 2자 이상 부분 문자열 포함을
+ * 모두 인정하므로 '상태변화' 와 '상태' 도 '상태' 로 만난다.
+ */
+export function sharedKeywordTerms(
+  a: readonly (string | null | undefined)[],
+  b: readonly (string | null | undefined)[],
+  cap = 6,
+): string[] {
+  const termsA = normalizeKeywordTerms(a)
+  const termsB = normalizeKeywordTerms(b)
+  if (termsA.length === 0 || termsB.length === 0) return []
+  const setB = new Set(termsB)
+  const shared: string[] = []
+  for (const term of termsA) {
+    if (setB.has(term)) {
+      shared.push(term)
+      continue
+    }
+    // 부분 문자열 포함 — 겹치는 쪽(짧은 어간)을 공통어로 삼는다.
+    for (const other of termsB) {
+      if (term.includes(other) && other.length >= 2) shared.push(other)
+      else if (other.includes(term) && term.length >= 2) shared.push(term)
+    }
+  }
+  return dedupeNestedTerms(shared, cap)
+}
+
+/**
+ * 화면에 보여줄 대표 키워드. 기계 추출 잡음·기능어를 걸러내고 더 긴 말에 포함된
+ * 짧은 어간을 접어 중복을 없앤다(에셋의 node.keywords, 호버 툴팁용).
+ */
+export function displayKeywords(keywords: readonly (string | null | undefined)[], cap = 8): string[] {
+  return dedupeNestedTerms(normalizeKeywordTerms(keywords), cap)
+}
+
+/** 질의어 중 이 성취기준에 실제로 걸린 낱말. 키워드·본문 양쪽을 본다. */
+export function matchedQueryTerms(
+  query: string,
+  keywords: readonly (string | null | undefined)[],
+  text: string,
+  cap = 6,
+): string[] {
+  const terms = normalizeKeywordTerms(query.split(/[\s,·]+/))
+  if (terms.length === 0) return []
+  const standardTerms = normalizeKeywordTerms(keywords)
+  const haystack = (text ?? '').toLowerCase()
+  const matched = terms.filter(term =>
+    standardTerms.some(other => other === term || other.includes(term) || term.includes(other))
+    || haystack.includes(term),
+  )
+  return dedupeNestedTerms(matched, cap)
+}
+
+/** 교과 간 링크의 근거를 한 줄로. 링크가 없으면 호출자가 '' 을 쓴다. */
+export function formatLinkEvidence(link: {
+  relation_edu?: string
+  relation?: string
+  method?: string
+  weight?: number
+  evidence?: {
+    shared_keywords?: string[]
+    shared_functions?: string[]
+    shared_knowledge?: string[]
+    similarity_score?: number
+  }
+}): string {
+  const parts: string[] = []
+  const relation = normalizeRelationType(link.relation_edu ?? link.relation)
+  parts.push(relation)
+  const evidence = link.evidence ?? {}
+  const pushList = (label: string, items?: string[]) => {
+    const cleaned = (items ?? []).map(item => item.trim()).filter(Boolean).slice(0, 4)
+    if (cleaned.length > 0) parts.push(`${label} ${cleaned.join('·')}`)
+  }
+  pushList('공통 키워드', evidence.shared_keywords)
+  pushList('공통 과정·기능', evidence.shared_functions)
+  pushList('공통 지식', evidence.shared_knowledge)
+  const weight = link.weight ?? evidence.similarity_score
+  if (typeof weight === 'number' && Number.isFinite(weight)) {
+    parts.push(`가중치 ${weight.toFixed(2)}`)
+  }
+  return parts.join(' · ')
+}
+
+export interface RelationReasonInput {
+  linkEvidence: string
+  sameCoreIdea: boolean
+  sameArea: boolean
+  coreIdeaArea: string
+  sharedKeywords: readonly string[]
+  sim: number
+  /** Jev 관련도 0~1. 없으면 undefined. */
+  jevScore?: number
+}
+
+/**
+ * "왜 연결됐는가"를 한 줄로. 우선순위: 교차 링크 근거 → 같은 핵심아이디어/영역
+ * → 공통 키워드 → 유사도만. 가장 강한 근거를 앞에 세우고 보조 근거를 덧붙이며,
+ * 아무 근거가 없어도 유사도는 항상 있으므로 빈 문자열이 되지 않는다.
+ */
+export function buildRelationReason(input: RelationReasonInput): string {
+  const parts: string[] = []
+  if (input.linkEvidence) parts.push(`교육과정 연계 링크: ${input.linkEvidence}`)
+  if (input.sameCoreIdea) parts.push(`같은 핵심아이디어(${input.coreIdeaArea || '동일 영역'})`)
+  else if (input.sameArea) parts.push(`같은 영역(${input.coreIdeaArea || '동일 영역'})`)
+  if (input.sharedKeywords.length > 0) parts.push(`공통 키워드: ${input.sharedKeywords.join(', ')}`)
+  if (parts.length === 0) {
+    const sim = `의미 유사도 ${input.sim.toFixed(2)}`
+    parts.push(
+      typeof input.jevScore === 'number'
+        ? `${sim} (Jev 판정 ${levelForScore(input.jevScore)} ${input.jevScore.toFixed(2)})`
+        : sim,
+    )
+  }
+  return parts.join(' · ')
+}
+
+export interface SearchReasonInput {
+  matchedTerms: readonly string[]
+  sim: number
+  jevScore?: number
+}
+
+/** 검색 결과의 근거. 걸린 질의어를 앞세우고 판정·유사도 수치를 덧붙인다. */
+export function buildSearchReason(input: SearchReasonInput): string {
+  const parts: string[] = []
+  if (input.matchedTerms.length > 0) parts.push(`질의어 일치: ${input.matchedTerms.join(', ')}`)
+  parts.push(
+    typeof input.jevScore === 'number'
+      ? `Jev 판정 ${levelForScore(input.jevScore)} ${input.jevScore.toFixed(2)} · 의미 유사도 ${input.sim.toFixed(2)}`
+      : `의미 유사도 ${input.sim.toFixed(2)}`,
+  )
+  return parts.join(' · ')
 }
 
 // ─── 순수 헬퍼: 반지름 · 충돌 해소 · 맞춤 ───────────────────────────────────

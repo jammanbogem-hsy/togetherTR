@@ -8,18 +8,25 @@
  *
  * Jev 가 꺼져 있거나 실패·시한 초과면 관계 유형은 교과 간 링크의 relation_edu
  * (없으면 '의미연결'), 강도는 코사인으로 채운다(judge:'embedding').
+ *
+ * 후보마다 "왜 연결됐는가"를 결정적으로 계산해 함께 준다(추가 LLM 호출 없음):
+ * 공통 키워드·같은 영역/핵심아이디어·교과 간 링크 근거를 모아 reason 한 줄로
+ * 조립한다. 사용자 피드백("연결 근거가 불분명하다")에 대한 응답이다.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
 import { jevJudgeEnabled, judgeRelations, RELATION_TYPE_CRITERIA } from '@/lib/curriculum/jevJudge'
 import {
+  buildRelationReason,
   clamp01,
   coreIdeaSentence,
   cosineSim,
+  formatLinkEvidence,
   levelForScore,
   loadStandardEmbeddings,
   normalizeRelationType,
+  sharedKeywordTerms,
   toStandardSummary,
   unionCandidates,
   withDeadline,
@@ -55,6 +62,18 @@ interface RelatedItem extends StandardSummary {
   strength: number
   level: RelevanceLevel
   source: CandidateSource
+  /** Jev 원점수 0~1. 판정이 없으면 생략(UI 가 '유사도만' 으로 표시). */
+  jevScore?: number
+  /** 두 성취기준의 공통 키워드 어간(최대 6). */
+  sharedKeywords: string[]
+  sameArea: boolean
+  sameCoreIdea: boolean
+  /** 후보의 핵심아이디어 영역명. */
+  coreIdeaArea: string
+  /** 교과 간 링크가 있을 때의 근거 문구. 없으면 ''. */
+  linkEvidence: string
+  /** 위 근거를 우선순위로 조립한 한 줄 설명. 항상 비어 있지 않다. */
+  reason: string
 }
 
 function resolveLimit(value: unknown): number {
@@ -118,9 +137,14 @@ export async function POST(request: NextRequest) {
       inputs.push({ id: neighbour.id, origin: 'similar', sim: clamp01(neighbour.score) })
     }
 
+    // 링크 원본을 후보 id 로 보관한다 — relation 뿐 아니라 evidence 문구도 필요하다.
+    const linkByCandidateId = new Map<string, (typeof graph.links_cross_subject)[number]>()
     for (const link of graph.links_cross_subject ?? []) {
       const other = link.source_id === id ? link.target_id : link.target_id === id ? link.source_id : ''
       if (!other || other === id || !byId.has(other)) continue
+      // 같은 쌍에 링크가 여러 개면 가중치가 큰 것을 근거로 쓴다.
+      const existing = linkByCandidateId.get(other)
+      if (!existing || (link.weight ?? 0) > (existing.weight ?? 0)) linkByCandidateId.set(other, link)
       inputs.push({
         id: other,
         origin: 'cross',
@@ -182,13 +206,36 @@ export async function POST(request: NextRequest) {
         // Jev 판정이 없으면 교과 간 링크의 관계 유형, 그것도 없으면 '의미연결'.
         const relationType = safeRelationType(verdict?.relationType ?? candidate.relation)
         const strength = clamp01(verdict?.strength ?? candidate.sim)
+        const link = linkByCandidateId.get(candidate.id)
+        const linkEvidence = link ? formatLinkEvidence(link) : ''
+        const sharedKeywords = sharedKeywordTerms(center.keywords ?? [], std.keywords ?? [], 6)
+        const sameCoreIdea = Boolean(center.core_idea_id && center.core_idea_id === std.core_idea_id)
+        const sameArea = Boolean(center.area && center.area === std.area)
+        const coreIdeaArea = std.area ?? ''
+        const sim = Math.round(candidate.sim * 1000) / 1000
+        const jevScore = verdict ? Math.round(verdict.strength * 1000) / 1000 : undefined
         return {
           ...toStandardSummary(std, graph),
-          sim: Math.round(candidate.sim * 1000) / 1000,
+          sim,
           relationType,
           strength: Math.round(strength * 1000) / 1000,
           level: levelForScore(strength),
           source: candidate.source,
+          ...(jevScore === undefined ? {} : { jevScore }),
+          sharedKeywords,
+          sameArea,
+          sameCoreIdea,
+          coreIdeaArea,
+          linkEvidence,
+          reason: buildRelationReason({
+            linkEvidence,
+            sameCoreIdea,
+            sameArea,
+            coreIdeaArea,
+            sharedKeywords,
+            sim,
+            jevScore,
+          }),
         }
       })
       .sort((a, b) => b.strength - a.strength || b.sim - a.sim || (a.id < b.id ? -1 : 1))

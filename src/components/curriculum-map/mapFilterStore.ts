@@ -14,6 +14,7 @@ export const DEFAULT_FILTERS: MapFilters = {
   hiddenBands: [],
   edgeThreshold: EDGE_THRESHOLD_DEFAULT,
   alwaysLabels: false,
+  physics: true,
 }
 
 function readStoredFilters(): MapFilters {
@@ -35,6 +36,8 @@ function readStoredFilters(): MapFilters {
         ? clamp(obj.edgeThreshold, EDGE_THRESHOLD_MIN, EDGE_THRESHOLD_MAX)
         : EDGE_THRESHOLD_DEFAULT,
       alwaysLabels: obj.alwaysLabels === true,
+      // 저장값이 없으면 움직임은 기본 켜짐
+      physics: obj.physics === undefined ? true : obj.physics === true,
     }
   } catch {
     return DEFAULT_FILTERS

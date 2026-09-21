@@ -17,18 +17,25 @@ import {
   buildUndirectedEdges,
   clamp01,
   cosineSim,
+  buildRelationReason,
+  buildSearchReason,
+  displayKeywords,
   edgeKey,
   fitToSquare,
+  formatLinkEvidence,
   inspectOverlaps,
   layoutCurriculumMap,
   levelForScore,
+  matchedQueryTerms,
   meanNearestNeighbourDistance,
+  normalizeKeywordTerms,
   mulberry32,
   nodeRadii,
   normalizeLayout,
   normalizeRelationType,
   resolveCandidateSource,
   resolveCollisions,
+  sharedKeywordTerms,
   runForceLayout,
   springRestLength,
   standardBandLabel,
@@ -604,4 +611,195 @@ test('layoutCurriculumMap: keeps subjects as soft clusters after collision resol
 test('COLLISION_SAFETY_GAP: leaves headroom above the contract for coordinate rounding', () => {
   assert.ok(COLLISION_SAFETY_GAP > 0.15, 'must exceed the worst 1-decimal rounding error')
   assert.equal(MIN_NODE_GAP, 8)
+})
+
+// ─── keyword normalization ─────────────────────────────────────────────────
+
+test('normalizeKeywordTerms: keeps the phrase and its word parts', () => {
+  const terms = normalizeKeywordTerms(['상태 변화'])
+  assert.ok(terms.includes('상태 변화'))
+  assert.ok(terms.includes('상태'))
+  assert.ok(terms.includes('변화'))
+})
+
+test('normalizeKeywordTerms: drops machine-extraction noise fragments', () => {
+  // These are real entries from the graph's keywords arrays.
+  const terms = normalizeKeywordTerms(['수 있', '있음', '밀거나 당길 때 나타', '갖고 물체'])
+  assert.ok(!terms.includes('수 있'), JSON.stringify(terms))
+  assert.ok(!terms.includes('있음'))
+  assert.ok(!terms.some(t => t.includes('나타')))
+  assert.ok(!terms.includes('갖고'))
+  // The content word inside the fragment survives.
+  assert.ok(terms.includes('물체'))
+})
+
+test('normalizeKeywordTerms: strips a leading conjugated verb from a phrase', () => {
+  const terms = normalizeKeywordTerms(['알고 기후변화', '가지고 기후변화'])
+  assert.ok(terms.includes('기후변화'))
+  assert.ok(!terms.some(t => t.startsWith('알고') || t.startsWith('가지고')))
+})
+
+test('normalizeKeywordTerms: keeps nouns that merely look like verb forms', () => {
+  // '사고' and '기후' must not be mistaken for conjugated verbs.
+  const terms = normalizeKeywordTerms(['사고', '기후', '지구'])
+  assert.deepEqual(terms.sort(), ['기후', '사고', '지구'])
+})
+
+test('normalizeKeywordTerms: drops generic stopwords and single characters', () => {
+  const terms = normalizeKeywordTerms(['이용', '활동', '관련', '물', '무게'])
+  assert.deepEqual(terms, ['무게'])
+})
+
+test('normalizeKeywordTerms: strips trailing particles when 2+ chars remain', () => {
+  assert.ok(normalizeKeywordTerms(['무게를']).includes('무게'))
+  // '물의' would become the single char '물', so the original is kept.
+  assert.ok(normalizeKeywordTerms(['물의']).includes('물의'))
+})
+
+test('normalizeKeywordTerms: empty and nullish input', () => {
+  assert.deepEqual(normalizeKeywordTerms([]), [])
+  assert.deepEqual(normalizeKeywordTerms([null, undefined, '', '   ']), [])
+})
+
+test('displayKeywords: caps the list and folds nested stems', () => {
+  const out = displayKeywords(['상태 변화', '상태', '물의', '장치'], 8)
+  // '상태' is contained in '상태 변화', so it is folded away.
+  assert.ok(out.includes('상태 변화'))
+  assert.ok(!out.includes('상태'))
+  assert.ok(out.length <= 8)
+  assert.equal(displayKeywords(['가', '나', '다'], 8).length, 0)
+  assert.equal(displayKeywords(Array.from({ length: 30 }, (_, i) => `키워드${i}`), 8).length, 8)
+})
+
+// ─── shared keywords ──────────────────────────────────────────────────────
+
+test('sharedKeywordTerms: two standards meet on a shared stem', () => {
+  // The brief's example: '물의 상태' and '상태 변화' must share '상태'.
+  const shared = sharedKeywordTerms(['물의 상태'], ['상태 변화'])
+  assert.ok(shared.includes('상태'), JSON.stringify(shared))
+})
+
+test('sharedKeywordTerms: matches a 2+ char stem inside a longer word', () => {
+  const shared = sharedKeywordTerms(['상태변화'], ['상태'])
+  assert.deepEqual(shared, ['상태'])
+})
+
+test('sharedKeywordTerms: no overlap yields an empty list', () => {
+  assert.deepEqual(sharedKeywordTerms(['무게', '저울'], ['분수', '소수']), [])
+  assert.deepEqual(sharedKeywordTerms([], ['무게']), [])
+  assert.deepEqual(sharedKeywordTerms(['무게'], []), [])
+})
+
+test('sharedKeywordTerms: noise fragments never become shared evidence', () => {
+  // Both standards contain '수 있' but that is not a reason they are related.
+  assert.deepEqual(sharedKeywordTerms(['수 있', '무게'], ['수 있', '분수']), [])
+})
+
+test('sharedKeywordTerms: caps the result and is deterministic', () => {
+  const a = ['가가', '나나', '다다', '라라', '마마', '바바', '사사', '아아']
+  const shared = sharedKeywordTerms(a, a, 6)
+  assert.equal(shared.length, 6)
+  assert.deepEqual(shared, sharedKeywordTerms(a, a, 6))
+})
+
+// ─── matched query terms ──────────────────────────────────────────────────
+
+test('matchedQueryTerms: matches against keywords and against the text', () => {
+  const matched = matchedQueryTerms('물의 상태 변화', ['상태 변화'], '물이 얼 때의 현상을 관찰한다')
+  assert.ok(matched.includes('상태 변화') || matched.includes('상태'))
+  assert.ok(matched.includes('변화') || matched.includes('상태 변화'))
+})
+
+test('matchedQueryTerms: unrelated query returns nothing', () => {
+  assert.deepEqual(matchedQueryTerms('분수의 덧셈', ['무게', '저울'], '물체의 무게를 비교한다'), [])
+})
+
+test('matchedQueryTerms: drops stopwords and single characters from the query', () => {
+  const matched = matchedQueryTerms('이용 활동 물', ['이용', '활동'], '물을 이용한 활동')
+  assert.deepEqual(matched, [])
+})
+
+test('matchedQueryTerms: caps and handles an empty query', () => {
+  assert.deepEqual(matchedQueryTerms('', ['무게'], '무게'), [])
+  assert.ok(matchedQueryTerms('가가 나나 다다 라라 마마 바바 사사', [], '가가 나나 다다 라라 마마 바바 사사').length <= 6)
+})
+
+// ─── link evidence ────────────────────────────────────────────────────────
+
+test('formatLinkEvidence: renders relation, shared keywords and weight', () => {
+  const out = formatLinkEvidence({
+    relation_edu: '내용-표현',
+    method: 'hybrid_embedding70_tfidf30',
+    weight: 0.4888,
+    evidence: { shared_keywords: ['생활', '건강'], shared_functions: [], shared_knowledge: [], similarity_score: 0.4888 },
+  })
+  assert.ok(out.startsWith('내용-표현'), out)
+  assert.ok(out.includes('공통 키워드 생활·건강'), out)
+  assert.ok(out.includes('가중치 0.49'), out)
+})
+
+test('formatLinkEvidence: legacy 의미-연결 is normalized and empty evidence is tolerated', () => {
+  assert.ok(formatLinkEvidence({ relation_edu: '의미-연결', weight: 0.3 }).startsWith('의미연결'))
+  const bare = formatLinkEvidence({})
+  assert.equal(bare, '의미연결')
+})
+
+// ─── reason assembly ──────────────────────────────────────────────────────
+
+const BASE_REASON = {
+  linkEvidence: '',
+  sameCoreIdea: false,
+  sameArea: false,
+  coreIdeaArea: '지구와 우주',
+  sharedKeywords: [],
+  sim: 0.61,
+}
+
+test('buildRelationReason: cross link evidence leads', () => {
+  const reason = buildRelationReason({
+    ...BASE_REASON,
+    linkEvidence: '내용-표현 · 공통 키워드 생활·건강',
+    sharedKeywords: ['생활'],
+  })
+  assert.ok(reason.startsWith('교육과정 연계 링크: 내용-표현'), reason)
+  assert.ok(reason.includes('공통 키워드: 생활'), reason)
+})
+
+test('buildRelationReason: same core idea outranks shared keywords', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sameCoreIdea: true, sharedKeywords: ['물', '상태'] })
+  assert.ok(reason.startsWith('같은 핵심아이디어(지구와 우주)'), reason)
+  assert.ok(reason.includes('공통 키워드: 물, 상태'))
+})
+
+test('buildRelationReason: same area only when the core idea differs', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sameArea: true })
+  assert.ok(reason.startsWith('같은 영역(지구와 우주)'), reason)
+  assert.ok(!reason.includes('핵심아이디어'))
+})
+
+test('buildRelationReason: shared keywords alone', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sharedKeywords: ['물', '상태', '변화'] })
+  assert.equal(reason, '공통 키워드: 물, 상태, 변화')
+})
+
+test('buildRelationReason: similarity-only fallback reports the Jev verdict', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, jevScore: 0.75 })
+  assert.equal(reason, '의미 유사도 0.61 (Jev 판정 핵심 0.75)')
+})
+
+test('buildRelationReason: never empty, even with no evidence and no Jev score', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sim: 0 })
+  assert.ok(reason.length > 0)
+  assert.equal(reason, '의미 유사도 0.00')
+})
+
+test('buildSearchReason: matched query terms lead, scores follow', () => {
+  const reason = buildSearchReason({ matchedTerms: ['물', '환경'], sim: 0.39, jevScore: 1 })
+  assert.ok(reason.startsWith('질의어 일치: 물, 환경'), reason)
+  assert.ok(reason.includes('Jev 판정 핵심 1.00'), reason)
+  assert.ok(reason.includes('의미 유사도 0.39'), reason)
+})
+
+test('buildSearchReason: never empty without matches or a Jev score', () => {
+  assert.equal(buildSearchReason({ matchedTerms: [], sim: 0.42 }), '의미 유사도 0.42')
 })
