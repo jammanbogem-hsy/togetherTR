@@ -52,6 +52,13 @@ export default function LeftPanel({
 
   // ── 내비게이션 드로어 ↔ 레일 (M3 반응형 접힘, UI 전용 상태) ────────────────
   const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)')
+    const update = () => setCollapsed(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
 
   // ── 성취기준 추가 검색 ──────────────────────────────────────────────────
   const [addQuery, setAddQuery] = useState('')
@@ -126,11 +133,11 @@ export default function LeftPanel({
       style={{ color: 'var(--md-sys-on-surface)' }}
     >
       {/* 헤더 (M3 top app bar) */}
-      <div className={`m3-top-app-bar flex items-center gap-1 shrink-0 py-2 ${collapsed ? 'px-2 justify-center' : 'px-3 pl-4'}`}>
+      <div className={`m3-top-app-bar flex items-center gap-1 shrink-0 py-3 ${collapsed ? 'px-2 justify-center' : 'px-4'}`}>
         {!collapsed && (
           <div className="flex-1 min-w-0">
-            <div className="text-[14px] font-bold" style={{ color: 'var(--md-sys-on-surface)' }}>연결 노드</div>
-            <p className="text-[12px] leading-tight" style={{ color: 'var(--md-sys-on-surface-variant)' }}>시트에서 넘어온 노드를 켜고 끕니다</p>
+            <div className="text-[16px] font-medium" style={{ color: 'var(--md-sys-on-surface)' }}>성취기준 목록</div>
+            <p className="text-[12px] leading-tight" style={{ color: 'var(--md-sys-on-surface-variant)' }}>그래프에 표시할 성취기준을 선택하세요</p>
           </div>
         )}
         <button
@@ -222,7 +229,7 @@ export default function LeftPanel({
           })()}
 
           {/* 교과 필터 칩 (M3 filter chips) */}
-          <div className="px-3 py-2 flex flex-wrap gap-1.5 shrink-0" style={{ borderBottom: '1px solid var(--md-sys-outline-variant)' }} role="group" aria-label="교과 필터">
+          <div className="px-4 py-3 flex flex-wrap gap-2 shrink-0" style={{ borderBottom: '1px solid var(--md-sys-outline-variant)' }} role="group" aria-label="교과 필터">
             <button
               type="button"
               onClick={() => setSubjectFilter(null)}
@@ -288,7 +295,7 @@ export default function LeftPanel({
           </div>
 
           {/* 추천 목록 (M3 list rows) */}
-          <div className="flex-1 overflow-y-auto py-2 space-y-1.5 px-3">
+          <div className="min-h-0 flex-1 overflow-y-auto py-3 space-y-2 px-3">
             {loading && <div className="text-[13px] text-center py-4 animate-pulse" style={{ color: 'var(--md-sys-on-surface-variant)' }}>불러오는 중…</div>}
             {!loading && filteredStandards.length === 0 && (
               <div className="text-[13px] text-center py-4" style={{ color: 'var(--md-sys-on-surface-variant)' }}>성취기준 없음</div>
@@ -322,7 +329,7 @@ export default function LeftPanel({
                   aria-pressed={isSelected}
                   tabIndex={0}
                   className={rowClass}
-                  style={isCenter ? { borderColor: 'var(--md-sys-tertiary)', background: 'var(--md-sys-tertiary-container)' } : undefined}
+                  style={isCenter ? { borderColor: 'var(--md-sys-primary)', background: 'var(--md-sys-primary-container)' } : undefined}
                   onClick={() => onSetSelectedCardId(isSelected ? null : n.id)}
                   onKeyDown={e => {
                     if (e.target !== e.currentTarget) return
@@ -335,8 +342,10 @@ export default function LeftPanel({
                         <span className="font-mono font-bold text-[15px]" style={{ color }}>{n.label}</span>
                         <span className="text-[12px] font-semibold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: color + '18', color }}>{subjectName(n.subject_id)}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        {isCenter && <span className="text-[12px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--md-sys-tertiary)', color: 'white' }}>중심</span>}
+                      {n.text && <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-[var(--md-on-surface-variant)]">{n.text}</p>}
+                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                        {/^\[?[246]/.test(n.label) && <span className="text-[12px] text-[var(--md-on-surface-variant)]">{({ '2': '1–2학년군', '4': '3–4학년군', '6': '5–6학년군' } as Record<string, string>)[n.label.replace('[', '')[0]]}</span>}
+                        {isCenter && <span className="text-[12px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--md-sys-primary)', color: 'white' }}>중심 성취기준</span>}
                         {isAIMentioned && !isCenter && <span className="text-[12px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--md-sys-secondary-container)', color: 'var(--md-sys-on-secondary-container)' }}>AI 언급</span>}
                         {score > 0.01 && !isCenter && <span className="text-[12px] font-bold" style={{ color: 'var(--md-sys-on-surface-variant)' }}>{Math.round(score * 100)}%</span>}
                         {effectiveRelation && !isCenter && (
@@ -449,7 +458,7 @@ export default function LeftPanel({
                 value={addQuery}
                 onChange={e => setAddQuery(e.target.value)}
                 aria-label="성취기준 코드·키워드 검색"
-                className="m3-search-field w-full text-[13px] px-3 py-1.5"
+                className="m3-search-field h-10 w-full text-[14px] px-3"
               />
               {addLoading && <span className="absolute right-3 top-1.5 text-[11px] animate-pulse" style={{ color: 'var(--md-sys-on-surface-variant)' }}>…</span>}
             </div>

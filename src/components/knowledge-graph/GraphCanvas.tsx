@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { GNode, GEdge, GraphRelationAnalysis, GraphPinnedStandard, GraphRelationFilter } from './types'
+import type { GNode, GEdge, GraphRelationAnalysis, GraphPinnedStandard } from './types'
 import {
   RELATION_COLORS, subjectColor, subjectName, normCode, nodeRadius, nodeImportance,
   hasCompletedRelationAnalysis,
@@ -26,10 +26,6 @@ interface GraphCanvasProps {
   pinnedStandards: GraphPinnedStandard[]
   recommendedCenterIds: Map<string, string>
   hoveredNodeId: string | null
-  algoMode: 'keyword' | 'semantic' | 'hybrid'
-  relFilter: GraphRelationFilter
-  onAlgoModeChange: (mode: 'keyword' | 'semantic' | 'hybrid') => void
-  onRelFilterChange: (filter: GraphRelationFilter) => void
   onNodeClick: (node: GNode) => void
   onRightClick: (e: React.MouseEvent, nodeId: string) => void
   onSetHoveredNodeId: (id: string | null) => void
@@ -54,11 +50,9 @@ function prefersReducedMotion(): boolean {
 }
 
 export default function GraphCanvas({
-  svgRef, nodesRef, svgWidth, svgHeight, height,
+  svgRef, nodesRef, svgWidth, svgHeight,
   visibleNodes, visibleEdges, centerNodeId, popup, hoveredNodeId: hoveredNodeIdProp,
   claudeRelations, chatMentionedCodes, pinnedStandards, recommendedCenterIds,
-  algoMode, relFilter,
-  onAlgoModeChange, onRelFilterChange,
   onNodeClick, onRightClick, onSetHoveredNodeId, onSetTooltip, onDragStart, onDragEnd,
 }: GraphCanvasProps) {
   const [viewTransform, setViewTransform] = useState<ViewTransform>({ x: 0, y: 0, scale: 1 })
@@ -167,7 +161,7 @@ export default function GraphCanvas({
     fitRafRef.current = requestAnimationFrame(step)
   }, [])
 
-  const fitToView = useCallback(() => {
+  const fitToView = useCallback((maxScale = MAX_SCALE) => {
     if (visibleNodes.length === 0) { animateTransformTo({ x: 0, y: 0, scale: 1 }); return }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (const n of visibleNodes) {
@@ -177,12 +171,24 @@ export default function GraphCanvas({
     }
     const bw = Math.max(1, maxX - minX)
     const bh = Math.max(1, maxY - minY)
-    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE,
-      Math.min((svgWidth - 2 * FIT_PADDING) / bw, (svgHeight - 2 * FIT_PADDING) / bh)))
+    const paddingX = Math.min(FIT_PADDING, svgWidth * 0.12)
+    const scale = Math.max(MIN_SCALE, Math.min(maxScale,
+      Math.min((svgWidth - 2 * paddingX) / bw, (svgHeight - 2 * FIT_PADDING) / bh)))
     const bcx = (minX + maxX) / 2
     const bcy = (minY + maxY) / 2
     animateTransformTo({ scale, x: svgWidth / 2 - bcx * scale, y: svgHeight / 2 - bcy * scale })
   }, [visibleNodes, centerNodeId, svgWidth, svgHeight, animateTransformTo])
+
+  // 패널 접기나 창 크기 변경 후에도 전체 노드가 화면 안에 남도록 맞춘다.
+  // 시뮬레이션 프레임마다 갱신되는 노드 배열은 자동 맞춤의 트리거로 쓰지 않는다.
+  const autoFitRef = useRef(() => {})
+  useEffect(() => { autoFitRef.current = () => fitToView(1) }, [fitToView])
+  const hasNodes = visibleNodes.length > 0
+  useEffect(() => {
+    if (!hasNodes) return
+    const timer = setTimeout(() => autoFitRef.current(), 300)
+    return () => clearTimeout(timer)
+  }, [svgWidth, svgHeight, hasNodes])
 
   const zoomBy = useCallback((factor: number) => {
     cancelAnimationFrame(fitRafRef.current)
@@ -323,45 +329,6 @@ export default function GraphCanvas({
 
   return (
     <>
-      {/* 상단 컨트롤: 검색 방식 + 관계 필터 */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 pointer-events-auto">
-        <div className="flex items-center gap-1 bg-white/85 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200 p-1">
-          <span className="text-[12px] font-semibold text-gray-400 px-2">검색 방식</span>
-          {([
-            { key: 'keyword', label: '키워드', desc: '키워드 기반 검색' },
-            { key: 'semantic', label: '의미망', desc: '개념·맥락 기반 임베딩 검색' },
-            { key: 'hybrid', label: '통합', desc: '의미망 + 키워드 통합' },
-          ] as const).map(({ key, label, desc }) => (
-            <button key={key} title={desc} onClick={() => onAlgoModeChange(key)}
-              aria-pressed={algoMode === key}
-              className={`px-2.5 py-1 rounded-lg text-[12px] font-semibold transition-all ${algoMode === key ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1 bg-white/85 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200 p-1 flex-wrap">
-          <span className="text-[12px] font-semibold text-gray-400 px-2">관계</span>
-          {([
-            { key: 'all', label: '전체', color: '#111827' },
-            { key: '의미연결', label: '의미', color: '#7C3AED' },
-            { key: '도구-활용', label: '도구', color: '#EF4444' },
-            { key: '현상-가치', label: '가치', color: '#F97316' },
-            { key: '내용-표현', label: '표현', color: '#22C55E' },
-            { key: '개념-적용', label: '적용', color: '#0EA5E9' },
-            { key: '문제-해결', label: '해결', color: '#D946EF' },
-            { key: '탐구-실천', label: '실천', color: '#84CC16' },
-            { key: '원인-결과', label: '인과', color: '#F59E0B' },
-          ] as { key: GraphRelationFilter; label: string; color: string }[]).map(({ key, label, color }) => (
-            <button key={key} onClick={() => onRelFilterChange(key)}
-              aria-pressed={relFilter === key}
-              className={`px-2 py-1 rounded-lg text-[11.5px] font-semibold transition-all ${relFilter === key ? 'text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
-              style={relFilter === key ? { backgroundColor: color } : { color }}
-            >{label}</button>
-          ))}
-        </div>
-      </div>
-
       {/* 우측 상단 에이전트 추천 멘트 */}
       <AgentHintPanel
         centerNodeId={centerNodeId}
@@ -374,7 +341,7 @@ export default function GraphCanvas({
       <svg
         ref={svgRef}
         className="w-full h-full"
-        style={{ width: svgWidth, height: height ?? '100%', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+        style={{ width: svgWidth, height: '100%', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}
         role="application"
         aria-label={`지식 그래프. 성취기준 ${visibleNodes.length}개, 관계 ${visibleEdges.length}개.${centerNodeId ? ' 중심 성취기준이 설정되어 있습니다.' : ' 노드를 우클릭하여 중심을 설정하세요.'}`}
         onPointerDown={onBackgroundPointerDown}
@@ -575,21 +542,21 @@ export default function GraphCanvas({
       </svg>
 
       {/* 줌 컨트롤 */}
-      <div className="absolute bottom-16 right-4 z-20 flex flex-col items-center gap-1 pointer-events-auto" role="group" aria-label="그래프 확대·축소 컨트롤">
+      <div className="absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-full border border-[var(--md-outline-variant)] bg-[var(--md-surface)] p-1 shadow-sm pointer-events-auto" role="group" aria-label="그래프 확대·축소 컨트롤">
         <button
           onClick={() => zoomBy(1.2)}
           aria-label="확대"
-          className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="확대"
+          className="m3-state w-10 h-10 rounded-full text-[var(--md-on-surface-variant)] flex items-center justify-center text-lg font-medium leading-none" title="확대"
         >+</button>
         <button
-          onClick={fitToView}
+          onClick={() => fitToView()}
           aria-label="화면에 맞추기"
-          className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-500 hover:bg-gray-50 flex items-center justify-center text-[12px] font-bold leading-none" title="화면 맞춤"
-        >⊙</button>
+          className="m3-state w-10 h-10 rounded-full text-[var(--md-on-surface-variant)] flex items-center justify-center text-[12px] font-medium leading-none" title="화면 맞춤"
+        ><span className="material-symbols-rounded text-[20px]" aria-hidden>fit_screen</span></button>
         <button
           onClick={() => zoomBy(0.83)}
           aria-label="축소"
-          className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow text-gray-600 hover:bg-gray-50 flex items-center justify-center text-lg font-bold leading-none" title="축소"
+          className="m3-state w-10 h-10 rounded-full text-[var(--md-on-surface-variant)] flex items-center justify-center text-lg font-medium leading-none" title="축소"
         >−</button>
       </div>
     </>
@@ -607,6 +574,24 @@ function AgentHintPanel({
   claudeRelations: Map<string, GraphRelationAnalysis>
 }) {
   const [showModal, setShowModal] = React.useState(false)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showModal) return
+    const previous = document.activeElement as HTMLElement | null
+    modalRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') { event.preventDefault(); setShowModal(false) }
+      if (event.key === 'Tab') {
+        const buttons = modalRef.current?.querySelectorAll<HTMLButtonElement>('button')
+        if (!buttons?.length) return
+        const first = buttons[0], last = buttons[buttons.length - 1]
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus() }
+  }, [showModal])
 
   if (!centerNodeId) return null
   const centerNode = visibleNodes.find(n => n.id === centerNodeId)
@@ -674,70 +659,55 @@ function AgentHintPanel({
 
   return (
     <>
-      {/* 연결 요약 카드 */}
-      <div className="absolute top-4 right-4 z-10 w-[236px] pointer-events-auto">
-        <button
-          onClick={() => setShowModal(true)}
-          className="w-full text-left bg-white/90 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-200 px-4 py-3 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer"
+      {/* 연결 요약은 한 줄로 접어 그래프 영역을 확보한다. */}
+      <div className="absolute top-4 left-4 right-4 z-10 flex pointer-events-none">
+        <button type="button" onClick={() => setShowModal(true)} aria-label="연결 구조 자세히 보기"
+          className="m3-state pointer-events-auto flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-[var(--md-outline-variant)] bg-[var(--md-surface)] px-4 py-2.5 text-[13px] shadow-sm"
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[13px] font-bold text-gray-700">연결 구조</span>
-            <span className="text-[12px] font-semibold text-gray-400">자세히 보기</span>
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-1.5">
-            <div className="rounded-xl bg-gray-50 px-2 py-1.5">
-              <p className="text-[11px] text-gray-400">중심</p>
-              <p className="mt-0.5 font-mono text-[12px] font-bold truncate" style={{ color: subjectColor(centerNode.subject_id) }}>{centerNode.label}</p>
-            </div>
-            <div className="rounded-xl bg-gray-50 px-2 py-1.5">
-              <p className="text-[11px] text-gray-400">연결</p>
-              <p className="mt-0.5 text-[13px] font-bold text-gray-700">{connectedStds.length}개</p>
-            </div>
-            <div className="rounded-xl bg-gray-50 px-2 py-1.5">
-              <p className="text-[11px] text-gray-400">분석</p>
-              <p className="mt-0.5 text-[13px] font-bold text-gray-700">{analyzedConnectedCount}개</p>
-            </div>
-          </div>
-          <div className="mt-2 flex items-center gap-1.5">
-            {topRelLabel && <span className="h-2 w-2 rounded-full" style={{ background: topRelColor }} />}
-            <p className="min-w-0 flex-1 truncate text-[12px] text-gray-500">{topRelLabel || '관계'} 중심으로 수업 예시를 만들 수 있습니다.</p>
-          </div>
+          <span className="font-medium text-[var(--md-on-surface)]">연결 구조</span>
+          <span className="font-medium" style={{ color: subjectColor(centerNode.subject_id) }}>중심 {centerNode.label}</span>
+          <span className="text-[var(--md-on-surface-variant)]">연결 {connectedStds.length}개 · 분석 {analyzedConnectedCount}개</span>
+          <span className="text-[var(--md-primary)]">자세히 보기</span>
         </button>
       </div>
 
       {/* 전체 모달 */}
       {showModal && createPortal(
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50"
+          className="m3-sheet fixed inset-0 z-[15000] flex items-center justify-center bg-black/40 p-4"
           onClick={() => setShowModal(false)}
         >
           <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="연결 구조 상세"
             className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden"
             style={{ maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
             onClick={e => e.stopPropagation()}
           >
             {/* 헤더 */}
-            <div className="px-6 py-4 bg-gradient-to-r from-[#7B1FA2] to-[#9C27B0] flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-[var(--md-outline-variant)] bg-[var(--md-surface-container)] flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-base font-bold text-white">{analyzedConnectedCount > 0 ? 'Agent 추천 상세' : '연결 제안 상세'}</span>
-                  {topRelLabel && <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-white/20 text-white">{topRelLabel}</span>}
+                  <span className="text-[20px] font-normal text-[var(--md-on-surface)]">{analyzedConnectedCount > 0 ? 'Agent 추천 상세' : '연결 제안 상세'}</span>
+                  {topRelLabel && <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-[var(--md-primary-container)] text-[var(--md-on-primary-container)]">{topRelLabel}</span>}
                 </div>
-                <div className="flex items-center gap-1.5 text-white/70 text-sm">
+                <div className="flex items-center gap-1.5 text-[var(--md-on-surface-variant)] text-sm">
                   <span>중심:</span>
-                  <span className="font-mono font-bold text-white">{centerNode.label}</span>
+                  <span className="font-mono font-medium text-[var(--md-on-surface)]">{centerNode.label}</span>
                   <span>({subjectName(centerNode.subject_id)})</span>
                   <span>· 연결 {stdDetails.length}개</span>
                 </div>
               </div>
-              <button className="text-white/60 hover:text-white text-2xl leading-none" onClick={() => setShowModal(false)}>×</button>
+              <button type="button" aria-label="연결 구조 상세 닫기" className="m3-state h-10 w-10 rounded-full text-[var(--md-on-surface-variant)] text-2xl leading-none" onClick={() => setShowModal(false)}>×</button>
             </div>
 
             {/* 본문 스크롤 */}
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
               {/* 전체 수업 제안 */}
-              <div className="rounded-xl bg-[#F3E5F5]/60 border border-[#CE93D8]/50 px-4 py-3">
-                <p className="text-sm font-bold text-[#7B1FA2] mb-1.5">{bestClaudeNote?.source === 'claude' ? 'Agent 수업 제안' : '융합 수업 방향'}</p>
+              <div className="rounded-xl bg-[var(--md-surface-container-low)] border border-[var(--md-outline-variant)] px-4 py-3">
+                <p className="text-sm font-bold text-[var(--md-primary)] mb-1.5">{bestClaudeNote?.source === 'claude' ? 'Agent 수업 제안' : '융합 수업 방향'}</p>
                 <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{hint}</p>
               </div>
 
@@ -756,7 +726,7 @@ function AgentHintPanel({
                   {/* 수업 아이디어 */}
                   {ideas && ideas.length > 0 && (
                     <div className="mb-3">
-                      <p className="text-[12px] font-semibold text-[#7B1FA2] mb-1.5 uppercase tracking-wide">수업 아이디어</p>
+                      <p className="text-[12px] font-semibold text-[var(--md-primary)] mb-1.5 uppercase tracking-wide">수업 아이디어</p>
                       <ul className="space-y-1.5 list-none">
                         {ideas.map((idea, i) => (
                           <li key={i} className="flex gap-2 text-base">
@@ -773,7 +743,7 @@ function AgentHintPanel({
                   {/* 수업 제안 */}
                   {teachingNote && (
                     <div className="border-t pt-2" style={{ borderColor: subjectColor(node.subject_id) + '30' }}>
-                      <p className="text-[12px] font-semibold text-[#7B1FA2] mb-1 uppercase tracking-wide">수업 제안 · 융합 구조</p>
+                      <p className="text-[12px] font-semibold text-[var(--md-primary)] mb-1 uppercase tracking-wide">수업 제안 · 융합 구조</p>
                       <p className="text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{teachingNote}</p>
                     </div>
                   )}

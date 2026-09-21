@@ -31,7 +31,8 @@ import StandardsBrowser from './StandardsBrowser'
 import NodePopup from './NodePopup'
 import ContextMenu from './ContextMenu'
 import Tooltip from './Tooltip'
-import OnboardingOverlay from './OnboardingOverlay'
+import { GraphToolbar } from './GraphToolbar'
+import { MD3Button } from '@/components/ui/MD3Button'
 import SaveButtons from './SaveButtons'
 
 // ─── CSS 주입 (무지개 애니메이션) ─────────────────────────────────────────
@@ -605,9 +606,15 @@ export default function KnowledgeGraphViewer({
 
   return (
     <div
-      className="m3-shell flex w-full rounded-xl overflow-hidden"
-      style={{ ...(height !== undefined ? { height } : { height: '100%' }), border: '1px solid var(--md-sys-outline-variant)' }}
+      className="m3-sheet m3-graph m3-shell flex flex-col w-full overflow-hidden"
+      style={{ height: height ?? '100%' }}
     >
+      <GraphToolbar
+        algoMode={algoMode} relFilter={relFilter} helpOpen={onboardingVisible} isLeader={isLeader}
+        onAlgoModeChange={setAlgoMode} onRelFilterChange={setRelFilter}
+        onToggleHelp={() => setOnboardingVisible(open => !open)}
+      />
+      <div className="kg-workspace-body relative flex min-h-0 flex-1 overflow-hidden">
       {/* 좌측 패널 */}
       <LeftPanel
         loading={loading}
@@ -638,7 +645,7 @@ export default function KnowledgeGraphViewer({
       />
 
       {/* 우측 그래프 영역 — 측정 영역(graphAreaRef)의 flex/position/overflow는 불변, 배경색만 토큰화 */}
-      <div ref={graphAreaRef} className="flex-1 relative overflow-hidden" style={{ background: 'var(--md-sys-surface-container-low)' }}>
+      <div ref={graphAreaRef} className="min-w-0 flex-1 relative overflow-hidden" style={{ background: 'var(--md-sys-surface-container-low)' }}>
 
         {/* 전체 성취기준 브라우저 */}
         {showStandardsBrowser && (
@@ -656,41 +663,6 @@ export default function KnowledgeGraphViewer({
             applyCheckedStandards={applyCheckedStandards}
           />
         )}
-
-        {/* 통합 컨텍스트 액션 영역 (M3) — 컨텍스트 배너/재분석을 지속 액션 바 위로 묶음 */}
-        <div className="absolute bottom-4 right-4 z-30 flex flex-col items-end gap-2 pointer-events-none">
-          {/* 분석 확인 배너 — 팀장만 분석 가능 */}
-          {showAnalysisBanner && centerNodeId && !claudeLoading && isLeader && (
-            <div className="m3-card md-shadow-2 pointer-events-auto flex items-center gap-2.5 px-4 py-2.5" style={{ borderRadius: 'var(--md-sys-radius-xl)', background: 'var(--md-sys-surface-container-high)' }} role="region" aria-label="수업 예시 생성 제안">
-              <span className="font-semibold text-[14px] whitespace-nowrap" style={{ color: 'var(--md-sys-on-surface)' }}>연결을 바탕으로 수업 예시를 만들까요?</span>
-              <button type="button" onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }} className="m3-btn-filled m3-state m3-focus-ring px-4 py-1.5 text-[13px] whitespace-nowrap">생성</button>
-              <button type="button" onClick={() => setShowAnalysisBanner(false)} className="m3-focus-ring px-2 py-1 text-[13px] font-medium whitespace-nowrap" style={{ color: 'var(--md-sys-on-surface-variant)' }}>나중에</button>
-            </div>
-          )}
-
-          {/* 재분석 버튼 (노드 추가/삭제 후) — 팀장만 */}
-          {nodesChangedAfterAnalysis && centerNodeId && !claudeLoading && !showAnalysisBanner && isLeader && (
-            <button type="button" onClick={() => runAnalysis(centerNodeId)} className="m3-btn-tonal md-shadow-1 m3-state m3-focus-ring pointer-events-auto flex items-center gap-1.5 px-4 py-2 text-[13px] whitespace-nowrap" style={{ borderRadius: 'var(--md-sys-radius-xl)' }}>
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
-                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>
-              </svg>
-              노드 변경됨 — 재분석
-            </button>
-          )}
-
-          {/* 지속 액션 바 — 저장 / 나가기 */}
-          {(onSaveGraph || onClose) && (
-            <div className="m3-card md-shadow-2 pointer-events-auto flex items-center gap-2 px-2 py-2" style={{ borderRadius: 'var(--md-sys-radius-xl)', background: 'var(--md-sys-surface-container-high)' }}>
-              {onSaveGraph && (
-                <SaveButtons onSaveGraph={onSaveGraph} buildData={buildSaveData} />
-              )}
-              {onClose && (
-                <button type="button" onClick={onClose} className="m3-btn-outlined m3-state m3-focus-ring px-4 py-2 text-[14px]">나가기</button>
-              )}
-            </div>
-          )}
-        </div>
 
         {/* 분석 중 오버레이 */}
         {claudeLoading && centerNodeId && (
@@ -726,10 +698,6 @@ export default function KnowledgeGraphViewer({
           chatMentionedCodes={chatMentionedCodes}
           pinnedStandards={pinnedStandards}
           recommendedCenterIds={recommendedCenterIds}
-          algoMode={algoMode}
-          relFilter={relFilter}
-          onAlgoModeChange={setAlgoMode}
-          onRelFilterChange={setRelFilter}
           onNodeClick={onNodeClick}
           onRightClick={onRightClick}
           hoveredNodeId={hoveredNodeId}
@@ -772,18 +740,6 @@ export default function KnowledgeGraphViewer({
         {/* 툴팁 */}
         {tooltip && <Tooltip nodeId={tooltip.nodeId} x={tooltip.x} y={tooltip.y} rawNodes={rawNodes} />}
 
-        {/* 온보딩 */}
-        {onboardingVisible && !loading && visibleNodes.length > 0 && (
-          <OnboardingOverlay svgRef={svgRef} onDismiss={() => setOnboardingVisible(false)} />
-        )}
-
-        {/* 하단 안내 (M3 assist) */}
-        {!centerNodeId && !loading && visibleNodes.length > 0 && (
-          <div className="absolute bottom-3 left-3 backdrop-blur-sm rounded-lg md-shadow-1 px-3 py-1.5 text-[12px] pointer-events-none" style={{ background: 'color-mix(in srgb, var(--md-sys-surface) 92%, transparent)', color: 'var(--md-sys-on-surface-variant)', border: '1px solid var(--md-sys-outline-variant)' }}>
-            노드 우클릭 → 중심 성취기준 설정
-          </div>
-        )}
-
         {/* 노드 상세 팝업 */}
         {popup && (
           <NodePopup
@@ -814,6 +770,30 @@ export default function KnowledgeGraphViewer({
           />
         )}
       </div>
+      </div>
+      <footer aria-label="그래프 저장 및 수업 예시" className="kg-bottom-bar shrink-0 border-t border-[var(--md-outline-variant)] bg-[var(--md-surface-container)] px-4 py-3">
+        <div className="min-w-0 flex-1">
+          {isLeader && centerNodeId && (showAnalysisBanner || nodesChangedAfterAnalysis || claudeLoading) ? (
+            <div className="flex flex-wrap items-center gap-2" role="region" aria-label="수업 예시 생성 제안">
+              <span className="text-[13px] text-[var(--md-on-surface-variant)]">
+                {claudeLoading ? '성취기준의 연결을 분석하고 있습니다.' : nodesChangedAfterAnalysis ? '연결이 바뀌었습니다. 수업 예시를 갱신하세요.' : '연결을 바탕으로 수업 예시를 만들어 보세요.'}
+              </span>
+              <MD3Button variant="tonal" disabled={claudeLoading} onClick={() => { setShowAnalysisBanner(false); runAnalysis(centerNodeId) }}>
+                {claudeLoading ? '분석 중…' : nodesChangedAfterAnalysis ? '수업 예시 다시 생성' : '수업 예시 생성'}
+              </MD3Button>
+              {showAnalysisBanner && !claudeLoading && <MD3Button variant="text" tone="neutral" onClick={() => setShowAnalysisBanner(false)}>나중에</MD3Button>}
+            </div>
+          ) : (
+            <p className="text-[13px] leading-5 text-[var(--md-on-surface-variant)]">
+              {onSaveGraph ? '저장하면 그래프와 수업 예시가 교육과정 분석시트에 반영됩니다.' : '팀장이 그래프와 수업 예시를 저장하면 분석시트에 반영됩니다.'}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center justify-end gap-2">
+          {onClose && <MD3Button variant="outlined" tone="neutral" onClick={onClose}>분석시트로</MD3Button>}
+          {onSaveGraph && <SaveButtons onSaveGraph={onSaveGraph} buildData={buildSaveData} disabled={loading || claudeLoading} />}
+        </div>
+      </footer>
     </div>
   )
 }

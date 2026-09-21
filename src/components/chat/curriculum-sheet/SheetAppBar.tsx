@@ -8,12 +8,13 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 export function SheetAppBar({
-  title, supporting, elevated, onClose, children,
+  title, supporting, elevated, onClose, children, closeLabel = '분석 시트 닫기',
 }: {
   title: string
   supporting: string
   elevated: boolean
   onClose: () => void
+  closeLabel?: string
   /** 우측 액션 영역(프레즌스 아바타·저장 버튼 등). */
   children?: ReactNode
 }) {
@@ -29,8 +30,8 @@ export function SheetAppBar({
       <button
         type="button"
         onClick={onClose}
-        aria-label="분석 시트 닫기"
-        title="닫기"
+        aria-label={closeLabel}
+        title={closeLabel}
         className="m3-state flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--md-on-surface-variant)]"
       >
         <span className="material-symbols-rounded text-[24px] leading-none" aria-hidden>arrow_back</span>

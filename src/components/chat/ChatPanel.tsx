@@ -65,6 +65,7 @@ import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
+import { GraphWorkspaceHeader } from '@/components/knowledge-graph/GraphWorkspaceHeader'
 import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
 import { Avatar, AvatarChip } from '@/components/ui/Avatar'
 import ReactMarkdown, { type Components } from 'react-markdown'
@@ -5263,25 +5264,17 @@ ${discussionSummary}
             const graphKeyword = stableGraphKeyword || graphKeywordForShare
             return (
               <>
-                {/* 그래프 헤더 (M3 calm top app bar) */}
-                <div className="m3-shell m3-top-app-bar flex items-center gap-2 px-4 py-2.5 shrink-0">
-                  <button type="button" onClick={onBackToSheet} aria-label="분석시트로 돌아가기" className="m3-btn-tonal m3-state m3-focus-ring shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs">
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
-                    분석시트
-                  </button>
-                  <span className="shrink-0 text-sm font-semibold" style={{ color: 'var(--md-sys-on-surface)' }}>교육과정 융합 지식 그래프</span>
-                  {isHost && <span className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--md-sys-secondary-container)', color: 'var(--md-sys-on-secondary-container)' }}>팀 공유 중</span>}
-                  <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                    <input id="graph-topic-input" type="text" defaultValue={graphKeyword.trim() || ''}
-                      aria-label="수업 주제 검색"
-                      placeholder="수업 주제를 입력하고 검색을 누르면 관련 성취기준을 찾습니다"
-                      onKeyDown={e => { if (e.key === 'Enter') { const val = (e.target as HTMLInputElement).value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } } }}
-                      className="m3-search-field flex-1 min-w-0 text-[12px] px-3 py-1.5"
-                    />
-                    <button type="button" onClick={() => { const input = document.getElementById('graph-topic-input') as HTMLInputElement | null; const val = input?.value.trim(); if (val && val !== stableGraphKeywordRef.current) { stableGraphKeywordRef.current = val; setStableGraphKeyword(val); if (isHost) setGraphOpen(proj.id, true, val, 'graph').catch(console.error) } }}
-                      className="m3-btn-filled m3-state m3-focus-ring shrink-0 px-4 py-1.5 text-[12px]">검색</button>
-                  </div>
-                </div>
+                <GraphWorkspaceHeader
+                  keyword={graphKeyword}
+                  isLeader={isHost}
+                  onBack={onBackToSheet}
+                  onSearch={value => {
+                    if (value === stableGraphKeywordRef.current) return
+                    stableGraphKeywordRef.current = value
+                    setStableGraphKeyword(value)
+                    if (isHost) setGraphOpen(proj.id, true, value, 'graph').catch(console.error)
+                  }}
+                />
                 {/* 그래프 본문 */}
                 <div className="flex-1 min-h-0">
                   <KnowledgeGraphViewer
@@ -5305,7 +5298,7 @@ ${discussionSummary}
                     artifactContext={(() => { const parts: string[] = []; if (proj.targetGradeGroup) parts.push(`학년군: ${proj.targetGradeGroup}`); if (proj.title) parts.push(`프로젝트: ${proj.title}`); const arts = proj.artifacts ?? {}; for (const [code, art] of Object.entries(arts)) { const c = art.content as Record<string, unknown>; const topic = (c['선택 주제'] || c['주제'] || c['수업 목표']) as string | undefined; if (topic) parts.push(`${code} 산출물 — ${topic}`) }; return parts.join('\n') || undefined })()}
                     onSetCenter={(nodeId) => setGraphCenter(proj.id, nodeId)}
                     onRecommendCenter={(nodeId) => recommendGraphCenter(proj.id, nodeId, userProfile?.displayName ?? '팀원', userProfile?.uid)}
-                    onSaveGraph={isHost ? async (data) => { try { await saveGraphDataAndSyncSheet(data) } catch (e) { console.error('[saveGraphData]', e) } } : undefined}
+                    onSaveGraph={isHost ? async (data) => { try { await saveGraphDataAndSyncSheet(data) } catch (e) { console.error('[saveGraphData]', e); throw e } } : undefined}
                   />
                 </div>
               </>

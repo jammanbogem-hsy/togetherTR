@@ -1007,3 +1007,39 @@ textarea[data-block-input]::placeholder {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(250%); }
 }
+
+/* Knowledge graph and curriculum sheet share the same surface and typography tokens. */
+.m3-graph {
+  --md-sys-primary: var(--md-primary);
+  --md-sys-on-primary: var(--md-on-primary);
+  --md-sys-primary-container: var(--md-primary-container);
+  --md-sys-on-primary-container: var(--md-on-primary-container);
+  --md-sys-surface: var(--md-surface);
+  --md-sys-surface-container-lowest: var(--md-surface-container-lowest);
+  --md-sys-surface-container-low: var(--md-surface-container-low);
+  --md-sys-surface-container: var(--md-surface-container);
+  --md-sys-surface-container-high: var(--md-surface-container-high);
+  --md-sys-surface-container-highest: var(--md-surface-container-highest);
+  --md-sys-on-surface: var(--md-on-surface);
+  --md-sys-on-surface-variant: var(--md-on-surface-variant);
+  --md-sys-outline: var(--md-outline);
+  --md-sys-outline-variant: var(--md-outline-variant);
+}
+.m3-graph .m3-nav-drawer { width: 320px; background: var(--md-surface); }
+.m3-graph .m3-nav-rail { width: 64px; background: var(--md-surface); }
+.m3-graph .m3-chip { min-height: 32px; font-size: 13px; font-weight: 500; }
+.m3-graph .m3-list-row { border-radius: 16px; }
+.m3-graph .m3-top-app-bar { background: var(--md-surface); }
+.kg-bottom-bar { display: flex; align-items: center; gap: 16px; min-height: 80px; }
+@media (max-width: 1023px) {
+  .kg-bottom-bar { flex-wrap: wrap; gap: 8px; }
+  .kg-bottom-bar > :first-child { flex-basis: 100%; }
+  .kg-bottom-bar > :last-child { margin-left: auto; }
+}
+@media (max-width: 767px) {
+  .m3-graph .m3-nav-drawer {
+    position: absolute; inset: 0 auto 0 0; z-index: 40;
+    width: min(320px, calc(100% - 48px));
+    box-shadow: 4px 0 12px rgb(0 0 0 / 10%);
+  }
+}
