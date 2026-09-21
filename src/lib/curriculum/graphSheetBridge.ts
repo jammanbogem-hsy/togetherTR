@@ -1,5 +1,7 @@
 import type { CurriculumSheetRow } from '@/types'
 import type { GraphSavedData, GraphAgentNote } from '@/lib/knowledge-graph/domain'
+import { defaultGradeMode, distinctGradeBands, resolveGradePrefixBandForMode } from './sheetGradeBands'
+import type { SheetGradeMode } from './sheetGradeBands'
 
 const SEP = ' | '
 const STD_CODE_RE = /\[?(\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2})\]?/g
@@ -70,18 +72,7 @@ function compactText(value: string, maxLength: number): string {
   return `${cleaned.slice(0, maxLength - 1).trim()}…`
 }
 
-function inferGradeLabelFromStandard(standard?: string | null): string {
-  const code = normalizeStandardCode(standard)
-  const firstGrade = code.match(/^(\d)/)?.[1]
-  if (!firstGrade) return ''
-  if (firstGrade === '1' || firstGrade === '2') return '1-2학년군'
-  if (firstGrade === '3' || firstGrade === '4') return '3-4학년군'
-  if (firstGrade === '5' || firstGrade === '6') return '5-6학년군'
-  return ''
-}
-
-function ensureGradePrefixes(value?: string | null, standard?: string | null): string {
-  const gradeLabel = inferGradeLabelFromStandard(standard)
+function ensureGradePrefixes(value: string | null | undefined, gradeLabel: string): string {
   const text = stripDisplayMarkup(value)
   if (!gradeLabel || !text) return text
   return text
@@ -128,27 +119,56 @@ function mdCell(value?: string | null): string {
     .trim()
 }
 
+/** 시트 학년군 설정 — 산출물 표의 학년군 표기를 화면과 일치시키기 위해 받는다. */
+export interface SheetGradeSettings {
+  gradeMode?: SheetGradeMode
+  sheetGradeBand?: string
+}
+
 export function buildCurriculumSheetArtifactProposal(
   rows: CurriculumSheetRow[],
+  gradeSettings?: SheetGradeSettings,
 ): CurriculumSheetArtifactProposal | null {
   const validRows = rows.filter(row =>
     row.subject || row.coreIdea || row.standard || row.knowledge || row.processFunction || row.valueAttitude || row.agentLessonExample || row.description
   )
   if (validRows.length === 0) return null
 
+  // 학년군이 섞인 시트(1·3·5학년 혼성 팀)에서만 교과 칸에 학년군을 덧붙인다.
+  // 열 구성은 그대로 두고 교과명만 '국어 (3-4학년군)' 형태로 확장한다 —
+  // A-2-1 표 파서(schemas.ts parseA21Table)는 교과 칸 문자열을 그대로 보존한다.
+  // 모드를 받지 못하면 시트 내용으로 판정한다(한 학년군 시트는 기존 표 그대로).
+  const gradeMode = gradeSettings?.gradeMode ?? defaultGradeMode(validRows)
+  const sheetGradeBand = gradeSettings?.sheetGradeBand
+  const isMixedGradeSheet = distinctGradeBands(validRows, gradeMode, sheetGradeBand).length >= 2
+
   const analysisTable = [
     '| 교과 | 핵심 아이디어 | 성취기준 | 지식·이해 | 과정·기능 | 가치·태도 | Agent 추천 수업아이디어 | 수업내용 설명 |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
-    ...validRows.map(row => [
-      row.isCenter ? `${row.subject || '-'} ★중심` : row.subject || '-',
-      row.coreIdea,
-      row.standard,
-      ensureGradePrefixes(row.knowledge, row.standard),
-      ensureGradePrefixes(row.processFunction, row.standard),
-      ensureGradePrefixes(row.valueAttitude, row.standard),
-      row.agentLessonExample,
-      row.description,
-    ].map(mdCell).join(' | ')).map(line => `| ${line} |`),
+    ...validRows.map(row => {
+      const gradeLabel = resolveGradePrefixBandForMode(row, gradeMode, sheetGradeBand)
+      const subjectCell = [
+        row.subject || '-',
+        isMixedGradeSheet && gradeLabel ? ` (${gradeLabel})` : '',
+        row.isCenter ? ' ★중심' : '',
+      ].join('')
+      // 연결 줄(다른 교과 성취기준을 팀 핵심아이디어에 붙인 줄)은 핵심아이디어 칸을 그대로 두고
+      // 수업내용 설명 앞에 연결을 적는다 — 열 구성과 파서 동작을 바꾸지 않기 위해.
+      const link = row.linkedCoreIdea
+      const description = link
+        ? `(${link.subject} 핵심아이디어 '${compactText(link.coreIdea, 40)}'와 연결) ${stripDisplayMarkup(row.description)}`.trim()
+        : row.description
+      return [
+        subjectCell,
+        row.coreIdea,
+        row.standard,
+        ensureGradePrefixes(row.knowledge, gradeLabel),
+        ensureGradePrefixes(row.processFunction, gradeLabel),
+        ensureGradePrefixes(row.valueAttitude, gradeLabel),
+        row.agentLessonExample,
+        description,
+      ].map(mdCell).join(' | ')
+    }).map(line => `| ${line} |`),
   ].join('\n')
 
   const lessonIdeas = validRows

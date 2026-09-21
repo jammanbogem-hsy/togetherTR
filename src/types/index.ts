@@ -449,6 +449,13 @@ export interface Project {
   keyNotes?: KeyNote[]
   // 교육과정 시트 — A-2-1 핵심아이디어·성취기준 공동 편집 시트
   curriculumSheet?: CurriculumSheetRow[]
+  // 시트 학년군 모드 — 'single'(시트 전체가 학년군 하나) | 'multi'(행마다 학년군).
+  // 팀원 전체가 같은 모드를 보도록 프로젝트 문서에 저장한다. 없으면 시트 내용으로 기본값 판정.
+  curriculumSheetGradeMode?: 'single' | 'multi'
+  // 시트 기준 학년군 (정규 라벨: '1-2학년군' | '3-4학년군' | '5-6학년군').
+  // single 모드의 시트 전체 학년군이자, multi 모드에서 행에 값이 없을 때의 기본값.
+  // 없으면 targetGradeGroup을 라벨로 변환해 쓴다.
+  curriculumSheetGradeBand?: string
   // 교육과정 시트 프레즌스 — 누가 어느 셀을 편집 중인지 실시간 표시
   curriculumSheetPresence?: Record<string, {
     uid: string
@@ -539,6 +546,14 @@ export interface CurriculumSheetRow {
   id: string                    // nanoid
   session?: string              // 차시 (예: "1차시", "2-3차시")
   subject: string               // 과목명
+  gradeBand?: string            // 행 학년군 ('1-2학년군' | '3-4학년군' | '5-6학년군').
+                                // 없으면 프로젝트 targetGradeGroup을 뜻한다(기존 시트 하위 호환).
+                                // 1·3·5학년 담임이 한 팀이면 행마다 다른 학년군을 고를 수 있다.
+  // 다른 교과 핵심아이디어와의 연결 — 그 학년군에 성취기준이 없는 교과(1-2학년군의 사회 등)를
+  // 대신해 다른 교과의 그 학년군 성취기준을 붙인 '연결 줄'임을 표시한다.
+  // 행의 coreIdea는 실제 성취기준의 학년군 핵심아이디어를 쓰고(엄격 규칙·DB 검증 유지),
+  // 팀이 고른 원래 핵심아이디어는 여기에 남겨 화면·산출물에서 연결을 보여 준다.
+  linkedCoreIdea?: { subject: string; coreIdea: string }
   isCenter?: boolean            // 중심 교과 여부 (지식그래프 중심 노드로 연결)
   coreIdea: string              // 핵심아이디어 (DB 원문)
   standard: string              // 성취기준 코드 + 텍스트

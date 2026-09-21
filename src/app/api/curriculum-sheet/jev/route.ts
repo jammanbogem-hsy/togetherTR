@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
 import { gradeBandNeedle, isUsableCoreIdea } from '@/lib/curriculum/curriculumFilters'
+import { canonicalSubjectName, graphSubjectIdsForSubject } from '@/lib/curriculum/subjectAliases'
 import {
   concentrationConfidence,
   isJevConfigured,
@@ -26,7 +27,9 @@ import {
 
 export const maxDuration = 60
 
-const SUBJECTS = ['국어', '수학', '과학', '사회', '도덕', '미술', '음악', '체육', '영어', '실과'] as const
+// autofill 라우트와 같은 교과 목록. 통합교과는 지식 그래프 이름이
+// '바른 생활·슬기로운 생활·즐거운 생활'이라 별칭 표(subjectAliases)로만 해소된다.
+const SUBJECTS = ['국어', '수학', '과학', '사회', '도덕', '미술', '음악', '체육', '영어', '실과', '통합교과'] as const
 
 /** 설계안의 3단계 게이트: confidence 로 대화 목표를 코드가 정한다. */
 const MODE_THRESHOLDS = { present: 0.8, confirm: 0.5 } as const
@@ -97,13 +100,24 @@ interface JevSubjectResult {
 function canonicalSubject(value: string): string {
   const compact = (value ?? '').trim()
   if (!compact) return ''
+  const aliased = canonicalSubjectName(compact)
+  if (aliased) return aliased
   return SUBJECTS.find(subject => compact.includes(subject) || subject.includes(compact)) ?? compact
 }
 
 function getSubjectIds(graph: KnowledgeGraph, subject: string): string[] {
   const canonical = canonicalSubject(subject)
+  if (!canonical) return []
+  const aliased = graphSubjectIdsForSubject(canonical)
+  if (aliased.length > 0) {
+    const known = new Set(graph.subjects.map(s => s.id))
+    const hits = aliased.filter(id => known.has(id))
+    if (hits.length > 0) return hits
+  }
   return graph.subjects
     .filter(s => s.name_ko.includes(canonical) || canonical.includes(s.name_ko))
+    // 창의적 체험활동은 별칭 표에서 명시적으로 지목했을 때만 쓴다(우연 매칭 금지).
+    .filter(s => s.id !== 'sub_extra')
     .map(s => s.id)
 }
 

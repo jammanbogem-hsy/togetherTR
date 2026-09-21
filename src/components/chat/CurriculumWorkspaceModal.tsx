@@ -37,6 +37,10 @@ interface Props {
   graphSavedData?: { centerNode: { id: string; label: string; subjectId: string; text: string } | null; selectedStandards: Array<{ id: string; label: string; subjectId: string; text: string }> } | null
   targetGradeGroup?: string
   chatContext?: string
+  // ─── 시트 학년군 설정 (프로젝트 문서 공유 값) ───
+  gradeMode?: 'single' | 'multi'
+  sheetGradeBand?: string
+  onGradeSettingsChange?: (settings: { gradeMode?: 'single' | 'multi'; gradeBand?: string }) => void | Promise<void>
 }
 
 export function CurriculumWorkspaceModal({
@@ -45,6 +49,7 @@ export function CurriculumWorkspaceModal({
   currentUserName, currentUid, currentUserColor, projectId,
   renderGraphView, onGraphCodesFromSheet, onViewChange,
   a12Artifact, graphSavedData, targetGradeGroup, chatContext,
+  gradeMode, sheetGradeBand, onGradeSettingsChange,
   onRequestArtifactSave,
 }: Props) {
   const [view, setView] = useState<'sheet' | 'graph'>(initialView)
@@ -107,6 +112,9 @@ export function CurriculumWorkspaceModal({
             graphSavedData={graphSavedData}
             targetGradeGroup={targetGradeGroup}
             chatContext={chatContext}
+            gradeMode={gradeMode}
+            sheetGradeBand={sheetGradeBand}
+            onGradeSettingsChange={onGradeSettingsChange}
           />
         ) : (
           renderGraphView ? renderGraphView(backToSheet) : null

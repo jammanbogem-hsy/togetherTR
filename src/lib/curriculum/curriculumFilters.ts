@@ -35,6 +35,103 @@ export function gradeBandNeedle(gradeGroup?: string | null): string {
 }
 
 /**
+ * Whether a grade group / band label belongs to elementary school.
+ *
+ * Accepts both project `GradeGroup` values ('초3-4') and canonical band labels
+ * ('3-4학년군'), which the sheet sends as `targetGradeGroup` in single-band
+ * mode. Anything naming 중학교/고등학교 is rejected, and a label with no digits
+ * in 1..6 ('고공통') is not elementary.
+ *
+ * Lives here (dependency-free) rather than in contentSystemReader so it can be
+ * unit-tested without the filesystem readers; contentSystemReader re-exports it
+ * for its existing callers.
+ */
+export function isElementaryGradeGroup(gradeGroup?: string | null): boolean {
+  const raw = (gradeGroup ?? '').trim()
+  if (!raw || /중학교|고등학교|^[중고]/.test(raw)) return false
+  if (/초등학교|^초/.test(raw)) return true
+  const grades = [...raw.matchAll(/\d/g)].map(match => Number(match[0]))
+  return grades.length > 0 && grades.every(grade => grade >= 1 && grade <= 6)
+}
+
+/**
+ * The three elementary grade bands, in the canonical label form used by the
+ * curriculum analysis sheet (one band per row), the autofill API response and
+ * the content-item prefixes ("3-4학년군: 무게").
+ */
+export const CANONICAL_GRADE_BANDS = ['1-2학년군', '3-4학년군', '5-6학년군'] as const
+export type CanonicalGradeBand = (typeof CANONICAL_GRADE_BANDS)[number]
+
+/**
+ * Canonicalize an arbitrary band/grade-group label ('초3-4', '3~4학년군',
+ * '초등학교 3-4학년') to one of CANONICAL_GRADE_BANDS. Returns '' for anything
+ * that is not an elementary band (middle/high school, unparseable, empty), so
+ * callers can fall back to a default band instead of trusting junk input.
+ */
+export function toCanonicalGradeBand(value?: string | null): CanonicalGradeBand | '' {
+  const raw = (value ?? '').trim()
+  if (!raw) return ''
+  if (/중학교|고등학교|^[중고]/.test(raw)) return ''
+  const needle = gradeBandNeedle(raw)
+  if (!needle) return ''
+  const label = `${needle}학년군`
+  return (CANONICAL_GRADE_BANDS as readonly string[]).includes(label) ? (label as CanonicalGradeBand) : ''
+}
+
+/**
+ * Normalize the bands a client asked to fill.
+ *
+ * `selectedBands` (the teacher's per-subject choice in the confirm dialog) wins
+ * over `rowBands` (the bands that subject's sheet rows carry); an entry that
+ * cannot be canonicalized falls back to `defaultBand` (the project band), and
+ * the result is de-duplicated in request order. An empty result means "use the
+ * default band", which keeps a client that never sends bands on the old
+ * single-band behavior.
+ */
+export function resolveRequestedBands(params: {
+  selectedBands?: readonly (string | null | undefined)[] | null
+  rowBands?: readonly (string | null | undefined)[] | null
+  defaultBand: string
+}): string[] {
+  const { selectedBands, rowBands, defaultBand } = params
+  const selected = (selectedBands ?? []).filter(Boolean)
+  const source = selected.length > 0 ? selected : (rowBands ?? [])
+  const out: string[] = []
+  for (const value of source) {
+    const band = toCanonicalGradeBand(value) || defaultBand
+    if (band && !out.includes(band)) out.push(band)
+  }
+  return out
+}
+
+const BAND_PREFIX_RE = /^(\d+-\d+학년군):/
+
+/**
+ * Cap grade-prefixed content items at `limit` items *per band* instead of
+ * globally, preserving input order.
+ *
+ * Why: a record's knowledge/functions/attitudes list concatenates all three
+ * bands ('1-2학년군: …' → '3-4학년군: …' → '5-6학년군: …'). A global
+ * `slice(0, 15)` therefore returns only the earliest bands and silently starves
+ * 5-6학년군 rows of their own official items. Unprefixed items (records with no
+ * per-band breakdown) are treated as a single extra group, so they are kept
+ * once rather than counted against every band.
+ */
+export function sliceContentItemsPerBand(items: string[], limit: number): string[] {
+  if (limit <= 0) return []
+  const used = new Map<string, number>()
+  const out: string[] = []
+  for (const item of items) {
+    const band = item.match(BAND_PREFIX_RE)?.[1] ?? ''
+    const count = used.get(band) ?? 0
+    if (count >= limit) continue
+    used.set(band, count + 1)
+    out.push(item)
+  }
+  return out
+}
+
+/**
  * Filter grade-prefixed content items ("3-4학년군: …") to the requested grade
  * band. If the band cannot be derived, returns items unchanged. If items carry
  * no grade prefixes, returns them unchanged. If the band matches nothing yet

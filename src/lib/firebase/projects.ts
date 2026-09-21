@@ -736,6 +736,8 @@ export async function saveGraphData(
 export type CurriculumSheetEditableField =
   | 'session'
   | 'subject'
+  | 'gradeBand'
+  | 'linkedCoreIdea'
   | 'isCenter'
   | 'coreIdea'
   | 'standard'
@@ -857,6 +859,26 @@ export async function patchCurriculumSheet(
   })
 
   return nextRows
+}
+
+/**
+ * 시트 학년군 설정(모드·기준 학년군) 저장. 시트는 공동 편집이라 팀원 누구나 바꿀 수 있고,
+ * 프로젝트 문서에 저장되므로 onSnapshot으로 전원 화면에 동시 반영된다.
+ * undefined 필드는 제거한다(Firestore는 undefined를 거부한다 — CLAUDE.md).
+ */
+export async function updateCurriculumSheetSettings(
+  projectId: string,
+  settings: { gradeMode?: 'single' | 'multi'; gradeBand?: string },
+): Promise<void> {
+  const payload: Record<string, unknown> = {}
+  if (settings.gradeMode !== undefined) payload.curriculumSheetGradeMode = settings.gradeMode
+  if (settings.gradeBand !== undefined) payload.curriculumSheetGradeBand = settings.gradeBand
+  if (Object.keys(payload).length === 0) return
+
+  await updateDoc(doc(db, 'projects', projectId), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  })
 }
 
 // ─── 팀 공통 비전 워크스페이스 공동 편집 ─────────────────────

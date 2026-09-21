@@ -5,7 +5,25 @@ import { createPortal } from 'react-dom'
 import type { CurriculumSheetRow } from '@/types'
 import type { CurriculumSheetEditableField, CurriculumSheetPatch } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
-import { curriculumJsonAssetPath, filterContentItemsByGrade } from '@/lib/curriculum/curriculumFilters'
+import { curriculumJsonAssetPath } from '@/lib/curriculum/curriculumFilters'
+import {
+  ELEMENTARY_GRADE_BANDS,
+  allowedGradeBandsForSubject,
+  bandsLackingStandards,
+  bandsWithStandards,
+  filterItemsByGradeBandStrict,
+  makeBridgeRow,
+  defaultGradeMode,
+  effectiveRowGradeBand,
+  integratedBandMismatch,
+  nextUnusedGradeBand,
+  resolveGradePrefixBandForMode,
+  resolveSheetGradeBand,
+  standardMatchesGradeBand,
+  toGradeBandLabel,
+  usedGradeBands,
+} from '@/lib/curriculum/sheetGradeBands'
+import type { SheetGradeMode } from '@/lib/curriculum/sheetGradeBands'
 
 // ─── 교육과정 데이터 타입 ─────────────────────────────────
 
@@ -23,13 +41,15 @@ type PresenceMap = Record<string, PresenceEntry>
 
 // ─── 상수 ─────────────────────────────────────────────────
 
-const SUBJECTS = ['국어', '수학', '과학', '사회', '도덕', '미술', '음악', '체육', '영어', '실과'] as const
+const SUBJECTS = ['국어', '수학', '과학', '사회', '도덕', '미술', '음악', '체육', '영어', '실과', '통합교과'] as const
 const SEP = ' | '
 const SUBJECT_FILE: Record<string, string> = {
   '국어': '국어교육과정.json', '도덕': '도덕교육과정.json', '사회': '사회교육과정.json',
   '수학': '수학교육과정.json', '과학': '과학교육과정.json', '실과': '실과교육과정.json',
   '체육': '체육교육과정.json', '음악': '음악교육과정.json', '미술': '미술교육과정.json',
   '영어': '영어 교육과정.json',
+  // 통합교과(바른 생활·슬기로운 생활·즐거운 생활) — 1~2학년군 전용. StandardsFinderModal과 동일 매핑.
+  '통합교과': '통합교과교육과정.json',
 }
 const PRESENCE_COLORS = ['#EA4335', '#4285F4', '#34A853', '#FBBC04', '#FF6D01', '#46BDC6', '#E040FB', '#00BCD4']
 const ELEMENTARY_LEVELS = ['초등학교', '초']
@@ -37,6 +57,8 @@ const STANDARD_CODE_RE = /\[?(\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2})\]?/g
 const SHEET_EDITABLE_FIELDS: CurriculumSheetEditableField[] = [
   'session',
   'subject',
+  'gradeBand',
+  'linkedCoreIdea',
   'isCenter',
   'coreIdea',
   'standard',
@@ -55,12 +77,16 @@ interface CoreIdeaOption {
   score: number
   standardsCount: number
   sampleStandards: string[]
+  /** 이 후보에 성취기준이 실제로 있는 학년군들(서버 제공, 없으면 제한하지 않음). */
+  gradeBands?: string[]
 }
 interface CoreIdeaProposal {
   subject: string
   focus: string
   isCenter: boolean
   selectedCoreIdea: string
+  /** 이 교과가 채울 학년군들 — 시트 행의 gradeBand에서 서버가 유도한 값. */
+  gradeBands?: string[]
   options: CoreIdeaOption[]
   /** 서버 판정기(jev | embedding)와 Jev confidence 게이트(제시/확인/명료화). */
   judge?: 'jev' | 'embedding'
@@ -78,6 +104,8 @@ interface AutofillReview {
   message?: string
   judge?: 'jev' | 'embedding'
   steps?: AutofillStep[]
+  /** 교사에게 보여줄 서버 안내 — 통합교과 학년군 조정, 해당 학년군에 성취기준이 없어 제외된 교과 등. */
+  notes?: string[]
 }
 /** 자동 채우기 진행 단계 표시(에이전트가 지금 무엇을 하는지). */
 interface AutofillProgress {
@@ -88,6 +116,52 @@ interface AutofillProgress {
   note?: string
 }
 const JUDGE_LABEL: Record<'jev' | 'embedding', string> = { jev: 'Jev 판정', embedding: '임베딩 유사도(Jev 미사용)' }
+/** 연결 줄 후보 — /api/curriculum-sheet/autofill mode:'bridgeStandards' 응답 항목. */
+interface BridgeCandidate {
+  subject: string
+  code: string
+  text: string
+  standard: string
+  area: string
+  coreIdea: string
+  contentCoreIdea: string
+  score: number
+  level: '무관' | '약함' | '관련' | '핵심'
+}
+const BRIDGE_LEVEL_STYLE: Record<BridgeCandidate['level'], string> = {
+  '핵심': 'bg-[#E6F4EA] text-[#137333]',
+  '관련': 'bg-[#E8F0FE] text-[#1A73E8]',
+  '약함': 'bg-[#FEF7E0] text-[#B06000]',
+  '무관': 'bg-[#F1F3F4] text-[#5F6368]',
+}
+
+/**
+ * 두 행이 같은 핵심아이디어 묶음인지 — 학년군만 다른 줄, 또는 그 핵심아이디어에 붙은
+ * 연결 줄(교과·핵심아이디어는 달라도 linkedCoreIdea가 원본을 가리킨다).
+ */
+function isSameCoreIdeaGroup(row: CurriculumSheetRow, prevRow?: CurriculumSheetRow): boolean {
+  if (!prevRow) return false
+  const rowIdea = (row.coreIdea ?? '').trim()
+  const prevIdea = (prevRow.coreIdea ?? '').trim()
+  if (row.subject && rowIdea && prevRow.subject === row.subject && prevIdea === rowIdea) return true
+  const link = row.linkedCoreIdea
+  if (!link) return false
+  if (prevRow.subject === link.subject && prevIdea === link.coreIdea.trim()) return true
+  const prevLink = prevRow.linkedCoreIdea
+  return !!prevLink && prevLink.subject === link.subject && prevLink.coreIdea.trim() === link.coreIdea.trim()
+}
+
+/** 연결 후보의 교과명을 시트 과목 선택지(SUBJECTS) 값으로 맞춘다. */
+function toSheetSubject(name?: string): string {
+  const raw = (name ?? '').trim()
+  if (!raw) return ''
+  return SUBJECTS.find(subject => subject === raw)
+    ?? SUBJECTS.find(subject => raw.includes(subject) || subject.includes(raw))
+    ?? raw
+}
+
+/** 행별 Jev 채우기가 다루는 칸 — 핵심아이디어 → 성취기준 → 내용 요소 매핑 사슬. */
+const ROW_FILL_FIELDS = ['standard', 'knowledge', 'processFunction', 'valueAttitude'] as const
 
 let nanoidCounter = 0
 function makeId() { return `cs_${Date.now()}_${++nanoidCounter}` }
@@ -106,17 +180,19 @@ function curriculumTextMatches(a: string, b: string): boolean {
   if (!na || !nb) return false
   return na === nb || na.includes(nb) || nb.includes(na)
 }
-function filterByTargetGrade(items: string[], gradeGroup?: string): string[] {
-  if (!gradeGroup) return items
+// 행 학년군 기준 내용 요소 필터. 인자는 프로젝트 학년그룹이 아니라 "행의 학년군"이다
+// (1·3·5학년 혼성 팀에서 행마다 다른 학년군의 내용 요소를 불러오기 위함).
+function filterByGradeBand(items: string[], gradeBand?: string): string[] {
+  if (!gradeBand) return items
   const gradePrefixed = items.filter(item => /^\d+-\d+학년군:/.test(item))
   if (gradePrefixed.length === 0) {
-    const gradeLabel = formatGradeGroupLabel(gradeGroup)
+    const gradeLabel = formatGradeGroupLabel(gradeBand)
     return gradeLabel ? items.map(item => withGradePrefix(item, gradeLabel)) : items
   }
-  // Delegate the grade-prefixed filtering to the shared pure helper: a band
-  // that matches nothing recovers to the official prefixed set instead of
-  // wiping the cell, and an unparseable grade group skips filtering.
-  return filterContentItemsByGrade(items, gradeGroup)
+  // 엄격 필터 — 그 학년군에 항목이 없으면 빈 배열. 공유 filterContentItemsByGrade의
+  // "전체 접두어 항목으로 복구"는 성취기준이 없는 교과(1-2학년군의 사회 등)에 다른
+  // 학년군 내용 요소를 채워 넣게 되므로 시트에서는 쓰지 않는다.
+  return filterItemsByGradeBandStrict(items, gradeBand)
 }
 function extractStandardCodes(text: string): string[] {
   return [...(text ?? '').matchAll(STANDARD_CODE_RE)].map(match => match[1]).filter(Boolean)
@@ -139,26 +215,22 @@ function withGradePrefix(value: string, gradeLabel: string): string {
   if (!trimmed || /^\d-\d학년군:/.test(trimmed)) return trimmed
   return `${gradeLabel}: ${trimmed}`
 }
-function inferGradeLabelFromStandard(standard?: string, fallbackGradeGroup?: string): string {
-  const codeGrade = normalizeStandardCode(standard ?? '').match(/^(\d)/)?.[1]
-  if (codeGrade === '1' || codeGrade === '2') return '1-2학년군'
-  if (codeGrade === '3' || codeGrade === '4') return '3-4학년군'
-  if (codeGrade === '5' || codeGrade === '6') return '5-6학년군'
-  return formatGradeGroupLabel(fallbackGradeGroup)
-}
-function ensureGradePrefixesForValue(value: string, standard?: string, fallbackGradeGroup?: string): string {
-  const gradeLabel = inferGradeLabelFromStandard(standard, fallbackGradeGroup)
+function ensureGradePrefixesForValue(value: string, gradeLabel: string): string {
   if (!gradeLabel || !value.trim()) return value
   return splitValues(value)
     .map(item => withGradePrefix(item, gradeLabel))
     .join(SEP)
 }
-function normalizeRowGradePrefixes(row: CurriculumSheetRow, fallbackGradeGroup?: string): CurriculumSheetRow {
+// 학년군 접두어 판정 순서(multi): 행에 저장된 학년군 → 성취기준 코드 → 시트 학년군.
+// single 모드는 행 값을 건너뛰고 "코드 → 시트 학년군"만 본다.
+// (학년군이 없는 기존 시트는 두 모드 모두 "코드 → 시트 학년군"이라 표시가 그대로 유지된다.)
+function normalizeRowGradePrefixes(row: CurriculumSheetRow, mode: SheetGradeMode, sheetGradeBand?: string): CurriculumSheetRow {
+  const gradeLabel = resolveGradePrefixBandForMode(row, mode, sheetGradeBand)
   return {
     ...row,
-    knowledge: ensureGradePrefixesForValue(row.knowledge, row.standard, fallbackGradeGroup),
-    processFunction: ensureGradePrefixesForValue(row.processFunction, row.standard, fallbackGradeGroup),
-    valueAttitude: ensureGradePrefixesForValue(row.valueAttitude ?? '', row.standard, fallbackGradeGroup),
+    knowledge: ensureGradePrefixesForValue(row.knowledge, gradeLabel),
+    processFunction: ensureGradePrefixesForValue(row.processFunction, gradeLabel),
+    valueAttitude: ensureGradePrefixesForValue(row.valueAttitude ?? '', gradeLabel),
   }
 }
 function samePickerOption(a: string, b: string): boolean {
@@ -167,13 +239,12 @@ function samePickerOption(a: string, b: string): boolean {
   if (ac && bc) return ac === bc
   return normalizeCurriculumText(stripGradePrefix(a)) === normalizeCurriculumText(stripGradePrefix(b))
 }
-function standardMatchesTargetGrade(standard: FlatStandard, gradeGroup?: string): boolean {
-  if (!gradeGroup) return true
-  const gradeDigits = [...gradeGroup.matchAll(/\d/g)].map(match => match[0])
-  if (gradeDigits.length === 0) return true
-  const codeGrade = standard.code.match(/^(\d)/)?.[1]
-  if (codeGrade && gradeDigits.includes(codeGrade)) return true
-  return gradeDigits.some(grade => standard.gradeBand.includes(grade))
+// 성취기준이 행 학년군에 속하는지 — 코드(선두 학년) 또는 원문 학년군 표기 중 하나라도
+// 맞으면 통과(기존 standardMatchesTargetGrade의 OR 판정 유지).
+function standardMatchesRowBand(standard: FlatStandard, gradeBand: string): boolean {
+  if (!gradeBand) return true
+  return standardMatchesGradeBand(standard.code, gradeBand)
+    || standardMatchesGradeBand(standard.gradeBand, gradeBand)
 }
 const BROKEN_CORE_IDEA_PREFIX_RE = /^(?:인문적|공간적|시대적|경제적|환경적|해석|판단을|평가하여|통신|발전시키는|운영된다|공존을|태도)(?:\s|$)/
 function isUsableCoreIdea(value: string): boolean {
@@ -374,6 +445,134 @@ function TagCell({ value, placeholder, color, onClickAdd, onRemove, otherEditor,
   )
 }
 
+// ─── 연결 줄: 유사 성취기준 찾기 팝오버 ──────────────────
+
+interface BridgePickerProps {
+  anchorRect: DOMRect | null
+  sourceSubject: string
+  sourceCoreIdea: string
+  targetBand: string
+  loading: boolean
+  error?: string
+  notes: string[]
+  judge?: 'jev' | 'embedding'
+  candidates: BridgeCandidate[]
+  subjectsSearched: string[]
+  subjectFilter: string
+  onSubjectFilterChange: (subject: string) => void
+  onSelect: (candidate: BridgeCandidate) => void
+  onClose: () => void
+}
+
+function BridgePicker({
+  anchorRect, sourceSubject, sourceCoreIdea, targetBand, loading, error, notes, judge,
+  candidates, subjectsSearched, subjectFilter, onSubjectFilterChange, onSelect, onClose,
+}: BridgePickerProps) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose() }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [onClose])
+
+  const shown = subjectFilter
+    ? candidates.filter(candidate => candidate.subject === subjectFilter)
+    : candidates
+
+  if (!anchorRect) return null
+  const pickerHeight = Math.min(560, window.innerHeight - 24)
+  const top = Math.max(12, Math.min(anchorRect.bottom + 4, window.innerHeight - pickerHeight - 12))
+  const left = Math.max(12, Math.min(anchorRect.left, window.innerWidth - 520 - 12))
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed bg-white rounded-2xl shadow-2xl border border-[#DADCE0] overflow-hidden flex flex-col"
+      style={{ top, left, width: 520, maxHeight: pickerHeight, zIndex: 10050 }}
+      onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}
+    >
+      <div className="p-3 border-b border-[#F1F3F4] flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-base font-bold text-[#202124]">
+            {targetBand} 유사 성취기준 찾기
+          </h4>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-[#5F6368] line-clamp-2" title={sourceCoreIdea}>
+            {sourceSubject} 핵심아이디어: {sourceCoreIdea}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {judge && (
+            <span title={JUDGE_LABEL[judge]}
+              className={cn('px-2 py-0.5 rounded-full text-[12px] font-bold', judge === 'jev' ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#F1F3F4] text-[#5F6368]')}>
+              {judge === 'jev' ? 'Jev' : '임베딩'}
+            </span>
+          )}
+          <button onClick={onClose} className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#9AA0A6] hover:text-[#5F6368] text-lg transition">&times;</button>
+        </div>
+      </div>
+
+      {notes.length > 0 && (
+        <ul className="px-3 py-2 border-b border-[#FDD663] bg-[#FEF7E0] space-y-0.5">
+          {notes.map((note, noteIdx) => (
+            <li key={noteIdx} className="text-[13px] leading-relaxed text-[#8A5A00]">· {note}</li>
+          ))}
+        </ul>
+      )}
+
+      {subjectsSearched.length > 0 && (
+        <div className="px-3 py-2 border-b border-[#F1F3F4] flex flex-wrap items-center gap-1.5">
+          {['', ...subjectsSearched].map(subject => (
+            <button
+              key={subject || '전체'}
+              onClick={() => onSubjectFilterChange(subject)}
+              className={cn(
+                'px-2.5 py-0.5 rounded-full text-[13px] font-bold border transition',
+                subjectFilter === subject
+                  ? 'bg-[#E8F0FE] border-[#C2D7F8] text-[#1A73E8]'
+                  : 'bg-white border-[#E8EAED] text-[#5F6368] hover:border-[#DADCE0]',
+              )}
+            >
+              {subject || '전체'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto">
+        {loading && <p className="px-4 py-8 text-center text-base text-[#9AA0A6]">유사 성취기준을 찾고 있습니다...</p>}
+        {!loading && error && <p className="px-4 py-6 text-base font-semibold text-[#A50E0E]">{error}</p>}
+        {!loading && !error && shown.length === 0 && (
+          <p className="px-4 py-8 text-center text-base text-[#9AA0A6]">후보가 없습니다. 교과 필터를 넓혀 보세요.</p>
+        )}
+        {!loading && shown.map(candidate => (
+          <button
+            key={`${candidate.subject}:${candidate.code}`}
+            onClick={() => onSelect(candidate)}
+            className="w-full text-left px-4 py-3 border-b border-[#F1F3F4] hover:bg-[#F8F9FA] transition"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[13px] font-bold text-[#5F6368]">{candidate.subject}</span>
+              {candidate.area && <span className="text-[12px] font-semibold text-[#7B1FA2]">{candidate.area}</span>}
+              <span className={cn('ml-auto px-2 py-0.5 rounded-full text-[12px] font-bold flex-shrink-0', BRIDGE_LEVEL_STYLE[candidate.level] ?? BRIDGE_LEVEL_STYLE['무관'])}>
+                {candidate.level} {candidate.score.toFixed(2)}
+              </span>
+            </div>
+            {/* code는 이미 '[2슬02-01]' 형태로 대괄호를 포함한다. standard('[코드] 본문')를 그대로 쓴다. */}
+            <p className="text-base leading-relaxed text-[#1A73E8]">{candidate.standard || `${candidate.code} ${candidate.text}`.trim()}</p>
+            {(candidate.contentCoreIdea || candidate.coreIdea) && (
+              <p className="mt-1 text-[13px] leading-relaxed text-[#5F6368]">
+                핵심아이디어: {candidate.contentCoreIdea || candidate.coreIdea}
+              </p>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ─── 메인 모달 ────────────────────────────────────────────
 
 interface Props {
@@ -389,13 +588,19 @@ interface Props {
   graphSavedData?: { centerNode: { id: string; label: string; subjectId: string; text: string } | null; selectedStandards: Array<{ id: string; label: string; subjectId: string; text: string }> } | null
   targetGradeGroup?: string
   chatContext?: string
+  // ─── 시트 학년군 설정 (프로젝트 문서 공유 값) ───
+  gradeMode?: SheetGradeMode
+  sheetGradeBand?: string
+  onGradeSettingsChange?: (settings: { gradeMode?: SheetGradeMode; gradeBand?: string }) => void | Promise<void>
 }
 
+/** 한 행에서 동시에 갱신할 셀 묶음 — 필드별 실제 타입을 유지한다(isCenter는 boolean). */
+type SheetFieldPatch = { [K in CurriculumSheetEditableField]?: CurriculumSheetRow[K] }
 type PickerField = 'coreIdea' | 'standard' | 'knowledge' | 'processFunction' | 'valueAttitude'
 type PickerTarget = { rowId: string; field: PickerField; rect: DOMRect } | null
 const MULTI_FIELDS: PickerField[] = ['standard', 'knowledge', 'processFunction', 'valueAttitude']
 
-export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, onPatchSave, onRequestArtifactSave, onPresenceUpdate, onSwitchToGraph, presence, currentUserName, currentUid, currentUserColor, a12Artifact, graphSavedData, targetGradeGroup, chatContext }: Props) {
+export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, onPatchSave, onRequestArtifactSave, onPresenceUpdate, onSwitchToGraph, presence, currentUserName, currentUid, currentUserColor, a12Artifact, graphSavedData, targetGradeGroup, chatContext, gradeMode, sheetGradeBand, onGradeSettingsChange }: Props) {
   const [rows, setRows] = useState<CurriculumSheetRow[]>([])
   const [contentItems, setContentItems] = useState<ContentItem[]>([])
   const [standards, setStandards] = useState<FlatStandard[]>([])
@@ -408,7 +613,26 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const [autofillLoading, setAutofillLoading] = useState(false)
   const [autofillReview, setAutofillReview] = useState<AutofillReview | null>(null)
   const [coreIdeaSelections, setCoreIdeaSelections] = useState<Record<string, string>>({})
+  // 교과별 학년군 선택 (AI 자동 채우기 확인 창) — 기본값은 프로젝트 학년군, 통합교과는 1~2학년군.
+  const [coreIdeaGradeBands, setCoreIdeaGradeBands] = useState<Record<string, string[]>>({})
+  // 학년군 설정 저장 왕복(Firestore) 동안 토글이 즉시 반응하도록 하는 낙관적 값.
+  const [pendingGradeSettings, setPendingGradeSettings] = useState<{ gradeMode?: SheetGradeMode; gradeBand?: string } | null>(null)
+  // 행별 Jev 채우기 상태 (판정기 배지 · 진행 · 오류)
+  // 연결 줄 팝오버 — 한 번에 하나만 열린다.
+  const [bridgeTarget, setBridgeTarget] = useState<{ rowId: string; rect: DOMRect } | null>(null)
+  const [bridgeQuery, setBridgeQuery] = useState<{
+    loading: boolean
+    candidates: BridgeCandidate[]
+    subjectsSearched: string[]
+    notes: string[]
+    judge?: 'jev' | 'embedding'
+    error?: string
+  }>({ loading: false, candidates: [], subjectsSearched: [], notes: [] })
+  const [bridgeSubjectFilter, setBridgeSubjectFilter] = useState('')
+  const [rowFillState, setRowFillState] = useState<Record<string, { loading?: boolean; judge?: 'jev' | 'embedding'; filled?: number; error?: string; notes?: string[] }>>({})
   const [autofillError, setAutofillError] = useState('')
+  // 서버가 돌려준 교사 안내 문구(학년군 조정·교과 제외·핵심아이디어 대체 사유).
+  const [autofillNotes, setAutofillNotes] = useState<string[]>([])
   const [autofillProgress, setAutofillProgress] = useState<AutofillProgress[]>([])
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const patchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -417,6 +641,39 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const pendingStructuralCountRef = useRef(0)
   const rowsRef = useRef<CurriculumSheetRow[]>([])
   const serverRowIdsRef = useRef<Set<string>>(new Set())
+
+  // ─── 시트 학년군 모드·기준 학년군 ───
+  // 프로젝트 문서에 저장된 값이 우선이고, 없으면 시트 내용으로 기본값을 판정한다
+  // (이미 학년군이 2개 이상 들어간 시트 = 혼성 학년 팀 → multi).
+  const sheetMode: SheetGradeMode = pendingGradeSettings?.gradeMode
+    ?? gradeMode
+    ?? defaultGradeMode(savedRows.length > 0 ? savedRows : rows)
+  const sheetBand = resolveSheetGradeBand(pendingGradeSettings?.gradeBand ?? sheetGradeBand, targetGradeGroup)
+  // 행이 실제로 쓰는 학년군 — single이면 시트 학년군, multi면 행 값(없으면 시트 학년군).
+  const rowBandOf = useCallback(
+    (row: CurriculumSheetRow) => effectiveRowGradeBand(row, sheetMode, sheetBand),
+    [sheetMode, sheetBand],
+  )
+  // 교과별로 성취기준이 실제로 있는 학년군 (사회=3-4·5-6, 실과=5-6, 통합교과=1-2 …).
+  // 불러온 성취기준에서 판정하므로 데이터가 바뀌면 자동으로 따라간다.
+  const bandsWithStandardsFor = useCallback(
+    (subject?: string) => bandsWithStandards(standards, subject),
+    [standards],
+  )
+  /** 행의 학년군에 그 교과 성취기준이 없으면 true — 성취기준·내용 요소가 모두 비는 상태. */
+  const rowBandHasNoStandards = useCallback((row: CurriculumSheetRow) => {
+    if (!row.subject || standards.length === 0) return false
+    const band = rowBandOf(row)
+    if (!band) return false
+    return !bandsWithStandardsFor(row.subject).some(item => item === band)
+  }, [bandsWithStandardsFor, rowBandOf, standards.length])
+
+  // 학년군 모드·기준 학년군은 ref로도 들고 있는다.
+  // mergeIncomingRows가 이 값을 deps로 받으면 identity가 바뀌어 savedRows 동기화 effect가
+  // 재실행되고, 저장 전 로컬 편집이 서버 값(빈 시트)으로 덮여 사라진다.
+  // 화면에 있는 행의 접두어는 다시 붙일 필요가 없다(이미 붙은 값은 건드리지 않으므로).
+  const gradeCtxRef = useRef({ sheetMode, sheetBand })
+  useEffect(() => { gradeCtxRef.current = { sheetMode, sheetBand } }, [sheetMode, sheetBand])
 
   // 디바운스 타이머 안에서 최신 rows를 읽기 위한 ref
   useEffect(() => { rowsRef.current = rows }, [rows])
@@ -444,8 +701,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   }, [savedRows, syncDirtyFromPending])
 
   const mergeIncomingRows = useCallback((incomingRows: CurriculumSheetRow[], currentRows: CurriculumSheetRow[]) => {
+    const { sheetMode: ctxMode, sheetBand: ctxBand } = gradeCtxRef.current
     const incoming = (incomingRows.length > 0 ? incomingRows : [])
-      .map(row => normalizeRowGradePrefixes(row, targetGradeGroup))
+      .map(row => normalizeRowGradePrefixes(row, ctxMode, ctxBand))
     const currentById = new Map(currentRows.map(row => [row.id, row]))
     const incomingIds = new Set(incoming.map(row => row.id))
     const dirtyKeys = new Set(Object.keys(dirtyCellVersionsRef.current))
@@ -468,7 +726,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     }
 
     return merged.length > 0 ? merged : [emptyRow()]
-  }, [targetGradeGroup])
+  }, [])
 
   const applySavedRows = useCallback((saved: CurriculumSheetRow[] | void) => {
     if (!saved) return
@@ -489,7 +747,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       syncDirtyFromPending()
       return
     }
-    setRows((savedRows.length > 0 ? savedRows : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, targetGradeGroup)))
+    setRows((savedRows.length > 0 ? savedRows : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, sheetMode, sheetBand)))
     setDirty(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, savedRowsJson, dirty, hasPendingLocalChanges, mergeIncomingRows, syncDirtyFromPending])
@@ -497,7 +755,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   // 모달 열릴 때 초기 로드
   useEffect(() => {
     if (!open) return
-    setRows((savedRows.length > 0 ? savedRows : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, targetGradeGroup)))
+    setRows((savedRows.length > 0 ? savedRows : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, sheetMode, sheetBand)))
     setDirty(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -517,13 +775,16 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     if (!open) return
     setLoading(true)
     setContentItems([])
+    const isElementaryTarget = !/(?:중학교|고등학교|^\s*[중고])/.test(targetGradeGroup ?? '')
     const params = new URLSearchParams()
     if (targetGradeGroup) params.set('gradeGroup', targetGradeGroup)
+    // 초등은 세 학년군 내용 요소를 한 번에 받아 두고 행별 학년군으로 클라이언트에서 필터한다.
+    // → 행 학년군을 바꿀 때 재요청이 필요 없다. (미지원 서버면 기존 단일 학년군 응답이 와도 동작)
+    if (isElementaryTarget) params.set('allBands', '1')
     params.set('_ts', String(Date.now()))
     const p1 = fetch(`/api/core-ideas?${params.toString()}`, { cache: 'no-store' }).then(r => r.json()).then(d => {
       setContentItems(sanitizeContentItems(d.items ?? []))
     }).catch(() => {})
-    const isElementaryTarget = !/(?:중학교|고등학교|^\s*[중고])/.test(targetGradeGroup ?? '')
     const p2 = isElementaryTarget ? Promise.all(
       Object.entries(SUBJECT_FILE).map(async ([subj, file]) => {
         try {
@@ -669,11 +930,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       triggerSave(nextRows)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, loading, contentItems, standards, rows, targetGradeGroup])
+  }, [open, loading, contentItems, standards, rows, sheetMode, sheetBand])
 
-  function updateRow(id: string, field: CurriculumSheetEditableField, value: string) {
+  // 한 행의 여러 셀을 한 번에 갱신한다 (과목 ↔ 학년군처럼 함께 바뀌어야 하는 값).
+  function updateRowFields(id: string, fields: SheetFieldPatch) {
+    const entries = Object.entries(fields) as Array<[CurriculumSheetEditableField, CurriculumSheetRow[CurriculumSheetEditableField]]>
+    if (entries.length === 0) return
     setRows(prev => {
-      const n = prev.map(r => r.id === id ? { ...r, [field]: value, updatedBy: currentUserName, updatedAt: Date.now() } : r)
+      const n = prev.map(r => r.id === id ? { ...r, ...fields, updatedBy: currentUserName, updatedAt: Date.now() } : r)
       rowsRef.current = n
       setDirty(true)
       if (!onPatchSave) triggerSave(n)
@@ -681,10 +945,28 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     })
     if (onPatchSave) {
       // 서버에 저장된 행은 셀 단위로, 아직 저장 안 된 행은 전체 행 upsert로 보낸다.
-      if (serverRowIdsRef.current.has(id)) scheduleCellPatch(id, field, value)
+      if (serverRowIdsRef.current.has(id)) for (const [field, value] of entries) scheduleCellPatch(id, field, value)
       else scheduleRowUpsert(id)
     }
-    updatePresence(`${id}:${field}`)
+    updatePresence(`${id}:${entries[0][0]}`)
+  }
+  function updateRow(id: string, field: CurriculumSheetEditableField, value: string) {
+    updateRowFields(id, { [field]: value } as SheetFieldPatch)
+  }
+  // 과목 변경 — 새 교과에 그 학년군 성취기준이 없으면(통합교과=1-2학년군 전용, 사회=1-2학년군 없음 …)
+  // 쓸 수 있는 학년군으로 옮긴다. 시트 학년군이 가능하면 그것, 아니면 첫 번째.
+  // 사용 가능한 학년군이면 학년군을 건드리지 않는다(값이 없으면 시트 학년군이라는 뜻 유지).
+  function updateRowSubject(row: CurriculumSheetRow, subject: string) {
+    const available = bandsWithStandardsFor(subject)
+    const fallback = allowedGradeBandsForSubject(subject)
+    const options: readonly string[] = available.length > 0 ? available : fallback
+    const effective = toGradeBandLabel(row.gradeBand) || sheetBand
+    if (effective && options.some(band => band === effective)) {
+      updateRowFields(row.id, { subject })
+      return
+    }
+    const nextBand = options.some(band => band === sheetBand) ? sheetBand : options[0]
+    updateRowFields(row.id, { subject, ...(nextBand ? { gradeBand: nextBand } : {}) })
   }
   function removeTag(rowId: string, field: CurriculumSheetEditableField, tag: string) {
     const row = rows.find(r => r.id === rowId); if (!row) return
@@ -706,6 +988,137 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       })
     }
   }
+  // ＋ 학년군 줄 — 같은 교과·핵심아이디어를 학년군별로 나눈다.
+  // 바로 아래에 형제 행을 끼워 넣고 upsert + reorder로 팀원 화면에도 같은 위치로 반영한다.
+  function addGradeBandRow(sourceRow: CurriculumSheetRow) {
+    const band = nextUnusedGradeBand(rows, sourceRow.subject, sourceRow.coreIdea, sheetBand, bandsWithStandardsFor(sourceRow.subject))
+    if (!band) return
+    const row: CurriculumSheetRow = {
+      ...emptyRow(),
+      subject: sourceRow.subject,
+      coreIdea: sourceRow.coreIdea,
+      gradeBand: band,
+      isCenter: false,
+    }
+    const sourceIdx = rows.findIndex(r => r.id === sourceRow.id)
+    const next = [...rows]
+    next.splice(sourceIdx < 0 ? next.length : sourceIdx + 1, 0, row)
+    rowsRef.current = next
+    setRows(next)
+    setDirty(true)
+    if (!onPatchSave) { triggerSave(next); return }
+    const rowIds = next.map(r => r.id)
+    pendingRowIdsRef.current.add(row.id)
+    void (async () => {
+      try {
+        await saveStructuralPatch({ type: 'upsert-row', row, updatedBy: currentUserName })
+        await saveStructuralPatch({ type: 'reorder', rowIds })
+      } finally {
+        pendingRowIdsRef.current.delete(row.id)
+        syncDirtyFromPending()
+      }
+    })()
+  }
+  /**
+   * ＋ N학년군 연결 줄 — 그 학년군에 성취기준이 없는 교과(1-2학년군의 사회 등)를 위해
+   * 다른 교과의 그 학년군 성취기준을 붙일 빈 줄을 원본 바로 아래에 만든다.
+   * 팀이 고른 핵심아이디어는 linkedCoreIdea로 남는다.
+   */
+  function addBridgeRow(sourceRow: CurriculumSheetRow, band: string) {
+    if (!band || !sourceRow.subject || !(sourceRow.coreIdea ?? '').trim()) return
+    const row: CurriculumSheetRow = { ...emptyRow(), ...makeBridgeRow(sourceRow, band) }
+    const sourceIdx = rows.findIndex(r => r.id === sourceRow.id)
+    const next = [...rows]
+    next.splice(sourceIdx < 0 ? next.length : sourceIdx + 1, 0, row)
+    rowsRef.current = next
+    setRows(next)
+    setDirty(true)
+    if (!onPatchSave) { triggerSave(next); return }
+    const rowIds = next.map(r => r.id)
+    pendingRowIdsRef.current.add(row.id)
+    void (async () => {
+      try {
+        await saveStructuralPatch({ type: 'upsert-row', row, updatedBy: currentUserName })
+        await saveStructuralPatch({ type: 'reorder', rowIds })
+      } finally {
+        pendingRowIdsRef.current.delete(row.id)
+        syncDirtyFromPending()
+      }
+    })()
+  }
+
+  /** 연결 줄의 '유사 성취기준 찾기' — 원본 핵심아이디어에 가까운 그 학년군 성취기준 후보. */
+  async function openBridgePicker(row: CurriculumSheetRow, rect: DOMRect) {
+    const link = row.linkedCoreIdea
+    const band = rowBandOf(row)
+    if (!link || !band) return
+    setBridgeTarget({ rowId: row.id, rect })
+    setBridgeSubjectFilter('')
+    setBridgeQuery({ loading: true, candidates: [], subjectsSearched: [], notes: [] })
+    try {
+      const resp = await fetch('/api/curriculum-sheet/autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'bridgeStandards',
+          sourceSubject: link.subject,
+          sourceCoreIdea: link.coreIdea,
+          targetBand: band,
+          topic: (a12Artifact?.selectedTopic as string | undefined) ?? undefined,
+          chatContext,
+        }),
+      })
+      const data = await resp.json().catch(() => ({})) as {
+        candidates?: BridgeCandidate[]
+        judge?: 'jev' | 'embedding'
+        subjectsSearched?: string[]
+        notes?: string[]
+        error?: string
+      }
+      if (!resp.ok) {
+        setBridgeQuery({
+          loading: false,
+          candidates: [],
+          subjectsSearched: [],
+          notes: data.notes ?? [],
+          error: data.error ?? '유사 성취기준을 찾지 못했습니다',
+        })
+        return
+      }
+      const subjectsSearched = data.subjectsSearched ?? []
+      // 기본 필터: 통합교과가 있으면 그것(1-2학년군 전용 교과라 연결 후보로 가장 적절), 없으면 전체.
+      setBridgeSubjectFilter(subjectsSearched.includes('통합교과') ? '통합교과' : '')
+      setBridgeQuery({
+        loading: false,
+        candidates: data.candidates ?? [],
+        subjectsSearched,
+        notes: data.notes ?? [],
+        judge: data.judge,
+      })
+    } catch (e) {
+      setBridgeQuery({ loading: false, candidates: [], subjectsSearched: [], notes: [], error: '요청 중 오류가 발생했습니다' })
+      console.error('[bridge standards]', e)
+    }
+  }
+
+  /**
+   * 후보 적용 — 교과·핵심아이디어·성취기준·학년군을 한 번에 갱신한다.
+   * 행의 핵심아이디어는 그 성취기준의 실제 학년군 핵심아이디어(내용체계 원문 우선)로 두어
+   * 엄격 학년군 규칙과 DB 검증이 그대로 유지되고, 팀 핵심아이디어는 linkedCoreIdea에 남는다.
+   * 지식·이해/과정·기능/가치·태도는 기존 자동 보강 effect가 이어서 채운다.
+   */
+  function applyBridgeCandidate(rowId: string, candidate: BridgeCandidate) {
+    const row = rowsRef.current.find(r => r.id === rowId)
+    const band = row ? rowBandOf(row) : ''
+    updateRowFields(rowId, {
+      subject: toSheetSubject(candidate.subject),
+      coreIdea: candidate.contentCoreIdea || candidate.coreIdea,
+      standard: candidate.standard,
+      ...(band ? { gradeBand: band } : {}),
+    })
+    setBridgeTarget(null)
+  }
+
   function removeRow(id: string) {
     setRows(p => {
       const n = p.filter(r => r.id !== id)
@@ -733,13 +1146,80 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     setDragRowId(null); setDragOverRowId(null)
   }
 
+  // 자동 채우기 확인 창의 학년군 기본값 — 시트 행에서 유도된 서버 값이 있으면 그것,
+  // 없으면 프로젝트 학년군(통합교과는 1~2학년군 고정).
+  function defaultGradeBandsForSubject(subject: string, serverBands?: string[]): string[] {
+    const allowed = allowedGradeBandsForSubject(subject)
+    if (allowed.length === 1) return [...allowed]
+    const fromServer = ELEMENTARY_GRADE_BANDS.filter(band => (serverBands ?? []).some(value => toGradeBandLabel(value) === band))
+    if (fromServer.length > 0) return fromServer
+    return sheetBand ? [sheetBand] : [allowed[0]]
+  }
+  // 선택된 핵심아이디어에 성취기준이 실제로 있는 학년군만 고를 수 있게 한다.
+  // (사회·실과처럼 학년군별로 후보가 갈리는 교과. 서버가 학년군을 주지 않으면 제한하지 않는다.)
+  function availableGradeBandsForProposal(subject: string, option?: CoreIdeaOption): string[] {
+    const allowed = allowedGradeBandsForSubject(subject)
+    const fromOption = ELEMENTARY_GRADE_BANDS.filter(band => (option?.gradeBands ?? []).some(value => toGradeBandLabel(value) === band))
+    const scoped = fromOption.length > 0 ? allowed.filter(band => fromOption.includes(band)) : [...allowed]
+    return scoped.length > 0 ? scoped : [...allowed]
+  }
+  function proposalGradeBands(subject: string): string[] {
+    const stored = coreIdeaGradeBands[subject]
+    if (stored?.length) return stored
+    const proposal = autofillReview?.proposals.find(item => item.subject === subject)
+    return defaultGradeBandsForSubject(subject, proposal?.gradeBands)
+  }
+  // 학년군 칩 토글 — 마지막 하나는 해제할 수 없다(교과당 최소 1개 학년군 필요).
+  function toggleProposalGradeBand(subject: string, band: string) {
+    const current = proposalGradeBands(subject)
+    const next = current.includes(band)
+      ? current.filter(item => item !== band)
+      : [...current, band]
+    if (next.length === 0) return
+    // 항상 학년군 순서(1-2 → 3-4 → 5-6)로 정렬해 보낸다.
+    setCoreIdeaGradeBands(prev => ({ ...prev, [subject]: ELEMENTARY_GRADE_BANDS.filter(item => next.includes(item)) }))
+  }
   function getAutofillExistingRows() {
     return rows.some(r => r.subject) ? rows.map(r => ({
-      subject: r.subject, coreIdea: r.coreIdea, standard: r.standard,
+      subject: r.subject,
+      // 서버가 학년군을 다시 추정하지 않도록 정규 라벨로 확정해 보낸다(없으면 생략).
+      ...(rowBandOf(r) ? { gradeBand: rowBandOf(r) } : {}),
+      coreIdea: r.coreIdea, standard: r.standard,
       knowledge: r.knowledge, processFunction: r.processFunction,
       valueAttitude: r.valueAttitude,
       agentLessonExample: r.agentLessonExample, description: r.description, isCenter: r.isCenter,
     })) : undefined
+  }
+
+  // 자동 채우기 요청의 공통 본문 — 전체 채우기·행별 Jev 채우기가 같은 값을 쓴다.
+  // targetGradeGroup은 시트 기준 학년군('3-4학년군')을 보낸다. 한 학년 팀이 프로젝트
+  // 학년군과 다른 학년군을 고른 경우에도 서버가 그 학년군으로 판정하도록.
+  function autofillCommonPayload() {
+    return {
+      existingRows: getAutofillExistingRows(),
+      a12Artifact,
+      graphSavedData,
+      targetGradeGroup: sheetBand || targetGradeGroup,
+      chatContext,
+    }
+  }
+
+  // 교과별 선택 핵심아이디어 + 채울 학년군.
+  // single 모드는 시트 학년군 하나, multi 모드는 칩으로 고른 학년군(가용 학년군과 교집합).
+  function buildSelectedCoreIdeasPayload() {
+    return Object.entries(coreIdeaSelections).map(([subject, coreIdea]) => {
+      if (sheetMode === 'single') {
+        const band = allowedGradeBandsForSubject(subject).length === 1
+          ? allowedGradeBandsForSubject(subject)[0]
+          : sheetBand
+        return { subject, coreIdea, gradeBands: band ? [band] : [] }
+      }
+      const proposal = autofillReview?.proposals.find(item => item.subject === subject)
+      const option = proposal?.options.find(item => item.idea === coreIdea)
+      const available = availableGradeBandsForProposal(subject, option)
+      const selected = proposalGradeBands(subject).filter(band => available.includes(band))
+      return { subject, coreIdea, gradeBands: selected.length > 0 ? selected : available.slice(0, 1) }
+    })
   }
 
   function setProgressStep(id: string, patch: Partial<AutofillProgress>) {
@@ -749,34 +1229,35 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   async function handleAutofill() {
     setAutofillLoading(true)
     setAutofillError('')
+    setAutofillNotes([])
     setAutofillProgress([{ id: 'coreIdeas', label: '핵심아이디어 판정 (Jev)', status: 'running' }])
     const started = performance.now()
     try {
       const resp = await fetch('/api/curriculum-sheet/autofill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'coreIdeas',
-          existingRows: getAutofillExistingRows(),
-          a12Artifact,
-          graphSavedData,
-          targetGradeGroup,
-          chatContext,
-        }),
+        body: JSON.stringify({ mode: 'coreIdeas', ...autofillCommonPayload() }),
       })
       if (resp.ok) {
         const data = await resp.json() as AutofillReview
         if (data.proposals?.length) {
           const defaults: Record<string, string> = {}
-          for (const proposal of data.proposals) defaults[proposal.subject] = proposal.selectedCoreIdea
+          const bandDefaults: Record<string, string[]> = {}
+          for (const proposal of data.proposals) {
+            defaults[proposal.subject] = proposal.selectedCoreIdea
+            bandDefaults[proposal.subject] = defaultGradeBandsForSubject(proposal.subject, proposal.gradeBands)
+          }
           setCoreIdeaSelections(defaults)
+          setCoreIdeaGradeBands(bandDefaults)
           setAutofillReview(data)
         }
+        setAutofillNotes(data.notes ?? [])
         const judge = data.judge ?? 'embedding'
         setProgressStep('coreIdeas', { status: 'done', label: `핵심아이디어 판정 (${JUDGE_LABEL[judge]})`, ms: Math.round(performance.now() - started), note: `${data.proposals?.length ?? 0}개 교과` })
       } else {
-        const err = await resp.json().catch(() => ({}))
+        const err = await resp.json().catch(() => ({})) as { error?: string; notes?: string[] }
         setAutofillError(err.error ?? '핵심아이디어 후보를 찾지 못했습니다.')
+        setAutofillNotes(err.notes ?? [])
         setProgressStep('coreIdeas', { status: 'error', note: err.error })
         console.error('[autofill error]', err)
       }
@@ -800,7 +1281,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       { id: 'describe', label: 'LLM 수업내용 설명 작성 (확정된 값만 사용)', status: 'pending' },
       { id: 'verify', label: 'Jev 설명 범위 검증', status: 'pending' },
     ])
-    const common = { existingRows: getAutofillExistingRows(), a12Artifact, graphSavedData, targetGradeGroup, chatContext }
+    const common = autofillCommonPayload()
     try {
       const rowsStart = performance.now()
       const resp = await fetch('/api/curriculum-sheet/autofill', {
@@ -808,18 +1289,20 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'rows',
-          selectedCoreIdeas: Object.entries(coreIdeaSelections).map(([subject, coreIdea]) => ({ subject, coreIdea })),
+          selectedCoreIdeas: buildSelectedCoreIdeasPayload(),
           ...common,
         }),
       })
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}))
+        const err = await resp.json().catch(() => ({})) as { error?: string; notes?: string[] }
         setAutofillError(err.error ?? '분석표 생성에 실패했습니다.')
+        setAutofillNotes(err.notes ?? [])
         setProgressStep('rows', { status: 'error', note: err.error })
         console.error('[autofill apply error]', err)
         return
       }
-      const data = await resp.json() as { rows?: CurriculumSheetRow[]; judge?: 'jev' | 'embedding' }
+      const data = await resp.json() as { rows?: CurriculumSheetRow[]; judge?: 'jev' | 'embedding'; notes?: string[] }
+      if (data.notes?.length) setAutofillNotes(data.notes)
       const judgedRows = (data.rows ?? []).map((r: CurriculumSheetRow) => ({ ...emptyRow(), ...r }))
       setProgressStep('rows', {
         status: 'done',
@@ -849,7 +1332,15 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         })
         if (!descResp.ok) throw new Error(`HTTP ${descResp.status}`)
         const desc = await descResp.json() as { descriptions?: Record<string, string>; verification?: Record<string, number>; steps?: AutofillStep[] }
-        const withDescriptions = judgedRows.map(row => ({ ...row, description: desc.descriptions?.[row.subject] ?? row.description ?? '' }))
+        // 설명 키 우선순위: 보낸 행 id → '교과::학년군' → 교과명.
+        // 교과명 키는 한 교과가 두 학년군에 있으면 충돌하므로 마지막 폴백으로만 쓴다.
+        const descriptionFor = (row: CurriculumSheetRow): string | undefined => {
+          const band = toGradeBandLabel(row.gradeBand)
+          return desc.descriptions?.[row.id]
+            ?? (band ? desc.descriptions?.[`${row.subject}::${band}`] : undefined)
+            ?? desc.descriptions?.[row.subject]
+        }
+        const withDescriptions = judgedRows.map(row => ({ ...row, description: descriptionFor(row) ?? row.description ?? '' }))
         commitRows(withDescriptions)
         const serverStep = (id: string) => desc.steps?.find(step => step.id === id)
         setProgressStep('describe', { status: 'done', ms: serverStep('describe')?.ms ?? Math.round(performance.now() - describeStart) })
@@ -872,6 +1363,92 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     finally { setAutofillLoading(false) }
   }
 
+  /** 행에 Jev 제안을 채울 수 있는지 — 과목·핵심아이디어가 있고 매핑 칸이 하나라도 비어 있을 때. */
+  function canRowJevFill(row: CurriculumSheetRow): boolean {
+    if (!row.subject || !(row.coreIdea ?? '').trim()) return false
+    return ROW_FILL_FIELDS.some(field => !(row[field] ?? '').trim())
+  }
+
+  /**
+   * 행별 Jev 채우기 — 핵심아이디어 → (그 학년군의) 성취기준 → (그 성취기준의)
+   * 지식·이해/과정·기능/가치·태도 매핑을 서버 판정(mode: 'rows')으로 한 행만 받아온다.
+   * 비어 있는 칸만 채우고 교사가 직접 넣은 값은 절대 덮어쓰지 않는다. 선택창은 그대로 쓸 수 있다.
+   */
+  async function handleRowJevFill(row: CurriculumSheetRow) {
+    const band = rowBandOf(row)
+    setRowFillState(prev => ({ ...prev, [row.id]: { loading: true } }))
+    try {
+      const resp = await fetch('/api/curriculum-sheet/autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'rows',
+          selectedCoreIdeas: [{ subject: row.subject, coreIdea: row.coreIdea, gradeBands: band ? [band] : [] }],
+          ...autofillCommonPayload(),
+        }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({})) as { error?: string; notes?: string[] }
+        // 404의 error 문구가 곧 사유("사회: 1-2학년군 성취기준이 … 제외했습니다.")다.
+        // 행 칸은 좁아 잘리므로 상단 안내 스트립에 전문을 띄운다.
+        const reasons = err.notes?.length ? err.notes : (err.error ? [err.error] : [])
+        if (reasons.length > 0) setAutofillNotes(reasons)
+        setRowFillState(prev => ({ ...prev, [row.id]: { error: err.error ?? '제안을 받지 못했습니다', notes: err.notes } }))
+        console.error('[row jev fill]', err)
+        return
+      }
+      const data = await resp.json() as { rows?: CurriculumSheetRow[]; judge?: 'jev' | 'embedding'; notes?: string[] }
+      // 학년군 조정 같은 안내(통합교과 → 1-2학년군)도 전문을 상단에 띄운다.
+      if (data.notes?.length) setAutofillNotes(data.notes)
+      // 반드시 같은 교과의 행만 쓴다. 해당 학년군에 성취기준이 없어 교과가 제외되면
+      // (예: 사회 1-2학년군) 응답에 다른 교과 행만 남는데, 그것을 채우면 완전히 틀린 값이 된다.
+      // 서버가 교과명을 별칭으로 돌려줄 수 있어 비교는 포함 관계까지 허용한다.
+      const candidates = data.rows ?? []
+      const subjectRows = candidates.filter(r => curriculumTextMatches(r.subject ?? '', row.subject))
+      const matched = subjectRows.find(r => !band || toGradeBandLabel(r.gradeBand) === band) ?? subjectRows[0]
+      if (!matched) {
+        setRowFillState(prev => ({
+          ...prev,
+          [row.id]: {
+            judge: data.judge,
+            error: data.notes?.length ? '제안 없음 (안내 참고)' : '연결할 성취기준을 찾지 못했습니다',
+            notes: data.notes,
+          },
+        }))
+        return
+      }
+      // 최신 로컬 값 기준으로 "빈 칸"을 판정한다(요청 중 다른 팀원이 채웠을 수 있다).
+      const current = rowsRef.current.find(r => r.id === row.id) ?? row
+      const prefixBand = resolveGradePrefixBandForMode({ ...current, standard: matched.standard }, sheetMode, sheetBand)
+      const fields: SheetFieldPatch = {}
+      for (const field of ROW_FILL_FIELDS) {
+        if ((current[field] ?? '').trim()) continue
+        const value = (matched[field] ?? '').trim()
+        if (!value) continue
+        fields[field] = field === 'standard' ? value : ensureGradePrefixesForValue(value, prefixBand)
+      }
+      const filled = Object.keys(fields).length
+      if (filled > 0) updateRowFields(row.id, fields)
+      setRowFillState(prev => ({ ...prev, [row.id]: { judge: data.judge, filled, notes: data.notes } }))
+    } catch (e) {
+      setRowFillState(prev => ({ ...prev, [row.id]: { error: '요청 중 오류가 발생했습니다' } }))
+      console.error('[row jev fill]', e)
+    }
+  }
+
+  // 시트 학년군 설정 변경 — 공동 편집이라 팀원 누구나 바꿀 수 있고, 저장되면 전원 화면에 반영된다.
+  async function changeGradeSettings(next: { gradeMode?: SheetGradeMode; gradeBand?: string }) {
+    setPendingGradeSettings(prev => ({ ...(prev ?? {}), ...next }))
+    try {
+      await onGradeSettingsChange?.(next)
+    } catch (e) {
+      console.error('[curriculumSheet grade settings]', e)
+    } finally {
+      // 저장 후에는 프로젝트 문서(prop)가 기준 — 낙관적 값을 놓는다.
+      setPendingGradeSettings(null)
+    }
+  }
+
   // 핵심아이디어 확인 창에서 AI가 제안한 교과 중 원하지 않는 교과를 제외한다.
   function removeAutofillProposal(subject: string) {
     setAutofillReview(prev => {
@@ -880,6 +1457,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       return proposals.length > 0 ? { ...prev, proposals } : null
     })
     setCoreIdeaSelections(prev => {
+      const next = { ...prev }
+      delete next[subject]
+      return next
+    })
+    setCoreIdeaGradeBands(prev => {
       const next = { ...prev }
       delete next[subject]
       return next
@@ -906,14 +1488,15 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     if (matched.length === 0) return []
     matched.sort((a, b) => a.coreIdeas.length - b.coreIdeas.length)
     const rawItems = field === 'knowledge' ? matched[0].knowledge : field === 'processFunction' ? matched[0].functions : matched[0].attitudes
-    const raw = filterByTargetGrade(rawItems, targetGradeGroup)
+    const raw = filterByGradeBand(rawItems, rowBandOf(row))
     return [...new Set(raw)]
   }
 
   function getPickerOptions(rowId: string, field: PickerField): string[] {
     const row = rows.find(r => r.id === rowId); const subj = row?.subject ?? ''; const ci = row?.coreIdea ?? ''
     const si = subj ? contentItems.filter(i => i.subject.includes(subj)) : contentItems
-    const gradeFiltered = (items: string[]) => filterByTargetGrade(items, targetGradeGroup)
+    const rowBand = row ? rowBandOf(row) : sheetBand
+    const gradeFiltered = (items: string[]) => filterByGradeBand(items, rowBand)
     const selectedAreas = row ? unique(splitValues(row.standard)
       .map(value => {
         const code = normalizeStandardCode(value)
@@ -927,7 +1510,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     if (field === 'coreIdea') return [...new Set(si.flatMap(i => i.coreIdeas))]
     if (field === 'standard') {
       const s = subj ? standards.filter(s => s.subject === subj) : standards
-      return s.filter(standard => standardMatchesTargetGrade(standard, targetGradeGroup)).map(s => s.label)
+      return s.filter(standard => standardMatchesRowBand(standard, rowBand)).map(s => s.label)
     }
     if (field === 'knowledge' || field === 'processFunction' || field === 'valueAttitude') {
       // 내용체계 JSON 원문만 사용한다. 보조 매핑/AI 생성값은 선택창 후보에서 제외한다.
@@ -1006,6 +1589,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
   const allEditors = presence ? [...new Map(Object.values(presence).filter(p => Date.now() - p.updatedAt < 20000).map(p => [p.uid, p] as const)).values()] : []
   const myColor = currentUserColor ?? (currentUid ? PRESENCE_COLORS[(currentUid.charCodeAt(0) + currentUid.charCodeAt(Math.min(currentUid.length - 1, 5))) % PRESENCE_COLORS.length] : '#999')
+  // 학년군 UI는 초등 학년군이 판정되는 시트에서만 노출한다(중·고는 기존 화면 그대로).
+  const showGradeBandUI = !!sheetBand
   const hasGraphRows = rows.some(r => r.subject && r.standard)
   const hasCenterGraphRow = rows.some(r => r.isCenter && r.standard)
   // 과목·내용은 채웠지만 성취기준이 비어 지식 그래프에 표시되지 않을 교과들
@@ -1043,6 +1628,51 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           </div>
         </div>
 
+        {/* ── 학년군 모드 ── */}
+        {showGradeBandUI && (
+          <div className="px-6 py-2.5 border-b border-[#E8EAED] bg-white flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-xl border border-[#DADCE0] overflow-hidden" role="group" aria-label="학년군 모드">
+                {([['single', '한 학년군'], ['multi', '다양한 학년군']] as const).map(([mode, label], modeIdx) => (
+                  <button
+                    key={mode}
+                    onClick={() => { if (sheetMode !== mode) void changeGradeSettings({ gradeMode: mode, ...(sheetBand ? { gradeBand: sheetBand } : {}) }) }}
+                    aria-pressed={sheetMode === mode}
+                    title={mode === 'single'
+                      ? '시트 전체가 학년군 하나를 씁니다 (한 학년 팀)'
+                      : '행마다 학년군을 고릅니다 (1·3·5학년처럼 여러 학년이 함께할 때)'}
+                    className={cn(
+                      'px-3 py-1.5 text-sm font-bold transition',
+                      modeIdx > 0 && 'border-l border-[#DADCE0]',
+                      sheetMode === mode ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'bg-white text-[#5F6368] hover:bg-[#F1F3F4]',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {sheetMode === 'single' && (
+                <select
+                  value={sheetBand}
+                  onChange={e => { void changeGradeSettings({ gradeMode: 'single', gradeBand: e.target.value }) }}
+                  title="시트 전체가 사용할 학년군 — 프로젝트 학년군과 달라도 됩니다"
+                  className="px-2.5 py-1.5 rounded-xl border border-[#DADCE0] hover:border-[#9AA0A6] focus:border-[#1A73E8] focus:outline-none bg-white text-sm font-bold text-[#202124] cursor-pointer"
+                >
+                  {ELEMENTARY_GRADE_BANDS.map(band => <option key={band} value={band}>{band}</option>)}
+                </select>
+              )}
+              {sheetMode === 'multi' && (
+                <span className="text-[13px] font-semibold text-[#5F6368]">
+                  기본 학년군 {sheetBand} · 행마다 변경 가능
+                </span>
+              )}
+            </div>
+            <p className="text-sm leading-relaxed text-[#5F6368]">
+              한 학년군 팀은 위에서 학년군을 고르면 됩니다. 여러 학년 선생님이 함께라면 &lsquo;다양한 학년군&rsquo;으로 바꾸고 행마다 학년군을 고른 뒤, &lsquo;＋ 학년군 줄&rsquo;로 같은 핵심아이디어를 학년군별로 나눠 성취기준을 연결하세요. 각 줄은 &lsquo;Jev로 채우기&rsquo;로 자동 제안받거나 직접 고를 수 있습니다.
+            </p>
+          </div>
+        )}
+
         {/* ── 지식 그래프 안내 ── */}
         {showGraphPrompt && onSwitchToGraph && (
           <div className="px-6 py-3 bg-[#F3E5F5] border-b border-[#CE93D8] flex items-center justify-between gap-4">
@@ -1057,11 +1687,25 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         )}
 
         {/* ── AI 자동 채우기: 핵심아이디어 확인 ── */}
-        {(autofillReview || autofillError) && (
+        {(autofillReview || autofillError || autofillNotes.length > 0) && (
           <div className="px-6 py-4 bg-[#F8F9FA] border-b border-[#DADCE0]">
             {autofillError && (
               <div className="mb-3 rounded-xl border border-[#F28B82] bg-[#FCE8E6] px-4 py-3 text-base font-semibold text-[#A50E0E]">
                 {autofillError}
+              </div>
+            )}
+            {/* 서버 안내 — 학년군 조정·교과 제외·핵심아이디어 대체 사유 */}
+            {autofillNotes.length > 0 && (
+              <div className="mb-3 rounded-xl border border-[#FDD663] bg-[#FEF7E0] px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <ul className="flex-1 space-y-1">
+                    {autofillNotes.map((note, noteIdx) => (
+                      <li key={noteIdx} className="text-sm leading-relaxed text-[#8A5A00]">· {note}</li>
+                    ))}
+                  </ul>
+                  <button onClick={() => setAutofillNotes([])} title="안내 닫기"
+                    className="w-7 h-7 rounded-full hover:bg-[#FDE9B8] flex items-center justify-center text-[#B06000] flex-shrink-0">&times;</button>
+                </div>
               </div>
             )}
             {autofillReview && (
@@ -1118,6 +1762,45 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                             </option>
                           ))}
                         </select>
+                        {showGradeBandUI && sheetMode === 'single' && (
+                          <p className="mt-2 text-[12px] font-bold text-[#5F6368]">
+                            학년군 {allowedGradeBandsForSubject(proposal.subject).length === 1 ? '1-2학년군 (통합교과)' : sheetBand}
+                          </p>
+                        )}
+                        {showGradeBandUI && sheetMode === 'multi' && (() => {
+                          const allowedBands = availableGradeBandsForProposal(proposal.subject, selectedOption)
+                          const selectedBands = proposalGradeBands(proposal.subject)
+                          return (
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <span className="text-[12px] font-bold text-[#5F6368]">학년군</span>
+                              {ELEMENTARY_GRADE_BANDS.map(band => {
+                                const disabled = !allowedBands.some(allowed => allowed === band)
+                                const active = !disabled && selectedBands.includes(band)
+                                return (
+                                  <button
+                                    key={band}
+                                    disabled={disabled}
+                                    onClick={() => toggleProposalGradeBand(proposal.subject, band)}
+                                    title={disabled
+                                      ? (allowedGradeBandsForSubject(proposal.subject).length === 1
+                                        ? '통합교과는 1~2학년군에만 있습니다'
+                                        : '선택한 핵심아이디어에는 이 학년군 성취기준이 없습니다')
+                                      : `${band} 행 생성`}
+                                    className={cn(
+                                      'px-2 py-0.5 rounded-full text-[12px] font-bold border transition',
+                                      active
+                                        ? 'bg-[#E8F0FE] border-[#C2D7F8] text-[#1A73E8]'
+                                        : 'bg-white border-[#E8EAED] text-[#9AA0A6] hover:border-[#DADCE0]',
+                                      disabled && 'opacity-40 cursor-default hover:border-[#E8EAED]',
+                                    )}
+                                  >
+                                    {band}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
                         {selectedOption && (
                           <div className="mt-3 rounded-lg bg-[#F8F9FA] px-3 py-2">
                             <p className="text-[13px] font-bold text-[#5F6368] mb-1">
@@ -1201,11 +1884,139 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
                     {/* 과목 + 중심교과 — 좌측 고정 */}
                     <td className="px-2 py-2 align-top sticky left-[36px] z-[5] bg-white group-hover:bg-[#F8F9FA] border-r border-[#E8EAED]">
-                      <select value={row.subject} onChange={e => updateRow(row.id, 'subject', e.target.value)}
+                      <select value={row.subject} onChange={e => updateRowSubject(row, e.target.value)}
                         className="w-full px-1.5 py-2 rounded-xl border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-base font-semibold text-[#202124] cursor-pointer">
                         <option value="">선택</option>
                         {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
+                      {showGradeBandUI && sheetMode === 'multi' && (() => {
+                        const withStandards = bandsWithStandardsFor(row.subject)
+                        const rowBand = rowBandOf(row)
+                        // 성취기준이 있는 학년군만 제시하되, 이미 저장된 학년군은 목록에 남긴다
+                        // (선택지에서 빼면 select 값이 비어 기존 데이터를 조용히 덮어쓴다).
+                        const allowedBands = ELEMENTARY_GRADE_BANDS.filter(band =>
+                          withStandards.some(item => item === band) || band === rowBand)
+                        const nextBand = nextUnusedGradeBand(rows, row.subject, row.coreIdea, sheetBand, withStandards)
+                        const canSplit = !!row.subject && !!row.coreIdea?.trim() && !!nextBand
+                        return (
+                          <div className="mt-1.5 flex flex-col gap-1">
+                            <select
+                              value={rowBand}
+                              disabled={allowedBands.length === 1}
+                              onChange={e => updateRow(row.id, 'gradeBand', e.target.value)}
+                              onFocus={() => updatePresence(`${row.id}:gradeBand`)}
+                              title={allowedBands.length === 1 ? '통합교과는 1~2학년군에만 있습니다' : '이 행의 학년군 — 성취기준·내용 요소 후보가 이 학년군으로 바뀝니다'}
+                              className="w-full px-1.5 py-1 rounded-lg border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-[13px] font-semibold text-[#5F6368] cursor-pointer disabled:cursor-default disabled:bg-[#F8F9FA]"
+                            >
+                              {allowedBands.map(band => (
+                                <option key={band} value={band}>
+                                  {withStandards.some(item => item === band) ? band : `${band} (성취기준 없음)`}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => addGradeBandRow(row)}
+                              disabled={!canSplit}
+                              title={canSplit
+                                ? `${nextBand} 줄을 바로 아래에 추가 (같은 핵심아이디어)`
+                                : !row.subject || !row.coreIdea?.trim()
+                                  ? '과목과 핵심아이디어를 먼저 선택하세요'
+                                  : '이 핵심아이디어의 학년군을 모두 사용했습니다'}
+                              className="w-full px-1.5 py-1 rounded-lg border border-[#C2D7F8] text-[12px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE] disabled:opacity-40 disabled:hover:bg-transparent transition"
+                            >
+                              ＋ 학년군 줄
+                            </button>
+                            {/* 그 학년군에 성취기준이 없는 교과 → 다른 교과 성취기준을 붙일 연결 줄 */}
+                            {!!row.subject && !!row.coreIdea?.trim() && (() => {
+                              const used = usedGradeBands(rows, row.subject, row.coreIdea, sheetBand)
+                              const lacking = bandsLackingStandards(standards, row.subject)
+                                .filter(band => !used.includes(band))
+                              return lacking.map(band => (
+                                <button
+                                  key={band}
+                                  onClick={() => addBridgeRow(row, band)}
+                                  title={`${row.subject}는 ${band} 성취기준이 없습니다. 다른 교과의 ${band} 성취기준을 이 핵심아이디어에 연결하는 줄을 추가합니다`}
+                                  className="w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
+                                >
+                                  ＋ {band} 연결 줄
+                                </button>
+                              ))
+                            })()}
+                          </div>
+                        )
+                      })()}
+                      {/* 한 학년군 모드에서 통합교과 행만 1~2학년군으로 동작함을 알린다 */}
+                      {showGradeBandUI && integratedBandMismatch(row, sheetMode, sheetBand) && (
+                        <p className="mt-1.5 px-1 text-[11px] font-semibold leading-snug text-[#B06000]">
+                          이 줄만 1-2학년군
+                        </p>
+                      )}
+                      {/* 그 학년군에 교과 성취기준이 없음 — 성취기준·내용 요소가 모두 비는 이유 */}
+                      {showGradeBandUI && rowBandHasNoStandards(row) && (() => {
+                        const withStandards = bandsWithStandardsFor(row.subject)
+                        const message = `${row.subject}는 ${rowBandOf(row)} 성취기준이 없습니다${withStandards.length > 0 ? ` · ${withStandards.map(band => band.replace('학년군', '')).join('·')}학년군만` : ''}`
+                        return (
+                          <p title={message} className="mt-1.5 px-1 text-[11px] font-semibold leading-snug text-[#B06000]">
+                            {message}
+                          </p>
+                        )
+                      })()}
+                      {/* 연결 줄 — 원본 핵심아이디어에 맞는 그 학년군 성취기준 찾기 */}
+                      {showGradeBandUI && !!row.linkedCoreIdea && !!rowBandOf(row) && (
+                        <button
+                          onClick={e => { void openBridgePicker(row, (e.currentTarget as HTMLElement).getBoundingClientRect()) }}
+                          title={`${row.linkedCoreIdea.subject} 핵심아이디어에 맞는 ${rowBandOf(row)} 성취기준 후보를 찾습니다`}
+                          className="mt-1.5 w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
+                        >
+                          유사 성취기준 찾기
+                        </button>
+                      )}
+                      {/* 행별 Jev 채우기 — 핵심아이디어 → 성취기준 → 내용 요소 매핑 제안 */}
+                      {(() => {
+                        const fill = rowFillState[row.id]
+                        const noStandards = rowBandHasNoStandards(row)
+                        const enabled = canRowJevFill(row) && !noStandards && !fill?.loading
+                        if (!row.subject) return null
+                        return (
+                          <div className="mt-1.5 flex flex-col gap-1">
+                            <button
+                              onClick={() => { void handleRowJevFill(row) }}
+                              disabled={!enabled}
+                              title={noStandards
+                                ? `${row.subject}는 ${rowBandOf(row)} 성취기준이 교육과정에 없어 채울 수 없습니다`
+                                : !(row.coreIdea ?? '').trim()
+                                  ? '핵심아이디어를 먼저 선택하세요'
+                                  : !canRowJevFill(row)
+                                    ? '성취기준·내용 요소가 모두 채워져 있습니다'
+                                    : `${rowBandOf(row) || '이 학년군'} 성취기준과 내용 요소를 Jev 판정으로 제안받습니다 (빈 칸만 채움)`}
+                              className="w-full px-1.5 py-1 rounded-lg border border-[#A8DAB5] text-[11px] font-bold text-[#137333] hover:bg-[#E6F4EA] disabled:opacity-40 disabled:hover:bg-transparent transition truncate"
+                            >
+                              {fill?.loading ? '판정 중...' : 'Jev로 채우기'}
+                            </button>
+                            {fill?.judge && !fill.error && (
+                              <span
+                                title={JUDGE_LABEL[fill.judge]}
+                                className={cn(
+                                  'px-1.5 py-0.5 rounded-md text-[11px] font-bold text-center',
+                                  fill.judge === 'jev' ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#F1F3F4] text-[#5F6368]',
+                                )}
+                              >
+                                {fill.judge === 'jev' ? 'Jev' : '임베딩'} {fill.filled ? `${fill.filled}칸` : '추가 없음'}
+                              </span>
+                            )}
+                            {fill?.error && (
+                              <span title={[fill.error, ...(fill.notes ?? [])].join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FCE8E6] text-[11px] font-bold text-[#A50E0E] truncate">
+                                {fill.error}
+                              </span>
+                            )}
+                            {!fill?.error && fill?.notes?.length ? (
+                              <span title={fill.notes.join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FEF7E0] text-[11px] font-semibold text-[#8A5A00] leading-snug line-clamp-2">
+                                {fill.notes[0]}
+                              </span>
+                            ) : null}
+                          </div>
+                        )
+                      })()}
                       {row.subject && (
                         <label className="flex items-center gap-1 mt-1.5 px-1 cursor-pointer select-none">
                           <input
@@ -1248,15 +2059,36 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         const isMy = getMyPresenceForCell(row.id, 'coreIdea')
                         const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid #E8EAED'
                         const coreIdeaArea = getCoreIdeaArea(row)
+                        const prevRow = rowIdx > 0 ? rows[rowIdx - 1] : undefined
+                        // 바로 위 행과 같은 핵심아이디어 묶음이면 "학년군만 다른 줄"로 묶어 보여준다.
+                        // 연결 줄은 교과·핵심아이디어가 달라도 원본을 가리키면 같은 묶음이다.
+                        const sameGroupAsAbove = isSameCoreIdeaGroup(row, prevRow)
+                        const rowBandLabel = rowBandOf(row)
                         return (<>
                           <button onClick={e => handleCellClick(row.id, 'coreIdea', e)}
                             className="w-full text-left px-3 py-2 rounded-xl transition min-h-[44px] text-base leading-relaxed"
                             style={{ color: row.coreIdea ? '#202124' : '#9AA0A6', border: bdr }}>
-                            {coreIdeaArea && (
-                              <span className="mb-1 inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
-                                {coreIdeaArea}
-                              </span>
-                            )}
+                            <span className="mb-1 flex flex-wrap items-center gap-1">
+                              {coreIdeaArea && (
+                                <span className="inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
+                                  {coreIdeaArea}
+                                </span>
+                              )}
+                              {row.linkedCoreIdea && (
+                                <span
+                                  title={`${row.linkedCoreIdea.subject} 핵심아이디어: ${row.linkedCoreIdea.coreIdea}`}
+                                  className="inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]"
+                                >
+                                  ↔ {row.linkedCoreIdea.subject} 핵심아이디어 연결
+                                </span>
+                              )}
+                              {showGradeBandUI && sheetMode === 'multi' && sameGroupAsAbove && (<>
+                                <span className="inline-flex items-center rounded-md bg-[#E8F0FE] px-1.5 py-0.5 text-[12px] font-bold text-[#1A73E8]">
+                                  {rowBandLabel}
+                                </span>
+                                <span className="text-[12px] font-semibold text-[#9AA0A6]">↳ 같은 핵심아이디어</span>
+                              </>)}
+                            </span>
                             <span className="block">{row.coreIdea || '핵심아이디어 선택...'}</span>
                           </button>
                           {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
@@ -1399,6 +2231,30 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           color={FC[pickerTarget.field]} multi={MULTI_FIELDS.includes(pickerTarget.field)}
           optionGroups={pickerTarget.field === 'coreIdea' ? getCoreIdeaGroups(pickerTarget.rowId) : undefined} />
       )}
+
+      {/* 연결 줄 — 유사 성취기준 후보 팝오버 */}
+      {bridgeTarget && (() => {
+        const row = rows.find(r => r.id === bridgeTarget.rowId)
+        if (!row?.linkedCoreIdea) return null
+        return (
+          <BridgePicker
+            anchorRect={bridgeTarget.rect}
+            sourceSubject={row.linkedCoreIdea.subject}
+            sourceCoreIdea={row.linkedCoreIdea.coreIdea}
+            targetBand={rowBandOf(row)}
+            loading={bridgeQuery.loading}
+            error={bridgeQuery.error}
+            notes={bridgeQuery.notes}
+            judge={bridgeQuery.judge}
+            candidates={bridgeQuery.candidates}
+            subjectsSearched={bridgeQuery.subjectsSearched}
+            subjectFilter={bridgeSubjectFilter}
+            onSubjectFilterChange={setBridgeSubjectFilter}
+            onSelect={candidate => applyBridgeCandidate(row.id, candidate)}
+            onClose={() => setBridgeTarget(null)}
+          />
+        )
+      })()}
     </>
   )
 }

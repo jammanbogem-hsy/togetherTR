@@ -11,7 +11,12 @@ import path from 'path'
 import type { ActivityCode } from '@/types'
 import { loadGraph } from './graphReader'
 import { getPrefixedElementaryLists } from './elementaryContentLists'
-import { filterContentItemsByGrade } from './curriculumFilters'
+import { filterContentItemsByGrade, isElementaryGradeGroup } from './curriculumFilters'
+
+// Grade-group predicate lives in curriculumFilters (pure, unit-testable) but is
+// re-exported here so existing importers keep working. It accepts both '초3-4'
+// and '3-4학년군'.
+export { isElementaryGradeGroup }
 
 type CategoryKey = '지식⋅이해' | '과정⋅기능' | '가치⋅태도'
 
@@ -364,14 +369,6 @@ export function searchContentSystems({
       functions: filterContentItemsByGrade(hit.functions, gradeGroup),
       attitudes: filterContentItemsByGrade(hit.attitudes, gradeGroup),
     }))
-}
-
-export function isElementaryGradeGroup(gradeGroup?: string | null): boolean {
-  const raw = (gradeGroup ?? '').trim()
-  if (!raw || /중학교|고등학교|^[중고]/.test(raw)) return false
-  if (/초등학교|^초/.test(raw)) return true
-  const grades = [...raw.matchAll(/\d/g)].map(match => Number(match[0]))
-  return grades.length > 0 && grades.every(grade => grade >= 1 && grade <= 6)
 }
 
 export function buildContentSystemContext(

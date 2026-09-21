@@ -46,7 +46,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   // 분석시트 변경 감지 — 보고서가 현재 분석시트를 반영하는지 "내용 기반"으로 판정 (A 분석 보고서).
   // 타임스탬프 대신 본문 교과 비교를 쓰는 이유: updatedAt은 재저장(replace-all/set-center)만 해도
   // 전 행에 찍혀 false-positive가 잦다. 본문 비교는 실제 교과 추가/삭제만 잡는다.
-  const SHEET_SUBJECTS = ['국어', '수학', '과학', '사회', '도덕', '미술', '음악', '체육', '영어', '실과']
+  const SHEET_SUBJECTS = ['국어', '수학', '과학', '사회', '도덕', '미술', '음악', '체육', '영어', '실과', '통합교과']
   const sheetRows = project?.curriculumSheet ?? []
   const currentSubjects = [...new Set(sheetRows.map(r => r.subject).filter(Boolean))]
   const currentCenter = sheetRows.find(r => r.isCenter)?.subject ?? ''

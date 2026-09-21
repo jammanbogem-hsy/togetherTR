@@ -1273,7 +1273,8 @@ function parseA21Table(raw: string): A21Row[] {
         contribution,
         agentLessonExample,
         description,
-        isCommon: /공통|팀\s*조정|통합/.test(subject),
+        // '통합'은 공통(팀 조정) 행 표시이지만 '통합교과'(바른·슬기·즐거운 생활)는 실제 교과다.
+        isCommon: /공통|팀\s*조정|통합(?!교과)/.test(subject),
       })
     }
   }
