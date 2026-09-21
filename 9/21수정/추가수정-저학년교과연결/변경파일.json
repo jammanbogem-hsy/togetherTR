@@ -1,0 +1,46 @@
+{
+  "beforeCommit": "8582c31bf125ce22fccce57d864546f03c86fced",
+  "codeCommit": "05cd8041cb10b8b2b509fbdc0751738146f09329",
+  "files": [
+    {
+      "path": "scripts/collaborativeAutofillRoute.test.mjs",
+      "beforeSha256": "335bebce6a2eb3279046a12fdbc15354653df4ca6e3bf748f0b3f266d7067591",
+      "afterSha256": "7e62b13cf7aa81df2bc9c211dcdaf80964b664c957e60d858035119c7946fddf"
+    },
+    {
+      "path": "scripts/rowBridge.test.mjs",
+      "beforeSha256": null,
+      "afterSha256": "668ed0fe8b999e124f6f63d027ea1a1acee0154b1904dc11e1bd16661ccce7fd"
+    },
+    {
+      "path": "src/app/api/core-ideas/route.ts",
+      "beforeSha256": "1ff968c55fa184001a5d5c4fa9a84767913e7858ae1663296a00affda98c5246",
+      "afterSha256": "5fc91c9a0d3944da5de2970849ced608706709ab1c1070869be53404722b2c4e"
+    },
+    {
+      "path": "src/app/api/curriculum-sheet/autofill/route.ts",
+      "beforeSha256": "774ef71a939b142e8519929732aee5d12b73180ece773b22ff4f405d00e8e2d2",
+      "afterSha256": "41d2212867c4904da6acbb040f3cf54b8c668fbf0d6c7f1f528819ba2a03b706"
+    },
+    {
+      "path": "src/components/chat/CurriculumSheetModal.tsx",
+      "beforeSha256": "95cf9b54ac0de87d9356e27b2f7d4a151fba585b1414f063213a99410b45da38",
+      "afterSha256": "084f390e853669d7039b35fc3ba826c29d0efd0cfdd1ba67fd0d5a803772fd59"
+    },
+    {
+      "path": "src/components/chat/curriculum-sheet/BridgePicker.tsx",
+      "beforeSha256": "40c50b719e1d4ef6a9da6e67114e9bc8762f6f42d53e531f37b38c31a7a96bc0",
+      "afterSha256": "3ae6ec8a66c35e7492e5822ab41f6bd7d41355d5ae9e729436139002e524a41f"
+    },
+    {
+      "path": "src/lib/curriculum/bridgeStandards.ts",
+      "beforeSha256": "bb3bcd8059dbaf5ee41e5840e0150a46740ec003f2aca76383873b47a8443e23",
+      "afterSha256": "c35312adeec93b9411bd450e8e6e00fff38e25d32055d96e8c386d64c6ffbada"
+    },
+    {
+      "path": "src/lib/curriculum/rowBridge.ts",
+      "beforeSha256": null,
+      "afterSha256": "6669e13160ae30f46aa300680e5873576a98cf567ff1056425086443035172df"
+    }
+  ]
+}
