@@ -25,6 +25,15 @@ import {
 import { searchJsonStandards } from './curriculumJsonReader'
 import { filterContentItemsByGrade, isUsableCoreIdea } from './curriculumFilters'
 import {
+  normalizeTeamGradeBands,
+  formatGradeBandList,
+  dedupeCoreIdeaLines,
+  capContextLength,
+  subjectsForGradeBand,
+  subjectsMissingInGradeBand,
+  toGradeGroupCode,
+} from './teamGradeBands'
+import {
   buildContentSystemContext,
   isElementaryGradeGroup,
   isContentSystemContextEnabled,
@@ -545,6 +554,93 @@ ${coreIdeasSection}
 }
 
 /**
+ * 성취기준 검색: KG + JSON 교육과정 병합 (KG에 없는 성취기준을 JSON에서 보완).
+ * KG 결과 우선 + JSON에서 신규 코드만 추가(중복 제거) — 학년군 하나 기준.
+ */
+function searchMergedStandards(keywords: string[], gradeGroup: string, topK: number): CurriculumStandard[] {
+  const kgResults = searchStandards(keywords, gradeGroup, topK, 5)
+  const jsonResults = searchJsonStandards(keywords, gradeGroup, topK, 3)
+  const seenCodes = new Set(kgResults.map(item => item.code))
+  const merged = [...kgResults]
+  for (const item of jsonResults) {
+    if (!seenCodes.has(item.code)) {
+      seenCodes.add(item.code)
+      merged.push(item)
+    }
+  }
+  return merged.slice(0, topK)
+}
+
+/** 여러 학년군 컨텍스트 총 길이 상한 — 학년군 수만큼 늘어나므로 프롬프트 폭주를 막는다. */
+const MULTI_BAND_CONTEXT_LIMIT = 24_000
+
+/**
+ * 여러 학년군 팀(1·3·5학년 담임 등)의 교육과정 컨텍스트.
+ *
+ * 기존 단일 학년군 빌더를 **학년군마다 한 번씩** 돌려 블록으로 이어 붙인다. 학년군을 섞어
+ * 한 번에 검색하면 1-2학년군 교사에게 3-4학년군 성취기준이 제시되는 오염이 생기므로,
+ * 블록 머리에 학년군을 명시하고 각 블록 안에서만 인용하도록 지시한다.
+ * 학년군 공통인 핵심아이디어는 중복 문장을 표시로 바꿔 길이를 줄이고, 총 길이를 상한으로 자른다.
+ */
+function buildMultiBandCurriculumContext(
+  activityCode: ActivityCode,
+  messages: Array<{ role: string; content: string }>,
+  bands: string[],
+  confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>,
+  graphSavedData?: GraphSavedData | null,
+  targetSubjects: string[] = [],
+): string {
+  const keywords = extractKeywords(messages, confirmedArtifacts)
+  // 학년군 수만큼 블록이 생기므로 학년군별 검색 폭은 좁힌다(단일 학년군 경로는 그대로).
+  const topK = activityCode === 'A-2-1' ? 10 : 8
+
+  const blocks: string[] = []
+  for (const band of bands) {
+    const parts: string[] = []
+    // 기존 빌더들은 프로젝트 학년그룹 코드('초1-2')를 기대한다 — 라벨을 그대로 넘기면
+    // graphReader의 포함 비교가 0건을 내므로 반드시 변환해서 넘긴다.
+    const gradeGroupCode = toGradeGroupCode(band)
+
+    if (activityCode === 'A-2-1' && graphSavedData) {
+      const graphContext = buildGraphBasedA21Context(graphSavedData, gradeGroupCode)
+      if (graphContext) parts.push(graphContext)
+    }
+    if (parts.length === 0 && keywords.length > 0) {
+      const standards = searchMergedStandards(keywords, gradeGroupCode, topK)
+      if (standards.length > 0) parts.push(buildActivityContext(activityCode, standards, keywords))
+    }
+    if (keywords.length > 0 && isContentSystemContextEnabled()) {
+      const contentSystemContext = buildContentSystemContext(activityCode, keywords, gradeGroupCode, targetSubjects)
+      if (contentSystemContext) parts.push(contentSystemContext)
+    }
+
+    const missing = subjectsMissingInGradeBand(targetSubjects, band)
+    const availability = `개설 교과: ${subjectsForGradeBand(band).join('·')}`
+      + (missing.length > 0 ? ` / 이 학년군에 없는 팀 교과: ${missing.join('·')}` : '')
+
+    if (parts.length === 0) {
+      blocks.push(`### ${band} 교육과정 근거\n${availability}\n(이 학년군에서 매칭된 교육과정 데이터를 찾지 못했습니다. 이 학년군의 성취기준을 추정해 만들지 말고 교사에게 확인하거나 분석시트를 사용하세요.)`)
+      continue
+    }
+    blocks.push(`### ${band} 교육과정 근거\n${availability}\n${parts.join('\n')}`)
+  }
+
+  if (blocks.length === 0) return ''
+
+  const header = `## 여러 학년군 팀의 교육과정 근거 (학년군별 분리 제공)
+
+팀 학년군: ${formatGradeBandList(bands)}
+⚠️ 아래 블록은 **학년군별로 따로** 조회한 결과다. 한 학년군 블록의 성취기준·내용 요소를 다른 학년군에 옮겨 쓰지 말 것.
+⚠️ 표·목록을 만들 때 학년군을 드러내고, 학년군마다 해당 블록의 자료만 인용할 것.
+⚠️ 블록이 비어 있는 학년군은 "데이터 없음"으로 안내하고 성취기준을 지어내지 말 것.`
+
+  return capContextLength(
+    dedupeCoreIdeaLines(`\n\n---\n${header}\n\n${blocks.join('\n\n')}`),
+    MULTI_BAND_CONTEXT_LIMIT,
+  )
+}
+
+/**
  * 교육과정 온톨로지 컨텍스트를 생성합니다.
  * system prompt 마지막에 주입됩니다.
  *
@@ -557,9 +653,23 @@ export function buildCurriculumContext(
   confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>,
   graphSavedData?: GraphSavedData | null,
   targetSubjects: string[] = [],
+  teamGradeBands?: readonly (string | null | undefined)[] | null,
 ): string {
   // 활성화된 활동인지 확인
   if (!ONTOLOGY_ENABLED_ACTIVITIES.includes(activityCode)) return ''
+
+  // 여러 학년군 팀: 학년군마다 컨텍스트를 따로 만든다(한 학년군 팀은 아래 기존 경로 그대로).
+  const teamBands = normalizeTeamGradeBands(teamGradeBands)
+  if (teamBands.length >= 2) {
+    return buildMultiBandCurriculumContext(
+      activityCode,
+      messages,
+      teamBands,
+      confirmedArtifacts,
+      graphSavedData,
+      targetSubjects,
+    )
+  }
 
   // A-2-1: 지식 그래프 저장 데이터 우선 사용
   if (activityCode === 'A-2-1' && graphSavedData) {
@@ -582,20 +692,7 @@ export function buildCurriculumContext(
   if (keywords.length === 0) return ''
 
   // 성취기준 검색: KG + JSON 교육과정 병합 (KG에 없는 성취기준을 JSON에서 보완)
-  const topK = activityCode === 'A-2-1' ? 20 : 12
-  const kgResults = searchStandards(keywords, gradeGroup, topK, 5)
-  const jsonResults = searchJsonStandards(keywords, gradeGroup, topK, 3)
-
-  // KG 결과 우선 + JSON에서 신규 코드만 추가 (중복 제거)
-  const seenCodes = new Set(kgResults.map(s => s.code))
-  const merged = [...kgResults]
-  for (const s of jsonResults) {
-    if (!seenCodes.has(s.code)) {
-      seenCodes.add(s.code)
-      merged.push(s)
-    }
-  }
-  const standards = merged.slice(0, topK)
+  const standards = searchMergedStandards(keywords, gradeGroup, activityCode === 'A-2-1' ? 20 : 12)
   if (standards.length === 0) return ''
 
   // 활동별 컨텍스트 블록 생성

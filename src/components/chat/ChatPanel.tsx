@@ -8,7 +8,7 @@ import { hasDeferredDecision, deferredResponse, discussionContributions } from '
 import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch, CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
@@ -61,6 +61,7 @@ import {
 import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import { defaultGradeMode, effectiveRowGradeBand, resolveSheetGradeBand, toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
+import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
 import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
@@ -540,7 +541,7 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
   // AI가 첫 줄에 [탐색] [팀+AI] 같은 활동유형/행위주체 태그를 출력하는 경우 제거
   // 표 셀 안의 <br/>은 ', '로, 표 밖은 줄바꿈으로
   const sanitized = text
-    .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|STANDARD_SEARCH)[^\]]*\]/g, '')
+    .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|TEAM_GRADE_BANDS|STANDARD_SEARCH)[^\]]*\]/g, '')
     .replace(/\[ARTIFACT_UPDATE\]/g, '')
     .replace(/(\|[^|\n]*)<br\s*\/?>/gi, '$1, ')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -2084,6 +2085,8 @@ function ChatPanelContent() {
         project: {
           title: proj.title,
           targetGradeGroup: proj.targetGradeGroup,
+          // 여러 학년 담임이 한 팀인 경우 — 학년군별 성취기준·활동 수준 판단의 근거
+          teamGradeBands: proj.teamGradeBands,
           targetSubjects: proj.targetSubjects,
           mode: proj.mode,
           isA23Completed: proj.isA23Completed,
@@ -2672,8 +2675,11 @@ ${discussionSummary}
         (text) => appendStreamingText(text),
         async (fullText) => {
           if (await discardResponseAfterActivityChange(currentActivity)) return
-          const signal = parseDiscussionSignal(fullText)
-          const text1 = signal ? signal.cleanText : fullText
+          // 교사들이 토의에서 학년을 밝히는 경우가 많아 분석 응답도 [TEAM_GRADE_BANDS]를 받는다.
+          const gradeBandsSignal = parseTeamGradeBandsSignal(fullText)
+          const bodyText = gradeBandsSignal ? gradeBandsSignal.cleanText : fullText
+          const signal = parseDiscussionSignal(bodyText)
+          const text1 = signal ? signal.cleanText : bodyText
           // P0-phil1 (Task #27): 분석 응답은 ACTION_CARD 저장 제안 경로만 허용.
           // 모델이 규칙 0-2를 위반하고 ARTIFACT_UPDATE/CONFIRM을 방출해도 구조적으로 버림.
           const { codes: confirmCodes, cleanText: text1c } = parseArtifactConfirm(text1)
@@ -2707,6 +2713,7 @@ ${discussionSummary}
             ...(parsedActionCardAnalysis ? { actionCard: parsedActionCardAnalysis.card, actionCardState: 'pending' as const } : {}),
           }, newMsgIdAnalysis).catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
+          if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
 
         }
       )
@@ -3484,6 +3491,29 @@ ${discussionSummary}
     }, msgId).catch(console.error)
   }
 
+  /**
+   * [TEAM_GRADE_BANDS] 신호 처리 — 팀의 학년 구성을 프로젝트에 저장한다.
+   * Firestore 쓰기는 방장만 수행한다(ACTIVITY_ADVANCE·ACTIVITY_RETURN 등 다른 신호 쓰기와 동일 게이팅).
+   * 저장 안내 메시지도 Firestore에 남으므로 팀원 전원 화면에 한 번만 나타난다.
+   */
+  async function handleTeamGradeBandsSignal(bands: string[]) {
+    if (bands.length === 0) return
+    if (!isHost) return
+    // 이미 같은 학년군이 저장돼 있으면 재저장·중복 안내를 하지 않는다(모델이 매 턴 방출해도 안전).
+    const saved = normalizeTeamGradeBands(project?.teamGradeBands)
+    if (saved.length === bands.length && saved.every((band, index) => band === bands[index])) return
+    try {
+      const next = await updateTeamGradeBands(proj.id, bands)
+      if (next.length === 0) return
+      addAssistantNotice(
+        `팀 학년군을 ${formatGradeBandList(next)}으로 저장했습니다.`
+        + (next.length >= 2 ? " 분석시트가 '다양한 학년군' 모드로 열립니다." : ''),
+      )
+    } catch (err) {
+      console.error('[TEAM_GRADE_BANDS] 저장 실패:', err)
+    }
+  }
+
   function handleA21SheetArtifactRequest(text: string): boolean {
     if (!isA21SheetArtifactRequest(text)) return false
 
@@ -3604,8 +3634,11 @@ ${discussionSummary}
         (chunk) => { appendStreamingText(chunk); streamingAccumRef.current += chunk },
         async (fullText) => {
           if (await discardResponseAfterActivityChange(currentActivity)) return
-          const signal = parseDiscussionSignal(fullText)
-          let t1 = signal ? signal.cleanText : fullText
+          // [TEAM_GRADE_BANDS]는 데이터 신호 — 가장 먼저 본문에서 떼어낸다(사용자 노출 금지).
+          const gradeBandsSignal = parseTeamGradeBandsSignal(fullText)
+          const bodyText = gradeBandsSignal ? gradeBandsSignal.cleanText : fullText
+          const signal = parseDiscussionSignal(bodyText)
+          let t1 = signal ? signal.cleanText : bodyText
           const advance = parseActivityAdvance(t1)
           t1 = advance ? advance.cleanText : t1
           const ret = parseActivityReturn(t1)
@@ -3647,6 +3680,7 @@ ${discussionSummary}
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
+          if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
           await processArtifactSignals(upd, cCodes, finalText)
 
           // 구조화 산출물 자동 저장 fallback
@@ -3784,8 +3818,11 @@ ${discussionSummary}
         },
         async (fullText) => {
           if (await discardResponseAfterActivityChange(currentActivity)) return
-          const signal = parseDiscussionSignal(fullText)
-          let text1 = signal ? signal.cleanText : fullText
+          // [TEAM_GRADE_BANDS]는 데이터 신호 — 가장 먼저 본문에서 떼어낸다(사용자 노출 금지).
+          const gradeBandsSignal = parseTeamGradeBandsSignal(fullText)
+          const bodyText = gradeBandsSignal ? gradeBandsSignal.cleanText : fullText
+          const signal = parseDiscussionSignal(bodyText)
+          let text1 = signal ? signal.cleanText : bodyText
           const advance = parseActivityAdvance(text1)
           text1 = advance ? advance.cleanText : text1
           const ret = parseActivityReturn(text1)
@@ -3845,6 +3882,7 @@ ${discussionSummary}
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch((err) => { console.error(err); setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.') })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
+          if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
           await processArtifactSignals(updates, confirmCodes2, displayText)
 
           // 구조화 산출물 자동 저장 fallback (A안/B안 선택 후 AI 응답)
@@ -5190,7 +5228,8 @@ ${discussionSummary}
             }
             return parts.length > 0 ? parts.join('\n') : undefined
           })()}
-          gradeMode={proj.curriculumSheetGradeMode}
+          gradeMode={proj.curriculumSheetGradeMode
+            ?? ((proj.teamGradeBands?.length ?? 0) >= 2 ? 'multi' : undefined)}
           sheetGradeBand={proj.curriculumSheetGradeBand}
           onGradeSettingsChange={async (settings) => {
             // 시트는 공동 편집이라 팀원 누구나 학년군 모드를 바꿀 수 있다(호스트 제한 없음).
@@ -5280,7 +5319,7 @@ ${discussionSummary}
             if (!ctxMenu || !userProfile) return
             // AI 신호(대괄호 블록 등) 제거 후 저장
             const cleaned = ctxMenu.message.content
-              .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|STANDARD_SEARCH)[\s\S]*?\]/g, '')
+              .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|TEAM_GRADE_BANDS|STANDARD_SEARCH)[\s\S]*?\]/g, '')
               .trim()
             if (!cleaned) return
             const note: KeyNote = {
@@ -5305,7 +5344,7 @@ ${discussionSummary}
           }}
           onSendToArtifact={isHost && ctxMenu ? () => {
             const content = stripNonContentLines(ctxMenu.message.content
-              .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|STANDARD_SEARCH)[^\]]*\]/g, '')
+              .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|TEAM_GRADE_BANDS|STANDARD_SEARCH)[^\]]*\]/g, '')
               .replace(/\[ARTIFACT_UPDATE\]/g, ''))
             if (!content) {
               setChatError('선택지·안내 문구는 산출물로 저장할 수 없습니다. 실제 내용이 담긴 메시지를 선택해주세요.')

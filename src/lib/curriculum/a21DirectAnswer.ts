@@ -3,11 +3,14 @@ import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { extractKeywords } from './contextInject'
 import { loadGraph, searchStandards, type CurriculumStandard } from './graphReader'
 import { isElementaryGradeGroup } from './contentSystemReader'
+import { normalizeTeamGradeBands, formatGradeBandList, subjectsMissingInGradeBand, toGradeGroupCode } from './teamGradeBands'
 
 interface BuildA21DirectAnswerParams {
   activityCode: ActivityCode
   messages: Array<{ role: string; content: string }>
   gradeGroup?: string
+  /** 여러 학년군 팀(1·3·5학년 담임 등)의 학년군 목록 — 2개 이상이면 학년군별로 나눠 답한다. */
+  teamGradeBands?: readonly (string | null | undefined)[] | null
   targetSubjects?: string[]
   confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>
   graphSavedData?: GraphSavedData | null
@@ -33,6 +36,7 @@ export function buildA21DirectAnswer({
   activityCode,
   messages,
   gradeGroup,
+  teamGradeBands,
   targetSubjects = [],
   confirmedArtifacts,
   graphSavedData,
@@ -41,6 +45,34 @@ export function buildA21DirectAnswer({
 
   const latestUser = [...messages].reverse().find(message => message.role === 'user')?.content ?? ''
   if (!isCoreIdeaStandardsQuestion(latestUser)) return ''
+
+  // 여러 학년군 팀: 학년군마다 같은 조회를 돌려 학년군별 답을 만든다.
+  // (한 학년군 팀은 아래 기존 경로를 그대로 타 답변이 바뀌지 않는다.)
+  const teamBands = normalizeTeamGradeBands(teamGradeBands)
+  if (teamBands.length >= 2) {
+    const sections = teamBands.map(band => {
+      const missing = subjectsMissingInGradeBand(targetSubjects, band)
+      const missingNote = missing.length > 0
+        ? `\n(${band}에 성취기준이 없어 제외한 교과: ${missing.join('·')} — 1-2학년군은 통합교과로 연결하세요.)`
+        : ''
+      const body = buildA21DirectAnswer({
+        activityCode,
+        messages,
+        // 그래프 성취기준의 grade_band는 '초1-2' 형태다 — 라벨을 그대로 넘기면 0건이 된다.
+        gradeGroup: toGradeGroupCode(band),
+        targetSubjects,
+        confirmedArtifacts,
+        graphSavedData,
+      })
+      return `### ${band}${missingNote}\n\n${body || '(이 학년군에서 매칭된 성취기준을 찾지 못했습니다.)'}`
+    })
+    return [
+      `팀 학년군이 ${formatGradeBandList(teamBands)}이므로 학년군별로 나누어 조회했습니다.`,
+      '학년군이 다르면 성취기준도 다릅니다. 아래 학년군 블록의 성취기준만 그 학년 수업에 사용하세요.',
+      '',
+      ...sections,
+    ].join('\n')
+  }
 
   if (gradeGroup && !isElementaryGradeGroup(gradeGroup)) {
     return `### 학교급 교육과정 자료 확인 필요

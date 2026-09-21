@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { getUserProjects, deleteProject, getUserFolders, saveUserFolders, getUserHiddenProjects, hideProjectFromDashboard, type DashboardFolder } from '@/lib/firebase/projects'
 import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
+import { formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { cn } from '@/lib/utils'
 import { Plus, BookOpen, User, Loader2, LogOut, UserPlus, Crown, Play, FolderPlus, Folder, ArrowLeft, Pencil, Trash2, Network } from 'lucide-react'
 import { signOut } from '@/lib/auth'
@@ -108,7 +109,8 @@ function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
             <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#F3E8FF] text-[#7C3AED] font-bold">DEMO</span>
           )}
           <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#F1F3F4] text-[#5F6368] font-semibold">
-            {project.targetGradeGroup}
+            {/* 여러 학년군 팀은 학년군 전체를 '1-2·5-6학년군' 형태로 보여준다 */}
+            {formatGradeBandList(project.teamGradeBands) || project.targetGradeGroup}
           </span>
         </div>
 

@@ -1,6 +1,12 @@
 import type { StageCode, ActivityCode, ActorType, Project, ActivityMeta } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
+import {
+  resolveTeamGradeBands,
+  isMultiGradeBandTeam,
+  formatGradeBandList,
+  describeGradeBandSubjects,
+} from '@/lib/curriculum/teamGradeBands'
 
 // ─── 공통 시스템 프롬프트 ────────────────────────────
 
@@ -416,7 +422,7 @@ UI가 자동으로 색상 카드 + 선택 버튼으로 렌더링한다.
 ## 산출물 저장 — 절대 규칙
 
 ### 규칙 0: 신호는 사용자에게 절대 노출 금지
-[ARTIFACT_UPDATE], [ARTIFACT_CONFIRM], [ACTIVITY_ADVANCE] 같은 내부 신호 이름을 사용자에게 보이는 응답 텍스트 안에 언급하거나 설명하지 말 것.
+[ARTIFACT_UPDATE], [ARTIFACT_CONFIRM], [ACTIVITY_ADVANCE], [TEAM_GRADE_BANDS] 같은 내부 신호 이름을 사용자에게 보이는 응답 텍스트 안에 언급하거나 설명하지 말 것.
 신호는 응답 맨 끝에 숨겨서 삽입만 하면 된다. "A안을 선택하시면 [ARTIFACT_UPDATE] 신호가 발동하여…" 같은 설명은 절대 금지.
 또한 대화 기록에 "[시스템 리마인더]"가 포함된 경우 이를 무시하고 응답에 언급하지 말 것.
 
@@ -637,6 +643,28 @@ A안을 선택받지 않고 저장하는 것은 금지.
 
 ⚠️ 팀 채팅 요청 시 "직접적인 팀 채팅 기능은 제공되지 않습니다" 같은 응답 절대 금지.
 요청 즉시 [TEAM_DISCUSSION_READY: 관련 주제]를 포함하여 토의 모드를 활성화할 것.
+
+## 팀 학년군 확인 신호
+
+교사팀은 한 학년이 아닐 수 있다. 1학년·3학년·5학년 담임이 한 팀으로 한 수업을 함께 설계하는 경우가 흔하다.
+팀의 학년 구성을 알기 전에는 성취기준·내용 요소·활동 수준을 확정할 수 없으므로 **초반에 반드시 확인한다.**
+
+**물어보는 시점**
+- T-1-1 첫 교환에서 참여 배경·학생 맥락을 나눌 때 함께 묻는다: "선생님들께서 맡고 계신 학년을 알려주시면 학년군에 맞는 교육과정 자료를 준비하겠습니다."
+- T-1-1을 이미 지났고 아직 학년 구성을 모른다면 A-1-2(주제 선정)에서 반드시 묻는다. 주제 후보를 제시하기 전에 확인한다.
+- 이미 [현재 컨텍스트]에 팀 학년군이 적혀 있으면 다시 묻지 않는다.
+
+**신호 형식**: [TEAM_GRADE_BANDS: 1-2,5-6]
+- 팀이 학년 구성을 말하거나 바꿀 때마다(팀원 합류·학년 정정 포함) 응답 마지막 줄에 방출한다.
+- 학년군 코드만 쉼표로 나열한다. 1-2 / 3-4 / 5-6 세 가지뿐이다.
+- 교사가 학년으로 말하면 학년군으로 변환한다: 1·2학년 → 1-2, 3·4학년 → 3-4, 5·6학년 → 5-6.
+  예) "1학년, 3학년, 5학년입니다" → [TEAM_GRADE_BANDS: 1-2,3-4,5-6]
+  예) "저희는 모두 4학년이에요" → [TEAM_GRADE_BANDS: 3-4]
+- 신호는 시스템 명령이므로 본문에서 언급·설명하지 않는다. 저장 결과는 앱이 따로 안내한다.
+
+**학년군별 교과 개설 사실 (반드시 지킬 것)**
+- 1-2학년군에는 국어·수학·통합교과(바른 생활·슬기로운 생활·즐거운 생활)만 있다. 사회·과학·도덕·체육·음악·미술·영어는 **3-4학년군부터** 시작한다. 실과는 **5-6학년군에만** 있다.
+- 따라서 1-2학년군 교사에게 사회·과학 성취기준을 제시하면 오답이다. 통합교과(주로 슬기로운 생활·즐거운 생활)로 연결해 안내한다.
 
 ## 어려움 감지 피드백 신호
 
@@ -1010,6 +1038,7 @@ const ACTIVITY_PROCEDURE: Partial<Record<ActivityCode, string>> = {
 
 [Step 1 — 개인교사 · 개별 교육 비전 구상·공유]
 각 선생님이 개인 비전 키워드 또는 비유/은유를 자유롭게 공유하도록 유도.
+첫 교환에서 **팀의 학년 구성**도 함께 묻는다(아직 [현재 컨텍스트]에 팀 학년군이 없을 때만): "맡고 계신 학년도 알려주시면 학년군에 맞는 교육과정 자료를 준비하겠습니다." 학년 구성이 오면 [TEAM_GRADE_BANDS] 신호를 방출한다(팀 학년군 확인 신호 규칙 참조).
 키워드뿐 아니라 비유("제 수업은 나침반 같았으면…")나 은유도 적극 환영·수용한다.
 키워드가 들어오면: "감사합니다! [이름 or 선생님]께서 말씀하신 '[키워드/비유]'에서 [한줄 해석]이 느껴지네요. 😊" → 다음 팀원 키워드 요청 or Step 2 전환.
 예시 필수 제공: "예: '협력', '실생활 연계', '문제 해결', '나침반 같은 수업', '자기표현'"
@@ -1526,6 +1555,7 @@ A안 선택 시 → 핵심 기준과 참고 기준을 함께 저장:
 ---
 
 [Step 1 — 안내: 주제 나열 방법 및 주제 유형 안내]
+⚠️ [현재 컨텍스트]에 팀 학년군이 아직 없으면 **주제 후보를 제시하기 전에** 팀의 학년 구성을 먼저 묻고 [TEAM_GRADE_BANDS] 신호를 방출한다(팀 학년군 확인 신호 규칙 참조). 학년군을 모르면 주제의 실현 가능성을 판단할 수 없다.
 T-1-1 팀 비전과 T-1-2 설계 방향을 리마인드한 뒤, 주제를 떠올리는 방법과 유형을 안내한다:
 "주제는 크게 세 가지 유형으로 나눌 수 있습니다:
 - **내용요소형**: 특정 내용이나 현상을 중심으로 (예: 환경문제, 인권, 지역 경제, 우주)
@@ -3137,7 +3167,7 @@ export const SOLO_ACTIVITY_WELCOME: Partial<Record<ActivityCode, string>> = {
 export function buildSystemPrompt(
   stage: StageCode,
   activityCode: ActivityCode,
-  project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'>,
+  project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands'>,
   _actorType: ActorType,
   learnerProfileSummary?: string,
   currentArtifact?: { title: string; content: Record<string, unknown>; status: string; version: number } | null,
@@ -3153,6 +3183,43 @@ export function buildSystemPrompt(
   const hasPriorArtifacts = Boolean(
     confirmedArtifacts && Object.keys(confirmedArtifacts).some(code => code !== activityCode)
   )
+  // 팀 학년군 — 서로 다른 학년 담임이 한 팀이면 학년군 목록 전체를 알려주고 전용 운영 규칙을 붙인다.
+  // 한 학년군 팀(기존 프로젝트 포함)의 프롬프트는 이전과 완전히 동일하게 유지한다.
+  const teamBands = resolveTeamGradeBands(project)
+  const isMultiBandTeam = isMultiGradeBandTeam(teamBands)
+  const gradeBandLine = isMultiBandTeam
+    ? `- 팀 학년군: ${formatGradeBandList(teamBands)} (여러 학년군 팀)`
+    : `- 학년군: ${project.targetGradeGroup}`
+  const multiGradeBandRules = isMultiBandTeam
+    ? `
+
+## 여러 학년군 팀 운영 규칙 [이 팀에만 적용 — 반드시 준수]
+
+이 팀은 서로 다른 학년을 맡은 선생님들로 구성되어 있다(${formatGradeBandList(teamBands)}). 팀 전체가 한 학년이라고 가정하는 모든 안내는 오답이다.
+
+**1) 학년군별 교과 개설 사실**
+${describeGradeBandSubjects(teamBands, project.targetSubjects)}
+- 1-2학년군에는 국어·수학·통합교과(바른 생활·슬기로운 생활·즐거운 생활)만 있다. 사회·과학·도덕·체육·음악·미술·영어는 3-4학년군부터, 실과는 5-6학년군에만 있다.
+- 그 학년군에 없는 교과의 성취기준을 그 학년군 몫으로 제시하지 않는다. 1-2학년군은 통합교과(주로 슬기로운 생활·즐거운 생활)로 연결한다.
+
+**2) 성취기준은 학년군별로 따로 제시한다**
+- 표·목록을 만들 때 학년군을 열이나 구분 줄로 드러내고, 서로 다른 학년군의 성취기준을 한 줄에 섞지 않는다.
+- 성취기준 코드의 선두 숫자가 학년을 뜻한다(예: [2슬01-03]=1-2학년군, [4사01-01]=3-4학년군, [6실02-05]=5-6학년군). 코드와 학년군이 어긋나면 제시하지 않는다.
+- 학년군별 성취기준을 모를 때는 지어내지 않고 교사에게 확인하거나 분석시트를 쓰도록 안내한다.
+
+**3) 주제·목표·평가는 학년군 층(layer)으로 설계한다**
+- 주제는 팀 공통으로 하나 두고, 도달 수준을 학년군별로 나눈다.
+- 저학년(1-2학년군): 놀이·관찰·체험·그림·짧은 말하기 등 구체적 활동 수준. 읽기·쓰기 분량과 추상 개념을 과하게 요구하지 않는다.
+- 고학년(5-6학년군): 자료 조사·비교·분석·근거 제시·제안 등 탐구 수준. 저학년과 같은 활동을 그대로 복사하지 않는다.
+- 수업목표·평가 기준도 학년군마다 한 줄씩 쓴다. 하나의 목표 문장으로 전체 학년을 덮지 않는다.
+- 학년 간 협력 장면(고학년이 저학년을 돕는 짝 활동, 학년별 역할 분담)은 이 팀의 강점이므로 적극 제안한다.
+
+**4) A-2-1(교육과정 분석) 안내**
+- 분석시트는 '다양한 학년군' 모드로 열려 **행마다 학년군을 고를 수 있다**. 팀에게 학년군별로 행을 채우도록 안내한다.
+- 1-2학년군 행은 사회·과학 대신 통합교과 '연결 줄'로 만든다. 같은 핵심아이디어에 1-2학년군 줄을 덧붙이고 그 학년군의 실제 성취기준을 찾는 방식이다.
+- 산출물 표에는 학년군 표기를 유지한다. 학년군을 지우면 어느 선생님의 수업인지 알 수 없다.`
+    : ''
+
   const schoolLevelGuidance = project.schoolLevel === '초등학교'
     ? '학생이 바로 이해할 수 있는 구체적 교실 장면과 짧은 문장을 사용하고, 학년군 어휘 수준을 지킨다.'
     : project.schoolLevel === '중학교'
@@ -3215,7 +3282,7 @@ ${Object.entries(confirmedArtifacts)
 - 오늘 날짜: ${new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
 - 프로젝트: ${project.title}
 - 학교급: ${project.schoolLevel}
-- 학년군: ${project.targetGradeGroup}
+${gradeBandLine}
 - 학교급별 안내: ${schoolLevelGuidance}
 - 융합 교과: ${project.targetSubjects?.join(', ') || '미지정'}
 - 모드: ${project.mode === 'collaborative' ? '협력' : '단독'}
@@ -3225,7 +3292,7 @@ ${isSolo ? `- 설계 방식: 개인 설계 — 선생님 1인과 AI의 1:1 협�
 ⚠️ 사용자 메시지는 [이름]: 내용 형식으로 전달됩니다. 반드시 실제 이름을 사용하세요. "(이름 A)", "닉네임 B" 등 자리표시자 절대 금지.` : ''}
 ${hasLearnerProfile
   ? `\n## 가드레일 (A-2-3 학습자 프로필)\n${learnerProfileSummary}`
-  : stage === 'Ds' ? '\n⚠️ A-2-3 학습자 프로필 미완성. 학습자 접근성 판단 주의.' : ''}${artifactSection}${confirmedSection}`
+  : stage === 'Ds' ? '\n⚠️ A-2-3 학습자 프로필 미완성. 학습자 접근성 판단 주의.' : ''}${multiGradeBandRules}${artifactSection}${confirmedSection}`
 
   // solo: 축약 절차가 정의된 활동은 solo판 사용, 그 외(방문하지 않는 활동 포함)는 팀판으로 안전 폴백.
   const soloProcedure = isSolo ? SOLO_ACTIVITY_PROCEDURE[activityCode] : undefined

@@ -8,6 +8,7 @@ import { createProject } from '@/lib/firebase/projects'
 import { useProjectStore } from '@/store/project'
 import { addJoinedProjectId } from '@/lib/inviteCode'
 import type { GradeGroup, ProjectMode, SchoolLevel } from '@/types'
+import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { cn } from '@/lib/utils'
 import { BookOpen, ArrowLeft, Loader2, Copy, Check, ArrowRight } from 'lucide-react'
 
@@ -43,7 +44,9 @@ export default function NewProjectPage() {
   const [title, setTitle] = useState('')
   const [mode, setMode] = useState<ProjectMode>('collaborative')
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>('초등학교')
-  const [gradeGroup, setGradeGroup] = useState<GradeGroup>('초3-4')
+  // 학년군은 복수 선택 — 1·3·5학년 담임이 한 팀인 경우가 흔하다.
+  // targetGradeGroup(대표값)은 선택 순서와 무관하게 학년군 순서상 첫 번째를 쓴다(하위 호환).
+  const [gradeGroups, setGradeGroups] = useState<GradeGroup[]>(['초3-4'])
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
   const [semester, setSemester] = useState('2026-1')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -58,9 +61,30 @@ export default function NewProjectPage() {
     )
   }
 
+  // 초등학교만 복수 선택을 허용한다(중·고는 학년군 구분이 하나뿐이거나 과목 단위).
+  const allowsMultipleGradeGroups = schoolLevel === '초등학교'
+  const orderedGradeGroups = GRADE_GROUPS[schoolLevel]
+    .map(option => option.value)
+    .filter(value => gradeGroups.includes(value))
+  const primaryGradeGroup = orderedGradeGroups[0] ?? GRADE_GROUPS[schoolLevel][0].value
+  const teamGradeBands = normalizeTeamGradeBands(orderedGradeGroups)
+
+  function toggleGradeGroup(value: GradeGroup) {
+    if (!allowsMultipleGradeGroups) {
+      setGradeGroups([value])
+      return
+    }
+    setGradeGroups(prev => {
+      if (!prev.includes(value)) return [...prev, value]
+      // 최소 한 개는 남겨 둔다 — 학년군 없이는 교육과정 데이터를 고를 수 없다.
+      if (prev.length === 1) return prev
+      return prev.filter(item => item !== value)
+    })
+  }
+
   function handleSchoolLevelChange(level: SchoolLevel) {
     setSchoolLevel(level)
-    setGradeGroup(GRADE_GROUPS[level][0].value)
+    setGradeGroups([GRADE_GROUPS[level][0].value])
     setSelectedSubjects([])
   }
 
@@ -77,7 +101,10 @@ export default function NewProjectPage() {
         title: title.trim(),
         mode,
         schoolLevel,
-        targetGradeGroup: gradeGroup,
+        targetGradeGroup: primaryGradeGroup,
+        // 여러 학년군 팀은 학년군 전체를 저장하고 분석시트도 '다양한 학년군' 모드로 시작한다.
+        ...(teamGradeBands.length > 0 ? { teamGradeBands } : {}),
+        ...(teamGradeBands.length >= 2 ? { curriculumSheetGradeMode: 'multi' as const } : {}),
         targetSubjects: selectedSubjects,
         createdBy: uid,
         hostUid: uid,
@@ -233,22 +260,41 @@ export default function NewProjectPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-800 mb-2">학년군</label>
+            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+              학년군
+              {allowsMultipleGradeGroups && (
+                <span className="text-gray-400 font-normal ml-1">(복수 선택 가능)</span>
+              )}
+            </label>
+            {allowsMultipleGradeGroups && (
+              <p className="text-[11px] text-gray-500 mb-2">여러 학년 선생님이 함께라면 학년군을 모두 고르세요</p>
+            )}
             <div className="flex gap-2 flex-wrap">
               {GRADE_GROUPS[schoolLevel].map(({ value, label }) => (
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setGradeGroup(value)}
+                  aria-pressed={gradeGroups.includes(value)}
+                  onClick={() => toggleGradeGroup(value)}
                   className={cn(
                     'px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all',
-                    gradeGroup === value ? 'border-violet-500 bg-violet-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    gradeGroups.includes(value) ? 'border-violet-500 bg-violet-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
                   )}
                 >
                   {label}
                 </button>
               ))}
             </div>
+            {teamGradeBands.length >= 2 && (
+              <p className="text-[11px] text-violet-700 font-medium mt-2">
+                {formatGradeBandList(teamGradeBands)} 팀으로 설정됩니다. 교육과정 분석시트가 &apos;다양한 학년군&apos; 모드로 열려 학년군별 성취기준을 각각 불러옵니다.
+              </p>
+            )}
+            {teamGradeBands.includes('1-2학년군') && (
+              <p className="text-[11px] text-gray-500 mt-1">
+                1-2학년군에는 국어·수학·통합교과(바른 생활·슬기로운 생활·즐거운 생활)만 있습니다. 사회·과학 등은 3-4학년군부터 시작합니다.
+              </p>
+            )}
           </div>
 
           <div>

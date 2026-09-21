@@ -275,6 +275,11 @@ export interface Project {
   mode: ProjectMode
   schoolLevel: SchoolLevel
   targetGradeGroup: GradeGroup
+  // 팀 학년군 — 서로 다른 학년 담임이 한 팀일 때 실제 학년군 목록.
+  // 정규 라벨('1-2학년군' | '3-4학년군' | '5-6학년군')을 1-2 → 3-4 → 5-6 순서로 저장한다.
+  // targetGradeGroup은 하위 호환용 대표값(= 첫 번째 학년군)으로 계속 유지된다.
+  // 없으면 "팀 전체가 targetGradeGroup 한 학년군"을 뜻한다(기존 프로젝트).
+  teamGradeBands?: string[]
   targetSubjects: string[]
   createdBy: string
   currentStage: StageCode

@@ -13,6 +13,8 @@ import { extractImprovementText, parseNextCycleChoice } from '@/lib/activity/com
 import { resolveNextCycleChoice, type NextCycleChoice } from '@/lib/activity/cycle'
 import { sanitizeArtifactSections } from '@/lib/artifacts/schemas'
 import { mergeMessagesForCycle } from '@/lib/chat/messageCycles'
+import { normalizeTeamGradeBands } from '@/lib/curriculum/teamGradeBands'
+import { toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -879,6 +881,49 @@ export async function updateCurriculumSheetSettings(
     ...payload,
     updatedAt: serverTimestamp(),
   })
+}
+
+/**
+ * 팀 학년군 저장 — 1·3·5학년 담임처럼 서로 다른 학년이 한 팀일 때 그 사실을 프로젝트에 남긴다.
+ * AI가 채팅에서 [TEAM_GRADE_BANDS: …] 신호로 알려오거나 프로젝트 생성 화면에서 고른 값이 들어온다.
+ *
+ * 학년군이 2개 이상이면 분석시트도 '다양한 학년군'(multi) 모드로 열어야 하므로 함께 초기화한다.
+ * 단, 팀이 이미 시트 모드를 직접 고른 프로젝트(curriculumSheetGradeMode 존재)는 건드리지 않는다 —
+ * 채팅 신호가 팀의 명시적 선택을 되돌리면 안 되므로.
+ * undefined 필드는 payload에 넣지 않는다(Firestore는 undefined를 거부한다 — CLAUDE.md).
+ */
+export async function updateTeamGradeBands(
+  projectId: string,
+  bands: readonly (string | null | undefined)[],
+  options: { alsoSetSheetMode?: boolean } = {},
+): Promise<string[]> {
+  const normalized = normalizeTeamGradeBands(bands)
+  if (normalized.length === 0) return []
+
+  const payload: Record<string, unknown> = { teamGradeBands: normalized }
+
+  const alsoSetSheetMode = options.alsoSetSheetMode ?? true
+  if (alsoSetSheetMode && normalized.length >= 2) {
+    const snap = await getDoc(doc(db, 'projects', projectId))
+    const data = snap.exists() ? (snap.data() as Partial<Project>) : null
+    if (!data?.curriculumSheetGradeMode) {
+      payload.curriculumSheetGradeMode = 'multi'
+      // 시트 기준 학년군(행에 값이 없을 때의 기본값)은 프로젝트 대표 학년군에 맞춘다.
+      // 대표 학년군이 팀 학년군에 없으면(중·고 값 등) 첫 번째 학년군을 쓴다.
+      if (!data?.curriculumSheetGradeBand) {
+        const fromTarget = toGradeBandLabel(data?.targetGradeGroup)
+        payload.curriculumSheetGradeBand = fromTarget && (normalized as string[]).includes(fromTarget)
+          ? fromTarget
+          : normalized[0]
+      }
+    }
+  }
+
+  await updateDoc(doc(db, 'projects', projectId), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  })
+  return normalized
 }
 
 // ─── 팀 공통 비전 워크스페이스 공동 편집 ─────────────────────
