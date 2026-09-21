@@ -1,0 +1,51 @@
+{
+  "beforeCommit": "2483a6be8258d8c8d6a7fdd299c4a14221acf9b1",
+  "codeCommit": "aefc4fdecc6eee1523dabfdfb23dcf0e7b0a7e48",
+  "files": [
+    {
+      "path": "src/app/globals.css",
+      "beforeSha256": "ae5cb17f119fe0a9116c4e114c55e40d2af8ea3d4dbdbe34149073abcdc8caa5",
+      "afterSha256": "bc193544e1436082a94898dec3f9de87776ab73dccecee91d3ee90a4a772ec00"
+    },
+    {
+      "path": "src/components/chat/ChatPanel.tsx",
+      "beforeSha256": "5eccb04604a09080dfdf7747f74ffbe3262d1f9437ce885cda2f071c0e2856b8",
+      "afterSha256": "de475a51944800ce8662c6c31d4be2299078ec61ba2d553cfe63998f4a43af0c"
+    },
+    {
+      "path": "src/components/chat/curriculum-sheet/SheetAppBar.tsx",
+      "beforeSha256": "13753cf8db59e3e3583e4bf27e66a57412b44c78c70105f1ec5a48275fc833a9",
+      "afterSha256": "676627f3d8656a9113fd232b08d1beee8b389712aaaad268e7d0ff7a6c95a713"
+    },
+    {
+      "path": "src/components/knowledge-graph/GraphWorkspaceHeader.tsx",
+      "beforeSha256": null,
+      "afterSha256": "85fa89df87828e82226965bdb3aedf039a014ef1e447d1d1b51c261ad1991dc3"
+    },
+    {
+      "path": "src/components/knowledge-graph/GraphToolbar.tsx",
+      "beforeSha256": null,
+      "afterSha256": "bbcbd6fd1b163e4b0f8b24dcbfc90edaa6f54ad6fd68306d87c9bc2ac8e3dfba"
+    },
+    {
+      "path": "src/components/knowledge-graph/GraphCanvas.tsx",
+      "beforeSha256": "7aa1604feb442ae1788b95ac4abe5174cd8e71309eb0028469f5cd1bf7e10d24",
+      "afterSha256": "19f6f77feb8da71c1b03f1d3bcec831facde7e5b00710ccfd1c04ce2a7ba92dc"
+    },
+    {
+      "path": "src/components/knowledge-graph/KnowledgeGraphViewer.tsx",
+      "beforeSha256": "7d0434ad6f5b50cf95345b54cc6a978aa5e4f299cff212cf910d496ba39bbac2",
+      "afterSha256": "40d4233662c2098e8b93e5cead857ea96fa79e0f6c090d233d4968c85af37fce"
+    },
+    {
+      "path": "src/components/knowledge-graph/LeftPanel.tsx",
+      "beforeSha256": "e9a207afdf8f90c1323c8dca7669574340e8eb0a078c64fe119614d38f634225",
+      "afterSha256": "c039170acbdc69b76bc973158b100615f87d71256ae2b613d95aec78b5a9b424"
+    },
+    {
+      "path": "src/components/knowledge-graph/SaveButtons.tsx",
+      "beforeSha256": "f425f9dd677b1d653fc693051030706592acb2dadff4e8fe53decf9369ae9925",
+      "afterSha256": "dc1d2a20df0444fdd8d31448836bd7e53067285e67fc766d2b769d2a3021040d"
+    }
+  ]
+}
