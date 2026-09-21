@@ -1,0 +1,22 @@
+{
+  "url": "https://togethertr.web.app",
+  "checkedAt": "2026-09-21T15:15:31.242Z",
+  "sourceCommit": "d36589b2ea8e7091e805d6c52ce4aebcb141ed7d",
+  "checks": [
+    {
+      "page": "/login",
+      "status": 200,
+      "subjectIconSubset": 12
+    },
+    {
+      "graphClientFile": "/_next/static/chunks/12hdi_jaba4ct.js",
+      "matchesBuild": true,
+      "sha256": "c37dda8f78e1c9ebc2074d7ed5acbf3ee559349ec504b2d4ca6d368d68083e28",
+      "subjectIcons": true,
+      "relationLines": true
+    },
+    {
+      "backendRuntime": "nodejs24"
+    }
+  ]
+}

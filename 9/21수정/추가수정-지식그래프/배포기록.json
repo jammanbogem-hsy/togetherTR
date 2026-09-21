@@ -1,0 +1,34 @@
+{
+  "url": "https://togethertr.web.app",
+  "codeCommit": "d36589b2ea8e7091e805d6c52ce4aebcb141ed7d",
+  "releaseTime": "2026-09-21T15:15:26.937Z",
+  "hostingVersion": "projects/togethertr/sites/togethertr/versions/5ff3dd42e988ed6c",
+  "hostingRelease": "projects/togethertr/sites/togethertr/channels/live/releases/1790003726937000",
+  "previousHostingVersion": "projects/togethertr/sites/togethertr/versions/e1ed9fbc0a2b2252",
+  "buildId": "UVOMsLa0c7bJtiep3WC0_",
+  "runtime": "nodejs24",
+  "checks": {
+    "regressionTestsPassed": 11,
+    "typescript": "passed",
+    "build": "passed",
+    "lintErrors": 0,
+    "lintWarnings": 0,
+    "curriculumValidation": {
+      "passed": 16,
+      "existingWarnings": 3,
+      "failed": 0
+    },
+    "runtimeAssets": "passed",
+    "browser": [
+      "subject icon glyphs render",
+      "node click",
+      "keyboard selection",
+      "drag without accidental selection",
+      "zoom",
+      "fit to view",
+      "relation filter",
+      "analyzed and estimated edge styles"
+    ],
+    "productionClientMatchesBuild": true
+  }
+}
