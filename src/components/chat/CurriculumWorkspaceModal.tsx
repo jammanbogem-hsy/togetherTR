@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { CurriculumSheetModal } from './CurriculumSheetModal'
 import type { CurriculumSheetRow } from '@/types'
@@ -74,25 +74,57 @@ export function CurriculumWorkspaceModal({
     onViewChange?.('sheet')
   }, [onViewChange])
 
-  // 모달 닫힐 때 시트 뷰로 리셋
+  // 전체 화면 뷰라 브라우저 뒤로가기로도 닫혀야 한다.
+  // 열 때 history 항목을 하나 쌓고 popstate에서 닫는다. onClose는 부모에서 인라인
+  // 함수로 오는 경우가 많아 ref로 읽어 effect가 open에만 반응하도록 한다(중복 push 방지).
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
+  const openRef = useRef(open)
+  useEffect(() => { openRef.current = open }, [open])
+
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') return
+    // 이미 우리 항목이 최상단이면 다시 쌓지 않는다(StrictMode·remount 대비).
+    if (!(window.history.state as { tcidSheet?: boolean } | null)?.tcidSheet) {
+      window.history.pushState({ tcidSheet: true }, '')
+    }
+    const handlePop = () => {
+      // 열려 있을 때만 닫는다. cleanup에서는 history를 건드리지 않으므로
+      // (StrictMode의 mount→cleanup→mount가 자기 항목을 pop해 즉시 닫히던 문제)
+      // 남은 항목은 다음 뒤로가기에서 무해하게 소비된다.
+      if (!openRef.current) return
+      setView('sheet')
+      onCloseRef.current()
+    }
+    window.addEventListener('popstate', handlePop)
+    return () => { window.removeEventListener('popstate', handlePop) }
+  }, [open])
+
+  // 전체 화면 동안 배경 스크롤 잠금
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [open])
+
+  // 모달 닫힐 때 시트 뷰로 리셋. history 항목이 우리 것이면 back()으로 소비해
+  // popstate 경로 하나로만 닫는다(이중 pop 방지).
   const handleClose = useCallback(() => {
+    if (typeof window !== 'undefined' && (window.history.state as { tcidSheet?: boolean } | null)?.tcidSheet) {
+      window.history.back()
+      return
+    }
     setView('sheet')
-    onClose()
-  }, [onClose])
+    onCloseRef.current()
+  }, [])
 
   if (!open || typeof document === 'undefined') return null
 
+  // M3 full-screen dialog — 배경·여백 없이 화면을 가득 채운다.
   return createPortal(
-    <div
-      className="fixed inset-0 z-[9000] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.55)' }}
-      onClick={e => { if (e.target === e.currentTarget) handleClose() }}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-        style={{ width: '96vw', maxWidth: 1500, height: '92vh' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[9000] bg-[#FFFFFF]">
+      <div className="flex h-full w-full flex-col overflow-hidden">
         {view === 'sheet' ? (
           <CurriculumSheetModal
             open

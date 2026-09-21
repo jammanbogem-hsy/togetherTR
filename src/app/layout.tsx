@@ -47,6 +47,11 @@ export default function RootLayout({
               // 보고서 섹션
               'assignment', 'bar_chart', 'description', 'lightbulb', 'search',
               'target', 'warning',
+              // 교육과정 분석 시트 (M3 전체 화면)
+              'add', 'arrow_back', 'call_split', 'close', 'delete',
+              'drag_indicator', 'group', 'help', 'hub', 'link', 'save', 'star',
+              // 교육과정 분석맵
+              'fit_screen', 'remove', 'right_panel_close', 'right_panel_open',
             ].sort().join(',') +
             '&display=swap'
           }

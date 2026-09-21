@@ -125,6 +125,31 @@ export interface SheetGradeSettings {
   sheetGradeBand?: string
 }
 
+/**
+ * 같은 핵심아이디어 묶음의 둘째 줄부터 교과 칸에 붙이는 표시.
+ * 마크다운 표의 열 구성을 바꾸지 않고 "앞 줄과 한 묶음"이라는 정보만 실어 보낸다 —
+ * 파서(schemas.ts parseA21Table)가 이 접두어를 떼고 groupWithPrevious로 되살린다.
+ */
+export const A21_GROUP_MARKER = '↳ '
+
+/**
+ * 두 행이 같은 핵심아이디어 묶음인지 — 시트(CurriculumSheetModal.isSameCoreIdeaGroup)와 같은 규칙.
+ * 학년군만 다른 줄(같은 교과·핵심아이디어), 또는 그 핵심아이디어에 붙은 연결 줄
+ * (교과·핵심아이디어는 달라도 linkedCoreIdea가 원본을 가리킨다)을 한 묶음으로 본다.
+ * 규칙이 바뀌면 시트 쪽 함수와 함께 수정해야 한다.
+ */
+function isSameCoreIdeaGroup(row: CurriculumSheetRow, prevRow?: CurriculumSheetRow): boolean {
+  if (!prevRow) return false
+  const rowIdea = (row.coreIdea ?? '').trim()
+  const prevIdea = (prevRow.coreIdea ?? '').trim()
+  if (row.subject && rowIdea && prevRow.subject === row.subject && prevIdea === rowIdea) return true
+  const link = row.linkedCoreIdea
+  if (!link) return false
+  if (prevRow.subject === link.subject && prevIdea === link.coreIdea.trim()) return true
+  const prevLink = prevRow.linkedCoreIdea
+  return !!prevLink && prevLink.subject === link.subject && prevLink.coreIdea.trim() === link.coreIdea.trim()
+}
+
 export function buildCurriculumSheetArtifactProposal(
   rows: CurriculumSheetRow[],
   gradeSettings?: SheetGradeSettings,
@@ -145,9 +170,12 @@ export function buildCurriculumSheetArtifactProposal(
   const analysisTable = [
     '| 교과 | 핵심 아이디어 | 성취기준 | 지식·이해 | 과정·기능 | 가치·태도 | Agent 추천 수업아이디어 | 수업내용 설명 |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
-    ...validRows.map(row => {
+    ...validRows.map((row, index) => {
       const gradeLabel = resolveGradePrefixBandForMode(row, gradeMode, sheetGradeBand)
+      // 앞 줄과 한 묶음인 학년군 줄·연결 줄은 교과 칸에 '↳ '를 붙인다 — 산출물 렌더러가
+      // 시트처럼 교과·핵심아이디어 칸을 묶어(rowSpan) 한 줄로 보여주기 위한 표시.
       const subjectCell = [
+        isSameCoreIdeaGroup(row, validRows[index - 1]) ? A21_GROUP_MARKER : '',
         row.subject || '-',
         isMixedGradeSheet && gradeLabel ? ` (${gradeLabel})` : '',
         row.isCenter ? ' ★중심' : '',

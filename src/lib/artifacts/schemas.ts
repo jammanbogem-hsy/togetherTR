@@ -1192,6 +1192,11 @@ export interface A21Row {
   agentLessonExample?: string      // Agent 추천 수업아이디어
   description?: string             // 교사 수업내용 설명
   isCommon?: boolean        // 공통(팀 조정) 행 여부
+  /**
+   * 앞 줄과 같은 핵심아이디어 묶음인지(학년군만 다른 줄·연결 줄).
+   * 표의 교과 칸 '↳ ' 표시로 전달되고, 렌더러가 교과·핵심아이디어 칸을 묶는 근거로 쓴다.
+   */
+  groupWithPrevious?: boolean
 }
 
 export interface A21Structured {
@@ -1229,7 +1234,13 @@ export function buildA21Structured(sections: Record<string, string>, chat: Array
   return r
 }
 
-function parseA21Table(raw: string): A21Row[] {
+/**
+ * 교과 칸 앞의 묶음 표시('↳ ') — graphSheetBridge.A21_GROUP_MARKER가 붙인다.
+ * 교과명에서 떼어내고 groupWithPrevious로 옮긴다(공통 행 판정에는 영향 없음).
+ */
+const A21_GROUP_MARKER_RE = /^[↳⤷└]\s*/
+
+export function parseA21Table(raw: string): A21Row[] {
   const rows: A21Row[] = []
   const tableLines = raw.split('\n').filter(l => l.trim().startsWith('|'))
   if (tableLines.length < 3) return rows
@@ -1252,7 +1263,9 @@ function parseA21Table(raw: string): A21Row[] {
   const dataLines = tableLines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1)
   for (const line of dataLines) {
     const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(cleanA21Cell)
-    const subject = cells[subjectIdx >= 0 ? subjectIdx : 0] || ''
+    const rawSubject = cells[subjectIdx >= 0 ? subjectIdx : 0] || ''
+    const groupWithPrevious = A21_GROUP_MARKER_RE.test(rawSubject)
+    const subject = rawSubject.replace(A21_GROUP_MARKER_RE, '').trim()
     const coreIdea = cells[coreIdeaIdx >= 0 ? coreIdeaIdx : 1] || ''
     const standard = standardIdx >= 0 ? (cells[standardIdx] || '') : ''
     const knowledge = cells[knowledgeIdx >= 0 ? knowledgeIdx : 2] || ''
@@ -1275,6 +1288,7 @@ function parseA21Table(raw: string): A21Row[] {
         description,
         // '통합'은 공통(팀 조정) 행 표시이지만 '통합교과'(바른·슬기·즐거운 생활)는 실제 교과다.
         isCommon: /공통|팀\s*조정|통합(?!교과)/.test(subject),
+        groupWithPrevious,
       })
     }
   }

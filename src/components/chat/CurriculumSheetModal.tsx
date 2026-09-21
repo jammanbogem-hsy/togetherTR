@@ -5,6 +5,13 @@ import { createPortal } from 'react-dom'
 import type { CurriculumSheetRow } from '@/types'
 import type { CurriculumSheetEditableField, CurriculumSheetPatch } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
+import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
+import { SheetAppBar } from './curriculum-sheet/SheetAppBar'
+import { SheetToolbar, SheetSegmented } from './curriculum-sheet/SheetToolbar'
+import { SheetBottomBar } from './curriculum-sheet/SheetBottomBar'
+import { InputChip, AssistChip, LabelChip } from './curriculum-sheet/SheetChips'
+import { BridgePicker, JUDGE_LABEL } from './curriculum-sheet/BridgePicker'
+import type { BridgeCandidate } from './curriculum-sheet/BridgePicker'
 import { curriculumJsonAssetPath } from '@/lib/curriculum/curriculumFilters'
 import {
   ELEMENTARY_GRADE_BANDS,
@@ -115,26 +122,6 @@ interface AutofillProgress {
   ms?: number
   note?: string
 }
-const JUDGE_LABEL: Record<'jev' | 'embedding', string> = { jev: 'Jev 판정', embedding: '임베딩 유사도(Jev 미사용)' }
-/** 연결 줄 후보 — /api/curriculum-sheet/autofill mode:'bridgeStandards' 응답 항목. */
-interface BridgeCandidate {
-  subject: string
-  code: string
-  text: string
-  standard: string
-  area: string
-  coreIdea: string
-  contentCoreIdea: string
-  score: number
-  level: '무관' | '약함' | '관련' | '핵심'
-}
-const BRIDGE_LEVEL_STYLE: Record<BridgeCandidate['level'], string> = {
-  '핵심': 'bg-[#E6F4EA] text-[#137333]',
-  '관련': 'bg-[#E8F0FE] text-[#1A73E8]',
-  '약함': 'bg-[#FEF7E0] text-[#B06000]',
-  '무관': 'bg-[#F1F3F4] text-[#5F6368]',
-}
-
 /**
  * 두 행이 같은 핵심아이디어 묶음인지 — 학년군만 다른 줄, 또는 그 핵심아이디어에 붙은
  * 연결 줄(교과·핵심아이디어는 달라도 linkedCoreIdea가 원본을 가리킨다).
@@ -325,19 +312,25 @@ function CellPicker({ options, value, onSelect, onClose, anchorRect, placeholder
   return createPortal(
     <div
       ref={ref}
-      className="fixed bg-white rounded-2xl shadow-2xl border border-[#DADCE0] overflow-hidden flex flex-col"
+      className="m3-sheet fixed flex flex-col overflow-hidden rounded-2xl border border-[var(--md-outline-variant)] bg-[var(--md-surface-container-lowest)] shadow-[0_2px_6px_2px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)]"
       style={{ top, left, width: 460, maxHeight: pickerHeight, zIndex: 10050 }}
       onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}
     >
       {/* 헤더: 검색 + 닫기 */}
       <div className="p-3 border-b border-[#F1F3F4]">
         <div className="flex items-center gap-2">
-          <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={placeholder ?? '검색...'} className="flex-1 px-3 py-2 text-base rounded-xl border border-[#DADCE0] focus:outline-none focus:border-[#1A73E8]" />
+          <div className="relative flex-1">
+            <span className="material-symbols-rounded pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[20px] leading-none text-[var(--md-on-surface-variant)]" aria-hidden>search</span>
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+              placeholder={placeholder ?? '검색...'}
+              className="h-12 w-full rounded-xl border border-[var(--md-outline)] bg-[var(--md-surface-container-lowest)] pl-10 pr-3 text-[14px] leading-[20px] text-[var(--md-on-surface)] placeholder:text-[var(--md-on-surface-variant)] focus:border-[var(--md-primary)]" />
+          </div>
           {multi && selected.size > 0 && (
             <span className="text-sm font-bold px-2.5 py-1 rounded-full flex-shrink-0" style={{ color, backgroundColor: `${color}18` }}>{selected.size}개 선택</span>
           )}
-          <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#9AA0A6] hover:text-[#5F6368] text-lg flex-shrink-0 transition">&times;</button>
+          <button onClick={onClose} aria-label="닫기" title="닫기" className="m3-state flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--md-on-surface-variant)]">
+            <span className="material-symbols-rounded text-[20px] leading-none" aria-hidden>close</span>
+          </button>
         </div>
       </div>
       {/* 선택된 항목 미리보기 */}
@@ -424,152 +417,23 @@ interface TagCellProps {
 
 function TagCell({ value, placeholder, color, onClickAdd, onRemove, otherEditor, myEditing, myColor }: TagCellProps) {
   const tags = splitValues(value)
-  const borderStyle = otherEditor ? `2px solid ${otherEditor.color}` : myEditing && myColor ? `2px dashed ${myColor}` : '1px solid #E8EAED'
+  // 프레즌스(다른 사용자·나) 표시는 2px 테두리로 유지, 기본은 M3 outline-variant.
+  const borderStyle = otherEditor
+    ? `2px solid ${otherEditor.color}`
+    : myEditing && myColor ? `2px dashed ${myColor}` : '1px solid var(--md-outline-variant)'
   return (
-    <div className="w-full min-h-[44px] px-2 py-1.5 rounded-xl transition flex flex-col gap-1"
+    <div className="flex min-h-[44px] w-full flex-col items-start gap-1.5 rounded-xl px-2 py-2 transition-colors duration-150"
       style={{ border: borderStyle }}>
       {tags.map((tag, i) => (
-        <div key={i} className="flex items-start gap-1 py-1 border-b last:border-b-0"
-          style={{ borderColor: `${color}20` }}>
-          <span className="flex-1 text-sm leading-relaxed break-words" style={{ color }}>{tag}</span>
-          <button onClick={e => { e.stopPropagation(); onRemove(tag) }}
-            className="w-5 h-5 rounded-full hover:bg-black/10 flex items-center justify-center text-base flex-shrink-0 text-[#9AA0A6] hover:text-[#C5221F]">&times;</button>
-        </div>
+        <InputChip key={i} label={tag} color={color} onRemove={() => onRemove(tag)} removeTitle={`${tag} 제거`} />
       ))}
-      <button onClick={onClickAdd}
-        className="inline-flex items-center gap-1 px-1 py-1 rounded-lg text-sm font-semibold hover:bg-[#F1F3F4] transition self-start"
-        style={{ color: tags.length ? '#9AA0A6' : color }}>
-        + {tags.length ? '추가' : placeholder}
-      </button>
+      <AssistChip
+        label={tags.length ? '추가' : placeholder ?? '추가'}
+        color={tags.length ? 'var(--md-on-surface-variant)' : color}
+        onClick={onClickAdd}
+        title={tags.length ? `${placeholder ?? ''} 추가` : placeholder}
+      />
     </div>
-  )
-}
-
-// ─── 연결 줄: 유사 성취기준 찾기 팝오버 ──────────────────
-
-interface BridgePickerProps {
-  anchorRect: DOMRect | null
-  sourceSubject: string
-  sourceCoreIdea: string
-  targetBand: string
-  loading: boolean
-  error?: string
-  notes: string[]
-  judge?: 'jev' | 'embedding'
-  candidates: BridgeCandidate[]
-  subjectsSearched: string[]
-  subjectFilter: string
-  onSubjectFilterChange: (subject: string) => void
-  onSelect: (candidate: BridgeCandidate) => void
-  onClose: () => void
-}
-
-function BridgePicker({
-  anchorRect, sourceSubject, sourceCoreIdea, targetBand, loading, error, notes, judge,
-  candidates, subjectsSearched, subjectFilter, onSubjectFilterChange, onSelect, onClose,
-}: BridgePickerProps) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose() }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [onClose])
-
-  const shown = subjectFilter
-    ? candidates.filter(candidate => candidate.subject === subjectFilter)
-    : candidates
-
-  if (!anchorRect) return null
-  const pickerHeight = Math.min(560, window.innerHeight - 24)
-  const top = Math.max(12, Math.min(anchorRect.bottom + 4, window.innerHeight - pickerHeight - 12))
-  const left = Math.max(12, Math.min(anchorRect.left, window.innerWidth - 520 - 12))
-
-  return createPortal(
-    <div
-      ref={ref}
-      className="fixed bg-white rounded-2xl shadow-2xl border border-[#DADCE0] overflow-hidden flex flex-col"
-      style={{ top, left, width: 520, maxHeight: pickerHeight, zIndex: 10050 }}
-      onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}
-    >
-      <div className="p-3 border-b border-[#F1F3F4] flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h4 className="text-base font-bold text-[#202124]">
-            {targetBand} 유사 성취기준 찾기
-          </h4>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-[#5F6368] line-clamp-2" title={sourceCoreIdea}>
-            {sourceSubject} 핵심아이디어: {sourceCoreIdea}
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {judge && (
-            <span title={JUDGE_LABEL[judge]}
-              className={cn('px-2 py-0.5 rounded-full text-[12px] font-bold', judge === 'jev' ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#F1F3F4] text-[#5F6368]')}>
-              {judge === 'jev' ? 'Jev' : '임베딩'}
-            </span>
-          )}
-          <button onClick={onClose} className="w-9 h-9 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#9AA0A6] hover:text-[#5F6368] text-lg transition">&times;</button>
-        </div>
-      </div>
-
-      {notes.length > 0 && (
-        <ul className="px-3 py-2 border-b border-[#FDD663] bg-[#FEF7E0] space-y-0.5">
-          {notes.map((note, noteIdx) => (
-            <li key={noteIdx} className="text-[13px] leading-relaxed text-[#8A5A00]">· {note}</li>
-          ))}
-        </ul>
-      )}
-
-      {subjectsSearched.length > 0 && (
-        <div className="px-3 py-2 border-b border-[#F1F3F4] flex flex-wrap items-center gap-1.5">
-          {['', ...subjectsSearched].map(subject => (
-            <button
-              key={subject || '전체'}
-              onClick={() => onSubjectFilterChange(subject)}
-              className={cn(
-                'px-2.5 py-0.5 rounded-full text-[13px] font-bold border transition',
-                subjectFilter === subject
-                  ? 'bg-[#E8F0FE] border-[#C2D7F8] text-[#1A73E8]'
-                  : 'bg-white border-[#E8EAED] text-[#5F6368] hover:border-[#DADCE0]',
-              )}
-            >
-              {subject || '전체'}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto">
-        {loading && <p className="px-4 py-8 text-center text-base text-[#9AA0A6]">유사 성취기준을 찾고 있습니다...</p>}
-        {!loading && error && <p className="px-4 py-6 text-base font-semibold text-[#A50E0E]">{error}</p>}
-        {!loading && !error && shown.length === 0 && (
-          <p className="px-4 py-8 text-center text-base text-[#9AA0A6]">후보가 없습니다. 교과 필터를 넓혀 보세요.</p>
-        )}
-        {!loading && shown.map(candidate => (
-          <button
-            key={`${candidate.subject}:${candidate.code}`}
-            onClick={() => onSelect(candidate)}
-            className="w-full text-left px-4 py-3 border-b border-[#F1F3F4] hover:bg-[#F8F9FA] transition"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[13px] font-bold text-[#5F6368]">{candidate.subject}</span>
-              {candidate.area && <span className="text-[12px] font-semibold text-[#7B1FA2]">{candidate.area}</span>}
-              <span className={cn('ml-auto px-2 py-0.5 rounded-full text-[12px] font-bold flex-shrink-0', BRIDGE_LEVEL_STYLE[candidate.level] ?? BRIDGE_LEVEL_STYLE['무관'])}>
-                {candidate.level} {candidate.score.toFixed(2)}
-              </span>
-            </div>
-            {/* code는 이미 '[2슬02-01]' 형태로 대괄호를 포함한다. standard('[코드] 본문')를 그대로 쓴다. */}
-            <p className="text-base leading-relaxed text-[#1A73E8]">{candidate.standard || `${candidate.code} ${candidate.text}`.trim()}</p>
-            {(candidate.contentCoreIdea || candidate.coreIdea) && (
-              <p className="mt-1 text-[13px] leading-relaxed text-[#5F6368]">
-                핵심아이디어: {candidate.contentCoreIdea || candidate.coreIdea}
-              </p>
-            )}
-          </button>
-        ))}
-      </div>
-    </div>,
-    document.body,
   )
 }
 
@@ -629,6 +493,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     error?: string
   }>({ loading: false, candidates: [], subjectsSearched: [], notes: [] })
   const [bridgeSubjectFilter, setBridgeSubjectFilter] = useState('')
+  // 표시 전용 — 도움말 토글, 표 스크롤 시 앱 바 승격
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [tableScrolled, setTableScrolled] = useState(false)
   const [rowFillState, setRowFillState] = useState<Record<string, { loading?: boolean; judge?: 'jev' | 'embedding'; filled?: number; error?: string; notes?: string[] }>>({})
   const [autofillError, setAutofillError] = useState('')
   // 서버가 돌려준 교사 안내 문구(학년군 조정·교과 제외·핵심아이디어 대체 사유).
@@ -759,6 +626,19 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     setDirty(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // Esc — 열린 팝오버를 먼저 닫고, 없으면 시트를 닫는다.
+  useEffect(() => {
+    if (!open) return
+    function handleKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      if (bridgeTarget) { setBridgeTarget(null); return }
+      if (pickerTarget) { setPickerTarget(null); return }
+      onClose()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [open, bridgeTarget, pickerTarget, onClose])
 
   useEffect(() => {
     if (!open && onPresenceUpdate) onPresenceUpdate(null)
@@ -1598,6 +1478,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
   const allEditors = presence ? [...new Map(Object.values(presence).filter(p => Date.now() - p.updatedAt < 20000).map(p => [p.uid, p] as const)).values()] : []
   const myColor = currentUserColor ?? (currentUid ? PRESENCE_COLORS[(currentUid.charCodeAt(0) + currentUid.charCodeAt(Math.min(currentUid.length - 1, 5))) % PRESENCE_COLORS.length] : '#999')
+  // 앱 바 보조 줄 — 기존 dirty/저장됨 상태를 그대로 문장으로 보여 준다.
+  const filledRowCount = rows.filter(r => r.subject || r.coreIdea || r.standard).length
+  const statusLine = dirty
+    ? '저장 중…'
+    : `${rows.some(r => r.subject) ? '저장됨' : '작성 전'} · ${rows.length}행${filledRowCount > 0 ? ` (입력 ${filledRowCount}행)` : ''}`
   // 학년군 UI는 초등 학년군이 판정되는 시트에서만 노출한다(중·고는 기존 화면 그대로).
   const showGradeBandUI = !!sheetBand
   // 다양한 학년군 모드에서만 "핵심아이디어 1행 + 학년군별 줄" 묶음 렌더링을 쓴다.
@@ -1652,7 +1537,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             onChange={e => updateRow(row.id, 'gradeBand', e.target.value)}
             onFocus={() => updatePresence(`${row.id}:gradeBand`)}
             title={allowedBands.length === 1 ? '통합교과는 1~2학년군에만 있습니다' : '이 줄의 학년군 — 성취기준·내용 요소 후보가 이 학년군으로 바뀝니다'}
-            className="w-full px-1.5 py-1 rounded-lg border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-[13px] font-semibold text-[#5F6368] cursor-pointer disabled:cursor-default disabled:bg-[#F8F9FA]"
+            aria-label="이 줄의 학년군"
+            className="h-10 w-full cursor-pointer appearance-none rounded-lg border border-[var(--md-outline)] bg-[var(--md-surface-container-lowest)] bg-no-repeat px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-low)] disabled:cursor-default disabled:bg-[var(--md-surface-container)]"
+            style={{
+              // M3 메뉴 버튼 느낌 — 우측 expand_more 표시(SVG 인라인, 폰트 의존 없음)
+              backgroundImage: 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'20\' viewBox=\'0 0 24 24\' fill=\'%23444746\'><path d=\'M7 10l5 5 5-5z\'/></svg>")',
+              backgroundPosition: 'right 6px center',
+              paddingRight: 26,
+            }}
           >
             {allowedBands.map(band => (
               <option key={band} value={band}>
@@ -1670,9 +1562,10 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
               : !row.subject || !row.coreIdea?.trim()
                 ? '과목과 핵심아이디어를 먼저 선택하세요'
                 : '이 핵심아이디어의 학년군을 모두 사용했습니다'}
-            className="w-full px-1.5 py-1 rounded-lg border border-[#C2D7F8] text-[11px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE] disabled:opacity-40 disabled:hover:bg-transparent transition truncate"
+            className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg px-2 text-[14px] font-medium leading-[20px] text-[var(--md-primary)] transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40"
           >
-            ＋ 학년군 줄
+            <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>add</span>
+            <span className="truncate">학년군 줄</span>
           </button>
         )}
         {inBandCell && lackingBands.map(band => (
@@ -1680,18 +1573,20 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             key={band}
             onClick={() => addBridgeRow(row, band)}
             title={`${row.subject}는 ${band} 성취기준이 없습니다. 다른 교과의 ${band} 성취기준을 이 핵심아이디어에 연결하는 줄을 추가합니다`}
-            className="w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
+            className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-tertiary-container)] transition-colors duration-150"
           >
-            ＋ {band} 연결 줄
+            <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>call_split</span>
+            <span className="truncate">{band.replace('학년군', '')} 연결 줄</span>
           </button>
         ))}
         {inBandCell && !!row.linkedCoreIdea && !!rowBand && (
           <button
             onClick={e => { void openBridgePicker(row, (e.currentTarget as HTMLElement).getBoundingClientRect()) }}
             title={`${row.linkedCoreIdea.subject} 핵심아이디어에 맞는 ${rowBand} 성취기준 후보를 찾습니다`}
-            className="w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
+            className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-tertiary-container)] transition-colors duration-150"
           >
-            유사 성취기준 찾기
+            <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>search</span>
+            <span className="truncate">유사 성취기준</span>
           </button>
         )}
         {showAiStandard && (
@@ -1699,39 +1594,42 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             onClick={() => { void handleRowJevFill(row) }}
             disabled={!!fill?.loading}
             title="이 학년군의 성취기준과 비어 있는 내용 요소를 AI 판정(Jev)으로 제안받습니다"
-            className="w-full px-1.5 py-1 rounded-lg border border-[#A8DAB5] text-[11px] font-bold text-[#137333] hover:bg-[#E6F4EA] disabled:opacity-40 disabled:hover:bg-transparent transition truncate"
+            className="m3-state inline-flex h-10 w-full items-center gap-1.5 rounded-lg bg-[var(--md-primary-container)] px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-primary-container)] transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40"
           >
-            {fill?.loading ? '판정 중...' : 'AI 성취기준 제안'}
+            <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>auto_awesome</span>
+            <span className="truncate">{fill?.loading ? '판정 중…' : 'AI 성취기준'}</span>
           </button>
         )}
         {fill?.judge && !fill.error && (
           <span
             title={JUDGE_LABEL[fill.judge]}
             className={cn(
-              'px-1.5 py-0.5 rounded-md text-[11px] font-bold text-center',
-              fill.judge === 'jev' ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#F1F3F4] text-[#5F6368]',
+              'rounded-lg px-2 py-0.5 text-center text-[12px] font-medium leading-[16px]',
+              fill.judge === 'jev'
+                ? 'bg-[var(--md-tertiary-container)] text-[var(--md-on-tertiary-container)]'
+                : 'bg-[var(--md-surface-container-high)] text-[var(--md-on-surface-variant)]',
             )}
           >
             {fill.judge === 'jev' ? 'Jev' : '임베딩'} {fill.filled ? `${fill.filled}칸` : '추가 없음'}
           </span>
         )}
         {fill?.error && (
-          <span title={[fill.error, ...(fill.notes ?? [])].join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FCE8E6] text-[11px] font-bold text-[#A50E0E] truncate">
+          <span title={[fill.error, ...(fill.notes ?? [])].join('\n')} className="truncate rounded-lg bg-[var(--md-error-container)] px-2 py-0.5 text-[12px] font-medium leading-[16px] text-[var(--md-on-error-container)]">
             {fill.error}
           </span>
         )}
         {!fill?.error && fill?.notes?.length ? (
-          <span title={fill.notes.join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FEF7E0] text-[11px] font-semibold text-[#8A5A00] leading-snug line-clamp-2">
+          <span title={fill.notes.join('\n')} className="line-clamp-2 rounded-lg bg-[var(--md-secondary-container)] px-2 py-0.5 text-[12px] font-medium leading-[16px] text-[var(--md-on-secondary-container)]">
             {fill.notes[0]}
           </span>
         ) : null}
         {/* 한 학년군 모드에서 통합교과 줄만 1~2학년군으로 동작함을 알린다 */}
         {showGradeBandUI && integratedBandMismatch(row, sheetMode, sheetBand) && (
-          <p className="px-1 text-[11px] font-semibold leading-snug text-[#B06000]">이 줄만 1-2학년군</p>
+          <p className="px-1 text-[12px] font-medium leading-[16px] text-[var(--md-on-secondary-container)]">이 줄만 1-2학년군</p>
         )}
         {/* 그 학년군에 교과 성취기준이 없음 — 성취기준·내용 요소가 모두 비는 이유 */}
         {showGradeBandUI && noStandards && (
-          <p title={noStandardsMessage} className="px-1 text-[11px] font-semibold leading-snug text-[#B06000]">
+          <p title={noStandardsMessage} className="px-1 text-[12px] font-medium leading-[16px] text-[var(--md-on-secondary-container)]">
             {noStandardsMessage}
           </p>
         )}
@@ -1748,115 +1646,120 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   // 래퍼(CurriculumWorkspaceModal)가 portal을 관리. 여기서는 컨테이너를 채우는 div만 반환.
   return (
     <>
-    <div className="w-full h-full flex flex-col bg-white rounded-2xl overflow-hidden">
+    <div className="m3-sheet w-full h-full flex flex-col bg-[var(--md-surface)] overflow-hidden">
 
-        {/* ── 헤더 ── */}
-        <div className="px-6 py-4 border-b border-[#DADCE0] bg-[#FAFAFA] flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h2 className="text-lg font-bold text-[#202124]">교육과정 분석 시트</h2>
-            {dirty && <span className="text-sm text-[#F9AB00] font-semibold animate-pulse">자동 저장 중...</span>}
-            {!dirty && rows.some(r => r.subject) && <span className="text-sm text-[#137333] font-semibold">저장됨</span>}
+        {/* ── 상단 앱 바 ── */}
+        <SheetAppBar
+          title="교육과정 분석 시트"
+          supporting={statusLine}
+          elevated={tableScrolled}
+          onClose={onClose}
+        >
+          {/* 프레즌스 아바타 */}
+          <div className="flex items-center -space-x-1.5">
+            {currentUid && (
+              <span className="w-9 h-9 rounded-full flex items-center justify-center text-[14px] font-medium text-white border-2 border-[var(--md-surface)] relative z-10"
+                style={{ backgroundColor: myColor }} title={`${currentUserName} (나)`}>{(currentUserName ?? '?').charAt(0)}</span>
+            )}
+            {allEditors.filter(p => p.uid !== currentUid).map(p => (
+              <span key={p.uid} className="w-9 h-9 rounded-full flex items-center justify-center text-[14px] font-medium text-white border-2 border-[var(--md-surface)]"
+                style={{ backgroundColor: p.color }} title={`${p.displayName} 편집 중`}>{p.displayName.charAt(0)}</span>
+            ))}
           </div>
-          <div className="flex items-center gap-3">
-            {/* 프레즌스 아바타 */}
-            <div className="flex items-center -space-x-1.5">
-              {currentUid && (
-                <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-white relative z-10"
-                  style={{ backgroundColor: myColor }} title={`${currentUserName} (나)`}>{(currentUserName ?? '?').charAt(0)}</span>
-              )}
-              {allEditors.filter(p => p.uid !== currentUid).map(p => (
-                <span key={p.uid} className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white border-2 border-white"
-                  style={{ backgroundColor: p.color }} title={`${p.displayName} 편집 중`}>{p.displayName.charAt(0)}</span>
-              ))}
-            </div>
-            <button onClick={handleManualSave}
-              className="px-4 py-2 rounded-xl text-base font-bold bg-[#1A73E8] text-white hover:bg-[#1557B0] transition shadow-sm">저장</button>
-            <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-[#F1F3F4] flex items-center justify-center text-[#5F6368] text-xl transition">&times;</button>
-          </div>
-        </div>
+          <MD3Button
+            variant="filled"
+            tone="blue"
+            onClick={handleManualSave}
+            icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.sm }} aria-hidden>save</span>}
+          >
+            저장
+          </MD3Button>
+        </SheetAppBar>
 
-        {/* ── 학년군 모드 ── */}
+        {/* ── 툴바: 학년군 모드 ── */}
         {showGradeBandUI && (
-          <div className="px-6 py-2.5 border-b border-[#E8EAED] bg-white flex flex-col gap-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-xl border border-[#DADCE0] overflow-hidden" role="group" aria-label="학년군 모드">
-                {([['single', '한 학년군'], ['multi', '다양한 학년군']] as const).map(([mode, label], modeIdx) => (
-                  <button
-                    key={mode}
-                    onClick={() => { if (sheetMode !== mode) void changeGradeSettings({ gradeMode: mode, ...(sheetBand ? { gradeBand: sheetBand } : {}) }) }}
-                    aria-pressed={sheetMode === mode}
-                    title={mode === 'single'
-                      ? '시트 전체가 학년군 하나를 씁니다 (한 학년 팀)'
-                      : '행마다 학년군을 고릅니다 (1·3·5학년처럼 여러 학년이 함께할 때)'}
-                    className={cn(
-                      'px-3 py-1.5 text-sm font-bold transition',
-                      modeIdx > 0 && 'border-l border-[#DADCE0]',
-                      sheetMode === mode ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'bg-white text-[#5F6368] hover:bg-[#F1F3F4]',
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {sheetMode === 'single' && (
-                <select
-                  value={sheetBand}
-                  onChange={e => { void changeGradeSettings({ gradeMode: 'single', gradeBand: e.target.value }) }}
-                  title="시트 전체가 사용할 학년군 — 프로젝트 학년군과 달라도 됩니다"
-                  className="px-2.5 py-1.5 rounded-xl border border-[#DADCE0] hover:border-[#9AA0A6] focus:border-[#1A73E8] focus:outline-none bg-white text-sm font-bold text-[#202124] cursor-pointer"
-                >
-                  {ELEMENTARY_GRADE_BANDS.map(band => <option key={band} value={band}>{band}</option>)}
-                </select>
-              )}
-              {sheetMode === 'multi' && (
-                <span className="text-[13px] font-semibold text-[#5F6368]">
-                  기본 학년군 {sheetBand} · 행마다 변경 가능
-                </span>
-              )}
-            </div>
-            <p className="text-sm leading-relaxed text-[#5F6368]">
-              한 학년군 팀은 위에서 학년군을 고르면 됩니다. 여러 학년 선생님이 함께라면 &lsquo;다양한 학년군&rsquo;으로 바꾸고, 핵심아이디어 행 안에서 &lsquo;＋ 학년군 줄&rsquo;로 학년군별 줄을 나눠 성취기준을 연결하세요. 성취기준이 비어 있는 줄은 &lsquo;AI 성취기준 제안&rsquo;으로 받을 수도 있습니다.
-            </p>
-          </div>
+          <SheetToolbar
+            helpOpen={helpOpen}
+            onToggleHelp={() => setHelpOpen(prev => !prev)}
+            helpText="한 학년군 팀은 위에서 학년군을 고르면 됩니다. 여러 학년 선생님이 함께라면 ‘다양한 학년군’으로 바꾸고, 핵심아이디어 행 안에서 ‘＋ 학년군 줄’로 학년군별 줄을 나눠 성취기준을 연결하세요. 성취기준이 비어 있는 줄은 ‘AI 성취기준 제안’으로 받을 수도 있습니다."
+          >
+            <SheetSegmented
+              ariaLabel="학년군 모드"
+              value={sheetMode}
+              onChange={mode => { void changeGradeSettings({ gradeMode: mode, ...(sheetBand ? { gradeBand: sheetBand } : {}) }) }}
+              options={[
+                { value: 'single', label: '한 학년군', title: '시트 전체가 학년군 하나를 씁니다 (한 학년 팀)' },
+                { value: 'multi', label: '다양한 학년군', title: '행마다 학년군을 고릅니다 (1·3·5학년처럼 여러 학년이 함께할 때)' },
+              ]}
+            />
+            {sheetMode === 'single' && (
+              <SheetSegmented
+                compact
+                ariaLabel="시트 학년군"
+                value={sheetBand}
+                onChange={band => { void changeGradeSettings({ gradeMode: 'single', gradeBand: band }) }}
+                options={ELEMENTARY_GRADE_BANDS.map(band => ({
+                  value: band,
+                  label: band.replace('학년군', ''),
+                  title: `${band} — 프로젝트 학년군과 달라도 됩니다`,
+                }))}
+              />
+            )}
+            {sheetMode === 'multi' && (
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-medium leading-[16px] text-[var(--md-on-surface-variant)]">
+                <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>group</span>
+                기본 학년군 {sheetBand} · 줄마다 변경 가능
+              </span>
+            )}
+          </SheetToolbar>
         )}
 
         {/* ── 지식 그래프 안내 ── */}
         {showGraphPrompt && onSwitchToGraph && (
-          <div className="px-6 py-3 bg-[#F3E5F5] border-b border-[#CE93D8] flex items-center justify-between gap-4">
-            <p className="text-base text-[#4A148C]"><span className="font-bold">저장 완료!</span> 중심 교과를 기준으로 지식 그래프와 수업 예시를 생성할 수 있습니다.</p>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button onClick={() => { setShowGraphPrompt(false); onSwitchToGraph?.(rows) }}
-                className="px-4 py-2 rounded-full text-base font-bold bg-[#7B1FA2] text-white hover:bg-[#6A1B9A] transition shadow-sm">지식 그래프 확인</button>
-              <button onClick={() => setShowGraphPrompt(false)}
-                className="px-3 py-2 rounded-full text-base font-semibold text-[#7B1FA2] hover:bg-[#E1BEE7] transition">닫기</button>
+          <div className="flex items-center justify-between gap-4 border-b border-[var(--md-outline-variant)] bg-[var(--md-tertiary-container)] px-4 py-3">
+            <p className="text-[14px] leading-[20px] text-[var(--md-on-tertiary-container)]">
+              <span className="font-medium">저장 완료</span> · 중심 교과를 기준으로 지식 그래프와 수업 예시를 생성할 수 있습니다.
+            </p>
+            <div className="flex shrink-0 items-center gap-2">
+              <MD3Button
+                variant="filled"
+                tone="purple"
+                onClick={() => { setShowGraphPrompt(false); onSwitchToGraph?.(rows) }}
+                icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.sm }} aria-hidden>hub</span>}
+              >
+                지식 그래프 확인
+              </MD3Button>
+              <MD3Button variant="text" tone="purple" onClick={() => setShowGraphPrompt(false)}>닫기</MD3Button>
             </div>
           </div>
         )}
 
         {/* ── AI 자동 채우기: 핵심아이디어 확인 ── */}
         {(autofillReview || autofillError || autofillNotes.length > 0) && (
-          <div className="px-6 py-4 bg-[#F8F9FA] border-b border-[#DADCE0]">
+          <div className="border-b border-[var(--md-outline-variant)] bg-[var(--md-surface-container-low)] px-4 py-4">
             {autofillError && (
-              <div className="mb-3 rounded-xl border border-[#F28B82] bg-[#FCE8E6] px-4 py-3 text-base font-semibold text-[#A50E0E]">
+              <div className="mb-3 rounded-xl bg-[var(--md-error-container)] px-4 py-3 text-[14px] font-medium leading-[20px] text-[var(--md-on-error-container)]">
                 {autofillError}
               </div>
             )}
             {/* 서버 안내 — 학년군 조정·교과 제외·핵심아이디어 대체 사유 */}
             {autofillNotes.length > 0 && (
-              <div className="mb-3 rounded-xl border border-[#FDD663] bg-[#FEF7E0] px-4 py-3">
+              <div className="mb-3 rounded-xl bg-[var(--md-secondary-container)] px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <ul className="flex-1 space-y-1">
                     {autofillNotes.map((note, noteIdx) => (
-                      <li key={noteIdx} className="text-sm leading-relaxed text-[#8A5A00]">· {note}</li>
+                      <li key={noteIdx} className="text-[14px] leading-[20px] text-[var(--md-on-secondary-container)]">· {note}</li>
                     ))}
                   </ul>
-                  <button onClick={() => setAutofillNotes([])} title="안내 닫기"
-                    className="w-7 h-7 rounded-full hover:bg-[#FDE9B8] flex items-center justify-center text-[#B06000] flex-shrink-0">&times;</button>
+                  <button onClick={() => setAutofillNotes([])} aria-label="안내 닫기" title="안내 닫기"
+                    className="m3-state flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--md-on-secondary-container)]">
+                    <span className="material-symbols-rounded text-[20px] leading-none" aria-hidden>close</span>
+                  </button>
                 </div>
               </div>
             )}
             {autofillReview && (
-              <div className="rounded-2xl border border-[#DADCE0] bg-white shadow-sm overflow-hidden">
+              <div className="overflow-hidden rounded-2xl bg-[var(--md-surface-container-lowest)] shadow-[0_2px_6px_2px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)]">
                 <div className="px-5 py-4 border-b border-[#F1F3F4] flex items-start justify-between gap-4">
                   <div>
                     <h3 className="text-base font-bold text-[#202124]">핵심아이디어 확인</h3>
@@ -1964,13 +1867,17 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     )
                   })}
                 </div>
-                <div className="px-5 py-4 border-t border-[#F1F3F4] flex items-center justify-end gap-2">
-                  <button onClick={() => setAutofillReview(null)}
-                    className="px-4 py-2 rounded-xl text-base font-bold text-[#5F6368] hover:bg-[#F1F3F4] transition">취소</button>
-                  <button onClick={applyAutofillReview} disabled={autofillLoading}
-                    className="px-4 py-2 rounded-xl text-base font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm">
-                    {autofillLoading ? '분석표 생성 중...' : '성취기준 추천 및 분석표 생성'}
-                  </button>
+                <div className="flex items-center justify-end gap-2 border-t border-[var(--md-outline-variant)] px-5 py-3">
+                  <MD3Button variant="text" tone="neutral" onClick={() => setAutofillReview(null)}>취소</MD3Button>
+                  <MD3Button
+                    variant="filled"
+                    tone="green"
+                    onClick={applyAutofillReview}
+                    disabled={autofillLoading}
+                    icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.sm }} aria-hidden>auto_awesome</span>}
+                  >
+                    {autofillLoading ? '분석표 생성 중…' : '성취기준 추천 및 분석표 생성'}
+                  </MD3Button>
                 </div>
               </div>
             )}
@@ -1978,11 +1885,18 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
         )}
 
         {/* ── 테이블 ── */}
-        <div className="flex-1 min-h-0 overflow-hidden bg-white">
+        <div className="flex-1 min-h-0 overflow-hidden bg-[var(--md-surface)]">
           {loading ? (
-            <div className="py-20 text-center text-base text-[#9AA0A6]">교육과정 데이터 로딩 중...</div>
+            <div className="py-20 text-center text-[14px] leading-[20px] text-[var(--md-on-surface-variant)]">교육과정 데이터 로딩 중...</div>
           ) : (
-            <div className="h-full overflow-auto" style={{ scrollbarGutter: 'stable both-edges' }}>
+            <div
+              className="h-full overflow-auto"
+              style={{ scrollbarGutter: 'stable both-edges' }}
+              onScroll={e => {
+                const scrolled = (e.currentTarget as HTMLElement).scrollTop > 4
+                setTableScrolled(prev => (prev === scrolled ? prev : scrolled))
+              }}
+            >
               <table className="table-fixed border-collapse" style={{ width: tableWidth, minWidth: tableWidth }}>
                 <colgroup>
                   <col style={{ width: 36 }} />
@@ -1998,18 +1912,18 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                   <col style={{ width: 59 }} />
                 </colgroup>
                 <thead className="sticky top-0 z-10">
-                  <tr className="bg-[#F8F9FA] border-b-2 border-[#DADCE0]">
-                    <th className="px-1 py-3 sticky left-0 z-20 bg-[#F8F9FA]" />
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap sticky left-[36px] z-20 bg-[#F8F9FA] border-r border-[#DADCE0]">과목</th>
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#7B1FA2] whitespace-nowrap">핵심아이디어</th>
-                    {groupingEnabled && <th className="px-2 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap">학년군</th>}
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#1A73E8] whitespace-nowrap">성취기준</th>
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#0D47A1] whitespace-nowrap">지식·이해</th>
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#137333] whitespace-nowrap">과정·기능</th>
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#8A5A00] whitespace-nowrap">가치·태도</th>
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#7B1FA2] whitespace-nowrap">Agent 추천 수업 예시</th>
-                    <th className="px-3 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap">수업내용 설명</th>
-                    <th className="px-2 py-3 sticky right-0 z-20 bg-[#F8F9FA] border-l border-[#DADCE0]" />
+                  <tr className="h-12 bg-[var(--md-surface-container)] border-b border-[var(--md-outline-variant)] text-[14px] font-medium leading-[20px] text-[var(--md-on-surface-variant)]">
+                    <th className="px-1 sticky left-0 z-20 bg-[var(--md-surface-container)]" />
+                    <th className="px-3 text-left whitespace-nowrap sticky left-[36px] z-20 bg-[var(--md-surface-container)] border-r border-[var(--md-outline-variant)]">과목</th>
+                    <th className="px-3 text-left whitespace-nowrap">핵심아이디어</th>
+                    {groupingEnabled && <th className="px-2 text-left whitespace-nowrap">학년군</th>}
+                    <th className="px-3 text-left whitespace-nowrap">성취기준</th>
+                    <th className="px-3 text-left whitespace-nowrap">지식·이해</th>
+                    <th className="px-3 text-left whitespace-nowrap">과정·기능</th>
+                    <th className="px-3 text-left whitespace-nowrap">가치·태도</th>
+                    <th className="px-3 text-left whitespace-nowrap">Agent 추천 수업 예시</th>
+                    <th className="px-3 text-left whitespace-nowrap">수업내용 설명</th>
+                    <th className="px-2 sticky right-0 z-20 bg-[var(--md-surface-container)] border-l border-[var(--md-outline-variant)]" />
                   </tr>
                 </thead>
                 <tbody>
@@ -2037,32 +1951,37 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     onDragEnd={isLeader ? (() => { setDragRowId(null); setDragOverRowId(null) }) : undefined}
                     onDrop={isLeader ? (() => handleDrop(leader.id)) : undefined}
                     className={cn(
-                      'hover:bg-[#F8F9FA] group transition-colors',
-                      !groupingEnabled && 'border-b border-[#E8EAED]',
-                      groupingEnabled && isLastLine && 'border-b-2 border-b-[#DADCE0]',
-                      groupingEnabled && !isLeader && 'border-t border-dashed border-t-[#E8EAED]',
-                      isLeader && dragOverRowId === leader.id && dragRowId !== leader.id && 'border-t-2 border-t-[#1A73E8] bg-[#E8F0FE]',
+                      'group transition-colors duration-150 hover:bg-[var(--md-surface-container-low)]',
+                      !groupingEnabled && 'border-b border-[var(--md-outline-variant)]',
+                      groupingEnabled && isLastLine && 'border-b border-[var(--md-outline-variant)]',
+                      groupingEnabled && !isLeader && 'border-t border-dashed border-t-[var(--md-outline-variant)]',
+                      isLeader && dragOverRowId === leader.id && dragRowId !== leader.id && 'border-t-2 border-t-[var(--md-primary)] bg-[var(--md-primary-container)]',
                     )}
                   >
                     {/* 드래그 핸들 — 좌측 고정 (묶음 전체를 옮긴다) */}
                     {isLeader && (
-                    <td rowSpan={group.length} className={cn('px-1 py-2 align-top text-center cursor-grab active:cursor-grabbing sticky left-0 z-[5] bg-white group-hover:bg-[#F8F9FA]', leaderSpanBorder)}>
-                      <span className="text-[#DADCE0] hover:text-[#9AA0A6] text-base select-none">⠿</span>
+                    <td rowSpan={group.length} className={cn('px-1 py-2 align-top text-center cursor-grab active:cursor-grabbing sticky left-0 z-[5] bg-[var(--md-surface-container-lowest)] group-hover:bg-[var(--md-surface-container-low)]', leaderSpanBorder)}>
+                      <span className="material-symbols-rounded text-[20px] leading-none text-[var(--md-outline-variant)] hover:text-[var(--md-on-surface-variant)]" aria-hidden>drag_indicator</span>
                     </td>
                     )}
 
                     {/* 과목 + 중심교과 — 좌측 고정 (묶음 대표) */}
                     {isLeader && (
-                    <td rowSpan={group.length} className={cn('px-2 py-2 align-top sticky left-[36px] z-[5] bg-white group-hover:bg-[#F8F9FA] border-r border-[#E8EAED]', leaderSpanBorder)}>
+                    <td
+                      rowSpan={group.length}
+                      className={cn('px-2 py-2 align-top sticky left-[36px] z-[5] bg-[var(--md-surface-container-lowest)] group-hover:bg-[var(--md-surface-container-low)] border-r border-[var(--md-outline-variant)]', leaderSpanBorder)}
+                      style={groupingEnabled ? { boxShadow: 'inset 3px 0 0 0 var(--md-primary)' } : undefined}
+                    >
                       <select value={row.subject} onChange={e => updateRowSubject(row, e.target.value)}
-                        className="w-full px-1.5 py-2 rounded-xl border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-base font-semibold text-[#202124] cursor-pointer">
+                        aria-label="과목"
+                        className="h-10 w-full cursor-pointer rounded-lg border border-[var(--md-outline)] bg-[var(--md-surface-container-lowest)] px-2 text-[14px] font-medium leading-[20px] text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-low)]">
                         <option value="">선택</option>
                         {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                       {/* 묶음 안에 다른 교과 줄(연결 줄)이 있으면 읽기 전용 칩으로 알린다 */}
                       {memberSubjectChips.map(chip => (
-                        <span key={chip.id} className="mt-1.5 inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
-                          {chip.label}
+                        <span key={chip.id} className="mt-1.5 block">
+                          <LabelChip variant="tertiary">{chip.label}</LabelChip>
                         </span>
                       ))}
                       {/* 한 학년군 모드에서는 학년군 칸이 없으므로 안내·AI 제안을 과목 칸에 둔다 */}
@@ -2093,10 +2012,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                                 return next
                               })
                             }}
-                            className="w-3.5 h-3.5 rounded accent-[#F9AB00] cursor-pointer"
+                            className="h-[18px] w-[18px] cursor-pointer rounded accent-[var(--md-primary)]"
                           />
-                          <span className={cn('text-[12px] font-bold', row.isCenter ? 'text-[#E65100]' : 'text-[#9AA0A6]')}>
-                            {row.isCenter ? '★ 중심 교과' : '중심 교과'}
+                          <span className={cn('inline-flex items-center gap-0.5 text-[12px] font-medium leading-[16px]', row.isCenter ? 'text-[var(--md-primary)]' : 'text-[var(--md-on-surface-variant)]')}>
+                            <span className={cn('material-symbols-rounded text-[16px] leading-none', row.isCenter && 'm3-icon-fill')} aria-hidden>star</span>
+                            중심 교과
                           </span>
                         </label>
                       )}
@@ -2105,29 +2025,23 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
                     {/* 핵심아이디어 — 묶음 대표 (연결 줄은 자기 핵심아이디어를 아래에 덧붙인다) */}
                     {isLeader && (
-                    <td rowSpan={group.length} className={cn('px-3 py-2 align-top relative', leaderSpanBorder)}>
+                    <td rowSpan={group.length} className={cn('px-3 py-2 align-top relative bg-[var(--md-surface-container-lowest)]', leaderSpanBorder)}>
                       {(() => {
                         const oe = getPresenceForCell(row.id, 'coreIdea')
                         const isMy = getMyPresenceForCell(row.id, 'coreIdea')
-                        const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid #E8EAED'
+                        const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid var(--md-outline-variant)'
                         const coreIdeaArea = getCoreIdeaArea(row)
                         return (<>
                           <button onClick={e => handleCellClick(row.id, 'coreIdea', e)}
-                            className="w-full text-left px-3 py-2 rounded-xl transition min-h-[44px] text-base leading-relaxed"
-                            style={{ color: row.coreIdea ? '#202124' : '#9AA0A6', border: bdr }}>
+                            className="m3-state min-h-[44px] w-full rounded-xl px-3 py-2 text-left text-[14px] leading-[20px] transition-colors duration-150"
+                            style={{ color: row.coreIdea ? 'var(--md-on-surface)' : 'var(--md-on-surface-variant)', border: bdr }}>
                             <span className="mb-1 flex flex-wrap items-center gap-1">
-                              {coreIdeaArea && (
-                                <span className="inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
-                                  {coreIdeaArea}
-                                </span>
-                              )}
+                              {coreIdeaArea && <LabelChip variant="secondary">{coreIdeaArea}</LabelChip>}
                               {row.linkedCoreIdea && (
-                                <span
-                                  title={`${row.linkedCoreIdea.subject} 핵심아이디어: ${row.linkedCoreIdea.coreIdea}`}
-                                  className="inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]"
-                                >
-                                  ↔ {row.linkedCoreIdea.subject} 핵심아이디어 연결
-                                </span>
+                                <LabelChip variant="tertiary" title={`${row.linkedCoreIdea.subject} 핵심아이디어: ${row.linkedCoreIdea.coreIdea}`}>
+                                  <span className="material-symbols-rounded text-[16px] leading-none" aria-hidden>link</span>
+                                  {row.linkedCoreIdea.subject} 연결
+                                </LabelChip>
                               )}
                             </span>
                             <span className="block">{row.coreIdea || '핵심아이디어 선택...'}</span>
@@ -2137,10 +2051,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                               key={member.id}
                               onClick={e => handleCellClick(member.id, 'coreIdea', e)}
                               title={`${rowBandOf(member)} ${member.subject} 줄의 핵심아이디어 — 클릭하면 다시 고를 수 있습니다`}
-                              className="mt-1.5 w-full text-left px-2 py-1.5 rounded-lg bg-[#FAF5FD] border border-[#EADDF3] hover:border-[#D7C2E8] transition"
+                              className="m3-state mt-1.5 w-full rounded-lg bg-[var(--md-tertiary-container)] px-2 py-1.5 text-left transition-colors duration-150"
                             >
-                              <span className="text-[12px] font-bold text-[#7B1FA2]">↔ {rowBandOf(member)} · {member.subject}</span>
-                              <span className="block text-[13px] leading-relaxed text-[#5F6368]">{member.coreIdea}</span>
+                              <span className="inline-flex items-center gap-1 text-[12px] font-medium leading-[16px] text-[var(--md-on-tertiary-container)]">
+                                <span className="material-symbols-rounded text-[16px] leading-none" aria-hidden>link</span>
+                                {rowBandOf(member)} · {member.subject}
+                              </span>
+                              <span className="block text-[14px] leading-[20px] text-[var(--md-on-surface-variant)]">{member.coreIdea}</span>
                             </button>
                           ))}
                           {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
@@ -2154,8 +2071,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     {groupingEnabled && (
                       <td className="px-2 py-2 align-top">
                         {!isLeader && row.subject && row.subject !== leader.subject && (
-                          <span className="mb-1 inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
-                            {row.subject}
+                          <span className="mb-1 block">
+                            <LabelChip variant="tertiary">{row.subject}</LabelChip>
                           </span>
                         )}
                         {renderLineControls(row, { isLeader, inBandCell: true })}
@@ -2182,11 +2099,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       {(() => {
                         const oe = getPresenceForCell(row.id, 'agentLessonExample')
                         const isMy = getMyPresenceForCell(row.id, 'agentLessonExample')
-                        const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid #E8EAED'
+                        const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid var(--md-outline-variant)'
                         return (<>
                           <textarea value={row.agentLessonExample ?? ''} onChange={e => updateRow(row.id, 'agentLessonExample', e.target.value)}
                             onFocus={() => updatePresence(`${row.id}:agentLessonExample`)} placeholder="그래프 저장 후 자동 입력" rows={2}
-                            className="w-full px-3 py-2 rounded-xl focus:outline-none text-base leading-relaxed resize-none focus:border-[#7B1FA2] bg-[#FCF8FF]"
+                            className="w-full resize-none rounded-xl bg-[var(--md-surface-container-low)] px-3 py-2 text-[14px] leading-[20px] text-[var(--md-on-surface)] placeholder:text-[var(--md-on-surface-variant)] focus:outline-none"
                             style={{ minHeight: 60, border: bdr }}
                             ref={el => { if (el && row.agentLessonExample) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                             onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }} />
@@ -2201,11 +2118,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       {(() => {
                         const oe = getPresenceForCell(row.id, 'description')
                         const isMy = getMyPresenceForCell(row.id, 'description')
-                        const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid #E8EAED'
+                        const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid var(--md-outline-variant)'
                         return (<>
                           <textarea value={row.description} onChange={e => updateRow(row.id, 'description', e.target.value)}
                             onFocus={() => updatePresence(`${row.id}:description`)} placeholder="수업 내용 입력..." rows={2}
-                            className="w-full px-3 py-2 rounded-xl focus:outline-none text-base leading-relaxed resize-none focus:border-[#1A73E8]"
+                            className="w-full resize-none rounded-xl bg-[var(--md-surface-container-lowest)] px-3 py-2 text-[14px] leading-[20px] text-[var(--md-on-surface)] placeholder:text-[var(--md-on-surface-variant)] focus:outline-none"
                             style={{ minHeight: 60, border: bdr }}
                             ref={el => { if (el && row.description) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                             onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }} />
@@ -2216,10 +2133,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     </td>
 
                     {/* 줄 삭제 — 우측 고정 (가로 스크롤 없이 항상 보임) */}
-                    <td className="px-2 py-2 align-top text-center sticky right-0 z-[5] bg-white group-hover:bg-[#F8F9FA] border-l border-[#E8EAED]">
-                      <button onClick={() => removeRow(row.id)} title={groupingEnabled ? '이 학년군 줄 삭제' : `${rows.indexOf(row) + 1}행 삭제`}
-                        className="w-10 h-10 rounded-full border border-[#F1F3F4] hover:bg-[#FCE8E6] hover:border-[#F28B82] text-[#C5221F] flex items-center justify-center transition text-base">
-                        &times;
+                    <td className="px-2 py-2 align-top text-center sticky right-0 z-[5] bg-[var(--md-surface-container-lowest)] group-hover:bg-[var(--md-surface-container-low)] border-l border-[var(--md-outline-variant)]">
+                      <button
+                        onClick={() => removeRow(row.id)}
+                        aria-label={groupingEnabled ? '이 학년군 줄 삭제' : `${rows.indexOf(row) + 1}행 삭제`}
+                        title={groupingEnabled ? '이 학년군 줄 삭제' : `${rows.indexOf(row) + 1}행 삭제`}
+                        className="m3-state flex h-10 w-10 items-center justify-center rounded-full text-[var(--md-on-surface-variant)] hover:text-[var(--md-error)]"
+                      >
+                        <span className="material-symbols-rounded text-[20px] leading-none" aria-hidden>delete</span>
                       </button>
                     </td>
                   </tr>
@@ -2234,8 +2155,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
         {/* ── 자동 채우기 진행 단계 ── */}
         {autofillProgress.length > 0 && (
-          <div className="px-6 py-2 border-t border-[#DADCE0] bg-white flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]">
-            <span className="font-bold text-[#5F6368]">AI 자동 채우기 진행</span>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-[var(--md-outline-variant)] bg-[var(--md-surface-container-low)] px-4 py-2 text-[12px] leading-[16px]">
+            <span className="font-medium text-[var(--md-on-surface-variant)]">AI 자동 채우기 진행</span>
             {autofillProgress.map(step => (
               <span key={step.id} className={`flex items-center gap-1.5 ${step.status === 'pending' ? 'text-[#9AA0A6]' : step.status === 'running' ? 'font-bold text-[#1A73E8]' : step.status === 'error' ? 'text-[#C5221F]' : 'text-[#202124]'}`}>
                 {step.status === 'running'
@@ -2254,39 +2175,58 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           </div>
         )}
 
-        {/* ── 하단 ── */}
-        <div className="px-6 py-3 border-t border-[#DADCE0] bg-[#FAFAFA] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={addRow} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-[#1A73E8] hover:bg-[#E8F0FE] border border-[#C2D7F8] transition">
-              + 행 추가
-            </button>
-            <button onClick={handleAutofill} disabled={autofillLoading}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-white bg-[#137333] hover:bg-[#0D5C27] disabled:opacity-40 transition shadow-sm"
-              title={!a12Artifact?.selectedTopic && !graphSavedData ? 'A-1-2 주제 선정 또는 지식 그래프 데이터 필요' : '핵심아이디어 후보를 먼저 확인하고 DB 기반으로 자동 채우기'}>
-              {autofillLoading ? (
-                <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> {({ coreIdeas: '핵심아이디어 판정 중...', rows: '성취기준·내용 요소 판정 중...', describe: '설명 작성·검증 중...' } as Record<string, string>)[autofillProgress.find(step => step.status === 'running')?.id ?? ''] ?? '진행 중...'}</>
-              ) : 'AI 자동 채우기'}
-            </button>
-            {onSwitchToGraph && hasGraphRows && (
-              <button onClick={() => onSwitchToGraph(rows)} disabled={!hasCenterGraphRow}
-                title={hasCenterGraphRow ? '중심 교과를 중심 노드로 지식 그래프와 수업 예시를 생성합니다' : '먼저 중심 교과를 체크하고 성취기준을 선택하세요'}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-base font-bold text-white bg-[#7B1FA2] hover:bg-[#6A1B9A] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#7B1FA2] transition shadow-sm">
-                지식 그래프·수업 예시 생성 →
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-4 text-sm text-[#9AA0A6]">
+        {/* ── 하단 앱 바 ── */}
+        <SheetBottomBar
+          start={<>
+            <MD3Button
+              variant="tonal"
+              tone="blue"
+              onClick={addRow}
+              icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.sm }} aria-hidden>add</span>}
+            >
+              행 추가
+            </MD3Button>
+            <MD3Button
+              variant="tonal"
+              tone="green"
+              onClick={handleAutofill}
+              disabled={autofillLoading}
+              title={!a12Artifact?.selectedTopic && !graphSavedData ? 'A-1-2 주제 선정 또는 지식 그래프 데이터 필요' : '핵심아이디어 후보를 먼저 확인하고 DB 기반으로 자동 채우기'}
+              icon={<span className={cn('material-symbols-rounded leading-none', autofillLoading && 'animate-spin')} style={{ fontSize: MD3_ICON.sm }} aria-hidden>{autofillLoading ? 'sync' : 'auto_awesome'}</span>}
+            >
+              {autofillLoading
+                ? ({ coreIdeas: '핵심아이디어 판정 중…', rows: '성취기준·내용 요소 판정 중…', describe: '설명 작성·검증 중…' } as Record<string, string>)[autofillProgress.find(step => step.status === 'running')?.id ?? ''] ?? '진행 중…'
+                : 'AI 자동 채우기'}
+            </MD3Button>
+          </>}
+          end={<>
             {subjectsMissingStandard.length > 0 && (
-              <span className="font-semibold text-[#C5221F]" title="지식 그래프 노드는 성취기준 기준으로 만들어집니다. 성취기준이 없는 교과는 그래프에 나타나지 않습니다.">
-                ⚠ {subjectsMissingStandard.join('·')} — 성취기준을 선택해야 지식 그래프에 표시됩니다
+              <span className="hidden max-w-[420px] truncate text-[12px] font-medium leading-[16px] text-[var(--md-error)] xl:inline"
+                title="지식 그래프 노드는 성취기준 기준으로 만들어집니다. 성취기준이 없는 교과는 그래프에 나타나지 않습니다.">
+                {subjectsMissingStandard.join('·')} — 성취기준을 선택해야 지식 그래프에 표시됩니다
               </span>
             )}
             {hasGraphRows && !hasCenterGraphRow && (
-              <span className="font-semibold text-[#E65100]">중심 교과 체크 후 그래프를 생성할 수 있습니다.</span>
+              <span className="hidden text-[12px] font-medium leading-[16px] text-[var(--md-on-surface-variant)] lg:inline">
+                중심 교과를 체크하면 그래프를 만들 수 있습니다
+              </span>
             )}
-            <span className="font-semibold text-[#5F6368]">{rows.length}행</span>
-          </div>
-        </div>
+            <span className="text-[12px] font-medium leading-[16px] text-[var(--md-on-surface-variant)]">{rows.length}행</span>
+            {onSwitchToGraph && hasGraphRows && (
+              <MD3Button
+                variant="filled"
+                tone="purple"
+                size="md"
+                onClick={() => onSwitchToGraph(rows)}
+                disabled={!hasCenterGraphRow}
+                title={hasCenterGraphRow ? '중심 교과를 중심 노드로 지식 그래프와 수업 예시를 생성합니다' : '먼저 중심 교과를 체크하고 성취기준을 선택하세요'}
+                icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.md }} aria-hidden>hub</span>}
+              >
+                지식 그래프 · 수업 예시 생성
+              </MD3Button>
+            )}
+          </>}
+        />
       </div>
 
       {/* 팝오버 — createPortal 유지 (모달 위에서 독립 동작) */}
