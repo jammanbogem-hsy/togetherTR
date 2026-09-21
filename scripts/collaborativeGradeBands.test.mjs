@@ -50,6 +50,7 @@ test('changing a high-grade center keeps the low-grade center; unchecking is sco
   const changed = setCenterInGradeBand(rows, 'high-kor', bands[2])
   assert.deepEqual(changed.filter(r => r.isCenter).map(r => r.id), ['low', 'high-kor'])
   assert.deepEqual(setCenterInGradeBand(changed, null, bands[2]).filter(r => r.isCenter).map(r => r.id), ['low'])
+  assert.deepEqual(setCenterInGradeBand(rows, 'high-kor').filter(r => r.isCenter).map(r => r.id), ['high-kor'])
 })
 test('generated rows choose one center per band and respect each band’s previous choice', () => {
   const chosen = chooseBandCenters(rows.map(r => ({ ...r, isCenter: false })), [rows[0], { ...rows[2], isCenter: true }])

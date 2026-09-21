@@ -1570,12 +1570,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                 // 이 학년군의 중심만 바꾸고 다른 학년군의 중심은 유지한다.
                 setRows(prev => {
                   const nextCenterId = row.isCenter ? null : row.id
-                  const next = setCenterInGradeBand(prev, nextCenterId, rowBandOf(row))
+                  const centerBand = sheetMode === 'multi' ? rowBandOf(row) : undefined
+                  const next = setCenterInGradeBand(prev, nextCenterId, centerBand)
                   rowsRef.current = next
                   setDirty(true)
                   if (!onPatchSave) triggerSave(next)
                   else {
-                    void saveStructuralPatch({ type: 'set-center', rowId: nextCenterId, gradeBand: rowBandOf(row), updatedBy: currentUserName })
+                    void saveStructuralPatch({ type: 'set-center', rowId: nextCenterId, gradeBand: centerBand, updatedBy: currentUserName })
                     // set-center는 서버에 존재하는 행만 갱신하므로, 아직 저장 안 된 중심 행은 전체 행 upsert로 보장한다.
                     if (nextCenterId && !serverRowIdsRef.current.has(nextCenterId)) scheduleRowUpsert(nextCenterId)
                   }
