@@ -1,0 +1,33 @@
+{
+  "url": "https://togethertr.web.app",
+  "codeCommit": "05cd8041cb10b8b2b509fbdc0751738146f09329",
+  "releaseTime": "2026-09-21T22:46:38.179Z",
+  "hostingVersion": "projects/togethertr/sites/togethertr/versions/24da5d766a2e1570",
+  "hostingRelease": "projects/togethertr/sites/togethertr/channels/live/releases/1790030798179000",
+  "previousHostingVersion": "projects/togethertr/sites/togethertr/versions/5ff3dd42e988ed6c",
+  "buildId": "m0SOHa_VtR61ELTEe2JKt",
+  "runtime": "nodejs24",
+  "checks": {
+    "regressionTestsPassed": 68,
+    "typescript": "passed",
+    "build": "passed",
+    "lintErrors": 0,
+    "lintWarnings": 0,
+    "runtimeAssets": "passed",
+    "browser": [
+      "ordinary low-grade art row offers bridge search",
+      "integrated candidate selection updates subject, core idea, standard and content",
+      "original art link and per-band center preserved",
+      "higher-grade row unchanged",
+      "teacher explanation preserved",
+      "stale selection rejected after curriculum edits"
+    ],
+    "production": [
+      "12 integrated course records kept separate",
+      "art 1–2 search returns official integrated alternatives",
+      "selected standard has correct course content",
+      "actual description generated for selected low-grade row",
+      "client SHA-256 matches built artifact"
+    ]
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "url": "https://togethertr.web.app",
+  "checkedAt": "2026-09-21T22:47:08.149Z",
+  "sourceCommit": "05cd8041cb10b8b2b509fbdc0751738146f09329",
+  "checks": [
+    {
+      "endpoint": "/api/core-ideas?allBands=1",
+      "integratedRecords": 12,
+      "separateCourses": true
+    },
+    {
+      "mode": "bridgeStandards",
+      "sourceSubject": "미술",
+      "targetBand": "1-2학년군",
+      "candidateCount": 8,
+      "integratedCandidateCount": 6,
+      "selectedStandard": "[2슬04-02] 상상한 것을 다양한 매체와 재료로 구현한다.",
+      "selectedCourse": "슬기로운 생활",
+      "knowledge": [
+        "1-2학년군: 생활 도구의 모양과 기능",
+        "1-2학년군: 다양한 매체와 재료",
+        "1-2학년군: 관심 주제",
+        "1-2학년군: 배운 것과 배울 것"
+      ],
+      "functions": [
+        "1-2학년군: 바꾸기",
+        "1-2학년군: 매체 활용하기",
+        "1-2학년군: 상상하여 구현하기",
+        "1-2학년군: 조사하기",
+        "1-2학년군: 연결하기",
+        "1-2학년군: 탐색하기"
+      ],
+      "attitudes": [
+        "1-2학년군: 창의성"
+      ]
+    },
+    {
+      "mode": "describe",
+      "rowId": "deployment-art-bridge-low",
+      "gradeBand": "1-2학년군",
+      "description": "우리 마을에서 볼 수 있는 생활 도구와 장소에 관심을 갖고, 그 모양과 기능을 살펴본다. 다양한 매체와 재료를 활용해 마을의 모습을 자신이 상상한 대로 바꾸어 표현한다."
+    },
+    {
+      "clientFile": "/_next/static/chunks/0ym_4ot0jbtye.js",
+      "matchesBuild": true,
+      "sha256": "206c9d7f6df82db8801882fba98750c98b5f3961328e8e419f61f56ae89ec5a4"
+    }
+  ]
+}
