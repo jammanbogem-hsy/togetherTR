@@ -31,6 +31,8 @@ import {
   usedGradeBands,
 } from '@/lib/curriculum/sheetGradeBands'
 import type { SheetGradeMode } from '@/lib/curriculum/sheetGradeBands'
+import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
+import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 
 // ─── 교육과정 데이터 타입 ─────────────────────────────────
 
@@ -451,6 +453,7 @@ interface Props {
   a12Artifact?: Record<string, unknown>
   graphSavedData?: { centerNode: { id: string; label: string; subjectId: string; text: string } | null; selectedStandards: Array<{ id: string; label: string; subjectId: string; text: string }> } | null
   targetGradeGroup?: string
+  teamGradeBands?: string[]
   chatContext?: string
   // ─── 시트 학년군 설정 (프로젝트 문서 공유 값) ───
   gradeMode?: SheetGradeMode
@@ -464,7 +467,7 @@ type PickerField = 'coreIdea' | 'standard' | 'knowledge' | 'processFunction' | '
 type PickerTarget = { rowId: string; field: PickerField; rect: DOMRect } | null
 const MULTI_FIELDS: PickerField[] = ['standard', 'knowledge', 'processFunction', 'valueAttitude']
 
-export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, onPatchSave, onRequestArtifactSave, onPresenceUpdate, onSwitchToGraph, presence, currentUserName, currentUid, currentUserColor, a12Artifact, graphSavedData, targetGradeGroup, chatContext, gradeMode, sheetGradeBand, onGradeSettingsChange }: Props) {
+export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, onPatchSave, onRequestArtifactSave, onPresenceUpdate, onSwitchToGraph, presence, currentUserName, currentUid, currentUserColor, a12Artifact, graphSavedData, targetGradeGroup, teamGradeBands, chatContext, gradeMode, sheetGradeBand, onGradeSettingsChange }: Props) {
   const [rows, setRows] = useState<CurriculumSheetRow[]>([])
   const [contentItems, setContentItems] = useState<ContentItem[]>([])
   const [standards, setStandards] = useState<FlatStandard[]>([])
@@ -512,7 +515,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   // ─── 시트 학년군 모드·기준 학년군 ───
   // 프로젝트 문서에 저장된 값이 우선이고, 없으면 시트 내용으로 기본값을 판정한다
   // (이미 학년군이 2개 이상 들어간 시트 = 혼성 학년 팀 → multi).
-  const sheetMode: SheetGradeMode = pendingGradeSettings?.gradeMode
+  const confirmedTeamBands = normalizeTeamGradeBands(teamGradeBands)
+  const multiBandTeam = confirmedTeamBands.length >= 2
+  const sheetMode: SheetGradeMode = multiBandTeam ? 'multi' : pendingGradeSettings?.gradeMode
     ?? gradeMode
     ?? defaultGradeMode(savedRows.length > 0 ? savedRows : rows)
   const sheetBand = resolveSheetGradeBand(pendingGradeSettings?.gradeBand ?? sheetGradeBand, targetGradeGroup)
@@ -1048,13 +1053,18 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     if (allowed.length === 1) return [...allowed]
     const fromServer = ELEMENTARY_GRADE_BANDS.filter(band => (serverBands ?? []).some(value => toGradeBandLabel(value) === band))
     if (fromServer.length > 0) return fromServer
-    return sheetBand ? [sheetBand] : [allowed[0]]
+    const teamBands = confirmedTeamBands.filter(band => allowed.includes(band))
+    return teamBands.length ? teamBands : sheetBand ? [sheetBand] : [allowed[0]]
   }
   // 선택된 핵심아이디어에 성취기준이 실제로 있는 학년군만 고를 수 있게 한다.
   // (사회·실과처럼 학년군별로 후보가 갈리는 교과. 서버가 학년군을 주지 않으면 제한하지 않는다.)
   function availableGradeBandsForProposal(subject: string, option?: CoreIdeaOption): string[] {
     const allowed = allowedGradeBandsForSubject(subject)
-    const fromOption = ELEMENTARY_GRADE_BANDS.filter(band => (option?.gradeBands ?? []).some(value => toGradeBandLabel(value) === band))
+    // Other bands can use another official core idea of this subject; don't disable them
+    // just because the currently selected sentence only exists in one band.
+    const proposal = autofillReview?.proposals.find(item => item.subject === subject)
+    const available = proposal?.options.flatMap(item => item.gradeBands ?? []) ?? option?.gradeBands ?? []
+    const fromOption = ELEMENTARY_GRADE_BANDS.filter(band => available.some(value => toGradeBandLabel(value) === band))
     const scoped = fromOption.length > 0 ? allowed.filter(band => fromOption.includes(band)) : [...allowed]
     return scoped.length > 0 ? scoped : [...allowed]
   }
@@ -1095,6 +1105,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       a12Artifact,
       graphSavedData,
       targetGradeGroup: sheetBand || targetGradeGroup,
+      teamGradeBands: confirmedTeamBands,
       chatContext,
     }
   }
@@ -1198,23 +1209,28 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       }
       const data = await resp.json() as { rows?: CurriculumSheetRow[]; judge?: 'jev' | 'embedding'; notes?: string[] }
       if (data.notes?.length) setAutofillNotes(data.notes)
-      const judgedRows = (data.rows ?? []).map((r: CurriculumSheetRow) => ({ ...emptyRow(), ...r }))
+      const generatedRows = (data.rows ?? []).map((r: CurriculumSheetRow) => ({ ...emptyRow(), ...r }))
+      let judgedRows = mergeAutofillRows(rowsRef.current, generatedRows, sheetBand)
       setProgressStep('rows', {
         status: 'done',
         label: `성취기준 · 지식·이해 · 과정·기능 · 가치·태도 판정 (${JUDGE_LABEL[data.judge ?? 'embedding']})`,
         ms: Math.round(performance.now() - rowsStart),
         note: `${judgedRows.length}행`,
       })
-      if (judgedRows.length === 0) return
+      if (generatedRows.length === 0) return
 
-      // 판정된 행을 먼저 반영해 두고, 설명은 뒤이어 채운다.
-      const commitRows = (next: CurriculumSheetRow[]) => {
-        setRows(next)
-        setDirty(true)
-        if (onPatchSave) void saveStructuralPatch({ type: 'replace-all', rows: next, updatedBy: currentUserName })
-        else triggerSave(next)
+      // Merge against the latest Firestore rows inside the transaction, not a stale local snapshot.
+      if (onPatchSave) {
+        const saved = await onPatchSave({ type: 'merge-autofill', rows: generatedRows, defaultBand: sheetBand, updatedBy: currentUserName })
+        if (saved) {
+          applySavedRows(saved)
+          judgedRows = saved
+        }
+      } else {
+        setRows(judgedRows)
+        triggerSave(judgedRows)
       }
-      commitRows(judgedRows)
+      rowsRef.current = judgedRows
       setAutofillReview(null)
 
       setProgressStep('describe', { status: 'running' })
@@ -1235,8 +1251,23 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             ?? (band ? desc.descriptions?.[`${row.subject}::${band}`] : undefined)
             ?? desc.descriptions?.[row.subject]
         }
-        const withDescriptions = judgedRows.map(row => ({ ...row, description: descriptionFor(row) ?? row.description ?? '' }))
-        commitRows(withDescriptions)
+        // Read current rows after the network wait: preserve edits made while descriptions were generated.
+        const withDescriptions = rowsRef.current.map(row => {
+          const source = judgedRows.find(item => item.id === row.id)
+          const unchanged = source && source.coreIdea === row.coreIdea && source.standard === row.standard
+          return { ...row, description: row.description || (unchanged ? descriptionFor(row) : undefined) || '' }
+        })
+        if (onPatchSave) {
+          const saved = await onPatchSave({
+            type: 'fill-descriptions',
+            rows: withDescriptions.map(({ id, coreIdea, standard, description }) => ({ id, coreIdea, standard, description })),
+            updatedBy: currentUserName,
+          })
+          applySavedRows(saved)
+        } else {
+          setRows(withDescriptions)
+          triggerSave(withDescriptions)
+        }
         const serverStep = (id: string) => desc.steps?.find(step => step.id === id)
         setProgressStep('describe', { status: 'done', ms: serverStep('describe')?.ms ?? Math.round(performance.now() - describeStart) })
         const verifyStep = serverStep('verify')
@@ -1530,6 +1561,35 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
     return (
       <div className={cn('flex flex-col gap-1', !inBandCell && 'mt-1.5')}>
+        {row.subject && (
+          <label className="flex items-center gap-1 mt-1.5 px-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!row.isCenter}
+              onChange={() => {
+                // 이 학년군의 중심만 바꾸고 다른 학년군의 중심은 유지한다.
+                setRows(prev => {
+                  const nextCenterId = row.isCenter ? null : row.id
+                  const next = setCenterInGradeBand(prev, nextCenterId, rowBandOf(row))
+                  rowsRef.current = next
+                  setDirty(true)
+                  if (!onPatchSave) triggerSave(next)
+                  else {
+                    void saveStructuralPatch({ type: 'set-center', rowId: nextCenterId, gradeBand: rowBandOf(row), updatedBy: currentUserName })
+                    // set-center는 서버에 존재하는 행만 갱신하므로, 아직 저장 안 된 중심 행은 전체 행 upsert로 보장한다.
+                    if (nextCenterId && !serverRowIdsRef.current.has(nextCenterId)) scheduleRowUpsert(nextCenterId)
+                  }
+                  return next
+                })
+              }}
+              className="h-[18px] w-[18px] cursor-pointer rounded accent-[var(--md-primary)]"
+            />
+            <span className={cn('inline-flex items-center gap-0.5 text-[12px] font-medium leading-[16px]', row.isCenter ? 'text-[var(--md-primary)]' : 'text-[var(--md-on-surface-variant)]')}>
+              <span className={cn('material-symbols-rounded text-[16px] leading-none', row.isCenter && 'm3-icon-fill')} aria-hidden>star</span>
+              {sheetMode === 'multi' ? '이 학년군 중심' : '중심 교과'}
+            </span>
+          </label>
+        )}
         {inBandCell && (
           <select
             value={rowBand}
@@ -1681,14 +1741,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           <SheetToolbar
             helpOpen={helpOpen}
             onToggleHelp={() => setHelpOpen(prev => !prev)}
-            helpText="한 학년군 팀은 위에서 학년군을 고르면 됩니다. 여러 학년 선생님이 함께라면 ‘다양한 학년군’으로 바꾸고, 핵심아이디어 행 안에서 ‘＋ 학년군 줄’로 학년군별 줄을 나눠 성취기준을 연결하세요. 성취기준이 비어 있는 줄은 ‘AI 성취기준 제안’으로 받을 수도 있습니다."
+            helpText="팀장이 확인한 팀 학년군을 자동 채우기에 반영합니다. 같은 주제를 함께 설계해도 학년군별 중심 교과와 성취기준은 다를 수 있습니다. 각 학년군 줄에서 중심 교과를 지정하세요. ‘＋ 학년군 줄’로 줄을 더하거나 ‘AI 성취기준 제안’으로 빈칸을 채울 수 있습니다."
           >
             <SheetSegmented
               ariaLabel="학년군 모드"
               value={sheetMode}
               onChange={mode => { void changeGradeSettings({ gradeMode: mode, ...(sheetBand ? { gradeBand: sheetBand } : {}) }) }}
               options={[
-                { value: 'single', label: '한 학년군', title: '시트 전체가 학년군 하나를 씁니다 (한 학년 팀)' },
+                { value: 'single', label: '한 학년군', disabled: multiBandTeam, title: '시트 전체가 학년군 하나를 씁니다 (한 학년 팀)' },
                 { value: 'multi', label: '다양한 학년군', title: '행마다 학년군을 고릅니다 (1·3·5학년처럼 여러 학년이 함께할 때)' },
               ]}
             />
@@ -1708,7 +1768,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             {sheetMode === 'multi' && (
               <span className="inline-flex items-center gap-1.5 text-[12px] font-medium leading-[16px] text-[var(--md-on-surface-variant)]">
                 <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>group</span>
-                기본 학년군 {sheetBand} · 줄마다 변경 가능
+                {multiBandTeam ? `팀 ${formatGradeBandList(confirmedTeamBands)} · 학년군마다 중심 교과 지정` : `기본 학년군 ${sheetBand} · 줄마다 변경 가능`}
               </span>
             )}
           </SheetToolbar>
@@ -1986,40 +2046,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       ))}
                       {/* 한 학년군 모드에서는 학년군 칸이 없으므로 안내·AI 제안을 과목 칸에 둔다 */}
                       {!groupingEnabled && renderLineControls(row, { isLeader: true, inBandCell: false })}
-                      {row.subject && (
-                        <label className="flex items-center gap-1 mt-1.5 px-1 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={!!row.isCenter}
-                            onChange={() => {
-                              // 중심 교과는 하나만 — 다른 행의 isCenter를 해제
-                              setRows(prev => {
-                                const nextCenterId = row.isCenter ? null : row.id
-                                const next = prev.map(r => ({
-                                  ...r,
-                                  isCenter: nextCenterId ? r.id === nextCenterId : false,
-                                  updatedBy: r.id === row.id ? currentUserName : r.updatedBy,
-                                  updatedAt: r.id === row.id ? Date.now() : r.updatedAt,
-                                }))
-                                rowsRef.current = next
-                                setDirty(true)
-                                if (!onPatchSave) triggerSave(next)
-                                else {
-                                  void saveStructuralPatch({ type: 'set-center', rowId: nextCenterId, updatedBy: currentUserName })
-                                  // set-center는 서버에 존재하는 행만 갱신하므로, 아직 저장 안 된 중심 행은 전체 행 upsert로 보장한다.
-                                  if (nextCenterId && !serverRowIdsRef.current.has(nextCenterId)) scheduleRowUpsert(nextCenterId)
-                                }
-                                return next
-                              })
-                            }}
-                            className="h-[18px] w-[18px] cursor-pointer rounded accent-[var(--md-primary)]"
-                          />
-                          <span className={cn('inline-flex items-center gap-0.5 text-[12px] font-medium leading-[16px]', row.isCenter ? 'text-[var(--md-primary)]' : 'text-[var(--md-on-surface-variant)]')}>
-                            <span className={cn('material-symbols-rounded text-[16px] leading-none', row.isCenter && 'm3-icon-fill')} aria-hidden>star</span>
-                            중심 교과
-                          </span>
-                        </label>
-                      )}
+
                     </td>
                     )}
 

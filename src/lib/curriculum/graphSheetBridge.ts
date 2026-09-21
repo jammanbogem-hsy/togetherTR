@@ -238,7 +238,7 @@ export function mergeGraphAgentExamplesIntoRows(
     const codes = extractStandardCodes(row.standard)
     const matchedId = codes.map(code => standardIdByCode.get(code)).find(Boolean)
     const note = matchedId ? noteByStandardId.get(matchedId) : undefined
-    const nextExample = row.isCenter && centerExample
+    const nextExample = row.isCenter && centerExample && codes.includes(centerCode)
       ? centerExample
       : note
         ? noteBody(note)

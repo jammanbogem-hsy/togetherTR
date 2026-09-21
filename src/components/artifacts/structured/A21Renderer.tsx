@@ -94,7 +94,7 @@ export function A21Renderer({ data }: { data: A21Structured }) {
     const leader = splitSubjectCell(group[0].subject)
     const own = splitSubjectCell(group[index].subject)
     const name = own.name !== '-' && own.name !== leader.name ? own.name : ''
-    return [own.band, name].filter(Boolean).join(' · ')
+    return [own.band, name, own.isCenter ? '★ 중심' : ''].filter(Boolean).join(' · ')
   }
 
   /** 묶음의 대표 칸(교과·핵심 아이디어) — 묶음 줄 수만큼 세로로 합친다. */
@@ -112,7 +112,7 @@ export function A21Renderer({ data }: { data: A21Structured }) {
         <td rowSpan={group.length} className={`${cellBase} whitespace-nowrap`}>
           <div className="flex flex-col items-start gap-1">
             <span className="font-semibold text-[#1A73E8]">{name}</span>
-            {(band || isCenter) && (
+            {group.length === 1 && (band || isCenter) && (
               <span className="flex items-center gap-1">
                 {band && <Chip text={band} />}
                 {isCenter && <Chip text="★ 중심" tone="center" />}

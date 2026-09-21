@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       stage: StageCode
       activityCode: ActivityCode
       actorType: ActorType
-      project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands'>
+      project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands' | 'curriculumSheet'>
       learnerProfileSummary?: string
       currentArtifact?: { title: string; content: Record<string, unknown>; status: string; version: number } | null
       confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown>; status?: string }>
@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       gradeGroup: project.targetGradeGroup,
       // 여러 학년군 팀(1·3·5학년 담임 등)은 학년군별로 성취기준을 나눠 답한다.
       teamGradeBands: project.teamGradeBands,
+      sheetRows: project.curriculumSheet,
       targetSubjects: project.targetSubjects,
       confirmedArtifacts,
       graphSavedData,

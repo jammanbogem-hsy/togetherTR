@@ -1,9 +1,9 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query,
-  where, orderBy, limit, serverTimestamp, onSnapshot, Unsubscribe, arrayUnion, deleteField,
+  where, orderBy, limit, serverTimestamp, onSnapshot, type Unsubscribe, arrayUnion, deleteField,
   runTransaction, type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
-import { db } from './config'
+import { auth, db } from './config'
 import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow, TeamVisionWorkspace, TeamVisionWorkspaceBlock, TeamVisionWorkspaceColumn, TeamVisionWorkspaceRow, IntegratedGoalWorkspace, IntegratedGoalWorkspaceBlock, IntegratedGoalWorkspaceColumn, IntegratedGoalWorkspaceRow, IntegratedGoalMethod } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
@@ -14,7 +14,8 @@ import { resolveNextCycleChoice, type NextCycleChoice } from '@/lib/activity/cyc
 import { sanitizeArtifactSections } from '@/lib/artifacts/schemas'
 import { mergeMessagesForCycle } from '@/lib/chat/messageCycles'
 import { normalizeTeamGradeBands } from '@/lib/curriculum/teamGradeBands'
-import { toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
+import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
+import { buildTeamGradeBandUpdate } from '@/lib/curriculum/teamGradeBandState'
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -769,7 +770,9 @@ export type CurriculumSheetPatch =
   | { type: 'upsert-row'; row: CurriculumSheetRow; updatedBy?: string }
   | { type: 'delete-row'; rowId: string }
   | { type: 'reorder'; rowIds: string[] }
-  | { type: 'set-center'; rowId: string | null; updatedBy?: string }
+  | { type: 'set-center'; rowId: string | null; gradeBand?: string; updatedBy?: string }
+  | { type: 'merge-autofill'; rows: CurriculumSheetRow[]; defaultBand?: string; updatedBy?: string }
+  | { type: 'fill-descriptions'; rows: Array<Pick<CurriculumSheetRow, 'id' | 'coreIdea' | 'standard' | 'description'>>; updatedBy?: string }
   | { type: 'replace-all'; rows: CurriculumSheetRow[]; updatedBy?: string }
 
 function cleanCurriculumSheetRow(row: CurriculumSheetRow): CurriculumSheetRow {
@@ -791,6 +794,17 @@ function applyCurriculumSheetPatch(
 
   if (patch.type === 'replace-all') {
     return patch.rows.map(row => stampRow(row, patch.updatedBy))
+  }
+
+  if (patch.type === 'merge-autofill') {
+    return mergeAutofillRows(currentRows, patch.rows, patch.defaultBand).map(cleanCurriculumSheetRow)
+  }
+  if (patch.type === 'fill-descriptions') {
+    return currentRows.map(row => {
+      const incoming = patch.rows.find(item => item.id === row.id)
+      if (!incoming || row.description?.trim() || row.coreIdea !== incoming.coreIdea || row.standard !== incoming.standard) return row
+      return stampRow({ ...row, description: incoming.description }, patch.updatedBy)
+    })
   }
 
   if (patch.type === 'upsert-row') {
@@ -815,10 +829,8 @@ function applyCurriculumSheetPatch(
   }
 
   if (patch.type === 'set-center') {
-    return currentRows.map(row => stampRow({
-      ...row,
-      isCenter: patch.rowId ? row.id === patch.rowId : false,
-    }, patch.updatedBy))
+    return setCenterInGradeBand(currentRows, patch.rowId, patch.gradeBand)
+      .map(row => stampRow(row, patch.updatedBy))
   }
 
   const updates = patch.type === 'update-cell'
@@ -883,47 +895,72 @@ export async function updateCurriculumSheetSettings(
   })
 }
 
-/**
- * 팀 학년군 저장 — 1·3·5학년 담임처럼 서로 다른 학년이 한 팀일 때 그 사실을 프로젝트에 남긴다.
- * AI가 채팅에서 [TEAM_GRADE_BANDS: …] 신호로 알려오거나 프로젝트 생성 화면에서 고른 값이 들어온다.
- *
- * 학년군이 2개 이상이면 분석시트도 '다양한 학년군'(multi) 모드로 열어야 하므로 함께 초기화한다.
- * 단, 팀이 이미 시트 모드를 직접 고른 프로젝트(curriculumSheetGradeMode 존재)는 건드리지 않는다 —
- * 채팅 신호가 팀의 명시적 선택을 되돌리면 안 되므로.
- * undefined 필드는 payload에 넣지 않는다(Firestore는 undefined를 거부한다 — CLAUDE.md).
- */
+/** Only the host can commit team composition; mode and legacy row labels change atomically. */
+function requireGradeBandHost(project: Project) {
+  const uid = auth.currentUser?.uid
+  if (!uid || (project.hostUid !== uid && project.createdBy !== uid)) {
+    throw new Error('팀 학년군은 방장만 확정할 수 있습니다.')
+  }
+}
+
 export async function updateTeamGradeBands(
   projectId: string,
   bands: readonly (string | null | undefined)[],
-  options: { alsoSetSheetMode?: boolean } = {},
+  options: { repairModeOnly?: boolean } = {},
 ): Promise<string[]> {
   const normalized = normalizeTeamGradeBands(bands)
-  if (normalized.length === 0) return []
+  if (!normalized.length) return []
+  const ref = doc(db, 'projects', projectId)
+  return runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    requireGradeBandHost(data)
+    const next = options.repairModeOnly ? normalizeTeamGradeBands(data.teamGradeBands) : normalized
+    if (options.repairModeOnly && (next.length < 2 || data.curriculumSheetGradeMode === 'multi')) return next
+    transaction.update(ref, {
+      ...stripUndefinedDeep(buildTeamGradeBandUpdate(data, next)),
+      updatedAt: serverTimestamp(),
+    })
+    return next
+  })
+}
 
-  const payload: Record<string, unknown> = { teamGradeBands: normalized }
-
-  const alsoSetSheetMode = options.alsoSetSheetMode ?? true
-  if (alsoSetSheetMode && normalized.length >= 2) {
-    const snap = await getDoc(doc(db, 'projects', projectId))
-    const data = snap.exists() ? (snap.data() as Partial<Project>) : null
-    if (!data?.curriculumSheetGradeMode) {
-      payload.curriculumSheetGradeMode = 'multi'
-      // 시트 기준 학년군(행에 값이 없을 때의 기본값)은 프로젝트 대표 학년군에 맞춘다.
-      // 대표 학년군이 팀 학년군에 없으면(중·고 값 등) 첫 번째 학년군을 쓴다.
-      if (!data?.curriculumSheetGradeBand) {
-        const fromTarget = toGradeBandLabel(data?.targetGradeGroup)
-        payload.curriculumSheetGradeBand = fromTarget && (normalized as string[]).includes(fromTarget)
-          ? fromTarget
-          : normalized[0]
-      }
-    }
-  }
-
+/** Members leave a durable proposal; they cannot change the confirmed team or sheet mode. */
+export async function proposeTeamGradeBands(projectId: string, bands: string[], displayName: string): Promise<void> {
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('로그인이 필요합니다.')
+  const normalized = normalizeTeamGradeBands(bands)
+  if (!normalized.length) return
   await updateDoc(doc(db, 'projects', projectId), {
-    ...payload,
+    [`teamGradeBandProposals.${uid}`]: {
+      id: crypto.randomUUID(), bands: normalized, proposedByName: displayName, proposedAt: Date.now(),
+    },
     updatedAt: serverTimestamp(),
   })
-  return normalized
+}
+
+/** Proposal ID prevents an older approval/rejection from deleting a newer member proposal. */
+export async function resolveTeamGradeBandProposal(
+  projectId: string, proposerUid: string, proposalId: string, accept: boolean,
+): Promise<string[] | null> {
+  const ref = doc(db, 'projects', projectId)
+  return runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    requireGradeBandHost(data)
+    const proposal = data.teamGradeBandProposals?.[proposerUid]
+    if (!proposal || proposal.id !== proposalId) throw new Error('학년군 제안이 변경되었습니다. 새 제안을 확인해주세요.')
+    // A member's own grade adds to the team; it must not silently remove another teacher's band.
+    const next = normalizeTeamGradeBands([...(data.teamGradeBands ?? [data.targetGradeGroup]), ...proposal.bands])
+    transaction.update(ref, {
+      ...(accept ? stripUndefinedDeep(buildTeamGradeBandUpdate(data, next)) : {}),
+      [`teamGradeBandProposals.${proposerUid}`]: deleteField(),
+      updatedAt: serverTimestamp(),
+    })
+    return accept ? next : null
+  })
 }
 
 // ─── 팀 공통 비전 워크스페이스 공동 편집 ─────────────────────

@@ -656,6 +656,8 @@ A안을 선택받지 않고 저장하는 것은 금지.
 
 **신호 형식**: [TEAM_GRADE_BANDS: 1-2,5-6]
 - 팀이 학년 구성을 말하거나 바꿀 때마다(팀원 합류·학년 정정 포함) 응답 마지막 줄에 방출한다.
+- 신호에는 최근 발언자의 학년만이 아니라 현재까지 확인된 팀 전체 학년군을 포함한다. 명시적인 정정·탈퇴가 아니면 기존 학년군을 빼지 않는다.
+- 팀원 발언은 앱에서 방장 확인 요청으로 보관한다. 앱의 저장 안내 전에는 "반영 완료"라고 말하지 않는다.
 - 학년군 코드만 쉼표로 나열한다. 1-2 / 3-4 / 5-6 세 가지뿐이다.
 - 교사가 학년으로 말하면 학년군으로 변환한다: 1·2학년 → 1-2, 3·4학년 → 3-4, 5·6학년 → 5-6.
   예) "1학년, 3학년, 5학년입니다" → [TEAM_GRADE_BANDS: 1-2,3-4,5-6]
@@ -3167,7 +3169,7 @@ export const SOLO_ACTIVITY_WELCOME: Partial<Record<ActivityCode, string>> = {
 export function buildSystemPrompt(
   stage: StageCode,
   activityCode: ActivityCode,
-  project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands'>,
+  project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands' | 'curriculumSheet'>,
   _actorType: ActorType,
   learnerProfileSummary?: string,
   currentArtifact?: { title: string; content: Record<string, unknown>; status: string; version: number } | null,
@@ -3189,7 +3191,7 @@ export function buildSystemPrompt(
   const isMultiBandTeam = isMultiGradeBandTeam(teamBands)
   const gradeBandLine = isMultiBandTeam
     ? `- 팀 학년군: ${formatGradeBandList(teamBands)} (여러 학년군 팀)`
-    : `- 학년군: ${project.targetGradeGroup}`
+    : `- 학년군: ${teamBands[0] || project.targetGradeGroup}`
   const multiGradeBandRules = isMultiBandTeam
     ? `
 
@@ -3213,9 +3215,13 @@ ${describeGradeBandSubjects(teamBands, project.targetSubjects)}
 - 고학년(5-6학년군): 자료 조사·비교·분석·근거 제시·제안 등 탐구 수준. 저학년과 같은 활동을 그대로 복사하지 않는다.
 - 수업목표·평가 기준도 학년군마다 한 줄씩 쓴다. 하나의 목표 문장으로 전체 학년을 덮지 않는다.
 - 학년 간 협력 장면(고학년이 저학년을 돕는 짝 활동, 학년별 역할 분담)은 이 팀의 강점이므로 적극 제안한다.
+- 중심 교과도 학년군마다 다를 수 있다. 예: 1-2학년군은 통합교과, 5-6학년군은 사회를 중심으로 같은 주제를 설계할 수 있다. 한 학년군의 중심 교과·성취기준을 다른 학년군에 강요하지 않는다.
+
+**현재 시트의 학년군별 중심 교과 (교사가 지정한 값 우선)**
+${project.curriculumSheet?.filter(row => row.isCenter).map(row => `- ${row.gradeBand || '학년군 확인 필요'}: ${row.subject} / ${row.standard || '성취기준 미선정'}`).join('\n') || '(아직 미지정 — 학년군별로 교사와 확인)'}
 
 **4) A-2-1(교육과정 분석) 안내**
-- 분석시트는 '다양한 학년군' 모드로 열려 **행마다 학년군을 고를 수 있다**. 팀에게 학년군별로 행을 채우도록 안내한다.
+- 분석시트는 '다양한 학년군' 모드로 열리고 자동 채우기는 저장된 팀 학년군 전체를 조회한다. 학년군마다 중심 교과와 성취기준을 각각 확인하도록 안내한다.
 - 1-2학년군 행은 사회·과학 대신 통합교과 '연결 줄'로 만든다. 같은 핵심아이디어에 1-2학년군 줄을 덧붙이고 그 학년군의 실제 성취기준을 찾는 방식이다.
 - 산출물 표에는 학년군 표기를 유지한다. 학년군을 지우면 어느 선생님의 수업인지 알 수 없다.`
     : ''

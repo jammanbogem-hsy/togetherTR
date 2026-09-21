@@ -10,6 +10,7 @@ export interface SegmentedOption<T extends string> {
   value: T
   label: string
   title?: string
+  disabled?: boolean
 }
 
 /** M3 세그먼트 버튼 — 선택 세그먼트에 check 아이콘과 primary-container. */
@@ -31,10 +32,11 @@ export function SheetSegmented<T extends string>({
             key={option.value}
             type="button"
             aria-pressed={selected}
+            disabled={option.disabled}
             title={option.title ?? option.label}
             onClick={() => { if (!selected) onChange(option.value) }}
             className={cn(
-              'm3-state inline-flex items-center gap-1.5 text-[14px] font-medium leading-[20px] transition-colors duration-150',
+              'm3-state inline-flex items-center gap-1.5 text-[14px] font-medium leading-[20px] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40',
               compact ? 'px-3' : 'px-4',
               index > 0 && 'border-l border-[var(--md-outline)]',
               selected

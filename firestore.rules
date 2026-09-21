@@ -63,6 +63,10 @@ service cloud.firestore {
     // 활동/단계/주기 전환처럼 전체 팀 흐름을 바꾸는 필드는 호스트만 수정한다.
     function isMemberSafeProjectUpdate() {
       return isMemberOf(resource)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['teamGradeBands', 'targetGradeGroup'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['teamGradeBandProposals'])
+          || request.resource.data.get('teamGradeBandProposals', {}).diff(resource.data.get('teamGradeBandProposals', {}))
+               .affectedKeys().hasOnly([request.auth.uid]))
         && !request.resource.data.diff(resource.data).changedKeys().hasAny([
           'artifacts',
           'activityStatuses',
@@ -88,7 +92,7 @@ service cloud.firestore {
     function isSelfJoinUpdate() {
       return isSignedIn()
         && request.resource.data.diff(resource.data)
-             .changedKeys().hasOnly(['memberUids', 'memberInfo', 'updatedAt'])
+             .affectedKeys().hasOnly(['memberUids', 'memberInfo', 'updatedAt'])
         && (!(resource.data.memberUids is list)
              || request.resource.data.memberUids.hasAll(resource.data.memberUids))
         && request.resource.data.memberUids.hasAll([request.auth.uid]);

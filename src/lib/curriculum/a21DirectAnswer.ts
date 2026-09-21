@@ -1,9 +1,11 @@
-import type { ActivityCode, Project } from '@/types'
+import type { ActivityCode, Project, CurriculumSheetRow } from '@/types'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { extractKeywords } from './contextInject'
 import { loadGraph, searchStandards, type CurriculumStandard } from './graphReader'
 import { isElementaryGradeGroup } from './contentSystemReader'
 import { normalizeTeamGradeBands, formatGradeBandList, subjectsMissingInGradeBand, toGradeGroupCode } from './teamGradeBands'
+import { standardBelongsToBand } from './graphGradeBands'
+import { includeTeamSubjects } from './collaborativeBands'
 
 interface BuildA21DirectAnswerParams {
   activityCode: ActivityCode
@@ -14,6 +16,7 @@ interface BuildA21DirectAnswerParams {
   targetSubjects?: string[]
   confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>
   graphSavedData?: GraphSavedData | null
+  sheetRows?: CurriculumSheetRow[]
 }
 
 type ProjectTargetSubjects = Pick<Project, 'targetSubjects'>
@@ -40,6 +43,7 @@ export function buildA21DirectAnswer({
   targetSubjects = [],
   confirmedArtifacts,
   graphSavedData,
+  sheetRows,
 }: BuildA21DirectAnswerParams): string {
   if (activityCode !== 'A-2-1') return ''
 
@@ -60,9 +64,10 @@ export function buildA21DirectAnswer({
         messages,
         // 그래프 성취기준의 grade_band는 '초1-2' 형태다 — 라벨을 그대로 넘기면 0건이 된다.
         gradeGroup: toGradeGroupCode(band),
-        targetSubjects,
+        targetSubjects: includeTeamSubjects(targetSubjects, [band]),
         confirmedArtifacts,
         graphSavedData,
+        sheetRows,
       })
       return `### ${band}${missingNote}\n\n${body || '(이 학년군에서 매칭된 성취기준을 찾지 못했습니다.)'}`
     })
@@ -73,6 +78,9 @@ export function buildA21DirectAnswer({
       ...sections,
     ].join('\n')
   }
+
+  // A corrected single-band team also overrides the legacy representative value.
+  if (teamBands.length === 1) gradeGroup = toGradeGroupCode(teamBands[0])
 
   if (gradeGroup && !isElementaryGradeGroup(gradeGroup)) {
     return `### 학교급 교육과정 자료 확인 필요
@@ -93,7 +101,15 @@ export function buildA21DirectAnswer({
 
   const subjectNameMap = new Map(graph.subjects.map(subject => [subject.id, subject.name_ko]))
   const a12Context = extractA12Context(messages, confirmedArtifacts)
-  const standards = collectStandardsFromGraphData(graphSavedData)
+  const sheetCodes = (sheetRows ?? [])
+    .filter(row => !row.gradeBand || toGradeGroupCode(row.gradeBand) === gradeGroup)
+    .sort((a, b) => Number(Boolean(b.isCenter)) - Number(Boolean(a.isCenter)))
+    .flatMap(row => [...(row.standard ?? '').matchAll(/\[?(\d[가-힣]+\d{2}-\d{2})\]?/g)].map(match => match[1]))
+  const sheetStandards = [...new Set(sheetCodes)]
+    .map(code => graph.achievementStandards.find(item => item.code.replace(/[\[\]]/g, '') === code))
+    .filter((item): item is CurriculumStandard => !!item && standardBelongsToBand(item, gradeGroup))
+  const standards = (sheetStandards.length ? sheetStandards : null)
+    || collectStandardsFromGraphData(graphSavedData, gradeGroup)
     || collectStandardsFromSearch(messages, gradeGroup, targetSubjects, confirmedArtifacts, a12Context)
   const expectedSubjects = !graphSavedData && a12Context.subjectPlans.size > 0
     ? [...a12Context.subjectPlans.keys()]
@@ -134,7 +150,8 @@ export function buildA21DirectAnswer({
   ]
 
   rows.forEach((row, index) => {
-    lines.push(`${index + 1}. **${row.subjectName}**`)
+    const isCenter = sheetRows?.some(item => item.isCenter && item.standard?.includes(row.standard.code.replace(/[\[\]]/g, '')))
+    lines.push(`${index + 1}. **${row.subjectName}${isCenter ? ' ★ 이 학년군 중심' : ''}**`)
     lines.push(`- 성취기준: ${formatCode(row.standard.code)} ${row.standard.text}`)
     lines.push(`- 영역: ${row.standard.area}`)
     lines.push(`- 핵심아이디어: ${row.coreIdea || '미매핑'}`)
@@ -222,7 +239,7 @@ function stripKoreanSuffix(value: string): string {
   return value
 }
 
-function collectStandardsFromGraphData(graphSavedData?: GraphSavedData | null): CurriculumStandard[] | null {
+function collectStandardsFromGraphData(graphSavedData?: GraphSavedData | null, gradeGroup?: string): CurriculumStandard[] | null {
   if (!graphSavedData) return null
 
   const graph = loadGraph()
@@ -240,7 +257,7 @@ function collectStandardsFromGraphData(graphSavedData?: GraphSavedData | null): 
   for (const id of ids) {
     if (seen.has(id)) continue
     const standard = graph.achievementStandards.find(item => item.id === id)
-    if (!standard) continue
+    if (!standard || !standardBelongsToBand(standard, gradeGroup)) continue
     seen.add(id)
     standards.push(standard)
   }

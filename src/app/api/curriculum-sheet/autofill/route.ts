@@ -14,11 +14,12 @@ import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/ope
 import OpenAI from 'openai'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
 import { isElementaryGradeGroup, loadContentSystemsForGradeGroup, type ContentSystemRecord } from '@/lib/curriculum/contentSystemReader'
-import { gradeBandNeedle, isUsableCoreIdea, resolveRequestedBands, toCanonicalGradeBand } from '@/lib/curriculum/curriculumFilters'
+import { gradeBandNeedle, isUsableCoreIdea, toCanonicalGradeBand } from '@/lib/curriculum/curriculumFilters'
+import { chooseBandCenters, includeTeamSubjects, resolveAutofillGradeBands } from '@/lib/curriculum/collaborativeBands'
+import { normalizeTeamGradeBands } from '@/lib/curriculum/teamGradeBands'
 import {
   canonicalSubjectName,
   graphSubjectIdsForSubject,
-  planSubjectBands,
   resolveBridgeSubjects,
 } from '@/lib/curriculum/subjectAliases'
 import {
@@ -996,16 +997,6 @@ async function buildRowsFromSelections(params: {
   const { graph, proposals, selectedCoreIdeas, existingRows, graphSavedData, topic, chatContext, contentSystems, areaMappings } = params
   const notes: string[] = []
 
-  // 중심 교과 행은 정확히 1개. 같은 교과가 학년군별로 여러 행이면 시트의 중심 행
-  // 학년군을, 그것이 없으면 그 교과의 첫 학년군을 중심 행으로 삼는다.
-  const centerProposal = proposals.find(proposal => proposal.isCenter)
-  const centerRowBand = toCanonicalGradeBand(existingRows.find(row => row.isCenter && row.subject)?.gradeBand)
-  const centerBand = centerProposal
-    ? (centerRowBand && centerProposal.gradeBands.includes(centerRowBand)
-        ? centerRowBand
-        : centerProposal.gradeBands[0] ?? '')
-    : ''
-
   // 학년군 1개당 행 1개. 학년군은 시트 행(existingRows.gradeBand) 또는
   // selectedCoreIdeas[].gradeBands 에서 이미 확정되어 proposal 에 실려 있다.
   const targets: RowTarget[] = []
@@ -1033,13 +1024,16 @@ async function buildRowsFromSelections(params: {
         proposal,
         gradeBand,
         option: picked.option,
-        isCenter: proposal.isCenter && gradeBand === centerBand,
+        isCenter: proposal.isCenter,
       })
     }
   }
 
-  // 행마다 판정 호출이 2회(성취기준, 내용 요소)라 행 간에는 병렬로 돌린다.
-  const built = await Promise.all(targets.map(async (target): Promise<{ row: BuiltRow; steps: StepTiming[] }> => {
+  // 학년군별로 중심 교과를 유지한다. 저학년 통합교과와 고학년 사회가 각각 중심일 수 있다.
+  const centeredTargets = chooseBandCenters(targets.map(target => ({
+    ...target, subject: target.proposal.subject, coreIdea: target.option.idea,
+  })), existingRows)
+  const built = await Promise.all(centeredTargets.map(async (target): Promise<{ row: BuiltRow; steps: StepTiming[] }> => {
     const { proposal, gradeBand, option } = target
     const subject = proposal.subject
     const focus = proposal.focus
@@ -1457,6 +1451,7 @@ export async function POST(request: NextRequest) {
       a12Artifact,
       graphSavedData,
       targetGradeGroup,
+      teamGradeBands,
       chatContext,
       existingRows = [],
       selectedCoreIdeas = [],
@@ -1477,6 +1472,7 @@ export async function POST(request: NextRequest) {
       a12Artifact?: Record<string, unknown>
       graphSavedData?: GraphSavedData
       targetGradeGroup?: string
+      teamGradeBands?: string[]
       chatContext?: string
       existingRows?: ExistingRow[]
       selectedCoreIdeas?: SelectedCoreIdea[]
@@ -1567,31 +1563,35 @@ export async function POST(request: NextRequest) {
     // 예전에는 시트의 모든 교과로 buildCoreIdeaProposal(교과당 Jev 호출 1회)을 돌린 뒤
     // scopedProposals 에서 버려, 한 행만 채우는 호출이 교과 수만큼 호출을 낭비했다.
     const selectedSubjects = unique(selectedCoreIdeas.map(item => canonicalSubject(item.subject)).filter(Boolean))
-    const subjects = mode !== 'coreIdeas' && selectedSubjects.length > 0 ? selectedSubjects : derivedSubjects
+    const teamBands = normalizeTeamGradeBands(teamGradeBands)
+    const subjects = mode !== 'coreIdeas' && selectedSubjects.length > 0
+      ? selectedSubjects
+      : includeTeamSubjects(derivedSubjects, teamBands)
 
     if (subjects.length === 0) {
       return NextResponse.json({ error: '교과 정보를 찾을 수 없습니다. 분석표에 과목을 입력하거나 주제(A-1-2)를 먼저 선정한 뒤 다시 시도하세요.' }, { status: 400 })
     }
 
-    // 교과별 학년군: selectedCoreIdeas[].gradeBands(교사 확인 창) > 시트 행의 gradeBand > 프로젝트 학년군.
+    // 명시 선택 > 팀 학년군 전체 + 기존 행 > 대표값. 대화 문자열을 다시 추측하지 않는다.
     const notes: string[] = []
     const bandsForSubject = (subject: string): string[] => {
-      const requested = resolveRequestedBands({
+      const requested = resolveAutofillGradeBands({
+        subject,
+        teamGradeBands: teamBands,
         selectedBands: selectedCoreIdeaEntry(selectedCoreIdeas, subject)?.gradeBands,
         rowBands: existingRows
           .filter(row => canonicalSubject(row.subject) === canonicalSubject(subject))
           .map(row => row.gradeBand),
         defaultBand: projectBand,
       })
-      const plan = planSubjectBands(subject, requested, projectBand)
-      for (const item of plan.coerced) {
-        notes.push(`${subject}는 ${item.used} 전용 교과입니다. 요청한 ${item.requested} 대신 ${item.used} 성취기준으로 채웠습니다.`)
-      }
-      return plan.gradeBands
+      return requested
     }
     const gradeBandsBySubject = new Map(subjects.map(subject => [subject, bandsForSubject(subject)]))
 
-    const proposals = (await Promise.all(subjects.map(subject => buildCoreIdeaProposal({
+    if (subjects.includes('통합교과') && !derivedSubjects.includes('통합교과')) {
+      notes.push('1-2학년군에는 사회·과학 등 대신 통합교과의 실제 성취기준을 연결했습니다. 학년군별 중심 교과는 시트에서 각각 지정할 수 있습니다.')
+    }
+    const proposals = (await Promise.all(subjects.filter(subject => (gradeBandsBySubject.get(subject)?.length ?? 0) > 0).map(subject => buildCoreIdeaProposal({
       graph,
       subject,
       focus: linkedSubjects.find(item => canonicalSubject(item.subject) === canonicalSubject(subject))?.focus ?? '',

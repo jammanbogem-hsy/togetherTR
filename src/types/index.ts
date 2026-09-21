@@ -280,6 +280,13 @@ export interface Project {
   // targetGradeGroup은 하위 호환용 대표값(= 첫 번째 학년군)으로 계속 유지된다.
   // 없으면 "팀 전체가 targetGradeGroup 한 학년군"을 뜻한다(기존 프로젝트).
   teamGradeBands?: string[]
+  /** 팀원 발언에서 확인한 학년군은 방장 승인 전까지 제안으로만 보관한다. */
+  teamGradeBandProposals?: Record<string, {
+    id: string
+    bands: string[]
+    proposedByName: string
+    proposedAt: number
+  }>
   targetSubjects: string[]
   createdBy: string
   currentStage: StageCode

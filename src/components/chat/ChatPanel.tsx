@@ -8,7 +8,7 @@ import { hasDeferredDecision, deferredResponse, discussionContributions } from '
 import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands } from '@/lib/firebase/projects'
+import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch, CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
@@ -62,6 +62,7 @@ import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import { defaultGradeMode, effectiveRowGradeBand, resolveSheetGradeBand, toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
 import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
+import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
 import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
@@ -2084,6 +2085,8 @@ function ChatPanelContent() {
         actorType: '팀+AI',
         project: {
           title: proj.title,
+          schoolLevel: proj.schoolLevel,
+          curriculumSheet: proj.curriculumSheet,
           targetGradeGroup: proj.targetGradeGroup,
           // 여러 학년 담임이 한 팀인 경우 — 학년군별 성취기준·활동 수준 판단의 근거
           teamGradeBands: proj.teamGradeBands,
@@ -2727,6 +2730,19 @@ ${discussionSummary}
 
   const isTeamMode = discussionMode === 'team_discussion'
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
+
+  const [gradeProposalBusy, setGradeProposalBusy] = useState<string | null>(null)
+  const repairingGradeModeRef = useRef(false)
+  const storedTeamBandsKey = normalizeTeamGradeBands(project.teamGradeBands).join(',')
+  useEffect(() => {
+    if (!isHost || !needsMultiBandModeRepair(project) || repairingGradeModeRef.current) return
+    repairingGradeModeRef.current = true
+    void updateTeamGradeBands(project.id, project.teamGradeBands ?? [], { repairModeOnly: true })
+      .catch(() => setChatError('팀 학년군의 분석시트 설정을 저장하지 못했습니다. 다시 열어주세요.'))
+      .finally(() => { repairingGradeModeRef.current = false })
+  // The transaction reads the latest project; rows edited during this repair are preserved.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, project.id, storedTeamBandsKey, project.curriculumSheetGradeMode])
 
   // [2026-05-15] useCallback으로 reference 안정화 — 매 render마다 새 함수가 prop으로 들어가면
   // 모달의 useEffect cleanup이 폭주해 본인 presence가 등록·삭제 cycle을 만들어 팀원 칩 깜빡임 발생했음.
@@ -3441,7 +3457,7 @@ ${discussionSummary}
   // 분석시트 학년군 설정 — 산출물 표의 학년군 표기를 시트 화면과 일치시킨다.
   function sheetGradeSettings(rows: CurriculumSheetRow[]) {
     return {
-      gradeMode: project?.curriculumSheetGradeMode ?? defaultGradeMode(rows),
+      gradeMode: (project?.teamGradeBands?.length ?? 0) >= 2 ? 'multi' : project?.curriculumSheetGradeMode ?? defaultGradeMode(rows),
       sheetGradeBand: resolveSheetGradeBand(project?.curriculumSheetGradeBand, project?.targetGradeGroup),
     }
   }
@@ -3498,19 +3514,26 @@ ${discussionSummary}
    */
   async function handleTeamGradeBandsSignal(bands: string[]) {
     if (bands.length === 0) return
-    if (!isHost) return
-    // 이미 같은 학년군이 저장돼 있으면 재저장·중복 안내를 하지 않는다(모델이 매 턴 방출해도 안전).
-    const saved = normalizeTeamGradeBands(project?.teamGradeBands)
-    if (saved.length === bands.length && saved.every((band, index) => band === bands[index])) return
+    const saved = normalizeTeamGradeBands(project.teamGradeBands)
+    const same = saved.length === bands.length && saved.every((band, index) => band === bands[index])
+    if (same && !needsMultiBandModeRepair(project)) return
     try {
+      if (!isHost) {
+        const pending = userProfile?.uid ? project.teamGradeBandProposals?.[userProfile.uid] : undefined
+        if (pending && pending.bands.join(',') === bands.join(',')) return
+        await proposeTeamGradeBands(proj.id, bands, userProfile?.displayName ?? '팀원')
+        addAssistantNotice(`학년군 ${formatGradeBandList(bands)}을 방장에게 확인 요청했습니다. 방장이 반영하면 분석시트에 적용됩니다.`)
+        return
+      }
       const next = await updateTeamGradeBands(proj.id, bands)
       if (next.length === 0) return
       addAssistantNotice(
         `팀 학년군을 ${formatGradeBandList(next)}으로 저장했습니다.`
-        + (next.length >= 2 ? " 분석시트가 '다양한 학년군' 모드로 열립니다." : ''),
+        + (next.length >= 2 ? " 분석시트가 '다양한 학년군' 모드로 열리고, 자동 채우기가 팀 학년군별로 자료를 조회합니다." : ''),
       )
     } catch (err) {
       console.error('[TEAM_GRADE_BANDS] 저장 실패:', err)
+      setChatError('학년군 정보를 저장하지 못했습니다. 다시 알려주세요.')
     }
   }
 
@@ -5095,7 +5118,7 @@ ${discussionSummary}
             // 시트 모드에 따른 행 학년군을 함께 넘긴다. 혼성 학년(multi)이거나 한 학년군이라도
             // 프로젝트 학년군과 다른 학년군을 고른 경우에만 `[국어·3-4학년군]`으로 표기한다.
             const rows = proj.curriculumSheet ?? []
-            const mode = proj.curriculumSheetGradeMode ?? defaultGradeMode(rows)
+            const mode = (proj.teamGradeBands?.length ?? 0) >= 2 ? 'multi' : proj.curriculumSheetGradeMode ?? defaultGradeMode(rows)
             const band = resolveSheetGradeBand(proj.curriculumSheetGradeBand, proj.targetGradeGroup)
             const projectBand = toGradeBandLabel(proj.targetGradeGroup)
             return rows
@@ -5228,8 +5251,8 @@ ${discussionSummary}
             }
             return parts.length > 0 ? parts.join('\n') : undefined
           })()}
-          gradeMode={proj.curriculumSheetGradeMode
-            ?? ((proj.teamGradeBands?.length ?? 0) >= 2 ? 'multi' : undefined)}
+          teamGradeBands={proj.teamGradeBands}
+          gradeMode={(proj.teamGradeBands?.length ?? 0) >= 2 ? 'multi' : proj.curriculumSheetGradeMode}
           sheetGradeBand={proj.curriculumSheetGradeBand}
           onGradeSettingsChange={async (settings) => {
             // 시트는 공동 편집이라 팀원 누구나 학년군 모드를 바꿀 수 있다(호스트 제한 없음).
@@ -5429,6 +5452,28 @@ ${discussionSummary}
             </div>
           </div>
         )}
+
+        {isHost && Object.entries(proj.teamGradeBandProposals ?? {}).map(([uid, proposal]) => (
+          <div key={proposal.id} className="mx-4 mb-2 flex flex-wrap items-center gap-3 rounded-xl border border-violet-200 bg-violet-50 p-3" role="status">
+            <div className="flex-1 text-sm text-violet-950">
+              <p className="font-semibold">{proposal.proposedByName}님의 학년군 확인 요청</p>
+              <p>{formatGradeBandList(proposal.bands)} · 반영하면 기존 팀 학년군에 추가됩니다.</p>
+            </div>
+            {[true, false].map(accept => (
+              <button key={String(accept)} disabled={gradeProposalBusy !== null}
+                className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm disabled:opacity-50"
+                onClick={async () => {
+                  setGradeProposalBusy(proposal.id)
+                  try {
+                    const next = await resolveTeamGradeBandProposal(proj.id, uid, proposal.id, accept)
+                    if (next) addAssistantNotice(`방장이 팀 학년군을 ${formatGradeBandList(next)}으로 반영했습니다. 분석시트의 학년군 설정에도 적용됩니다.`)
+                  } catch (error) {
+                    setChatError(error instanceof Error ? error.message : '학년군 제안을 처리하지 못했습니다.')
+                  } finally { setGradeProposalBusy(null) }
+                }}>{accept ? '팀 학년군에 반영' : '반영하지 않기'}</button>
+            ))}
+          </div>
+        ))}
 
         {/* 팀 토의 제안 카드 (AI가 제안한 경우) */}
         {isHost && pendingTeamDiscussion && !isTeamMode && !showDiscussionConfirm && (

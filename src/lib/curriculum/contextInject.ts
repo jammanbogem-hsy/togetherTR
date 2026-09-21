@@ -23,7 +23,10 @@ import {
   type CurriculumStandard,
 } from './graphReader'
 import { searchJsonStandards } from './curriculumJsonReader'
-import { filterContentItemsByGrade, isUsableCoreIdea } from './curriculumFilters'
+import { isUsableCoreIdea } from './curriculumFilters'
+import { filterItemsByGradeBandStrict } from './sheetGradeBands'
+import { filterGraphToGradeBand } from './graphGradeBands'
+import { includeTeamSubjects } from './collaborativeBands'
 import {
   normalizeTeamGradeBands,
   formatGradeBandList,
@@ -52,9 +55,7 @@ function curriculumTextMatches(a: string, b: string): boolean {
 }
 
 function filterContentByGrade(items: string[], gradeGroup?: string): string[] {
-  // 학년군 파싱 실패나 미스매치로 지식·이해/과정·기능이 조용히 공란이 되지 않도록
-  // 방어적 needle + 원문 복구를 공용 헬퍼로 위임한다.
-  return filterContentItemsByGrade(items, gradeGroup)
+  return filterItemsByGradeBandStrict(items, gradeGroup)
 }
 
 function isSelectionCurriculum(curriculum: string): boolean {
@@ -364,9 +365,6 @@ ${formatStandards(standards)}
  * 그래프에서 선택한 성취기준을 그대로 내용·기능요소 분석의 기초 자료로 사용합니다.
  */
 function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): string {
-  const { centerNode, selectedStandards, agentNotes } = graphData
-  if (!centerNode && selectedStandards.length === 0) return ''
-
   if (gradeGroup && !isElementaryGradeGroup(gradeGroup)) {
     return `## 학교급 교육과정 데이터 안내
 
@@ -374,10 +372,16 @@ function buildGraphBasedA21Context(graphData: GraphSavedData, gradeGroup = ''): 
 초등 자료로 대체하거나 성취기준을 추정하지 말고, 교사가 제공한 해당 학교급 성취기준·내용 요소만 사용하세요.`
   }
 
+  const graph = loadGraph()
+  const scoped = gradeGroup
+    ? filterGraphToGradeBand(graphData, gradeGroup, graph?.achievementStandards ?? [])
+    : graphData
+  const { centerNode, selectedStandards, agentNotes } = scoped
+  if (!centerNode && selectedStandards.length === 0) return ''
+
   const noteMap = new Map(agentNotes.map(n => [n.standardId, n]))
 
   // 서버에서 그래프 로드하여 핵심아이디어 데이터 주입
-  const graph = loadGraph()
   const subjectNameMap = new Map(graph?.subjects.map(s => [s.id, s.name_ko]) ?? [])
 
   // ─── 성취기준 → 핵심아이디어 → 내용체계(지식이해/과정기능) 확정 매핑 ───
@@ -610,7 +614,7 @@ function buildMultiBandCurriculumContext(
       if (standards.length > 0) parts.push(buildActivityContext(activityCode, standards, keywords))
     }
     if (keywords.length > 0 && isContentSystemContextEnabled()) {
-      const contentSystemContext = buildContentSystemContext(activityCode, keywords, gradeGroupCode, targetSubjects)
+      const contentSystemContext = buildContentSystemContext(activityCode, keywords, gradeGroupCode, includeTeamSubjects(targetSubjects, [band]))
       if (contentSystemContext) parts.push(contentSystemContext)
     }
 
@@ -634,10 +638,9 @@ function buildMultiBandCurriculumContext(
 ⚠️ 표·목록을 만들 때 학년군을 드러내고, 학년군마다 해당 블록의 자료만 인용할 것.
 ⚠️ 블록이 비어 있는 학년군은 "데이터 없음"으로 안내하고 성취기준을 지어내지 말 것.`
 
-  return capContextLength(
-    dedupeCoreIdeaLines(`\n\n---\n${header}\n\n${blocks.join('\n\n')}`),
-    MULTI_BAND_CONTEXT_LIMIT,
-  )
+  // Allocate space per band so a long low-grade block cannot cut off the high-grade team.
+  const blockLimit = Math.floor((MULTI_BAND_CONTEXT_LIMIT - header.length - 600) / blocks.length)
+  return dedupeCoreIdeaLines(`\n\n---\n${header}\n\n${blocks.map(block => capContextLength(block, blockLimit)).join('\n\n')}`)
 }
 
 /**
@@ -670,6 +673,7 @@ export function buildCurriculumContext(
       targetSubjects,
     )
   }
+  if (teamBands.length === 1) gradeGroup = toGradeGroupCode(teamBands[0])
 
   // A-2-1: 지식 그래프 저장 데이터 우선 사용
   if (activityCode === 'A-2-1' && graphSavedData) {
