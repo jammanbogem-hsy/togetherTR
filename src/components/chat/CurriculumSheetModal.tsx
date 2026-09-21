@@ -1129,15 +1129,30 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     })
     if (onPatchSave) void saveStructuralPatch({ type: 'delete-row', rowId: id })
   }
+  // 드롭 — 핵심아이디어 묶음 전체를 대상 묶음의 대표 줄 앞으로 옮긴다.
+  // (한 학년군 모드는 모든 묶음이 1줄이라 기존 동작과 같다.)
   function handleDrop(targetId: string) {
     if (!dragRowId || dragRowId === targetId) { setDragRowId(null); setDragOverRowId(null); return }
     setRows(prev => {
-      const fromIdx = prev.findIndex(r => r.id === dragRowId)
-      const toIdx = prev.findIndex(r => r.id === targetId)
-      if (fromIdx < 0 || toIdx < 0) return prev
-      const next = [...prev]
-      const [moved] = next.splice(fromIdx, 1)
-      next.splice(toIdx, 0, moved)
+      const groupOf = (leaderId: string) => {
+        const startIdx = prev.findIndex(r => r.id === leaderId)
+        if (startIdx < 0) return []
+        const groupRows = [prev[startIdx]]
+        for (let i = startIdx + 1; i < prev.length; i += 1) {
+          if (!groupingEnabled || !isSameCoreIdeaGroup(prev[i], prev[i - 1])) break
+          groupRows.push(prev[i])
+        }
+        return groupRows
+      }
+      const moved = groupOf(dragRowId)
+      if (moved.length === 0) return prev
+      const movedIds = new Set(moved.map(r => r.id))
+      if (movedIds.has(targetId)) return prev
+      const remaining = prev.filter(r => !movedIds.has(r.id))
+      const toIdx = remaining.findIndex(r => r.id === targetId)
+      if (toIdx < 0) return prev
+      const next = [...remaining]
+      next.splice(toIdx, 0, ...moved)
       setDirty(true)
       if (!onPatchSave) triggerSave(next)
       else void saveStructuralPatch({ type: 'reorder', rowIds: next.map(r => r.id) })
@@ -1363,12 +1378,6 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     finally { setAutofillLoading(false) }
   }
 
-  /** 행에 Jev 제안을 채울 수 있는지 — 과목·핵심아이디어가 있고 매핑 칸이 하나라도 비어 있을 때. */
-  function canRowJevFill(row: CurriculumSheetRow): boolean {
-    if (!row.subject || !(row.coreIdea ?? '').trim()) return false
-    return ROW_FILL_FIELDS.some(field => !(row[field] ?? '').trim())
-  }
-
   /**
    * 행별 Jev 채우기 — 핵심아이디어 → (그 학년군의) 성취기준 → (그 성취기준의)
    * 지식·이해/과정·기능/가치·태도 매핑을 서버 판정(mode: 'rows')으로 한 행만 받아온다.
@@ -1591,6 +1600,144 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const myColor = currentUserColor ?? (currentUid ? PRESENCE_COLORS[(currentUid.charCodeAt(0) + currentUid.charCodeAt(Math.min(currentUid.length - 1, 5))) % PRESENCE_COLORS.length] : '#999')
   // 학년군 UI는 초등 학년군이 판정되는 시트에서만 노출한다(중·고는 기존 화면 그대로).
   const showGradeBandUI = !!sheetBand
+  // 다양한 학년군 모드에서만 "핵심아이디어 1행 + 학년군별 줄" 묶음 렌더링을 쓴다.
+  // (한 학년군 모드는 기존 표 그대로 — 모든 묶음이 1줄이고 학년군 열도 없다.)
+  const groupingEnabled = showGradeBandUI && sheetMode === 'multi'
+  const tableWidth = groupingEnabled ? 2755 : 2605
+  // 연속한 같은 핵심아이디어 묶음(학년군만 다른 줄 + 연결 줄)을 하나의 시각적 행으로 묶는다.
+  const rowGroups: CurriculumSheetRow[][] = []
+  for (const row of rows) {
+    const lastGroup = rowGroups[rowGroups.length - 1]
+    const prevRow = lastGroup?.[lastGroup.length - 1]
+    if (groupingEnabled && lastGroup && isSameCoreIdeaGroup(row, prevRow)) lastGroup.push(row)
+    else rowGroups.push([row])
+  }
+
+  /**
+   * 줄 단위 컨트롤 — 학년군 선택, 학년군 줄·연결 줄 추가(대표 줄), 유사 성취기준 찾기(연결 줄),
+   * AI 성취기준 제안, 그리고 그 줄에 해당하는 안내. 다양한 학년군 모드에서는 학년군 칸에,
+   * 한 학년군 모드에서는 (학년군 칸이 없으므로) 과목 칸에 렌더링한다.
+   */
+  function renderLineControls(row: CurriculumSheetRow, options: { isLeader: boolean; inBandCell: boolean }) {
+    const { isLeader, inBandCell } = options
+    const withStandards = bandsWithStandardsFor(row.subject)
+    const rowBand = rowBandOf(row)
+    // 성취기준이 있는 학년군만 제시하되, 이미 저장된 학년군은 목록에 남긴다
+    // (선택지에서 빼면 select 값이 비어 기존 데이터를 조용히 덮어쓴다).
+    const allowedBands = ELEMENTARY_GRADE_BANDS.filter(band =>
+      withStandards.some(item => item === band) || band === rowBand)
+    const nextBand = isLeader ? nextUnusedGradeBand(rows, row.subject, row.coreIdea, sheetBand, withStandards) : ''
+    const canSplit = isLeader && !!row.subject && !!row.coreIdea?.trim() && !!nextBand
+    const lackingBands = isLeader && !!row.subject && !!row.coreIdea?.trim()
+      ? bandsLackingStandards(standards, row.subject)
+        .filter(band => !usedGradeBands(rows, row.subject, row.coreIdea, sheetBand).includes(band))
+      : []
+    const fill = rowFillState[row.id]
+    const noStandards = rowBandHasNoStandards(row)
+    // AI 성취기준 제안 — 성취기준이 비어 있는 줄에만 보여 준다(채워진 줄에는 아예 없음).
+    const showAiStandard = !!row.subject
+      && !!(row.coreIdea ?? '').trim()
+      && !(row.standard ?? '').trim()
+      && !noStandards
+    const noStandardsMessage = noStandards
+      ? `${row.subject}는 ${rowBand} 성취기준이 없습니다${withStandards.length > 0 ? ` · ${withStandards.map(band => band.replace('학년군', '')).join('·')}학년군만` : ''}`
+      : ''
+
+    return (
+      <div className={cn('flex flex-col gap-1', !inBandCell && 'mt-1.5')}>
+        {inBandCell && (
+          <select
+            value={rowBand}
+            disabled={allowedBands.length === 1}
+            onChange={e => updateRow(row.id, 'gradeBand', e.target.value)}
+            onFocus={() => updatePresence(`${row.id}:gradeBand`)}
+            title={allowedBands.length === 1 ? '통합교과는 1~2학년군에만 있습니다' : '이 줄의 학년군 — 성취기준·내용 요소 후보가 이 학년군으로 바뀝니다'}
+            className="w-full px-1.5 py-1 rounded-lg border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-[13px] font-semibold text-[#5F6368] cursor-pointer disabled:cursor-default disabled:bg-[#F8F9FA]"
+          >
+            {allowedBands.map(band => (
+              <option key={band} value={band}>
+                {withStandards.some(item => item === band) ? band : `${band} (성취기준 없음)`}
+              </option>
+            ))}
+          </select>
+        )}
+        {inBandCell && isLeader && (
+          <button
+            onClick={() => addGradeBandRow(row)}
+            disabled={!canSplit}
+            title={canSplit
+              ? `${nextBand} 줄을 이 핵심아이디어 행에 추가`
+              : !row.subject || !row.coreIdea?.trim()
+                ? '과목과 핵심아이디어를 먼저 선택하세요'
+                : '이 핵심아이디어의 학년군을 모두 사용했습니다'}
+            className="w-full px-1.5 py-1 rounded-lg border border-[#C2D7F8] text-[11px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE] disabled:opacity-40 disabled:hover:bg-transparent transition truncate"
+          >
+            ＋ 학년군 줄
+          </button>
+        )}
+        {inBandCell && lackingBands.map(band => (
+          <button
+            key={band}
+            onClick={() => addBridgeRow(row, band)}
+            title={`${row.subject}는 ${band} 성취기준이 없습니다. 다른 교과의 ${band} 성취기준을 이 핵심아이디어에 연결하는 줄을 추가합니다`}
+            className="w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
+          >
+            ＋ {band} 연결 줄
+          </button>
+        ))}
+        {inBandCell && !!row.linkedCoreIdea && !!rowBand && (
+          <button
+            onClick={e => { void openBridgePicker(row, (e.currentTarget as HTMLElement).getBoundingClientRect()) }}
+            title={`${row.linkedCoreIdea.subject} 핵심아이디어에 맞는 ${rowBand} 성취기준 후보를 찾습니다`}
+            className="w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
+          >
+            유사 성취기준 찾기
+          </button>
+        )}
+        {showAiStandard && (
+          <button
+            onClick={() => { void handleRowJevFill(row) }}
+            disabled={!!fill?.loading}
+            title="이 학년군의 성취기준과 비어 있는 내용 요소를 AI 판정(Jev)으로 제안받습니다"
+            className="w-full px-1.5 py-1 rounded-lg border border-[#A8DAB5] text-[11px] font-bold text-[#137333] hover:bg-[#E6F4EA] disabled:opacity-40 disabled:hover:bg-transparent transition truncate"
+          >
+            {fill?.loading ? '판정 중...' : 'AI 성취기준 제안'}
+          </button>
+        )}
+        {fill?.judge && !fill.error && (
+          <span
+            title={JUDGE_LABEL[fill.judge]}
+            className={cn(
+              'px-1.5 py-0.5 rounded-md text-[11px] font-bold text-center',
+              fill.judge === 'jev' ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#F1F3F4] text-[#5F6368]',
+            )}
+          >
+            {fill.judge === 'jev' ? 'Jev' : '임베딩'} {fill.filled ? `${fill.filled}칸` : '추가 없음'}
+          </span>
+        )}
+        {fill?.error && (
+          <span title={[fill.error, ...(fill.notes ?? [])].join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FCE8E6] text-[11px] font-bold text-[#A50E0E] truncate">
+            {fill.error}
+          </span>
+        )}
+        {!fill?.error && fill?.notes?.length ? (
+          <span title={fill.notes.join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FEF7E0] text-[11px] font-semibold text-[#8A5A00] leading-snug line-clamp-2">
+            {fill.notes[0]}
+          </span>
+        ) : null}
+        {/* 한 학년군 모드에서 통합교과 줄만 1~2학년군으로 동작함을 알린다 */}
+        {showGradeBandUI && integratedBandMismatch(row, sheetMode, sheetBand) && (
+          <p className="px-1 text-[11px] font-semibold leading-snug text-[#B06000]">이 줄만 1-2학년군</p>
+        )}
+        {/* 그 학년군에 교과 성취기준이 없음 — 성취기준·내용 요소가 모두 비는 이유 */}
+        {showGradeBandUI && noStandards && (
+          <p title={noStandardsMessage} className="px-1 text-[11px] font-semibold leading-snug text-[#B06000]">
+            {noStandardsMessage}
+          </p>
+        )}
+      </div>
+    )
+  }
   const hasGraphRows = rows.some(r => r.subject && r.standard)
   const hasCenterGraphRow = rows.some(r => r.isCenter && r.standard)
   // 과목·내용은 채웠지만 성취기준이 비어 지식 그래프에 표시되지 않을 교과들
@@ -1668,7 +1815,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
               )}
             </div>
             <p className="text-sm leading-relaxed text-[#5F6368]">
-              한 학년군 팀은 위에서 학년군을 고르면 됩니다. 여러 학년 선생님이 함께라면 &lsquo;다양한 학년군&rsquo;으로 바꾸고 행마다 학년군을 고른 뒤, &lsquo;＋ 학년군 줄&rsquo;로 같은 핵심아이디어를 학년군별로 나눠 성취기준을 연결하세요. 각 줄은 &lsquo;Jev로 채우기&rsquo;로 자동 제안받거나 직접 고를 수 있습니다.
+              한 학년군 팀은 위에서 학년군을 고르면 됩니다. 여러 학년 선생님이 함께라면 &lsquo;다양한 학년군&rsquo;으로 바꾸고, 핵심아이디어 행 안에서 &lsquo;＋ 학년군 줄&rsquo;로 학년군별 줄을 나눠 성취기준을 연결하세요. 성취기준이 비어 있는 줄은 &lsquo;AI 성취기준 제안&rsquo;으로 받을 수도 있습니다.
             </p>
           </div>
         )}
@@ -1836,11 +1983,12 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             <div className="py-20 text-center text-base text-[#9AA0A6]">교육과정 데이터 로딩 중...</div>
           ) : (
             <div className="h-full overflow-auto" style={{ scrollbarGutter: 'stable both-edges' }}>
-              <table className="w-[2605px] min-w-[2605px] table-fixed border-collapse">
+              <table className="table-fixed border-collapse" style={{ width: tableWidth, minWidth: tableWidth }}>
                 <colgroup>
                   <col style={{ width: 36 }} />
                   <col style={{ width: 125 }} />
                   <col style={{ width: 360 }} />
+                  {groupingEnabled && <col style={{ width: 150 }} />}
                   <col style={{ width: 420 }} />
                   <col style={{ width: 285 }} />
                   <col style={{ width: 285 }} />
@@ -1854,6 +2002,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     <th className="px-1 py-3 sticky left-0 z-20 bg-[#F8F9FA]" />
                     <th className="px-3 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap sticky left-[36px] z-20 bg-[#F8F9FA] border-r border-[#DADCE0]">과목</th>
                     <th className="px-3 py-3 text-left text-base font-bold text-[#7B1FA2] whitespace-nowrap">핵심아이디어</th>
+                    {groupingEnabled && <th className="px-2 py-3 text-left text-base font-bold text-[#5F6368] whitespace-nowrap">학년군</th>}
                     <th className="px-3 py-3 text-left text-base font-bold text-[#1A73E8] whitespace-nowrap">성취기준</th>
                     <th className="px-3 py-3 text-left text-base font-bold text-[#0D47A1] whitespace-nowrap">지식·이해</th>
                     <th className="px-3 py-3 text-left text-base font-bold text-[#137333] whitespace-nowrap">과정·기능</th>
@@ -1864,159 +2013,60 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                   </tr>
                 </thead>
                 <tbody>
-                {rows.map((row, rowIdx) => (
+                {rowGroups.map(group => {
+                  // 묶음의 첫 줄(leader)이 과목·핵심아이디어 칸을 rowSpan으로 들고,
+                  // 나머지 줄은 학년군별 칸만 렌더링해 "한 행 안의 학년군 줄"로 보이게 한다.
+                  const leader = group[0]
+                  const members = group.slice(1)
+                  const memberSubjectChips = members
+                    .filter(member => member.subject && member.subject !== leader.subject)
+                    .map(member => ({ id: member.id, label: `＋ ${member.subject} ${rowBandOf(member).replace('학년군', '')}` }))
+                  // 연결 줄은 자기 학년군의 실제 핵심아이디어로 성취기준·내용 요소를 찾으므로
+                  // 핵심아이디어 칸에 그 줄의 핵심아이디어를 따로 보여 준다.
+                  const bridgeMembers = members.filter(member => member.linkedCoreIdea && (member.coreIdea ?? '').trim())
+                  const leaderSpanBorder = groupingEnabled ? 'border-b-2 border-b-[#DADCE0]' : ''
+                  return group.map((row, lineIdx) => {
+                    const isLeader = lineIdx === 0
+                    const isLastLine = lineIdx === group.length - 1
+                    return (
                   <tr
                     key={row.id}
-                    draggable
-                    onDragStart={() => setDragRowId(row.id)}
-                    onDragOver={e => { e.preventDefault(); setDragOverRowId(row.id) }}
-                    onDragEnd={() => { setDragRowId(null); setDragOverRowId(null) }}
-                    onDrop={() => handleDrop(row.id)}
+                    draggable={isLeader}
+                    onDragStart={isLeader ? () => setDragRowId(leader.id) : undefined}
+                    onDragOver={isLeader ? (e => { e.preventDefault(); setDragOverRowId(leader.id) }) : undefined}
+                    onDragEnd={isLeader ? (() => { setDragRowId(null); setDragOverRowId(null) }) : undefined}
+                    onDrop={isLeader ? (() => handleDrop(leader.id)) : undefined}
                     className={cn(
-                      'border-b border-[#E8EAED] hover:bg-[#F8F9FA] group transition-colors',
-                      dragOverRowId === row.id && dragRowId !== row.id && 'border-t-2 border-t-[#1A73E8] bg-[#E8F0FE]',
+                      'hover:bg-[#F8F9FA] group transition-colors',
+                      !groupingEnabled && 'border-b border-[#E8EAED]',
+                      groupingEnabled && isLastLine && 'border-b-2 border-b-[#DADCE0]',
+                      groupingEnabled && !isLeader && 'border-t border-dashed border-t-[#E8EAED]',
+                      isLeader && dragOverRowId === leader.id && dragRowId !== leader.id && 'border-t-2 border-t-[#1A73E8] bg-[#E8F0FE]',
                     )}
                   >
-                    {/* 드래그 핸들 — 좌측 고정 */}
-                    <td className="px-1 py-2 align-top text-center cursor-grab active:cursor-grabbing sticky left-0 z-[5] bg-white group-hover:bg-[#F8F9FA]">
+                    {/* 드래그 핸들 — 좌측 고정 (묶음 전체를 옮긴다) */}
+                    {isLeader && (
+                    <td rowSpan={group.length} className={cn('px-1 py-2 align-top text-center cursor-grab active:cursor-grabbing sticky left-0 z-[5] bg-white group-hover:bg-[#F8F9FA]', leaderSpanBorder)}>
                       <span className="text-[#DADCE0] hover:text-[#9AA0A6] text-base select-none">⠿</span>
                     </td>
+                    )}
 
-                    {/* 과목 + 중심교과 — 좌측 고정 */}
-                    <td className="px-2 py-2 align-top sticky left-[36px] z-[5] bg-white group-hover:bg-[#F8F9FA] border-r border-[#E8EAED]">
+                    {/* 과목 + 중심교과 — 좌측 고정 (묶음 대표) */}
+                    {isLeader && (
+                    <td rowSpan={group.length} className={cn('px-2 py-2 align-top sticky left-[36px] z-[5] bg-white group-hover:bg-[#F8F9FA] border-r border-[#E8EAED]', leaderSpanBorder)}>
                       <select value={row.subject} onChange={e => updateRowSubject(row, e.target.value)}
                         className="w-full px-1.5 py-2 rounded-xl border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-base font-semibold text-[#202124] cursor-pointer">
                         <option value="">선택</option>
                         {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
-                      {showGradeBandUI && sheetMode === 'multi' && (() => {
-                        const withStandards = bandsWithStandardsFor(row.subject)
-                        const rowBand = rowBandOf(row)
-                        // 성취기준이 있는 학년군만 제시하되, 이미 저장된 학년군은 목록에 남긴다
-                        // (선택지에서 빼면 select 값이 비어 기존 데이터를 조용히 덮어쓴다).
-                        const allowedBands = ELEMENTARY_GRADE_BANDS.filter(band =>
-                          withStandards.some(item => item === band) || band === rowBand)
-                        const nextBand = nextUnusedGradeBand(rows, row.subject, row.coreIdea, sheetBand, withStandards)
-                        const canSplit = !!row.subject && !!row.coreIdea?.trim() && !!nextBand
-                        return (
-                          <div className="mt-1.5 flex flex-col gap-1">
-                            <select
-                              value={rowBand}
-                              disabled={allowedBands.length === 1}
-                              onChange={e => updateRow(row.id, 'gradeBand', e.target.value)}
-                              onFocus={() => updatePresence(`${row.id}:gradeBand`)}
-                              title={allowedBands.length === 1 ? '통합교과는 1~2학년군에만 있습니다' : '이 행의 학년군 — 성취기준·내용 요소 후보가 이 학년군으로 바뀝니다'}
-                              className="w-full px-1.5 py-1 rounded-lg border border-[#E8EAED] hover:border-[#DADCE0] focus:border-[#1A73E8] focus:outline-none bg-white text-[13px] font-semibold text-[#5F6368] cursor-pointer disabled:cursor-default disabled:bg-[#F8F9FA]"
-                            >
-                              {allowedBands.map(band => (
-                                <option key={band} value={band}>
-                                  {withStandards.some(item => item === band) ? band : `${band} (성취기준 없음)`}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => addGradeBandRow(row)}
-                              disabled={!canSplit}
-                              title={canSplit
-                                ? `${nextBand} 줄을 바로 아래에 추가 (같은 핵심아이디어)`
-                                : !row.subject || !row.coreIdea?.trim()
-                                  ? '과목과 핵심아이디어를 먼저 선택하세요'
-                                  : '이 핵심아이디어의 학년군을 모두 사용했습니다'}
-                              className="w-full px-1.5 py-1 rounded-lg border border-[#C2D7F8] text-[12px] font-bold text-[#1A73E8] hover:bg-[#E8F0FE] disabled:opacity-40 disabled:hover:bg-transparent transition"
-                            >
-                              ＋ 학년군 줄
-                            </button>
-                            {/* 그 학년군에 성취기준이 없는 교과 → 다른 교과 성취기준을 붙일 연결 줄 */}
-                            {!!row.subject && !!row.coreIdea?.trim() && (() => {
-                              const used = usedGradeBands(rows, row.subject, row.coreIdea, sheetBand)
-                              const lacking = bandsLackingStandards(standards, row.subject)
-                                .filter(band => !used.includes(band))
-                              return lacking.map(band => (
-                                <button
-                                  key={band}
-                                  onClick={() => addBridgeRow(row, band)}
-                                  title={`${row.subject}는 ${band} 성취기준이 없습니다. 다른 교과의 ${band} 성취기준을 이 핵심아이디어에 연결하는 줄을 추가합니다`}
-                                  className="w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
-                                >
-                                  ＋ {band} 연결 줄
-                                </button>
-                              ))
-                            })()}
-                          </div>
-                        )
-                      })()}
-                      {/* 한 학년군 모드에서 통합교과 행만 1~2학년군으로 동작함을 알린다 */}
-                      {showGradeBandUI && integratedBandMismatch(row, sheetMode, sheetBand) && (
-                        <p className="mt-1.5 px-1 text-[11px] font-semibold leading-snug text-[#B06000]">
-                          이 줄만 1-2학년군
-                        </p>
-                      )}
-                      {/* 그 학년군에 교과 성취기준이 없음 — 성취기준·내용 요소가 모두 비는 이유 */}
-                      {showGradeBandUI && rowBandHasNoStandards(row) && (() => {
-                        const withStandards = bandsWithStandardsFor(row.subject)
-                        const message = `${row.subject}는 ${rowBandOf(row)} 성취기준이 없습니다${withStandards.length > 0 ? ` · ${withStandards.map(band => band.replace('학년군', '')).join('·')}학년군만` : ''}`
-                        return (
-                          <p title={message} className="mt-1.5 px-1 text-[11px] font-semibold leading-snug text-[#B06000]">
-                            {message}
-                          </p>
-                        )
-                      })()}
-                      {/* 연결 줄 — 원본 핵심아이디어에 맞는 그 학년군 성취기준 찾기 */}
-                      {showGradeBandUI && !!row.linkedCoreIdea && !!rowBandOf(row) && (
-                        <button
-                          onClick={e => { void openBridgePicker(row, (e.currentTarget as HTMLElement).getBoundingClientRect()) }}
-                          title={`${row.linkedCoreIdea.subject} 핵심아이디어에 맞는 ${rowBandOf(row)} 성취기준 후보를 찾습니다`}
-                          className="mt-1.5 w-full px-1.5 py-1 rounded-lg border border-[#D7C2E8] text-[11px] font-bold text-[#7B1FA2] hover:bg-[#F3E5F5] transition truncate"
-                        >
-                          유사 성취기준 찾기
-                        </button>
-                      )}
-                      {/* 행별 Jev 채우기 — 핵심아이디어 → 성취기준 → 내용 요소 매핑 제안 */}
-                      {(() => {
-                        const fill = rowFillState[row.id]
-                        const noStandards = rowBandHasNoStandards(row)
-                        const enabled = canRowJevFill(row) && !noStandards && !fill?.loading
-                        if (!row.subject) return null
-                        return (
-                          <div className="mt-1.5 flex flex-col gap-1">
-                            <button
-                              onClick={() => { void handleRowJevFill(row) }}
-                              disabled={!enabled}
-                              title={noStandards
-                                ? `${row.subject}는 ${rowBandOf(row)} 성취기준이 교육과정에 없어 채울 수 없습니다`
-                                : !(row.coreIdea ?? '').trim()
-                                  ? '핵심아이디어를 먼저 선택하세요'
-                                  : !canRowJevFill(row)
-                                    ? '성취기준·내용 요소가 모두 채워져 있습니다'
-                                    : `${rowBandOf(row) || '이 학년군'} 성취기준과 내용 요소를 Jev 판정으로 제안받습니다 (빈 칸만 채움)`}
-                              className="w-full px-1.5 py-1 rounded-lg border border-[#A8DAB5] text-[11px] font-bold text-[#137333] hover:bg-[#E6F4EA] disabled:opacity-40 disabled:hover:bg-transparent transition truncate"
-                            >
-                              {fill?.loading ? '판정 중...' : 'Jev로 채우기'}
-                            </button>
-                            {fill?.judge && !fill.error && (
-                              <span
-                                title={JUDGE_LABEL[fill.judge]}
-                                className={cn(
-                                  'px-1.5 py-0.5 rounded-md text-[11px] font-bold text-center',
-                                  fill.judge === 'jev' ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#F1F3F4] text-[#5F6368]',
-                                )}
-                              >
-                                {fill.judge === 'jev' ? 'Jev' : '임베딩'} {fill.filled ? `${fill.filled}칸` : '추가 없음'}
-                              </span>
-                            )}
-                            {fill?.error && (
-                              <span title={[fill.error, ...(fill.notes ?? [])].join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FCE8E6] text-[11px] font-bold text-[#A50E0E] truncate">
-                                {fill.error}
-                              </span>
-                            )}
-                            {!fill?.error && fill?.notes?.length ? (
-                              <span title={fill.notes.join('\n')} className="px-1.5 py-0.5 rounded-md bg-[#FEF7E0] text-[11px] font-semibold text-[#8A5A00] leading-snug line-clamp-2">
-                                {fill.notes[0]}
-                              </span>
-                            ) : null}
-                          </div>
-                        )
-                      })()}
+                      {/* 묶음 안에 다른 교과 줄(연결 줄)이 있으면 읽기 전용 칩으로 알린다 */}
+                      {memberSubjectChips.map(chip => (
+                        <span key={chip.id} className="mt-1.5 inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
+                          {chip.label}
+                        </span>
+                      ))}
+                      {/* 한 학년군 모드에서는 학년군 칸이 없으므로 안내·AI 제안을 과목 칸에 둔다 */}
+                      {!groupingEnabled && renderLineControls(row, { isLeader: true, inBandCell: false })}
                       {row.subject && (
                         <label className="flex items-center gap-1 mt-1.5 px-1 cursor-pointer select-none">
                           <input
@@ -2051,19 +2101,16 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         </label>
                       )}
                     </td>
+                    )}
 
-                    {/* 핵심아이디어 (단일) */}
-                    <td className="px-3 py-2 align-top relative">
+                    {/* 핵심아이디어 — 묶음 대표 (연결 줄은 자기 핵심아이디어를 아래에 덧붙인다) */}
+                    {isLeader && (
+                    <td rowSpan={group.length} className={cn('px-3 py-2 align-top relative', leaderSpanBorder)}>
                       {(() => {
                         const oe = getPresenceForCell(row.id, 'coreIdea')
                         const isMy = getMyPresenceForCell(row.id, 'coreIdea')
                         const bdr = oe ? `2px solid ${oe.color}` : isMy ? `2px dashed ${myColor}` : '1px solid #E8EAED'
                         const coreIdeaArea = getCoreIdeaArea(row)
-                        const prevRow = rowIdx > 0 ? rows[rowIdx - 1] : undefined
-                        // 바로 위 행과 같은 핵심아이디어 묶음이면 "학년군만 다른 줄"로 묶어 보여준다.
-                        // 연결 줄은 교과·핵심아이디어가 달라도 원본을 가리키면 같은 묶음이다.
-                        const sameGroupAsAbove = isSameCoreIdeaGroup(row, prevRow)
-                        const rowBandLabel = rowBandOf(row)
                         return (<>
                           <button onClick={e => handleCellClick(row.id, 'coreIdea', e)}
                             className="w-full text-left px-3 py-2 rounded-xl transition min-h-[44px] text-base leading-relaxed"
@@ -2082,20 +2129,38 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                                   ↔ {row.linkedCoreIdea.subject} 핵심아이디어 연결
                                 </span>
                               )}
-                              {showGradeBandUI && sheetMode === 'multi' && sameGroupAsAbove && (<>
-                                <span className="inline-flex items-center rounded-md bg-[#E8F0FE] px-1.5 py-0.5 text-[12px] font-bold text-[#1A73E8]">
-                                  {rowBandLabel}
-                                </span>
-                                <span className="text-[12px] font-semibold text-[#9AA0A6]">↳ 같은 핵심아이디어</span>
-                              </>)}
                             </span>
                             <span className="block">{row.coreIdea || '핵심아이디어 선택...'}</span>
                           </button>
+                          {bridgeMembers.map(member => (
+                            <button
+                              key={member.id}
+                              onClick={e => handleCellClick(member.id, 'coreIdea', e)}
+                              title={`${rowBandOf(member)} ${member.subject} 줄의 핵심아이디어 — 클릭하면 다시 고를 수 있습니다`}
+                              className="mt-1.5 w-full text-left px-2 py-1.5 rounded-lg bg-[#FAF5FD] border border-[#EADDF3] hover:border-[#D7C2E8] transition"
+                            >
+                              <span className="text-[12px] font-bold text-[#7B1FA2]">↔ {rowBandOf(member)} · {member.subject}</span>
+                              <span className="block text-[13px] leading-relaxed text-[#5F6368]">{member.coreIdea}</span>
+                            </button>
+                          ))}
                           {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
                           {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
                         </>)
                       })()}
                     </td>
+                    )}
+
+                    {/* 학년군 — 줄마다 (다양한 학년군 모드 전용) */}
+                    {groupingEnabled && (
+                      <td className="px-2 py-2 align-top">
+                        {!isLeader && row.subject && row.subject !== leader.subject && (
+                          <span className="mb-1 inline-flex items-center rounded-md bg-[#F3E5F5] px-1.5 py-0.5 text-[12px] font-bold text-[#7B1FA2]">
+                            {row.subject}
+                          </span>
+                        )}
+                        {renderLineControls(row, { isLeader, inBandCell: true })}
+                      </td>
+                    )}
 
                     {/* 성취기준 / 지식·이해 / 과정·기능 / 가치·태도 (다중 태그) */}
                     {(['standard', 'knowledge', 'processFunction', 'valueAttitude'] as const).map(field => {
@@ -2150,15 +2215,17 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                       })()}
                     </td>
 
-                    {/* 행 삭제 — 우측 고정 (가로 스크롤 없이 항상 보임) */}
+                    {/* 줄 삭제 — 우측 고정 (가로 스크롤 없이 항상 보임) */}
                     <td className="px-2 py-2 align-top text-center sticky right-0 z-[5] bg-white group-hover:bg-[#F8F9FA] border-l border-[#E8EAED]">
-                      <button onClick={() => removeRow(row.id)} title={`${rowIdx + 1}행 삭제`}
+                      <button onClick={() => removeRow(row.id)} title={groupingEnabled ? '이 학년군 줄 삭제' : `${rows.indexOf(row) + 1}행 삭제`}
                         className="w-10 h-10 rounded-full border border-[#F1F3F4] hover:bg-[#FCE8E6] hover:border-[#F28B82] text-[#C5221F] flex items-center justify-center transition text-base">
                         &times;
                       </button>
                     </td>
                   </tr>
-                ))}
+                    )
+                  })
+                })}
                 </tbody>
               </table>
             </div>
