@@ -1,0 +1,11 @@
+{
+  "sourceCommit": "9dc63f47a57fb6f356f923469c4461db916dffb9",
+  "url": "https://togethertr.web.app",
+  "releaseTime": "2026-09-21T14:39:12.004Z",
+  "hostingRelease": "projects/togethertr/sites/togethertr/channels/live/releases/1790001552004000",
+  "hostingVersion": "projects/togethertr/sites/togethertr/versions/5f7368b0aa46b6cb",
+  "buildId": "P_Y50F6XHalr1xr1LGy8_",
+  "firestoreRulesSha256": "14e811777a3f3099083e7bdd1d416f7a1d34a01dbb34faf191d0cea68e706f8a",
+  "firestoreRulesReleased": true,
+  "previousHostingVersion": "projects/togethertr/sites/togethertr/versions/506cfec718660914"
+}

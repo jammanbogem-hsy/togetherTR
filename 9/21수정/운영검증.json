@@ -1,0 +1,73 @@
+{
+  "url": "https://togethertr.web.app",
+  "checkedAt": "2026-09-21T14:39:25.513Z",
+  "checks": [
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/login",
+      "status": 200
+    },
+    {
+      "mode": "coreIdeas",
+      "subjects": [
+        {
+          "subject": "국어",
+          "bands": [
+            "1-2학년군",
+            "3-4학년군",
+            "5-6학년군"
+          ]
+        },
+        {
+          "subject": "사회",
+          "bands": [
+            "3-4학년군",
+            "5-6학년군"
+          ]
+        },
+        {
+          "subject": "통합교과",
+          "bands": [
+            "1-2학년군"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "rows",
+      "rowCount": 6,
+      "centers": [
+        {
+          "band": "3-4학년군",
+          "subject": "국어"
+        },
+        {
+          "band": "5-6학년군",
+          "subject": "사회"
+        },
+        {
+          "band": "1-2학년군",
+          "subject": "통합교과"
+        }
+      ]
+    },
+    {
+      "mode": "chat",
+      "separatedBands": [
+        "1-2학년군",
+        "3-4학년군",
+        "5-6학년군"
+      ],
+      "centersPreserved": true,
+      "wrongGradeCodes": 0
+    },
+    {
+      "path": "/_next/static/chunks/0h7a~4rsxdng1.js",
+      "sha256": "ae73d244aa6a7637a5806c226f4a6500ea8410c8de239c2e32794165944007ed",
+      "matchesBuiltClient": true
+    }
+  ]
+}
