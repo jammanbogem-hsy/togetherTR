@@ -16,6 +16,7 @@
     "validate:curriculum-content-systems": "node scripts/validate-curriculum-content-systems.mjs",
     "verify:curriculum": "node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs scripts/verify-curriculum-linkage.mjs",
     "sanitize:knowledge-graph": "node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs scripts/sanitize-knowledge-graph.mjs",
+    "build:curriculum-map": "node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs scripts/build-curriculum-map.mjs",
     "export:knowledge-graph-xlsx": "python3 scripts/export-knowledge-graph-xlsx.py"
   },
   "dependencies": {

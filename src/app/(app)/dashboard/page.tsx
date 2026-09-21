@@ -8,7 +8,7 @@ import { getUserProjects, deleteProject, getUserFolders, saveUserFolders, getUse
 import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
 import { cn } from '@/lib/utils'
-import { Plus, BookOpen, User, Loader2, LogOut, UserPlus, Crown, Play, FolderPlus, Folder, ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { Plus, BookOpen, User, Loader2, LogOut, UserPlus, Crown, Play, FolderPlus, Folder, ArrowLeft, Pencil, Trash2, Network } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 
 const STAGE_LABELS = { T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가' }
@@ -337,6 +337,13 @@ export default function DashboardPage() {
                 </button>
               </div>
             )}
+            <button
+              onClick={() => router.push('/curriculum-map')}
+              className="morph-btn flex items-center gap-1.5 bg-white border-2 border-[#DADCE0] text-[#5F6368] text-[13px] font-bold px-4 py-2.5 hover:border-[#1A73E8] hover:text-[#1A73E8] transition-colors"
+            >
+              <Network className="w-4 h-4" />
+              교육과정 분석맵
+            </button>
             <button
               onClick={() => router.push('/projects/join')}
               className="morph-btn flex items-center gap-1.5 bg-white border-2 border-[#DADCE0] text-[#5F6368] text-[13px] font-bold px-4 py-2.5 hover:border-[#1A73E8] hover:text-[#1A73E8] transition-colors"
