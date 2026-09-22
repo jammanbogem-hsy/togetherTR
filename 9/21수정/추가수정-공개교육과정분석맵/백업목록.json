@@ -1,0 +1,68 @@
+{
+  "previousCommit": "fc542df992a2b0f73db74dd7ca3490fd7ed8c31f",
+  "codeCommit": "c8dd9e76eb24b34224d14aa9914aff7410d82fd7",
+  "archives": [
+    {
+      "file": "이전버전.zip",
+      "commit": "fc542df992a2b0f73db74dd7ca3490fd7ed8c31f",
+      "sha256": "6f67e3e82f063685943fd8e038278d0413a53f3b0e55d1140dee02838fc64dd0",
+      "entries": [
+        {
+          "path": "scripts/curriculumMap.test.mjs",
+          "sha256": "a001454ce6661d6a994e1867816bb9994603f9320bfc866134bb5e2d58529e02"
+        },
+        {
+          "path": "src/app/(app)/curriculum-map/page.tsx",
+          "sha256": "52a7fd2d5494e6e99e4384bf9e5b9cf8bdeb3488cd7f68962246bea08f2eaffa"
+        }
+      ]
+    },
+    {
+      "file": "수정본.zip",
+      "commit": "c8dd9e76eb24b34224d14aa9914aff7410d82fd7",
+      "sha256": "753ce6d41503d156d777f233d273f543648cf52026c68298a0a271e0ee646500",
+      "entries": [
+        {
+          "path": "deploy/curriculum-map/README.md",
+          "sha256": "c980624cfc793804d8dd12f1040677a756ce045729446271f5aa2ceb908dfa37"
+        },
+        {
+          "path": "deploy/curriculum-map/firebase.json",
+          "sha256": "75c11d2b0d0d6587826fead7c8a6d601406137213aa7f548aa43f88a6f24fb55"
+        },
+        {
+          "path": "deploy/curriculum-map/layout.tsx.template",
+          "sha256": "22d969784b0ff036fe05505ea7b17c2c3d1d67b8d1b377e40614d1b133fb7c36"
+        },
+        {
+          "path": "deploy/curriculum-map/next.config.mjs",
+          "sha256": "d46048ddd42c41a2c079f44b4dd1785f531b280d2251812a410ef0348de38b22"
+        },
+        {
+          "path": "deploy/curriculum-map/page.tsx.template",
+          "sha256": "0e25342b07c346313a5b77b11f8b748e143aba8861b930e591d43b2baf0db49e"
+        },
+        {
+          "path": "scripts/curriculumMap.test.mjs",
+          "sha256": "b0409a53336b5ecc5784cf752307fec1ac630f60342b87cba503568539a5ebc0"
+        },
+        {
+          "path": "scripts/prepare-public-curriculum-map.mjs",
+          "sha256": "01f01db301bbe31bf8eb2109a76528fd98ff42f55ae582cdefc054ab5e89bcb9"
+        },
+        {
+          "path": "scripts/publicCurriculumMap.test.mjs",
+          "sha256": "99f0d8c07e8120d965eaff98a19d41b1b04de0679fa848c5a5c73908edeaa25a"
+        },
+        {
+          "path": "src/app/(app)/curriculum-map/page.tsx",
+          "sha256": "b4f41a979959b31998d6f8a25a1912ba770ad233fb971190e79a1ce382073f09"
+        },
+        {
+          "path": "src/components/curriculum-map/CurriculumMapWorkspace.tsx",
+          "sha256": "bb37b6044f25472961dd225f953719a8847dc7df73ea011e4e525e73817ffe26"
+        }
+      ]
+    }
+  ]
+}
