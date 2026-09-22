@@ -1,0 +1,64 @@
+{
+  "previousCommit": "def2e624c0809c559377204e3d4cc915eb2b2c57",
+  "codeCommit": "7a48cc58eb5b1babb6501b8a2e4b3cca52d680b9",
+  "archives": [
+    {
+      "file": "이전버전.zip",
+      "commit": "def2e624c0809c559377204e3d4cc915eb2b2c57",
+      "sha256": "4ba13084878b0406899a56a7b5250904f511eb61aa282d2d918feffab7ad0bb0",
+      "entries": [
+        {
+          "path": "src/components/curriculum-map/CurriculumMapCanvas.tsx",
+          "sha256": "82fe3650c63e0afed25974f5f3821d39bcc15dc86dff588bbf72649be6bb0087"
+        },
+        {
+          "path": "src/components/curriculum-map/MapTooltip.tsx",
+          "sha256": "40fbcc34091b0bf3c9e3b2e5835c1d1ea4d7341fa2d3736dd6d67fb00aeca358"
+        },
+        {
+          "path": "src/components/curriculum-map/drawMap.ts",
+          "sha256": "068933f59d01152eb1a8f9625f4f849eb443e00e49216d86b6214dffd1b9de8b"
+        },
+        {
+          "path": "src/components/curriculum-map/mapMath.ts",
+          "sha256": "3b309659f06787a89fedff676de788110d10504bffc0b6c97d26acad25d748a5"
+        },
+        {
+          "path": "src/components/curriculum-map/useMapViewport.ts",
+          "sha256": "7f1849ac4786481e31ed517036f8a9150a2e4109b36b6fe8846997299b6050da"
+        }
+      ]
+    },
+    {
+      "file": "수정본.zip",
+      "commit": "7a48cc58eb5b1babb6501b8a2e4b3cca52d680b9",
+      "sha256": "4f9fb94f671d6fda4f854ab16e0128e3222d60463a9efc8ddfeb4c840334ff72",
+      "entries": [
+        {
+          "path": "scripts/curriculumMapTooltip.test.mjs",
+          "sha256": "08ed1aaf8d148a298791daab803e2351ac456c43f4149ccb2a95ba89e3a6564a"
+        },
+        {
+          "path": "src/components/curriculum-map/CurriculumMapCanvas.tsx",
+          "sha256": "de3e559fa79707ec3f6b182cd4cf6d6af671bc0ddb32f00e3163d1b720f84d85"
+        },
+        {
+          "path": "src/components/curriculum-map/MapTooltip.tsx",
+          "sha256": "43e784a5f45c14ab3d2b68140877dd69111650d6a64918f3f6ca0772cf96b46e"
+        },
+        {
+          "path": "src/components/curriculum-map/drawMap.ts",
+          "sha256": "da34c063ce940ad4b2e39a587d39fcbe630940872f1edd9031557b3c0e369a94"
+        },
+        {
+          "path": "src/components/curriculum-map/mapMath.ts",
+          "sha256": "d06030f344791a0d7b38d99aa4f99cd6f6b58fac788d68116807b53d4beac507"
+        },
+        {
+          "path": "src/components/curriculum-map/useMapViewport.ts",
+          "sha256": "71f5efcc2e506f61f904d214beda5b47441b32e6684c7715bb1945e88e93f550"
+        }
+      ]
+    }
+  ]
+}

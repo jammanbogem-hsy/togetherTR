@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-22",
+  "codeCommit": "7a48cc58eb5b1babb6501b8a2e4b3cca52d680b9",
+  "tests": {
+    "passed": 75,
+    "failed": 0,
+    "suites": [
+      "curriculumMapTooltip",
+      "curriculumMapUi",
+      "publicCurriculumMap"
+    ]
+  },
+  "eslint": "passed",
+  "typescript": "passed",
+  "productionBuild": "passed",
+  "browser": {
+    "viewport": [
+      1440,
+      960
+    ],
+    "center": "[6영02-02]",
+    "hoveredGhost": "[4영02-05]",
+    "duplicateCanvasReasons": 0,
+    "measuredTooltipHeight": 288,
+    "bottomRightTooltipBounds": {
+      "left": 657,
+      "top": 614,
+      "right": 997,
+      "bottom": 902
+    },
+    "canvasBounds": {
+      "left": 0,
+      "top": 217,
+      "right": 1060,
+      "bottom": 960
+    },
+    "fullyInsideCanvas": true,
+    "tooltipCountAfterZoom": 0,
+    "javascriptErrors": 0
+  }
+}
