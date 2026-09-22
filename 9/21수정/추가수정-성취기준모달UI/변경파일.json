@@ -1,0 +1,11 @@
+{
+  "beforeCommit": "f22b6f94050d703dcfbe8cc1adb8a8c77b1cd1b9",
+  "codeCommit": "dc6d6ba688dcb01f88ee9dfbb809a6deb5035488",
+  "files": [
+    {
+      "path": "src/components/knowledge-graph/NodePopup.tsx",
+      "beforeSha256": "181b6ad2b72d0904d26dd4d60d8319ace5395f34ee9d551963220049f25d7657",
+      "afterSha256": "041ef1aa614bf884feb2ba017749b1a1b46186ab06abe6ab2fc54d5e186a491d"
+    }
+  ]
+}
