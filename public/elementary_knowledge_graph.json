@@ -4,9 +4,9 @@
     "scope": "초등학교 (초1-2, 초3-4, 초5-6)",
     "description": "초등 융합 지식 그래프 — 의미망(임베딩)+TF-IDF 하이브리드 + 교육적 관계 분류",
     "subjects_count": 12,
-    "standards_count": 627,
-    "cross_subject_edges": 947,
-    "same_grade_edges": 922,
+    "standards_count": 629,
+    "cross_subject_edges": 956,
+    "same_grade_edges": 931,
     "similarity_method": "hybrid_embedding70_tfidf30",
     "embedding_alpha": 0.7,
     "same_grade_threshold": 0.3,
@@ -11521,6 +11521,88 @@
         "공동체 문화에 참여"
       ],
       "normalized_text_for_similarity": "다양한 방법을 활용하여 작품을 감상하며 작품에 관한 서로 다른 관점을 존중할 수 있다. 감상은 다양한 삶과 문화가 반영된 미술과의 만남으로 자신과 공동체의 문화를 이해하게 한다. 작품의 내용과 형식에 관한 맥락적 이해와 비평은 미적 판단 능력을 높인다. 감상은 서로 다른 관점을 이해하여 삶에서 미술 문화의 다원적 가치를 존중하도록 한다. 다양 감상 다른 관점 존중할 수 작품 다양 감상 다른 관점 존중할 수 작품"
+    },
+    {
+      "id": "sub_soc_4사01-01",
+      "code": "[4사01-01]",
+      "subject_id": "sub_soc",
+      "core_idea_id": "cig_soc_elem34_geo",
+      "grade_band": "초3-4",
+      "area": "지리 인식",
+      "text": "주변 여러 장소에서의 경험과 느낌을 다양한 방식으로 표현하고, 장소감을 나누며 서로 존중하는 태도를 지닌다.",
+      "keywords": [
+        "장소 경험",
+        "장소감",
+        "느낌 표현",
+        "존중하는 태도",
+        "주변 장소"
+      ],
+      "functions": [
+        "(디지털)지도에서 우리 지역 위치와 정보 확인하기",
+        "야외에서 관찰 및 조사 수행하기",
+        "생활 주변의 주요 장소 조사하기",
+        "생활환경을 분류하고 조사하기",
+        "지역의 정보를 수집하고 비교하기",
+        "(디지털)지도 및 지구본을 활용하여 지역 및 국가의 위치와 정보 확인하기"
+      ],
+      "knowledge": [
+        "우리 지역의 위치",
+        "우리나라 행정구역",
+        "장소 경험과 장소감",
+        "생활 주변의 주요 장소",
+        "우리 지역의 지리 정보",
+        "지도의 종류와 쓰임",
+        "(디지털)지도와 공간자료",
+        "지도의 요소"
+      ],
+      "competencies": [
+        "장소에 대한 경험 공감 및 장소에 대한 감수성",
+        "자신의 생활공간에서 일어나는 일에 대한 관심",
+        "삶의 터전으로서의 국토의 위치와 영역에 대한 관심",
+        "세계 여러 국가에 대한 편견 없는 관심과 호기심"
+      ],
+      "normalized_text_for_similarity": "주변 여러 장소에서의 경험과 느낌을 다양한 방식으로 표현하고, 장소감을 나누며 서로 존중하는 태도를 지닌다. 지표상에 분포하는 모든 사건과 현상은 절대적, 상대적 위치와 다양한 규모의 영역을 차지한다. 장소는 다른 장소와 차별되는 자연적·인문적 성격을 지니며, 특정 장소에 따른 장소감은 개인이나 집단에 따라 다양하다. 지표 세계는 장소적 성격의 동질성, 기능적 상호 관련성, 지역민의 인지 등의 측면에서 다양하게 구분되며, 이렇게 구분된 지역은 고유한 지역성이 나타난다. 지도를 비롯한 다양한 공간자료와 도구를 통한 지리 정보 수집은 장소와 지역의 여러 현상과 사건을 분석하고 해석하며 추론하는 데 필수적이다. 장소 경험 장소감 느낌 표현 존중하는 태도 주변 장소 장소 경험 장소감 느낌 표현 존중하는 태도 주변 장소"
+    },
+    {
+      "id": "sub_soc_4사01-02",
+      "code": "[4사01-02]",
+      "subject_id": "sub_soc",
+      "core_idea_id": "cig_soc_elem34_geo",
+      "grade_band": "초3-4",
+      "area": "지리 인식",
+      "text": "주변의 여러 장소를 살펴보고, 우리가 사는 곳을 더 살기 좋은 곳으로 만드는 방안을 탐색한다.",
+      "keywords": [
+        "주변 장소",
+        "우리가 사는 곳",
+        "살기 좋은 곳",
+        "방안 탐색",
+        "생활 주변"
+      ],
+      "functions": [
+        "(디지털)지도에서 우리 지역 위치와 정보 확인하기",
+        "야외에서 관찰 및 조사 수행하기",
+        "생활 주변의 주요 장소 조사하기",
+        "생활환경을 분류하고 조사하기",
+        "지역의 정보를 수집하고 비교하기",
+        "(디지털)지도 및 지구본을 활용하여 지역 및 국가의 위치와 정보 확인하기"
+      ],
+      "knowledge": [
+        "우리 지역의 위치",
+        "우리나라 행정구역",
+        "장소 경험과 장소감",
+        "생활 주변의 주요 장소",
+        "우리 지역의 지리 정보",
+        "지도의 종류와 쓰임",
+        "(디지털)지도와 공간자료",
+        "지도의 요소"
+      ],
+      "competencies": [
+        "장소에 대한 경험 공감 및 장소에 대한 감수성",
+        "자신의 생활공간에서 일어나는 일에 대한 관심",
+        "삶의 터전으로서의 국토의 위치와 영역에 대한 관심",
+        "세계 여러 국가에 대한 편견 없는 관심과 호기심"
+      ],
+      "normalized_text_for_similarity": "주변의 여러 장소를 살펴보고, 우리가 사는 곳을 더 살기 좋은 곳으로 만드는 방안을 탐색한다. 지표상에 분포하는 모든 사건과 현상은 절대적, 상대적 위치와 다양한 규모의 영역을 차지한다. 장소는 다른 장소와 차별되는 자연적·인문적 성격을 지니며, 특정 장소에 따른 장소감은 개인이나 집단에 따라 다양하다. 지표 세계는 장소적 성격의 동질성, 기능적 상호 관련성, 지역민의 인지 등의 측면에서 다양하게 구분되며, 이렇게 구분된 지역은 고유한 지역성이 나타난다. 지도를 비롯한 다양한 공간자료와 도구를 통한 지리 정보 수집은 장소와 지역의 여러 현상과 사건을 분석하고 해석하며 추론하는 데 필수적이다. 주변 장소 우리가 사는 곳 살기 좋은 곳 방안 탐색 생활 주변 주변 장소 우리가 사는 곳 살기 좋은 곳 방안 탐색 생활 주변"
     },
     {
       "id": "sub_soc_4사05-01",
@@ -46517,6 +46599,186 @@
         "similarity_score": 0.4501,
         "embedding_alpha": 0.7
       }
+    },
+    {
+      "id": "cross_00948",
+      "source_id": "sub_soc_4사01-01",
+      "target_id": "sub_art_4미01-02",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_art",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "내용-표현",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.4444,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.4444,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00949",
+      "source_id": "sub_soc_4사01-01",
+      "target_id": "sub_mus_4음03-04",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_mus",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "내용-표현",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3829,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3829,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00950",
+      "source_id": "sub_soc_4사01-01",
+      "target_id": "sub_mor_4도02-03",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_mor",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "현상-가치",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3773,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3773,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00951",
+      "source_id": "sub_soc_4사01-01",
+      "target_id": "sub_mor_4도01-01",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_mor",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "현상-가치",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3718,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3718,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00952",
+      "source_id": "sub_soc_4사01-01",
+      "target_id": "sub_eng_4영01-10",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_eng",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "의미-연결",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3665,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3665,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00953",
+      "source_id": "sub_soc_4사01-01",
+      "target_id": "sub_mor_4도01-02",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_mor",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "현상-가치",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3546,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3546,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00954",
+      "source_id": "sub_soc_4사01-02",
+      "target_id": "sub_art_4미01-02",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_art",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "내용-표현",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3795,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3795,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00955",
+      "source_id": "sub_soc_4사01-02",
+      "target_id": "sub_sci_4과10-01",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_sci",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "의미-연결",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3719,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3719,
+        "embedding_alpha": 0.7
+      }
+    },
+    {
+      "id": "cross_00956",
+      "source_id": "sub_soc_4사01-02",
+      "target_id": "sub_sci_4과11-04",
+      "source_subject": "sub_soc",
+      "target_subject": "sub_sci",
+      "grade_band": "초3-4",
+      "same_grade_band": true,
+      "relation_edu": "의미-연결",
+      "relation_sem": "semantic_similarity",
+      "method": "hybrid_embedding70_tfidf30",
+      "weight": 0.3172,
+      "evidence": {
+        "shared_keywords": [],
+        "shared_functions": [],
+        "shared_knowledge": [],
+        "similarity_score": 0.3172,
+        "embedding_alpha": 0.7
+      }
     }
   ],
   "search_index": [
@@ -55360,6 +55622,80 @@
         {
           "id": "sub_kor_4국05-02",
           "score": 0.4287
+        }
+      ]
+    },
+    {
+      "id": "sub_soc_4사01-01",
+      "top_similar": [
+        {
+          "id": "sub_soc_4사01-02",
+          "score": 0.5977
+        },
+        {
+          "id": "sub_soc_4사05-01",
+          "score": 0.567
+        },
+        {
+          "id": "sub_soc_6사09-01",
+          "score": 0.5555
+        },
+        {
+          "id": "sub_soc_6사09-02",
+          "score": 0.4912
+        },
+        {
+          "id": "sub_soc_4사05-02",
+          "score": 0.4838
+        },
+        {
+          "id": "sub_soc_6사01-02",
+          "score": 0.481
+        },
+        {
+          "id": "sub_art_4미01-02",
+          "score": 0.4444
+        },
+        {
+          "id": "sub_int_2바04-02",
+          "score": 0.4025
+        }
+      ]
+    },
+    {
+      "id": "sub_soc_4사01-02",
+      "top_similar": [
+        {
+          "id": "sub_soc_4사01-01",
+          "score": 0.5977
+        },
+        {
+          "id": "sub_soc_4사05-02",
+          "score": 0.5791
+        },
+        {
+          "id": "sub_soc_4사05-01",
+          "score": 0.5585
+        },
+        {
+          "id": "sub_soc_6사09-02",
+          "score": 0.4981
+        },
+        {
+          "id": "sub_soc_6사09-01",
+          "score": 0.4926
+        },
+        {
+          "id": "sub_soc_6사01-01",
+          "score": 0.4869
+        },
+        {
+          "id": "sub_soc_6사10-01",
+          "score": 0.3905
+        },
+        {
+          "id": "sub_art_4미01-02",
+          "score": 0.3795
         }
       ]
     },
@@ -75813,6 +76149,52 @@
       "group": "standard"
     },
     {
+      "id": "sub_soc_4사01-01",
+      "type": "standard",
+      "label": "[4사01-01]",
+      "text": "주변 여러 장소에서의 경험과 느낌을 다양한 방식으로 표현하고, 장소감을 나누며 서로 존중하는 태도를 지닌다.",
+      "subject_id": "sub_soc",
+      "grade_band": "초3-4",
+      "area": "지리 인식",
+      "keywords": [
+        "장소 경험",
+        "장소감",
+        "느낌 표현",
+        "존중하는 태도",
+        "주변 장소"
+      ],
+      "competencies": [
+        "세계와 우리나라 여러 지역에 대한 인식과 호기심",
+        "장소에 대한 경험 공감 및 장소에 대한 감수성",
+        "삶의 터전으로서의 국토의 위치와 영역에 대한 관심",
+        "세계 여러 국가에 대한 편견 없는 관심과 호기심"
+      ],
+      "group": "standard"
+    },
+    {
+      "id": "sub_soc_4사01-02",
+      "type": "standard",
+      "label": "[4사01-02]",
+      "text": "주변의 여러 장소를 살펴보고, 우리가 사는 곳을 더 살기 좋은 곳으로 만드는 방안을 탐색한다.",
+      "subject_id": "sub_soc",
+      "grade_band": "초3-4",
+      "area": "지리 인식",
+      "keywords": [
+        "주변 장소",
+        "우리가 사는 곳",
+        "살기 좋은 곳",
+        "방안 탐색",
+        "생활 주변"
+      ],
+      "competencies": [
+        "세계와 우리나라 여러 지역에 대한 인식과 호기심",
+        "장소에 대한 경험 공감 및 장소에 대한 감수성",
+        "삶의 터전으로서의 국토의 위치와 영역에 대한 관심",
+        "세계 여러 국가에 대한 편견 없는 관심과 호기심"
+      ],
+      "group": "standard"
+    },
+    {
       "id": "sub_soc_4사05-01",
       "type": "standard",
       "label": "[4사05-01]",
@@ -86644,6 +87026,22 @@
       "id": "e_ci_sub_art_6미03-04",
       "source": "cig_art_common_3",
       "target": "sub_art_6미03-04",
+      "relation": "has_standard",
+      "weight": 1,
+      "method": "explicit"
+    },
+    {
+      "id": "e_ci_sub_soc_4사01-01",
+      "source": "cig_soc_elem34_geo",
+      "target": "sub_soc_4사01-01",
+      "relation": "has_standard",
+      "weight": 1,
+      "method": "explicit"
+    },
+    {
+      "id": "e_ci_sub_soc_4사01-02",
+      "source": "cig_soc_elem34_geo",
+      "target": "sub_soc_4사01-02",
       "relation": "has_standard",
       "weight": 1,
       "method": "explicit"
