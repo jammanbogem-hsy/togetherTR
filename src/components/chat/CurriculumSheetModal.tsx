@@ -666,19 +666,44 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     const p1 = fetch(`/api/core-ideas?${params.toString()}`, { cache: 'no-store' }).then(r => r.json()).then(d => {
       setContentItems(sanitizeContentItems(d.items ?? []))
     }).catch(() => {})
-    const p2 = isElementaryTarget ? Promise.all(
-      Object.entries(SUBJECT_FILE).map(async ([subj, file]) => {
+    // 교과별 성취기준 JSON. 이전에는 실패를 `catch { return [] }`로 삼켜 한 교과라도 404·네트워크
+    // 오류가 나면 그 교과의 성취기준 선택창이 조용히 "결과 없음"이 됐다(2026-09-22 윈도우 실사용자
+    // 보고 — 캐시된 옛 페이지가 잘못된 경로를 요청해도 화면엔 아무 표시가 없었다).
+    // 이제 non-2xx를 실패로 취급하고 1회 재시도한 뒤, 그래도 실패한 교과는 상단 안내 띠에 드러낸다.
+    const failedSubjects: string[] = []
+    const fetchSubjectStandards = async (subj: string, file: string): Promise<FlatStandard[]> => {
+      const path = curriculumJsonAssetPath(file)
+      let lastError: unknown = null
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          const data: CurriculumFile = await (await fetch(curriculumJsonAssetPath(file))).json()
+          const res = await fetch(path, attempt === 0 ? undefined : { cache: 'reload' })
+          if (!res.ok) throw new Error(`HTTP ${res.status} ${path}`)
+          const data: CurriculumFile = await res.json()
           const flat: FlatStandard[] = []
           for (const g of data.core_idea_groups) for (const s of g.standard_sets) {
             if (!ELEMENTARY_LEVELS.some(lv => s.school_level.includes(lv))) continue
             for (const st of s.standards) flat.push({ code: st.code, text: st.text, subject: subj, area: g.area, gradeBand: s.grade_band, label: `${st.code} ${st.text}` })
           }
           return flat
-        } catch { return [] }
-      }),
-    ).then(a => setStandards(a.flat())) : Promise.resolve(setStandards([]))
+        } catch (error) {
+          lastError = error
+        }
+      }
+      console.error('[curriculumSheet] 성취기준 파일 로드 실패:', subj, lastError)
+      failedSubjects.push(subj)
+      return []
+    }
+    const p2 = isElementaryTarget ? Promise.all(
+      Object.entries(SUBJECT_FILE).map(([subj, file]) => fetchSubjectStandards(subj, file)),
+    ).then(a => {
+      setStandards(a.flat())
+      if (failedSubjects.length > 0) {
+        setAutofillNotes(prev => [
+          ...prev.filter(note => !note.startsWith('성취기준 자료를 불러오지 못한 교과')),
+          `성취기준 자료를 불러오지 못한 교과: ${failedSubjects.join('·')} — 새로고침(Ctrl/Cmd+Shift+R)해 주세요. 계속되면 알려주세요.`,
+        ])
+      }
+    }) : Promise.resolve(setStandards([]))
     Promise.all([p1, p2]).finally(() => setLoading(false))
   }, [open, targetGradeGroup])
 
