@@ -66,14 +66,16 @@ test('isUsableCoreIdea: rejects PDF-extraction junk and fragments', () => {
   assert.equal(isUsableCoreIdea(''), false)
 })
 
-test('curriculumJsonAssetPath: encodes to the NFD-normalized on-disk filename', () => {
-  // public/curriculum_json/*.json filenames are stored NFD; source literals are NFC.
+test('curriculumJsonAssetPath: encodes to the NFC filename that git tracks and Hosting serves', () => {
+  // Filenames are committed in NFC; the deployed site 404s on the NFD form
+  // (2026-09-22: Windows showed "결과 없음", Mac only worked from cache).
   const nfcLiteral = '영어 교육과정.json'
-  const expected = `/curriculum_json/${encodeURIComponent(nfcLiteral.normalize('NFD'))}`
+  const expected = `/curriculum_json/${encodeURIComponent(nfcLiteral.normalize('NFC'))}`
   assert.equal(curriculumJsonAssetPath(nfcLiteral), expected)
+  assert.notEqual(curriculumJsonAssetPath(nfcLiteral), `/curriculum_json/${encodeURIComponent(nfcLiteral.normalize('NFD'))}`)
 })
 
-test('curriculumJsonAssetPath: NFC and NFD inputs produce the same path (no failing NFC request)', () => {
+test('curriculumJsonAssetPath: NFC and NFD inputs produce the same (NFC) path', () => {
   const name = '과학교육과정.json'
   assert.equal(
     curriculumJsonAssetPath(name.normalize('NFC')),
