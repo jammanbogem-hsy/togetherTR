@@ -16,9 +16,11 @@ import {
   computeBounds,
   easeOutCubic,
   fitToView,
+  initialViewScale,
   lerpTransform,
   pickNodeAt,
   sanitizeTransform,
+  screenToWorld,
   zoomAtPoint,
   type Point,
   type ViewTransform,
@@ -45,6 +47,18 @@ export interface MapViewportOptions {
   onSelect: (id: string | null) => void
   /** nonce 가 바뀔 때마다 해당 노드를 화면 중앙으로 */
   focusRequest: { id: string; nonce: number } | null
+  /** 노드를 끌 때 월드 좌표를 전달 (힘 레이아웃이 고정핀으로 받는다) */
+  onNodeDrag?: (id: string, worldX: number, worldY: number) => void
+  /** 끌기 종료 — 고정핀 해제 */
+  onNodeDragEnd?: (id: string) => void
+  /** 노드 끌기 허용 (움직임이 꺼져 있어도 위치 이동은 허용) */
+  nodeDragEnabled?: boolean
+  /** 첫 화면에만 적용하는 배율 가중 — 작아서 안 읽히는 문제 보정 */
+  initialZoomBoost?: number
+  /** 현재(물리로 움직인) 좌표 조회 — 포커스 이동을 실제 위치에 맞춘다 */
+  positionOf?: (id: string) => Point | null
+  /** 중앙값 노드 반지름(월드) — 첫 화면에서 너무 작아지지 않게 하는 기준 */
+  medianWorldRadius?: number
 }
 
 export interface MapViewport {
@@ -74,7 +88,17 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOptions): MapViewport {
+export function useMapViewport({
+  nodes,
+  onSelect,
+  focusRequest,
+  onNodeDrag,
+  onNodeDragEnd,
+  nodeDragEnabled = true,
+  initialZoomBoost = 1.35,
+  positionOf,
+  medianWorldRadius = 0,
+}: MapViewportOptions): MapViewport {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -91,11 +115,20 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
   const pinchRef = useRef<{ dist: number } | null>(null)
   const movedRef = useRef(false)
   const fittedRef = useRef(false)
+  /** 노드를 끌고 있는 중이면 그 id — 이때 화면 팬은 하지 않는다 */
+  const dragNodeRef = useRef<string | null>(null)
+  const dragStartRef = useRef<Point | null>(null)
 
   // 렌더 중 ref 를 쓰지 않도록 커밋 후에 동기화한다
   useEffect(() => {
     viewRef.current = view
   }, [view])
+
+  useEffect(() => {
+    positionOfRef.current = positionOf
+  }, [positionOf])
+
+  const positionOfRef = useRef(positionOf)
 
   const setHitNodes = useCallback((list: HitNode[]) => {
     hitNodesRef.current = list
@@ -167,13 +200,17 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
   useEffect(() => {
     if (fittedRef.current || nodes.length === 0 || size.width === 0 || size.height === 0) return
     fittedRef.current = true
-    setView(fitToView(bounds, size, FIT_PADDING))
-  }, [bounds, nodes.length, size.width, size.height, size])
+    const fit = fitToView(bounds, size, FIT_PADDING)
+    // 첫 화면은 조금 당겨서 보여 준다 ('전체 보기' 버튼은 정확한 fit 유지)
+    const target = initialViewScale(fit.scale, initialZoomBoost, medianWorldRadius)
+    setView(zoomAtPoint(fit, { x: size.width / 2, y: size.height / 2 }, target / fit.scale))
+  }, [bounds, initialZoomBoost, medianWorldRadius, nodes.length, size.width, size.height, size])
 
   // ── 외부 포커스 요청 ───────────────────────────────────────────────────
   useEffect(() => {
     if (!focusRequest) return
-    const pos = positionById.get(focusRequest.id)
+    // 물리로 움직였을 수 있으므로 시드가 아니라 현재 좌표를 쓴다
+    const pos = positionOfRef.current?.(focusRequest.id) ?? positionById.get(focusRequest.id)
     if (!pos || size.width === 0) return
     animateTo(centerOn(pos, size, Math.max(viewRef.current.scale, 1.5)))
   // nonce 가 바뀔 때만 카메라를 움직인다 (같은 노드 재클릭도 재중앙 정렬)
@@ -214,9 +251,21 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
       panOriginRef.current = null
       return
     }
+    // 노드를 집었으면 노드를 끈다 (배경을 집었으면 화면을 끈다)
+    const hitId = hitTest(p)
+    if (hitId && nodeDragEnabled) {
+      dragNodeRef.current = hitId
+      dragStartRef.current = p
+      panOriginRef.current = null
+      setDragging(true)
+      // 끌기 중에는 툴팁을 숨긴다 — 노드가 움직이므로 옛 위치에 남으면 안 된다
+      setHoverId(null)
+      setHoverScreen(null)
+      return
+    }
     panOriginRef.current = { pointer: p, view: { ...viewRef.current } }
     setDragging(true)
-  }, [localPoint])
+  }, [hitTest, localPoint, nodeDragEnabled])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const p = localPoint(e)
@@ -236,6 +285,18 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
       return
     }
 
+    const dragId = dragNodeRef.current
+    if (dragId) {
+      // 임계값을 넘기 전에는 클릭으로 남겨 두어 '클릭=선택'이 유지된다
+      const start = dragStartRef.current
+      if (start && Math.hypot(p.x - start.x, p.y - start.y) > DRAG_SLOP_PX) movedRef.current = true
+      if (movedRef.current) {
+        const world = screenToWorld(p, viewRef.current)
+        onNodeDrag?.(dragId, world.x, world.y)
+      }
+      return
+    }
+
     const origin = panOriginRef.current
     if (origin) {
       const dx = p.x - origin.pointer.x
@@ -250,18 +311,33 @@ export function useMapViewport({ nodes, onSelect, focusRequest }: MapViewportOpt
     const id = hitTest(p)
     setHoverId(id)
     setHoverScreen(id ? p : null)
-  }, [hitTest, localPoint])
+  }, [hitTest, localPoint, onNodeDrag])
 
   const endPointer = useCallback((e: React.PointerEvent) => {
     const p = localPoint(e)
     pointersRef.current.delete(e.pointerId)
     if (pointersRef.current.size < 2) pinchRef.current = null
     const wasPanning = panOriginRef.current !== null
+    const draggedId = dragNodeRef.current
     panOriginRef.current = null
+    dragNodeRef.current = null
+    dragStartRef.current = null
     setDragging(false)
+    // 놓은 자리를 기준으로 호버를 다시 판정한다. 이걸 빼면 끌기 후 포인터가
+    // 노드 밖에 있어도 hoverId 가 남아 화면 전체가 15%로 흐려진 채 멈춘다.
+    const released = hitTest(p)
+    setHoverId(released)
+    setHoverScreen(released ? p : null)
+
+    if (draggedId) {
+      // 거의 움직이지 않았으면 클릭으로 보고 선택, 움직였으면 고정핀 해제
+      if (movedRef.current) onNodeDragEnd?.(draggedId)
+      else onSelect(draggedId)
+      return
+    }
     // 움직이지 않았다면 클릭 = 선택 (빈 공간 클릭은 선택 해제)
-    if (wasPanning && !movedRef.current) onSelect(hitTest(p))
-  }, [hitTest, localPoint, onSelect])
+    if (wasPanning && !movedRef.current) onSelect(released)
+  }, [hitTest, localPoint, onNodeDragEnd, onSelect])
 
   const onPointerLeave = useCallback(() => {
     setHoverId(null)

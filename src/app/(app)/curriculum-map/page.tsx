@@ -11,7 +11,8 @@ import { MD3Button } from '@/components/ui/MD3Button'
 import CurriculumMapCanvas from '@/components/curriculum-map/CurriculumMapCanvas'
 import MapSidePanel from '@/components/curriculum-map/MapSidePanel'
 import { FilterChip } from '@/components/curriculum-map/MapPanelBits'
-import { formatCount } from '@/components/curriculum-map/mapMath'
+import { formatCount, nextSelection } from '@/components/curriculum-map/mapMath'
+import { subjectIcon } from '@/components/curriculum-map/subjectIcons'
 import { useCurriculumMap } from '@/components/curriculum-map/useCurriculumMap'
 
 export default function CurriculumMapPage(): React.ReactElement {
@@ -19,6 +20,8 @@ export default function CurriculumMapPage(): React.ReactElement {
   const map = useCurriculumMap()
   const [panelOpen, setPanelOpen] = useState(true)
   const [focusRequest, setFocusRequest] = useState<{ id: string; nonce: number } | null>(null)
+  /** 패널 카드 호버 → 캔버스 강조 */
+  const [hoverCardId, setHoverCardId] = useState<string | null>(null)
 
   const subjectColors = useMemo(() => {
     const record: Record<string, string> = {}
@@ -28,11 +31,47 @@ export default function CurriculumMapPage(): React.ReactElement {
 
   const selectedNode = map.selectedId ? map.nodeById.get(map.selectedId) ?? null : null
 
+  // 체크된 학년군 — 에셋 순서(1-2 → 3-4 → 5-6)를 그대로 쓴다
+  const checkedBands = useMemo(
+    () => (map.asset?.bands ?? []).filter(b => !map.filters.hiddenBands.includes(b)),
+    [map.asset, map.filters.hiddenBands],
+  )
+
+  // 관계 유형·강도·근거 — 캔버스가 관계선 색·굵기·근거 라벨에 쓴다.
+  // /related 가 아직 응답하지 않았으면 비워 둔다: 이전 선택의 관계선이 남거나
+  // 에셋 유사도 엣지가 Jev 관계처럼 보이면 패널 목록과 화면이 어긋난다.
+  const relatedReady = map.related.status === 'ready'
+  const relatedMeta = useMemo(() => {
+    const meta = new Map<string, { relationType: string; strength: number; reason?: string }>()
+    if (!relatedReady) return meta
+    for (const item of map.related.items) {
+      meta.set(item.id, { relationType: item.relationType, strength: item.strength, reason: item.reason })
+    }
+    return meta
+  }, [map.related.items, relatedReady])
+
+  // 필터에 가려졌지만 관련 목록에 있는 성취기준 — 점선 고스트로 함께 보여 준다
+  const ghostNodes = useMemo(() => {
+    if (!relatedReady) return []
+    const out = []
+    for (const item of map.related.items) {
+      if (map.visibleIds.has(item.id)) continue
+      const node = map.nodeById.get(item.id)
+      if (node) out.push(node)
+    }
+    return out
+  }, [map.related.items, map.nodeById, map.visibleIds, relatedReady])
+
   // 결과·관련 항목 클릭 → 선택 + 카메라 이동 (패널이 접혀 있으면 펼친다)
   const focusNode = useCallback((id: string) => {
     map.selectNode(id)
     setFocusRequest({ id, nonce: Date.now() })
     setPanelOpen(true)
+  }, [map])
+
+  // 캔버스 클릭: 같은 노드를 다시 누르면 선택 해제 (빈 공간도 해제)
+  const handleCanvasSelect = useCallback((id: string | null) => {
+    map.selectNode(nextSelection(id, map.selectedId))
   }, [map])
 
   // Esc: 선택 → 검색 순으로 해제
@@ -62,7 +101,9 @@ export default function CurriculumMapPage(): React.ReactElement {
       filters={map.filters}
       onEdgeThresholdChange={map.setEdgeThreshold}
       onAlwaysLabelsChange={map.setAlwaysLabels}
+      onPhysicsChange={map.setPhysics}
       onResetFilters={map.resetFilters}
+      onHoverItem={setHoverCardId}
       search={map.search}
       onPickResult={focusNode}
       selectedNode={selectedNode}
@@ -70,6 +111,8 @@ export default function CurriculumMapPage(): React.ReactElement {
       onPickRelated={focusNode}
       onRefetchRelated={map.refetchRelated}
       onClearSelection={() => map.selectNode(null)}
+      hiddenRelatedCount={ghostNodes.length}
+      bands={checkedBands}
     />
   )
 
@@ -153,6 +196,7 @@ export default function CurriculumMapPage(): React.ReactElement {
                   label={s.name}
                   active={!map.filters.hiddenSubjectIds.includes(s.id)}
                   dotColor={s.color}
+                  icon={subjectIcon(s.id)}
                   onClick={() => map.toggleSubject(s.id)}
                 />
               ))}
@@ -194,14 +238,19 @@ export default function CurriculumMapPage(): React.ReactElement {
           {map.assetStatus === 'ready' && (
             <CurriculumMapCanvas
               nodes={map.visibleNodes}
+              ghostNodes={ghostNodes}
               edges={map.visibleEdges}
               subjectColors={subjectColors}
               scoreById={map.scoreById}
               searchActive={map.searchActive}
               selectedId={map.selectedId}
-              neighborIds={map.neighborIds}
               alwaysLabels={map.filters.alwaysLabels}
-              onSelect={map.selectNode}
+              physicsEnabled={map.filters.physics}
+              relatedMeta={relatedMeta}
+              relatedPending={map.related.status === 'loading'}
+              externalHoverId={hoverCardId}
+              onSelect={handleCanvasSelect}
+              onClearSelection={() => map.selectNode(null)}
               focusRequest={focusRequest}
             />
           )}

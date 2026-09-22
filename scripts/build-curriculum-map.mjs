@@ -2,6 +2,7 @@
 //
 // 입력: public/elementary_knowledge_graph.json (loadGraph 로 초등 전용 정화 적용)
 // 출력: 노드 627개(교과·학년군·영역·핵심아이디어 첫 문장·좌표 x·y·반지름 r·차수)
+//       + 대표 키워드 keywords(최대 8, 호버 툴팁용)
 //       + 무방향 간선(임베딩 이웃 ≥0.45, 교과 간 링크)
 //
 // 좌표는 Node 안에서 결정적으로 미리 계산한다(브라우저에서 매번 시뮬레이션하지
@@ -25,6 +26,7 @@ import {
   SIMILAR_EDGE_MIN_SIM,
   buildUndirectedEdges,
   coreIdeaSentence,
+  displayKeywords,
   layoutCurriculumMap,
   normalizeRelationType,
   standardBandLabel,
@@ -66,6 +68,7 @@ const nodes = graph.achievementStandards.map(std => ({
   coreIdeaId: std.core_idea_id ?? '',
   coreIdea: coreIdeaSentence(std, graph),
   text: std.text ?? '',
+  keywords: displayKeywords(std.keywords ?? [], 8),
   x: 0,
   y: 0,
   r: 0,
@@ -220,6 +223,7 @@ console.log(`  노드      : ${nodes.length} (고립 ${isolated.length}) · 교�
 console.log(`  간선      : ${edges.length} (similar ${kindCounts.similar ?? 0} · cross ${kindCounts.cross ?? 0} · both ${kindCounts.both ?? 0})`)
 console.log(`  제외      : similar 후보 ${droppedSimilar} (<${SIMILAR_EDGE_MIN_SIM} 또는 노드 없음) · cross ${droppedCross}`)
 console.log(`  반지름    : ${Math.min(...radiusValues).toFixed(1)}~${Math.max(...radiusValues).toFixed(1)} · 평균 ${stats.meanRadius}`)
+console.log(`  키워드    : 평균 ${(nodes.reduce((sum, node) => sum + node.keywords.length, 0) / nodes.length).toFixed(1)}개/노드 · 빈 노드 ${nodes.filter(node => node.keywords.length === 0).length}`)
 console.log(`  좌표계    : extent ${stats.extent} (요청 ${LAYOUT_SIZE}, 여백 ${LAYOUT_MARGIN}) · 벌림배율 ${stats.spreadScale} (확대 재시도 ${stats.growthAttempts}회) · 맞춤배율 ${stats.scale.toFixed(3)}`)
 console.log(`  겹침      : 위반 ${stats.violations}쌍 · 최소 간격 ${stats.minGap} (요구 ${MIN_NODE_GAP}) · 충돌 패스 ${stats.collisionPasses}/${MAX_COLLISION_PASSES}`)
 console.log(`  간격      : 평균 최근접거리 ${stats.meanNearestNeighbour} (목표 ${(stats.meanRadius * 3).toFixed(1)} = 평균반지름×3) · 간선 평균길이 ${meanEdgeLen.toFixed(0)}`)

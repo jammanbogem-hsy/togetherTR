@@ -29,22 +29,10 @@ export interface Bounds {
 
 export const MIN_SCALE = 0.15
 export const MAX_SCALE = 6
-/** 이 배율 이상이면 (가림 검사를 거쳐) 모든 노드 라벨을 그린다 */
-export const LABEL_ZOOM_THRESHOLD = 1.2
-/** 로드 시 자리 잡는 이징 길이(ms) */
-export const SETTLE_DURATION_MS = 1000
-/**
- * 정착 연출이 노드를 중심으로 끌어당기는 최대 비율.
- * 1.0 이면 progress 0 에서 모든 노드가 한 점으로 붕괴한다 — 연출이 어떤 이유로든
- * 멈추면 지도가 못 쓰게 되므로, 최악의 경우에도 배치가 읽히도록 상한을 둔다.
- */
-export const SETTLE_MAX_PULL = 0.12
 export const FIT_PADDING = 56
 export const EDGE_THRESHOLD_MIN = 0.3
 export const EDGE_THRESHOLD_MAX = 0.8
 export const EDGE_THRESHOLD_DEFAULT = 0.5
-/** 검색 모드에서 결과 아닌 노드의 알파 */
-export const DIMMED_ALPHA = 0.15
 
 // 노드 반지름은 월드 단위 — 백엔드 레이아웃의 겹침 방지 계산과 같은 공식을 쓴다.
 export const NODE_R_BASE = 8
@@ -52,12 +40,13 @@ export const NODE_R_RANGE = 18
 export const NODE_PADDING = 8
 /** 축소해도 클릭할 수 있는 최소 화면 반지름 */
 export const MIN_SCREEN_RADIUS = 2.5
+/**
+ * 가독성 배수 K. 반지름과 좌표에 **함께** 적용해야 한다.
+ * 반지름만 키우면 빌더가 만든 겹침 없는 배치가 무너진다(확대하면 원이 겹쳐 보임).
+ * 그래서 K 는 (1) 그리는 반지름, (2) 충돌 반지름, (3) 시드 좌표에 모두 곱한다.
+ */
+export const RENDER_RADIUS_SCALE = 1.6
 
-export const LABEL_FONT_PX = 13
-export const LABEL_FONT_PX_SMALL = 12
-/** 이 배율 이상에서 코드 + 본문 앞부분을 함께 보여 준다 */
-export const LABEL_DETAIL_ZOOM = 2
-export const LABEL_DETAIL_CHARS = 18
 
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
@@ -134,6 +123,32 @@ export function fitToView(
   })
 }
 
+/** 첫 화면에서 중앙값 노드가 가져야 할 최소 반지름(px) */
+export const MIN_MEDIAN_NODE_PX = 6
+
+/**
+ * 첫 화면 배율. fit 에 가중치를 곱하되, 중앙값 노드가 MIN_MEDIAN_NODE_PX 보다
+ * 작아지지 않도록 끌어올린다. K 는 좌표·반지름에 함께 곱해 배율 불변이므로
+ * "화면에서 크게 보이게" 하는 손잡이는 이 배율뿐이다.
+ */
+export function initialViewScale(
+  fitScale: number,
+  boost: number,
+  medianWorldRadius: number,
+  minNodePx: number = MIN_MEDIAN_NODE_PX,
+): number {
+  const base = clampScale(fitScale) * (Number.isFinite(boost) && boost > 0 ? boost : 1)
+  if (!Number.isFinite(medianWorldRadius) || medianWorldRadius <= 0) return clampScale(base)
+  return clampScale(Math.max(base, minNodePx / medianWorldRadius))
+}
+
+/** 중앙값 반지름 — 초기 배율 계산에 쓴다. */
+export function medianRadius(radii: readonly number[]): number {
+  const usable = radii.filter(r => Number.isFinite(r) && r > 0).sort((a, b) => a - b)
+  if (usable.length === 0) return 0
+  return usable[Math.floor(usable.length / 2)]
+}
+
 export function worldToScreen(p: Point, t: ViewTransform): Point {
   return { x: t.x + p.x * t.scale, y: t.y + p.y * t.scale }
 }
@@ -173,28 +188,6 @@ export function lerpTransform(from: ViewTransform, to: ViewTransform, p: number)
   })
 }
 
-/**
- * 로드 직후의 정착 연출. 에셋 좌표에 **가산되는** 오프셋만 적용하며,
- * progress 1 이면 에셋 좌표를 그대로(정확히) 돌려준다.
- * 연출이 중단돼도 최대 SETTLE_MAX_PULL 만큼만 당겨지므로 배치가 무너지지 않는다.
- */
-export function settlePosition(node: Point, center: Point, progress: number): Point {
-  const e = easeOutCubic(progress)
-  if (e >= 1) return { x: node.x, y: node.y }
-  const pull = (1 - e) * SETTLE_MAX_PULL
-  return {
-    x: node.x + (center.x - node.x) * pull,
-    y: node.y + (center.y - node.y) * pull,
-  }
-}
-
-/** 정착 진행도를 시계로부터 계산 — 리렌더·선택·검색에 영향받지 않는다. */
-export function settleProgress(startedAt: number | null, now: number): number {
-  if (startedAt === null || !Number.isFinite(startedAt)) return 1
-  if (SETTLE_DURATION_MS <= 0) return 1
-  return clamp((now - startedAt) / SETTLE_DURATION_MS, 0, 1)
-}
-
 // ─── 크기 규칙 (월드 단위) ────────────────────────────────────────────────
 
 /**
@@ -226,20 +219,29 @@ export function worldRadius(degreeNorm: number): number {
   return NODE_R_BASE + NODE_R_RANGE * clamp(degreeNorm, 0, 1)
 }
 
-/** 검색 결과는 점수에 비례해 조금 더 크게 (월드 단위). */
-export function worldRadiusForScore(score: number): number {
-  return NODE_R_BASE + 4 + (NODE_R_RANGE + 6) * clamp(score, 0, 1)
+/**
+ * 그리기·충돌에 함께 쓰는 월드 반지름. 선택·검색 강조로 이 값을 키우면 안 된다
+ * (강조는 링·후광·라벨 굵기로 표현한다).
+ */
+export function drawWorldRadius(baseRadius: number, k: number = RENDER_RADIUS_SCALE): number {
+  const r = baseRadius * k
+  return Number.isFinite(r) && r > 0 ? r : NODE_R_BASE * k
 }
 
-/** 월드 반지름을 화면 픽셀로 — 축소해도 최소 크기는 보장한다. */
+/** 시드 좌표도 같은 K 로 늘려 겹침 없는 배치를 유지한다. */
+export function scaleLayoutPoint(p: Point, k: number = RENDER_RADIUS_SCALE): Point {
+  return { x: p.x * k, y: p.y * k }
+}
+
+/**
+ * 월드 반지름을 화면 픽셀로. 여기서 K 를 또 곱하지 않는다 —
+ * 입력은 이미 drawWorldRadius 를 거친 값이어야 하고, 그래야 충돌과 일치한다.
+ */
 export function screenRadius(worldR: number, scale: number): number {
   const r = worldR * clampScale(scale)
   return Number.isFinite(r) ? Math.max(MIN_SCREEN_RADIUS, r) : MIN_SCREEN_RADIUS
 }
 
-export function edgeAlpha(sim: number): number {
-  return clamp(0.06 + clamp(sim, 0, 1) * 0.34, 0.06, 0.4)
-}
 
 // ─── 가시성 규칙 ──────────────────────────────────────────────────────────
 
@@ -267,79 +269,32 @@ export function isEdgeVisible(
   return edge.sim >= threshold
 }
 
-export interface LabelContext {
-  scale: number
-  alwaysLabels: boolean
-  isResult: boolean
-  isSelected: boolean
-  isHovered: boolean
-  /** 선택 노드의 이웃 — 관련 성취기준을 바로 읽히게 한다 */
-  isNeighbor?: boolean
-}
+// ─── 선택 집합 규칙 ──────────────────────────────────────────────────────
 
-/** 항상 보여야 하는 라벨(선택·결과·호버·이웃)은 가림 검사에서도 우선한다. */
-export function isForcedLabel(ctx: LabelContext): boolean {
-  return ctx.isSelected || ctx.isHovered || ctx.isResult || ctx.isNeighbor === true
-}
-
-export function shouldDrawLabel(ctx: LabelContext): boolean {
-  if (isForcedLabel(ctx)) return true
-  if (ctx.alwaysLabels) return true
-  return ctx.scale >= LABEL_ZOOM_THRESHOLD
-}
-
-/** 배율이 충분하면 코드 뒤에 본문 앞부분을 붙인다. */
-export function labelText(code: string, text: string, scale: number): string {
-  if (scale < LABEL_DETAIL_ZOOM || !text) return code
-  const head = text.slice(0, LABEL_DETAIL_CHARS).trim()
-  if (!head) return code
-  return `${code} ${head}${text.length > LABEL_DETAIL_CHARS ? '…' : ''}`
-}
-
-// ─── 라벨 가림(occlusion) 처리 ────────────────────────────────────────────
-
-export interface LabelBox {
-  x0: number
-  y0: number
-  x1: number
-  y1: number
-}
-
-export function boxesIntersect(a: LabelBox, b: LabelBox): boolean {
-  return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
-}
-
-export interface LabelCandidate {
-  id: string
-  box: LabelBox
-  /** 높을수록 먼저 자리를 차지한다 */
-  priority: number
-  /** 선택·결과·호버처럼 반드시 그려야 하는 라벨 */
-  forced: boolean
+export interface SelectionSetContext {
+  selectedId: string | null
+  /** /related 응답 대기 중 */
+  relatedPending: boolean
+  /** 선택 노드의 에셋 이웃 — 잠정 집합 */
+  selectedNeighbors: ReadonlySet<string>
+  /** Jev 관련 판정 결과 id */
+  relatedIds: ReadonlySet<string>
 }
 
 /**
- * 탐욕적 가림 제거 — 우선순위가 높은 라벨부터 배치하고, 이미 놓인 라벨과
- * 겹치는 라벨은 건너뛴다. 강제 라벨은 겹쳐도 그리되 자리는 차지한다.
+ * 선택 모드에서 밝게 둘 노드인지. 판정 전에는 에셋 이웃(잠정)을 쓰고,
+ * 응답이 오면 Jev 집합으로 **교체**한다 — 잠정에만 있던 노드는 다시 흐려진다.
  */
-export function placeLabels(candidates: readonly LabelCandidate[]): Set<string> {
-  const ordered = [...candidates].sort((a, b) => {
-    if (a.forced !== b.forced) return a.forced ? -1 : 1
-    return b.priority - a.priority
-  })
-  const accepted: LabelBox[] = []
-  const ids = new Set<string>()
-  for (const c of ordered) {
-    if (c.forced) {
-      accepted.push(c.box)
-      ids.add(c.id)
-      continue
-    }
-    if (accepted.some(box => boxesIntersect(box, c.box))) continue
-    accepted.push(c.box)
-    ids.add(c.id)
-  }
-  return ids
+export function isInSelectionSet(id: string, ctx: SelectionSetContext): boolean {
+  if (!ctx.selectedId) return false
+  if (id === ctx.selectedId) return true
+  return ctx.relatedPending ? ctx.selectedNeighbors.has(id) : ctx.relatedIds.has(id)
+}
+
+/** 캔버스 클릭의 다음 선택 상태 — 같은 노드를 다시 누르면 해제. */
+export function nextSelection(clickedId: string | null, currentId: string | null): string | null {
+  if (clickedId === null) return null
+  return clickedId === currentId ? null : clickedId
 }
 
 /** 화면 좌표에서 가장 가까운 노드 찾기 — 반지름 + 여유 4px 이내만 채택 */
@@ -364,6 +319,45 @@ export function pickNodeAt(
     }
   }
   return bestId
+}
+
+// ─── 학년군별 결과 묶기 ────────────────────────────────────────────────────
+
+export interface BandGroup<T> {
+  band: string
+  items: T[]
+}
+
+export interface BandGroupResult<T> {
+  groups: BandGroup<T>[]
+  emptyBands: string[]
+}
+
+/**
+ * 검색 결과를 체크된 학년군 순서(1-2 → 3-4 → 5-6)로 묶는다.
+ * 백엔드가 byBand 를 주면 그대로 쓰고, 없으면 각 항목의 band 로 클라이언트에서 묶는다.
+ * 결과가 없는 학년군은 emptyBands 로 따로 알린다.
+ */
+export function groupResultsByBand<T extends { band: string }>(
+  results: readonly T[],
+  bands: readonly string[],
+  byBand?: Record<string, T[]>,
+  emptyBands?: readonly string[],
+): BandGroupResult<T> {
+  const groups: BandGroup<T>[] = []
+  const empty: string[] = []
+  for (const band of bands) {
+    const items = byBand?.[band] ?? results.filter(r => r.band === band)
+    if (items.length > 0) groups.push({ band, items })
+    else empty.push(band)
+  }
+  // 체크된 학년군 목록 밖의 결과도 버리지 않는다 (필터와 응답이 어긋난 경우)
+  const covered = new Set(bands)
+  const leftover = results.filter(r => !covered.has(r.band))
+  for (const band of [...new Set(leftover.map(r => r.band))]) {
+    groups.push({ band, items: leftover.filter(r => r.band === band) })
+  }
+  return { groups, emptyBands: emptyBands ? [...emptyBands] : empty }
 }
 
 // ─── 표시 포맷 ────────────────────────────────────────────────────────────

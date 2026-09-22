@@ -13,7 +13,10 @@ export const DEFAULT_FILTERS: MapFilters = {
   hiddenSubjectIds: [],
   hiddenBands: [],
   edgeThreshold: EDGE_THRESHOLD_DEFAULT,
+  // 기본 꺼짐. 개요에서는 호버·선택·관련·검색 결과 라벨만 보이고,
+  // 1.2 배율을 넘으면 나머지도 가림 검사를 거쳐 나타난다.
   alwaysLabels: false,
+  physics: true,
 }
 
 function readStoredFilters(): MapFilters {
@@ -34,7 +37,10 @@ function readStoredFilters(): MapFilters {
       edgeThreshold: typeof obj.edgeThreshold === 'number'
         ? clamp(obj.edgeThreshold, EDGE_THRESHOLD_MIN, EDGE_THRESHOLD_MAX)
         : EDGE_THRESHOLD_DEFAULT,
+      // 저장값이 있으면 그것을 따른다 (없으면 기본 꺼짐)
       alwaysLabels: obj.alwaysLabels === true,
+      // 저장값이 없으면 움직임은 기본 켜짐
+      physics: obj.physics === undefined ? true : obj.physics === true,
     }
   } catch {
     return DEFAULT_FILTERS

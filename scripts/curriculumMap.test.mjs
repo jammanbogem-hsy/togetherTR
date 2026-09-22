@@ -5,30 +5,58 @@
 //   node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs --test scripts/curriculumMap.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import {
   COLLISION_SAFETY_GAP,
+  DOC_FUNCTION_LIMIT,
+  DOC_KNOWLEDGE_LIMIT,
   LAYOUT_SIZE,
   MIN_NODE_GAP,
   NODE_MIN_RADIUS,
   NODE_RADIUS_RANGE,
   SIMILAR_EDGE_MIN_SIM,
+  SIM_FLOOR_ABSOLUTE,
+  SIM_FLOOR_RATIO,
   TARGET_NN_RADIUS_FACTOR,
   blendJevAndSim,
   buildUndirectedEdges,
   clamp01,
   cosineSim,
+  DEFAULT_PER_BAND,
+  JEV_TIE_BREAK_EPSILON,
+  MAX_PER_BAND,
+  balanceByBand,
+  buildRelationReason,
+  buildSearchReason,
+  buildStandardDocument,
+  chunkArray,
+  compareJevFirst,
+  displayKeywords,
   edgeKey,
+  expandedQuerySimilarity,
   fitToSquare,
+  formatLinkEvidence,
+  isShortQuery,
+  keywordHit,
+  mergeSearchPool,
   inspectOverlaps,
   layoutCurriculumMap,
   levelForScore,
+  matchedQueryTerms,
   meanNearestNeighbourDistance,
+  normalizeKeywordTerms,
   mulberry32,
   nodeRadii,
   normalizeLayout,
   normalizeRelationType,
   resolveCandidateSource,
   resolveCollisions,
+  resolvePerBand,
+  resolveVectorTables,
+  sanitizeExpansionTerms,
+  searchTokens,
+  sharedKeywordTerms,
+  similarityFloor,
   runForceLayout,
   springRestLength,
   standardBandLabel,
@@ -604,4 +632,582 @@ test('layoutCurriculumMap: keeps subjects as soft clusters after collision resol
 test('COLLISION_SAFETY_GAP: leaves headroom above the contract for coordinate rounding', () => {
   assert.ok(COLLISION_SAFETY_GAP > 0.15, 'must exceed the worst 1-decimal rounding error')
   assert.equal(MIN_NODE_GAP, 8)
+})
+
+// ─── keyword normalization ─────────────────────────────────────────────────
+
+test('normalizeKeywordTerms: keeps the phrase and its word parts', () => {
+  const terms = normalizeKeywordTerms(['상태 변화'])
+  assert.ok(terms.includes('상태 변화'))
+  assert.ok(terms.includes('상태'))
+  assert.ok(terms.includes('변화'))
+})
+
+test('normalizeKeywordTerms: drops machine-extraction noise fragments', () => {
+  // These are real entries from the graph's keywords arrays.
+  const terms = normalizeKeywordTerms(['수 있', '있음', '밀거나 당길 때 나타', '갖고 물체'])
+  assert.ok(!terms.includes('수 있'), JSON.stringify(terms))
+  assert.ok(!terms.includes('있음'))
+  assert.ok(!terms.some(t => t.includes('나타')))
+  assert.ok(!terms.includes('갖고'))
+  // The content word inside the fragment survives.
+  assert.ok(terms.includes('물체'))
+})
+
+test('normalizeKeywordTerms: strips a leading conjugated verb from a phrase', () => {
+  const terms = normalizeKeywordTerms(['알고 기후변화', '가지고 기후변화'])
+  assert.ok(terms.includes('기후변화'))
+  assert.ok(!terms.some(t => t.startsWith('알고') || t.startsWith('가지고')))
+})
+
+test('normalizeKeywordTerms: keeps nouns that merely look like verb forms', () => {
+  // '사고' and '기후' must not be mistaken for conjugated verbs.
+  const terms = normalizeKeywordTerms(['사고', '기후', '지구'])
+  assert.deepEqual(terms.sort(), ['기후', '사고', '지구'])
+})
+
+test('normalizeKeywordTerms: drops generic stopwords and single characters', () => {
+  const terms = normalizeKeywordTerms(['이용', '활동', '관련', '물', '무게'])
+  assert.deepEqual(terms, ['무게'])
+})
+
+test('normalizeKeywordTerms: strips trailing particles when 2+ chars remain', () => {
+  assert.ok(normalizeKeywordTerms(['무게를']).includes('무게'))
+  // '물의' would become the single char '물', so the original is kept.
+  assert.ok(normalizeKeywordTerms(['물의']).includes('물의'))
+})
+
+test('normalizeKeywordTerms: empty and nullish input', () => {
+  assert.deepEqual(normalizeKeywordTerms([]), [])
+  assert.deepEqual(normalizeKeywordTerms([null, undefined, '', '   ']), [])
+})
+
+test('displayKeywords: caps the list and folds nested stems', () => {
+  const out = displayKeywords(['상태 변화', '상태', '물의', '장치'], 8)
+  // '상태' is contained in '상태 변화', so it is folded away.
+  assert.ok(out.includes('상태 변화'))
+  assert.ok(!out.includes('상태'))
+  assert.ok(out.length <= 8)
+  assert.equal(displayKeywords(['가', '나', '다'], 8).length, 0)
+  assert.equal(displayKeywords(Array.from({ length: 30 }, (_, i) => `키워드${i}`), 8).length, 8)
+})
+
+// ─── shared keywords ──────────────────────────────────────────────────────
+
+test('sharedKeywordTerms: two standards meet on a shared stem', () => {
+  // The brief's example: '물의 상태' and '상태 변화' must share '상태'.
+  const shared = sharedKeywordTerms(['물의 상태'], ['상태 변화'])
+  assert.ok(shared.includes('상태'), JSON.stringify(shared))
+})
+
+test('sharedKeywordTerms: matches a 2+ char stem inside a longer word', () => {
+  const shared = sharedKeywordTerms(['상태변화'], ['상태'])
+  assert.deepEqual(shared, ['상태'])
+})
+
+test('sharedKeywordTerms: no overlap yields an empty list', () => {
+  assert.deepEqual(sharedKeywordTerms(['무게', '저울'], ['분수', '소수']), [])
+  assert.deepEqual(sharedKeywordTerms([], ['무게']), [])
+  assert.deepEqual(sharedKeywordTerms(['무게'], []), [])
+})
+
+test('sharedKeywordTerms: noise fragments never become shared evidence', () => {
+  // Both standards contain '수 있' but that is not a reason they are related.
+  assert.deepEqual(sharedKeywordTerms(['수 있', '무게'], ['수 있', '분수']), [])
+})
+
+test('sharedKeywordTerms: caps the result and is deterministic', () => {
+  const a = ['가가', '나나', '다다', '라라', '마마', '바바', '사사', '아아']
+  const shared = sharedKeywordTerms(a, a, 6)
+  assert.equal(shared.length, 6)
+  assert.deepEqual(shared, sharedKeywordTerms(a, a, 6))
+})
+
+// ─── matched query terms ──────────────────────────────────────────────────
+
+test('matchedQueryTerms: matches against keywords and against the text', () => {
+  const matched = matchedQueryTerms('물의 상태 변화', ['상태 변화'], '물이 얼 때의 현상을 관찰한다')
+  assert.ok(matched.includes('상태 변화') || matched.includes('상태'))
+  assert.ok(matched.includes('변화') || matched.includes('상태 변화'))
+})
+
+test('matchedQueryTerms: unrelated query returns nothing', () => {
+  assert.deepEqual(matchedQueryTerms('분수의 덧셈', ['무게', '저울'], '물체의 무게를 비교한다'), [])
+})
+
+test('matchedQueryTerms: drops stopwords and single characters from the query', () => {
+  const matched = matchedQueryTerms('이용 활동 물', ['이용', '활동'], '물을 이용한 활동')
+  assert.deepEqual(matched, [])
+})
+
+test('matchedQueryTerms: caps and handles an empty query', () => {
+  assert.deepEqual(matchedQueryTerms('', ['무게'], '무게'), [])
+  assert.ok(matchedQueryTerms('가가 나나 다다 라라 마마 바바 사사', [], '가가 나나 다다 라라 마마 바바 사사').length <= 6)
+})
+
+// ─── link evidence ────────────────────────────────────────────────────────
+
+test('formatLinkEvidence: renders relation, shared keywords and weight', () => {
+  const out = formatLinkEvidence({
+    relation_edu: '내용-표현',
+    method: 'hybrid_embedding70_tfidf30',
+    weight: 0.4888,
+    evidence: { shared_keywords: ['생활', '건강'], shared_functions: [], shared_knowledge: [], similarity_score: 0.4888 },
+  })
+  assert.ok(out.startsWith('내용-표현'), out)
+  assert.ok(out.includes('공통 키워드 생활·건강'), out)
+  assert.ok(out.includes('가중치 0.49'), out)
+})
+
+test('formatLinkEvidence: legacy 의미-연결 is normalized and empty evidence is tolerated', () => {
+  assert.ok(formatLinkEvidence({ relation_edu: '의미-연결', weight: 0.3 }).startsWith('의미연결'))
+  const bare = formatLinkEvidence({})
+  assert.equal(bare, '의미연결')
+})
+
+// ─── reason assembly ──────────────────────────────────────────────────────
+
+const BASE_REASON = {
+  linkEvidence: '',
+  sameCoreIdea: false,
+  sameArea: false,
+  coreIdeaArea: '지구와 우주',
+  sharedKeywords: [],
+  sim: 0.61,
+}
+
+test('buildRelationReason: cross link evidence leads', () => {
+  const reason = buildRelationReason({
+    ...BASE_REASON,
+    linkEvidence: '내용-표현 · 공통 키워드 생활·건강',
+    sharedKeywords: ['생활'],
+  })
+  assert.ok(reason.startsWith('교육과정 연계 링크: 내용-표현'), reason)
+  assert.ok(reason.includes('공통 키워드: 생활'), reason)
+})
+
+test('buildRelationReason: same core idea outranks shared keywords', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sameCoreIdea: true, sharedKeywords: ['물', '상태'] })
+  assert.ok(reason.startsWith('같은 핵심아이디어(지구와 우주)'), reason)
+  assert.ok(reason.includes('공통 키워드: 물, 상태'))
+})
+
+test('buildRelationReason: same area only when the core idea differs', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sameArea: true })
+  assert.ok(reason.startsWith('같은 영역(지구와 우주)'), reason)
+  assert.ok(!reason.includes('핵심아이디어'))
+})
+
+test('buildRelationReason: shared keywords alone', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sharedKeywords: ['물', '상태', '변화'] })
+  assert.equal(reason, '공통 키워드: 물, 상태, 변화')
+})
+
+test('buildRelationReason: similarity-only fallback reports the Jev verdict', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, jevScore: 0.75 })
+  assert.equal(reason, '의미 유사도 0.61 (Jev 판정 핵심 0.75)')
+})
+
+test('buildRelationReason: never empty, even with no evidence and no Jev score', () => {
+  const reason = buildRelationReason({ ...BASE_REASON, sim: 0 })
+  assert.ok(reason.length > 0)
+  assert.equal(reason, '의미 유사도 0.00')
+})
+
+test('buildSearchReason: matched query terms lead, scores follow', () => {
+  const reason = buildSearchReason({ matchedTerms: ['물', '환경'], sim: 0.39, jevScore: 1 })
+  assert.ok(reason.startsWith('질의어 일치: 물, 환경'), reason)
+  assert.ok(reason.includes('Jev 판정 핵심 1.00'), reason)
+  assert.ok(reason.includes('의미 유사도 0.39'), reason)
+})
+
+test('buildSearchReason: never empty without matches or a Jev score', () => {
+  assert.equal(buildSearchReason({ matchedTerms: [], sim: 0.42 }), '의미 유사도 0.42')
+})
+
+// ─── v2 document builder ───────────────────────────────────────────────────
+
+const DOC_INPUT = {
+  subject: '과학',
+  area: '지구와 우주',
+  band: '5-6학년군',
+  coreIdea: '지구계는 지권, 수권, 기권, 생물권 등으로 구성된다.',
+  code: '[6과06-02]',
+  text: '이슬, 안개, 구름을 관찰하고, 공통점과 차이점을 찾을 수 있다.',
+  knowledge: ['5-6학년군: 이슬, 안개, 구름', '5-6학년군: 고기압과 저기압', '3-4학년군: 화산 활동'],
+  functions: ['5-6학년군: 자료를 수집하고 비교하기', '1-2학년군: 문제 인식하기'],
+  keywords: ['이슬 안개 구름', '관찰', '수 있'],
+}
+
+test('buildStandardDocument: header, core idea, standard, elements and keywords in fixed order', () => {
+  const doc = buildStandardDocument(DOC_INPUT)
+  const lines = doc.split('\n')
+  assert.equal(lines[0], '교과 과학 · 영역 지구와 우주 · 학년군 5-6학년군')
+  assert.ok(lines[1].startsWith('핵심아이디어: 지구계는'))
+  assert.ok(lines[2].startsWith('성취기준: [6과06-02] 이슬, 안개, 구름을'))
+  assert.ok(lines.some(l => l.startsWith('지식·이해: ')))
+  assert.ok(lines.some(l => l.startsWith('과정·기능: ')))
+  assert.ok(lines.some(l => l.startsWith('키워드: ')))
+})
+
+test('buildStandardDocument: keeps only the requested band and strips its prefix', () => {
+  const doc = buildStandardDocument(DOC_INPUT)
+  assert.ok(doc.includes('지식·이해: 이슬, 안개, 구름, 고기압과 저기압'), doc)
+  // Another band's item must not leak in, and no prefix survives.
+  assert.ok(!doc.includes('화산 활동'), doc)
+  assert.ok(!doc.includes('학년군:'), doc)
+  assert.ok(doc.includes('과정·기능: 자료를 수집하고 비교하기'), doc)
+  assert.ok(!doc.includes('문제 인식하기'), doc)
+})
+
+test('buildStandardDocument: deterministic for the same input', () => {
+  assert.equal(buildStandardDocument(DOC_INPUT), buildStandardDocument(DOC_INPUT))
+  assert.equal(buildStandardDocument({ ...DOC_INPUT }), buildStandardDocument(DOC_INPUT))
+})
+
+test('buildStandardDocument: caps knowledge at 8 and functions at 6', () => {
+  const doc = buildStandardDocument({
+    ...DOC_INPUT,
+    knowledge: Array.from({ length: 20 }, (_, i) => `5-6학년군: 지식${i}`),
+    functions: Array.from({ length: 20 }, (_, i) => `5-6학년군: 기능${i}`),
+  })
+  const knowledge = doc.split('\n').find(l => l.startsWith('지식·이해: ')).slice('지식·이해: '.length).split(', ')
+  const functions = doc.split('\n').find(l => l.startsWith('과정·기능: ')).slice('과정·기능: '.length).split(', ')
+  assert.equal(knowledge.length, DOC_KNOWLEDGE_LIMIT)
+  assert.equal(functions.length, DOC_FUNCTION_LIMIT)
+})
+
+test('buildStandardDocument: drops noise keywords and de-duplicates elements', () => {
+  const doc = buildStandardDocument({ ...DOC_INPUT, knowledge: ['5-6학년군: 이슬', '5-6학년군: 이슬'] })
+  // The noise filter applies to the keyword line only — the standard's own
+  // sentence keeps its wording ('...찾을 수 있다.') verbatim.
+  const keywordLine = doc.split('\n').find(l => l.startsWith('키워드: '))
+  assert.ok(!keywordLine.includes('수 있'), keywordLine)
+  assert.ok(doc.includes('찾을 수 있다.'), doc)
+  assert.equal(doc.split('\n').find(l => l.startsWith('지식·이해: ')), '지식·이해: 이슬')
+})
+
+test('buildStandardDocument: omits sections with nothing in them', () => {
+  const doc = buildStandardDocument({
+    subject: '창체', area: '', band: '3-4학년군', coreIdea: '', code: '', text: '자율활동을 한다.',
+  })
+  assert.equal(doc, '교과 창체 · 학년군 3-4학년군\n성취기준: 자율활동을 한다.')
+})
+
+test('buildStandardDocument: collapses whitespace inside sentences', () => {
+  const doc = buildStandardDocument({ ...DOC_INPUT, text: '이슬,\n  안개를   관찰한다.' })
+  assert.ok(doc.includes('성취기준: [6과06-02] 이슬, 안개를 관찰한다.'), doc)
+})
+
+// ─── short-query detection and expansion ──────────────────────────────────
+
+test('isShortQuery: two-character and one-token queries are short', () => {
+  assert.equal(isShortQuery('이슬'), true)
+  assert.equal(isShortQuery('기후변화'), true)
+  assert.equal(isShortQuery('분수의 덧셈'), true) // 2 tokens
+})
+
+test('isShortQuery: a full lesson topic is not short', () => {
+  assert.equal(isShortQuery('우리 마을의 물과 환경'), false)
+  assert.equal(isShortQuery('지구 온난화와 우리 생활의 변화'), false)
+})
+
+test('isShortQuery: long single token still counts as short (<= 2 tokens)', () => {
+  // One token can never be specific enough to skip expansion.
+  assert.equal(isShortQuery('지속가능발전교육'), true)
+})
+
+test('isShortQuery: empty or whitespace-only is not expandable', () => {
+  assert.equal(isShortQuery(''), false)
+  assert.equal(isShortQuery('   '), false)
+})
+
+test('sanitizeExpansionTerms: trims, dedupes and drops the original query', () => {
+  const out = sanitizeExpansionTerms(['  응결 ', '수증기', '응결', '이슬', ''], '이슬')
+  assert.deepEqual(out, ['응결', '수증기'])
+})
+
+test('sanitizeExpansionTerms: rejects non-strings and sentence-length output', () => {
+  const out = sanitizeExpansionTerms([42, null, { a: 1 }, '이슬은 공기 중의 수증기가 응결하여 생긴 물방울이다', '응결'], '이슬')
+  assert.deepEqual(out, ['응결'])
+})
+
+test('sanitizeExpansionTerms: caps at the limit', () => {
+  const out = sanitizeExpansionTerms(['가가', '나나', '다다', '라라', '마마', '바바', '사사', '아아'], '질의')
+  assert.equal(out.length, 6)
+})
+
+test('sanitizeExpansionTerms: empty and nullish input', () => {
+  assert.deepEqual(sanitizeExpansionTerms([], '이슬'), [])
+  assert.deepEqual(sanitizeExpansionTerms([undefined, undefined], '이슬'), [])
+})
+
+test('expandedQuerySimilarity: takes the max and names the winning term', () => {
+  const standard = [1, 0, 0]
+  const out = expandedQuerySimilarity(standard, [0, 1, 0], [
+    { term: '응결', vector: [1, 0, 0] },
+    { term: '날씨', vector: [0, 0, 1] },
+  ])
+  assert.equal(out.sim, 1)
+  assert.equal(out.matchedTerm, '응결')
+})
+
+test('expandedQuerySimilarity: no term beats the query, so no term is reported', () => {
+  const out = expandedQuerySimilarity([1, 0], [1, 0], [{ term: '날씨', vector: [0, 1] }])
+  assert.equal(out.sim, 1)
+  assert.equal(out.matchedTerm, undefined)
+})
+
+test('expandedQuerySimilarity: with no expansions it is the plain cosine', () => {
+  const out = expandedQuerySimilarity([1, 1], [1, 1], [])
+  assert.ok(Math.abs(out.sim - 1) < 1e-12)
+  assert.equal(out.matchedTerm, undefined)
+})
+
+test('expandedQuerySimilarity: negative cosine is clamped to 0', () => {
+  const out = expandedQuerySimilarity([1, 0], [-1, 0], [])
+  assert.equal(out.sim, 0)
+})
+
+// ─── similarity floor ─────────────────────────────────────────────────────
+
+test('similarityFloor: the absolute floor wins for a low-scoring query', () => {
+  // '이슬': top 0.468 -> ratio gives 0.211, so the 0.22 absolute floor applies
+  // and the 0.200 noise band is excluded.
+  assert.equal(similarityFloor(0.468), SIM_FLOOR_ABSOLUTE)
+  assert.ok(similarityFloor(0.468) > 0.2)
+})
+
+test('similarityFloor: the ratio wins for a high-scoring query', () => {
+  // '기후변화': top 0.608 -> 0.274, which kept 40 candidates in the live check.
+  assert.ok(Math.abs(similarityFloor(0.608) - 0.608 * SIM_FLOOR_RATIO) < 1e-12)
+  assert.ok(similarityFloor(0.608) > SIM_FLOOR_ABSOLUTE)
+})
+
+test('similarityFloor: never negative and clamps a bogus top score', () => {
+  assert.equal(similarityFloor(0), SIM_FLOOR_ABSOLUTE)
+  assert.equal(similarityFloor(-1), SIM_FLOOR_ABSOLUTE)
+  assert.equal(similarityFloor(5), SIM_FLOOR_RATIO)
+})
+
+test('buildSearchReason: names the expansion term that pulled a standard in', () => {
+  const reason = buildSearchReason({ matchedTerms: [], sim: 0.58, jevScore: 0.9, matchedExpansion: '응결' })
+  assert.ok(reason.includes("확장어 '응결' 로 연결"), reason)
+  assert.ok(reason.includes('Jev 판정 핵심 0.90'), reason)
+})
+
+// ─── search tokens ────────────────────────────────────────────────────────
+
+test('searchTokens: keeps the phrase and its parts, 2+ chars only', () => {
+  assert.deepEqual(searchTokens('물의 상태'), ['물의 상태', '물의', '상태'])
+})
+
+test('searchTokens: keeps generic words a user actually typed', () => {
+  // Unlike normalizeKeywordTerms, no stopword filter — searching '이용' must work.
+  assert.ok(searchTokens('이용').includes('이용'))
+})
+
+test('searchTokens: includes expansion terms and dedupes', () => {
+  const tokens = searchTokens('이슬', ['응결', '이슬', '수증기'])
+  assert.ok(tokens.includes('이슬'))
+  assert.ok(tokens.includes('응결'))
+  assert.ok(tokens.includes('수증기'))
+  assert.equal(new Set(tokens).size, tokens.length)
+})
+
+test('searchTokens: single characters are dropped (they match everything)', () => {
+  assert.deepEqual(searchTokens('물'), [])
+  assert.deepEqual(searchTokens(''), [])
+})
+
+// ─── keyword-hit guarantee ────────────────────────────────────────────────
+
+const DEW = {
+  text: '이슬, 안개, 구름을 관찰하고, 공통점과 차이점을 찾을 수 있다.',
+  keywords: ['이슬 안개 구름', '관찰'],
+  area: '지구와 우주',
+}
+
+test('keywordHit: the dew standard is found by the literal query token', () => {
+  // The regression this guards: '이슬' must always pull in [6과06-02].
+  const hit = keywordHit(DEW, '지구계는 지권, 수권, 기권으로 구성된다.', searchTokens('이슬'))
+  assert.ok(hit, 'no hit for 이슬')
+  assert.deepEqual(hit.terms, ['이슬'])
+  assert.equal(hit.fields[0], '성취기준 문장')
+})
+
+test('keywordHit: matches in the area and the core idea too', () => {
+  const area = keywordHit(DEW, '', searchTokens('지구와 우주'))
+  assert.ok(area.fields.includes('영역'), JSON.stringify(area))
+  const core = keywordHit({ text: '무게를 비교한다.', keywords: [], area: '물질' }, '지구계는 수권으로 구성된다.', searchTokens('지구계'))
+  assert.ok(core.fields.includes('핵심아이디어'), JSON.stringify(core))
+})
+
+test('keywordHit: an expansion term can be the thing that hits', () => {
+  const hit = keywordHit(DEW, '', searchTokens('이슬', ['안개']))
+  assert.ok(hit.terms.includes('안개'))
+})
+
+test('keywordHit: no token in any field yields null', () => {
+  assert.equal(keywordHit(DEW, '', searchTokens('분수의 덧셈')), null)
+  assert.equal(keywordHit(DEW, '', []), null)
+})
+
+test('keywordHit: reason names the field and the token', () => {
+  const hit = keywordHit(DEW, '', searchTokens('이슬'))
+  const reason = buildSearchReason({ matchedTerms: [], sim: 0.47, jevScore: 0.98, keywordHit: hit })
+  assert.ok(reason.startsWith("성취기준 문장에 '이슬' 포함"), reason)
+})
+
+// ─── pool merge and cap ───────────────────────────────────────────────────
+
+test('mergeSearchPool: keyword hits come first and survive the cap', () => {
+  const pool = mergeSearchPool({
+    embeddingIds: ['e1', 'e2', 'e3'],
+    keywordIds: ['k1'],
+    cap: 2,
+  })
+  assert.deepEqual(pool, [
+    { id: 'k1', source: 'keyword' },
+    { id: 'e1', source: 'embedding' },
+  ])
+})
+
+test('mergeSearchPool: an id from both paths is labelled both, once', () => {
+  const pool = mergeSearchPool({ embeddingIds: ['a', 'b'], keywordIds: ['b'], cap: 10 })
+  assert.deepEqual(pool, [
+    { id: 'b', source: 'both' },
+    { id: 'a', source: 'embedding' },
+  ])
+})
+
+test('mergeSearchPool: embedding order is preserved for the remainder', () => {
+  const pool = mergeSearchPool({ embeddingIds: ['e1', 'e2', 'e3'], keywordIds: [], cap: 10 })
+  assert.deepEqual(pool.map(p => p.id), ['e1', 'e2', 'e3'])
+})
+
+test('mergeSearchPool: the cap is honoured even when keyword hits alone exceed it', () => {
+  // A common token like '환경' can hit more standards than the pool allows.
+  const keywordIds = Array.from({ length: 200 }, (_, i) => `k${i}`)
+  const pool = mergeSearchPool({ embeddingIds: ['e1'], keywordIds, cap: 120 })
+  assert.equal(pool.length, 120)
+  assert.ok(pool.every(p => p.source === 'keyword'))
+  assert.equal(pool[0].id, 'k0')
+})
+
+test('mergeSearchPool: empty inputs and zero cap', () => {
+  assert.deepEqual(mergeSearchPool({ embeddingIds: [], keywordIds: [], cap: 10 }), [])
+  assert.deepEqual(mergeSearchPool({ embeddingIds: ['a'], keywordIds: ['b'], cap: 0 }), [])
+})
+
+test('chunkArray: splits for parallel Jev fan-out and covers every item', () => {
+  const items = Array.from({ length: 70 }, (_, i) => i)
+  const chunks = chunkArray(items, 30)
+  assert.deepEqual(chunks.map(c => c.length), [30, 30, 10])
+  assert.deepEqual(chunks.flat(), items)
+  assert.deepEqual(chunkArray([], 30), [])
+  assert.deepEqual(chunkArray([1, 2], 0), [[1, 2]])
+})
+
+// ─── Jev-first ranking ────────────────────────────────────────────────────
+
+test('compareJevFirst: a clearly higher Jev score wins regardless of cosine', () => {
+  const a = { score: 0.9, sim: 0.10, id: 'a' }
+  const b = { score: 0.6, sim: 0.99, id: 'b' }
+  assert.ok(compareJevFirst(a, b) < 0)
+})
+
+test('compareJevFirst: within the epsilon, cosine breaks the tie', () => {
+  const a = { score: 0.80, sim: 0.30, id: 'a' }
+  const b = { score: 0.81, sim: 0.50, id: 'b' }
+  assert.ok(Math.abs(a.score - b.score) <= JEV_TIE_BREAK_EPSILON)
+  assert.ok(compareJevFirst(a, b) > 0, 'higher cosine should win inside the epsilon')
+})
+
+test('compareJevFirst: fully tied entries fall back to id for determinism', () => {
+  const a = { score: 0.5, sim: 0.5, id: 'aaa' }
+  const b = { score: 0.5, sim: 0.5, id: 'bbb' }
+  assert.ok(compareJevFirst(a, b) < 0)
+  assert.equal(compareJevFirst(a, a), 0)
+})
+
+// ─── band balance ─────────────────────────────────────────────────────────
+
+const BANDS = ['1-2학년군', '3-4학년군', '5-6학년군']
+
+function bandItems() {
+  return [
+    { id: 'a1', band: '1-2학년군' }, { id: 'a2', band: '1-2학년군' },
+    { id: 'a3', band: '1-2학년군' }, { id: 'a4', band: '1-2학년군' },
+    { id: 'a5', band: '1-2학년군' },
+    { id: 'c1', band: '5-6학년군' }, { id: 'c2', band: '5-6학년군' },
+  ]
+}
+
+test('balanceByBand: each band gets up to perBand items', () => {
+  const out = balanceByBand(bandItems(), BANDS, 2)
+  assert.deepEqual(out.byBand['1-2학년군'].map(i => i.id), ['a1', 'a2'])
+  assert.deepEqual(out.byBand['5-6학년군'].map(i => i.id), ['c1', 'c2'])
+  assert.deepEqual(out.byBand['3-4학년군'], [])
+})
+
+test('balanceByBand: a band with nothing relevant is reported in emptyBands', () => {
+  const out = balanceByBand(bandItems(), BANDS, 4)
+  assert.deepEqual(out.emptyBands, ['3-4학년군'])
+})
+
+test('balanceByBand: picks stop one band from taking every slot', () => {
+  // Score order alone would return five 1-2학년군 items before any 5-6학년군.
+  const out = balanceByBand(bandItems(), BANDS, 2)
+  assert.deepEqual(out.picks.map(i => i.id), ['a1', 'a2', 'c1', 'c2'])
+})
+
+test('balanceByBand: perBand is clamped into 1..8', () => {
+  assert.equal(balanceByBand(bandItems(), BANDS, 99).byBand['1-2학년군'].length, 5)
+  assert.equal(balanceByBand(bandItems(), BANDS, 0).byBand['1-2학년군'].length, DEFAULT_PER_BAND)
+  assert.equal(balanceByBand(bandItems(), BANDS, -3).byBand['1-2학년군'].length, DEFAULT_PER_BAND)
+})
+
+test('balanceByBand: empty item list marks every band empty', () => {
+  const out = balanceByBand([], BANDS, 4)
+  assert.deepEqual(out.emptyBands, BANDS)
+  assert.deepEqual(out.picks, [])
+})
+
+test('resolvePerBand: defaults, clamps and rejects junk', () => {
+  assert.equal(resolvePerBand(undefined), DEFAULT_PER_BAND)
+  assert.equal(resolvePerBand(0), DEFAULT_PER_BAND)
+  assert.equal(resolvePerBand(-1), DEFAULT_PER_BAND)
+  assert.equal(resolvePerBand('4'), DEFAULT_PER_BAND)
+  assert.equal(resolvePerBand(3), 3)
+  assert.equal(resolvePerBand(99), MAX_PER_BAND)
+})
+
+// ─── pool vs display vectors ──────────────────────────────────────────────
+
+test('resolveVectorTables: pool comes from v2, displayed sim comes from v1', () => {
+  // Reads the committed assets, so it asserts the real wiring rather than a stub.
+  const tables = resolveVectorTables()
+  assert.equal(tables.poolSource, 'v2', 'pool should use the document embeddings')
+  assert.equal(tables.displaySource, 'v1', 'displayed sim must use the legacy cache')
+
+  const v1 = JSON.parse(fs.readFileSync('public/embeddings_cache.json', 'utf-8'))
+  const v2 = JSON.parse(fs.readFileSync('public/embeddings_v2.json', 'utf-8')).docs
+  const id = 'sub_sci_6과06-02'
+
+  // The display vector is byte-for-byte the legacy one, not the v2 one.
+  assert.deepEqual(tables.displayVectors[id], v1[id])
+  assert.deepEqual(tables.poolVectors[id], v2[id].vector)
+  assert.notDeepEqual(tables.displayVectors[id], tables.poolVectors[id])
+})
+
+test('resolveVectorTables: v1 similarity still discriminates where v2 does not', () => {
+  // This is the reason for the split: v2 collapses same-area neighbours.
+  const tables = resolveVectorTables()
+  const centre = 'sub_sci_6과06-02'
+  const neighbour = 'sub_sci_6과06-01'
+  const v2Sim = cosineSim(tables.poolVectors[centre], tables.poolVectors[neighbour])
+  const v1Sim = cosineSim(tables.displayVectors[centre], tables.displayVectors[neighbour])
+  assert.ok(v2Sim > 0.9, `v2 should be compressed high, got ${v2Sim.toFixed(3)}`)
+  assert.ok(v1Sim < v2Sim - 0.2, `v1 should be far lower, got ${v1Sim.toFixed(3)} vs ${v2Sim.toFixed(3)}`)
 })

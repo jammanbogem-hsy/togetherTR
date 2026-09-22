@@ -85,11 +85,14 @@ export function FilterChip({
   label,
   active,
   dotColor,
+  icon,
   onClick,
 }: {
   label: string
   active: boolean
   dotColor?: string
+  /** Material Symbols 이름 — 교과 칩에 쓴다 */
+  icon?: string
   onClick: () => void
 }): React.ReactElement {
   return (
@@ -103,7 +106,14 @@ export function FilterChip({
           : 'border-[var(--md-outline-variant)] bg-transparent text-[var(--md-on-surface-variant)]'
       }`}
     >
-      {active ? (
+      {icon ? (
+        <span
+          className="material-symbols-rounded text-[18px] leading-none"
+          style={{ color: active ? dotColor : 'var(--md-outline)' }}
+        >
+          {icon}
+        </span>
+      ) : active ? (
         <span className="material-symbols-rounded text-[18px] leading-none">check</span>
       ) : dotColor ? (
         <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />

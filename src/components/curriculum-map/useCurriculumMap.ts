@@ -59,6 +59,12 @@ function errorMessage(err: unknown, fallback: string): string {
 export interface SearchState {
   status: AsyncStatus
   results: MapSearchResult[]
+  /** 약함·무관 등급 — 접힌 영역에 따로 보여 준다 */
+  weak: MapSearchResult[]
+  /** 학년군별 상위 항목 (백엔드가 주면 채워진다) */
+  byBand?: Record<string, MapSearchResult[]>
+  /** 관련 성취기준이 없는 학년군 */
+  emptyBands?: string[]
   judge: MapJudge | null
   elapsedMs: number
   error: string | null
@@ -86,6 +92,7 @@ export interface CurriculumMapController {
   toggleBand: (band: string) => void
   setEdgeThreshold: (value: number) => void
   setAlwaysLabels: (value: boolean) => void
+  setPhysics: (value: boolean) => void
   resetFilters: () => void
 
   query: string
@@ -103,13 +110,15 @@ export interface CurriculumMapController {
   visibleEdges: MapEdge[]
   nodeById: Map<string, MapNode>
   scoreById: Map<string, number>
-  neighborIds: Set<string>
+  /** 현재 보이는 노드 id — 필터에 가려진 관련 항목을 골라낼 때 쓴다 */
+  visibleIds: Set<string>
   searchActive: boolean
 }
 
 const EMPTY_SEARCH: SearchState = {
   status: 'idle',
   results: [],
+  weak: [],
   judge: null,
   elapsedMs: 0,
   error: null,
@@ -190,6 +199,10 @@ export function useCurriculumMap(): CurriculumMapController {
     updateFilters(f => ({ ...f, alwaysLabels: value }))
   }, [])
 
+  const setPhysics = useCallback((value: boolean) => {
+    updateFilters(f => ({ ...f, physics: value }))
+  }, [])
+
   const resetFilters = useCallback(() => updateFilters(() => DEFAULT_FILTERS), [])
 
   // ── 파생 데이터 ────────────────────────────────────────────────────────
@@ -211,16 +224,6 @@ export function useCurriculumMap(): CurriculumMapController {
     [asset, filters.edgeThreshold, visibleIds, selectedId],
   )
 
-  const neighborIds = useMemo(() => {
-    const set = new Set<string>()
-    if (!selectedId) return set
-    for (const e of visibleEdges) {
-      if (e.source === selectedId) set.add(e.target)
-      else if (e.target === selectedId) set.add(e.source)
-    }
-    return set
-  }, [selectedId, visibleEdges])
-
   const scoreById = useMemo(() => {
     const map = new Map<string, number>()
     for (const r of search.results) map.set(r.id, r.score)
@@ -239,6 +242,7 @@ export function useCurriculumMap(): CurriculumMapController {
     [asset, filters.hiddenBands],
   )
 
+  // 검색 요청에 실을 학년군 목록 — 패널의 묶기 순서와 같은 기준을 쓴다
   const runSearch = useCallback((value?: string) => {
     const q = (value ?? query).trim()
     if (!q) {
@@ -256,10 +260,11 @@ export function useCurriculumMap(): CurriculumMapController {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
+      // 체크된 교과·학년군을 항상 보낸다 — 백엔드가 학년군별로 균형 있게 뽑는다
       body: JSON.stringify({
         query: q,
-        subjects: filters.hiddenSubjectIds.length > 0 ? visibleSubjectIds : undefined,
-        bands: filters.hiddenBands.length > 0 ? visibleBands : undefined,
+        subjects: visibleSubjectIds,
+        bands: visibleBands,
         limit: SEARCH_LIMIT,
       }),
     })
@@ -271,6 +276,9 @@ export function useCurriculumMap(): CurriculumMapController {
         setSearch({
           status: 'ready',
           results: Array.isArray(data.results) ? data.results : [],
+          weak: Array.isArray(data.weak) ? data.weak : [],
+          byBand: data.byBand,
+          emptyBands: Array.isArray(data.emptyBands) ? data.emptyBands : undefined,
           judge: data.judge ?? null,
           elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : 0,
           error: null,
@@ -286,7 +294,7 @@ export function useCurriculumMap(): CurriculumMapController {
           submittedQuery: q,
         })
       })
-  }, [query, filters.hiddenSubjectIds, filters.hiddenBands, visibleSubjectIds, visibleBands])
+  }, [query, visibleSubjectIds, visibleBands])
 
   const clearSearch = useCallback(() => {
     searchAbortRef.current?.abort()
@@ -364,6 +372,7 @@ export function useCurriculumMap(): CurriculumMapController {
     toggleBand,
     setEdgeThreshold,
     setAlwaysLabels,
+    setPhysics,
     resetFilters,
     query,
     setQuery,
@@ -378,7 +387,7 @@ export function useCurriculumMap(): CurriculumMapController {
     visibleEdges,
     nodeById,
     scoreById,
-    neighborIds,
+    visibleIds,
     searchActive,
   }
 }

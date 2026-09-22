@@ -51,7 +51,8 @@ export default function RootLayout({
               'add', 'arrow_back', 'call_split', 'close', 'delete',
               'drag_indicator', 'group', 'help', 'hub', 'link', 'save', 'star',
               // 교육과정 분석맵
-              'fit_screen', 'remove', 'right_panel_close', 'right_panel_open',
+              'expand_less', 'fit_screen', 'remove', 'right_panel_close',
+              'right_panel_open',
               // 교육과정 분석맵 과목 아이콘
               'calculate', 'science', 'public', 'volunteer_activism',
               'palette', 'music_note', 'directions_run', 'translate',
