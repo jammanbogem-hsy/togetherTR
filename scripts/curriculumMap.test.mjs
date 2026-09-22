@@ -604,7 +604,11 @@ test('layoutCurriculumMap: deterministic for the same seed', () => {
   const a = layoutCurriculumMap(nodes, edges, { iterations: 80, seed: 3 })
   const b = layoutCurriculumMap(nodes, edges, { iterations: 80, seed: 3 })
   for (const node of nodes) assert.deepEqual(a.positions.get(node.id), b.positions.get(node.id))
-  assert.deepEqual(a.stats, b.stats)
+  // Layout geometry is deterministic; wall-clock profiling varies between runs.
+  const geometryStats = stats => Object.fromEntries(
+    Object.entries(stats).filter(([key]) => key !== 'forceMs' && key !== 'collisionMs'),
+  )
+  assert.deepEqual(geometryStats(a.stats), geometryStats(b.stats))
 })
 
 test('layoutCurriculumMap: keeps subjects as soft clusters after collision resolution', () => {

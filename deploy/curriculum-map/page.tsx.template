@@ -1,0 +1,5 @@
+import CurriculumMapWorkspace from '@/components/curriculum-map/CurriculumMapWorkspace'
+
+export default function PublicCurriculumMapPage(): React.ReactElement {
+  return <CurriculumMapWorkspace standalone />
+}

@@ -1,0 +1,22 @@
+import type { Metadata } from 'next'
+import { Noto_Sans_KR } from 'next/font/google'
+import './globals.css'
+
+const notoSansKR = Noto_Sans_KR({
+  variable: '--font-noto',
+  subsets: ['latin'],
+  weight: ['400', '500', '700', '900'],
+})
+
+export const metadata: Metadata = {
+  title: '교육과정 분석맵',
+  description: '초등 교육과정의 교과·학년군별 성취기준을 탐색하고 수업 주제와 연결해 보세요.',
+}
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>): React.ReactElement {
+  return (
+    <html lang="ko" className={`${notoSansKR.variable} h-full`}>
+      <body className="min-h-full flex flex-col antialiased">{children}</body>
+    </html>
+  )
+}
