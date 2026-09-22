@@ -157,3 +157,23 @@ export interface MapFilters {
 }
 
 export type AsyncStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+// ─── 시트 연동 ────────────────────────────────────────────────────────────
+
+/** 분석시트로 보내는 성취기준 한 건. 시트 쪽 계약과 1:1 이다. */
+export interface MapPick {
+  id: string
+  code: string
+  text: string
+  /** "[코드] 본문" 형태 */
+  standard: string
+  /** 시트가 쓰는 교과 이름 ('사회', '통합교과' …) */
+  subject: string
+  subjectId: string
+  band: string
+  area: string
+  /** 그래프의 핵심 아이디어 문장 */
+  coreIdea: string
+  /** 내용 체계상의 핵심 아이디어 (있을 때만) */
+  contentCoreIdea?: string
+}

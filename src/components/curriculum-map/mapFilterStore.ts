@@ -3,6 +3,11 @@
 // 분석맵 보기 설정(필터) 외부 스토어.
 // localStorage 는 React 밖의 시스템이므로 useSyncExternalStore 로 구독한다
 // (effect 안에서 setState 로 복원하면 캐스케이드 렌더가 발생).
+//
+// 두 종류가 있다:
+//  - 공유·영속 스토어(page 모드): 앱 전체가 하나를 쓰고 localStorage 에 저장한다.
+//  - 인스턴스·비영속 스토어(embedded 모드): 시트에서 열 때마다 새로 만들고 저장하지
+//    않는다. 그래야 "사회 줄에서 열었던 필터"가 다음 열기에 새지 않는다.
 
 import { EDGE_THRESHOLD_DEFAULT, EDGE_THRESHOLD_MAX, EDGE_THRESHOLD_MIN, clamp } from './mapMath'
 import type { MapFilters } from './types'
@@ -60,31 +65,35 @@ export function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter(v => v !== value) : [...list, value]
 }
 
-// ─── 필터 외부 스토어 ─────────────────────────────────────────────────────
-// localStorage 는 React 밖의 시스템이므로 useSyncExternalStore 로 구독한다.
-// (effect 안에서 setState 로 복원하면 캐스케이드 렌더가 발생)
-
-let filtersSnapshot: MapFilters | null = null
-const filtersListeners = new Set<() => void>()
-
-export function getFiltersSnapshot(): MapFilters {
-  if (filtersSnapshot === null) filtersSnapshot = readStoredFilters()
-  return filtersSnapshot
+export interface FilterStore {
+  subscribe: (onChange: () => void) => () => void
+  getSnapshot: () => MapFilters
+  /** SSR·하이드레이션 시점에는 저장값을 읽을 수 없으므로 기본값을 쓴다. */
+  getServerSnapshot: () => MapFilters
+  update: (reducer: (prev: MapFilters) => MapFilters) => void
 }
 
-/** SSR·하이드레이션 시점에는 저장값을 읽을 수 없으므로 기본값을 쓴다. */
-export function getFiltersServerSnapshot(): MapFilters {
-  return DEFAULT_FILTERS
+export function createFilterStore(options: { persist: boolean; initial?: MapFilters }): FilterStore {
+  let snapshot: MapFilters | null = options.initial ?? null
+  const listeners = new Set<() => void>()
+  const getSnapshot = (): MapFilters => {
+    if (snapshot === null) snapshot = options.persist ? readStoredFilters() : DEFAULT_FILTERS
+    return snapshot
+  }
+  return {
+    subscribe: onChange => {
+      listeners.add(onChange)
+      return () => listeners.delete(onChange)
+    },
+    getSnapshot,
+    getServerSnapshot: () => DEFAULT_FILTERS,
+    update: reducer => {
+      snapshot = reducer(getSnapshot())
+      if (options.persist) writeStoredFilters(snapshot)
+      for (const listener of listeners) listener()
+    },
+  }
 }
 
-export function subscribeFilters(onChange: () => void): () => void {
-  filtersListeners.add(onChange)
-  return () => filtersListeners.delete(onChange)
-}
-
-export function updateFilters(reducer: (prev: MapFilters) => MapFilters): void {
-  const next = reducer(getFiltersSnapshot())
-  filtersSnapshot = next
-  writeStoredFilters(next)
-  for (const listener of filtersListeners) listener()
-}
+/** page 모드가 쓰는 앱 전체 공유·영속 스토어 */
+export const sharedFilterStore: FilterStore = createFilterStore({ persist: true })

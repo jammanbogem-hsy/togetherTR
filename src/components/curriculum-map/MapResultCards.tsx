@@ -15,6 +15,28 @@ const FALLBACK_RELATION_COLOR = '#94A3B8'
 const CARD_CLASS =
   'm3-state w-full rounded-xl border border-[var(--md-outline-variant)] bg-[var(--md-surface-container-lowest)] p-4 text-left transition-colors hover:border-[var(--md-primary)]'
 
+/** 담기 토글 — M3 tonal, 담기면 check 아이콘과 "담김". 카드 클릭과 분리한다. */
+export function PickButton({ picked, onToggle }: { picked: boolean; onToggle: () => void }): React.ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={e => {
+        e.stopPropagation()
+        onToggle()
+      }}
+      aria-pressed={picked}
+      className={`m3-state flex h-8 shrink-0 items-center gap-1 rounded-full px-3 text-[13px] font-medium ${
+        picked
+          ? 'bg-[var(--md-primary)] text-[var(--md-on-primary)]'
+          : 'bg-[var(--md-secondary-container)] text-[var(--md-on-secondary-container)]'
+      }`}
+    >
+      <span className="material-symbols-rounded text-[18px] leading-none">{picked ? 'check' : 'add_task'}</span>
+      {picked ? '담김' : '담기'}
+    </button>
+  )
+}
+
 function SubjectChip({ name, color, subjectId }: { name: string; color: string; subjectId: string }): React.ReactElement {
   const icon = subjectIcon(subjectId)
   return (
@@ -53,23 +75,34 @@ function Reason({ text }: { text?: string }): React.ReactElement | null {
 export function ResultCard({
   result,
   color,
+  picked,
   onClick,
   onHover,
+  onTogglePick,
 }: {
   result: MapSearchResult
   color: string
+  picked: boolean
   onClick: () => void
   onHover: (id: string | null) => void
+  onTogglePick: () => void
 }): React.ReactElement {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       onMouseEnter={() => onHover(result.id)}
       onMouseLeave={() => onHover(null)}
       onFocus={() => onHover(result.id)}
       onBlur={() => onHover(null)}
-      className={CARD_CLASS}
+      className={`${CARD_CLASS} cursor-pointer`}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <SubjectChip name={result.subject} color={color} subjectId={result.subjectId} />
@@ -88,33 +121,47 @@ export function ResultCard({
           {formatScore(result.score)}
         </span>
         <LevelChip level={result.level} />
+        <span className="ml-auto">
+          <PickButton picked={picked} onToggle={onTogglePick} />
+        </span>
       </div>
-    </button>
+    </div>
   )
 }
 
 export function RelatedCard({
   item,
   color,
+  picked,
   onClick,
   onHover,
+  onTogglePick,
 }: {
   item: MapRelatedItem
   color: string
+  picked: boolean
   onClick: () => void
   onHover: (id: string | null) => void
+  onTogglePick: () => void
 }): React.ReactElement {
   const relColor = RELATION_COLORS[item.relationType] ?? FALLBACK_RELATION_COLOR
   const hasScores = typeof item.jevScore === 'number' || typeof item.sim === 'number'
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       onMouseEnter={() => onHover(item.id)}
       onMouseLeave={() => onHover(null)}
       onFocus={() => onHover(item.id)}
       onBlur={() => onHover(null)}
-      className={CARD_CLASS}
+      className={`${CARD_CLASS} cursor-pointer`}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="rounded-lg px-2 py-0.5 text-[13px] font-medium text-white" style={{ backgroundColor: relColor }}>
@@ -170,12 +217,17 @@ export function RelatedCard({
         )}
       </div>
 
-      {hasScores && (
-        <p className="mt-1.5 text-[13px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
-          {typeof item.jevScore === 'number' && `Jev 판정 ${item.jevScore.toFixed(2)} · `}
-          유사도 {item.sim.toFixed(2)}
-        </p>
-      )}
-    </button>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        {hasScores ? (
+          <p className="text-[13px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
+            {typeof item.jevScore === 'number' && `Jev 판정 ${item.jevScore.toFixed(2)} · `}
+            유사도 {item.sim.toFixed(2)}
+          </p>
+        ) : (
+          <span />
+        )}
+        <PickButton picked={picked} onToggle={onTogglePick} />
+      </div>
+    </div>
   )
 }

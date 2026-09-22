@@ -360,3 +360,175 @@ export function distinctGradeBands(
       .filter(Boolean),
   )]
 }
+
+// ─── 분석맵 → 시트: 고른 성취기준을 행에 반영하는 계획 ─────────────────────
+
+/** 시트 셀 구분자 — CurriculumSheetModal의 SEP와 동일. */
+const SHEET_SEP = ' | '
+const STANDARD_CODE_FULL_RE = /\[?(\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2})\]?/
+
+/** '[4국01-01] 본문' 또는 '4국01-01'에서 코드만. 없으면 ''. */
+export function extractStandardCode(text?: string | null): string {
+  return (text ?? '').match(STANDARD_CODE_FULL_RE)?.[1] ?? ''
+}
+
+/** 분석맵에서 고른 성취기준의 최소 형태 — CurriculumMapView의 MapPick과 구조적으로 호환. */
+export interface MapPickLike {
+  code: string
+  standard: string
+  subject: string
+  band: string
+  coreIdea: string
+  contentCoreIdea?: string
+}
+
+export interface MapPickRowLike extends GradeBandRowLike {
+  id: string
+}
+
+export interface MapPickCellUpdate {
+  rowId: string
+  field: 'subject' | 'coreIdea' | 'standard'
+  value: string
+}
+
+export interface MapPickNewRow {
+  /** 이 행 바로 아래에 끼워 넣는다. 없으면 맨 끝. */
+  afterRowId?: string
+  subject: string
+  gradeBand: string
+  coreIdea: string
+  standard: string
+}
+
+export interface MapPickPlan {
+  cellUpdates: MapPickCellUpdate[]
+  newRows: MapPickNewRow[]
+  /** 첫 줄은 요약("성취기준 N개를 반영했습니다 (새 줄 M개)"), 이후는 학년군 불일치 등 안내. */
+  notes: string[]
+  /** 반영된 성취기준 수(중복 제외). */
+  appliedCount: number
+  /** 화면에서 먼저 보여 줄 기존 행(대상 줄). 새 줄만 생기면 undefined. */
+  focusRowId?: string
+}
+
+function pickIdea(pick: MapPickLike): string {
+  return (pick.contentCoreIdea || pick.coreIdea || '').trim()
+}
+
+function groupPicks(picks: MapPickLike[]): Array<{ subject: string; coreIdea: string; band: string; picks: MapPickLike[] }> {
+  const groups: Array<{ subject: string; coreIdea: string; band: string; picks: MapPickLike[] }> = []
+  for (const pick of picks) {
+    const subject = (pick.subject ?? '').trim()
+    const coreIdea = pickIdea(pick)
+    const band = toGradeBandLabel(pick.band)
+    let group = groups.find(item => item.subject === subject && item.coreIdea === coreIdea && item.band === band)
+    if (!group) { group = { subject, coreIdea, band, picks: [] }; groups.push(group) }
+    group.picks.push(pick)
+  }
+  return groups
+}
+
+function joinStandards(picks: MapPickLike[]): string {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const pick of picks) {
+    const code = extractStandardCode(pick.standard) || extractStandardCode(pick.code) || pick.standard.trim()
+    if (!code || seen.has(code)) continue
+    seen.add(code)
+    out.push(pick.standard.trim())
+  }
+  return out.join(SHEET_SEP)
+}
+
+/**
+ * 분석맵에서 고른 성취기준을 시트에 반영하는 계획(순수 함수 — 저장은 호출부가 한다).
+ *  - 대상 줄이 있으면: 같은 교과의 pick은 그 줄 성취기준에 덧붙인다(코드 기준 중복 제거).
+ *    줄에 핵심아이디어가 없으면 첫 pick의 핵심아이디어를, 교과가 없으면 첫 pick의 교과를 채운다.
+ *    줄 학년군과 pick 학년군이 다르면 줄 학년군을 유지하고 안내만 남긴다.
+ *    다른 교과의 pick은 교과·핵심아이디어·학년군별로 묶어 대상 줄 바로 아래 새 줄로 만든다.
+ *  - 대상 줄이 없으면: 전부 교과·핵심아이디어·학년군별로 묶어 새 줄로 만든다(맨 끝).
+ */
+export function planMapPickApplication(
+  rows: MapPickRowLike[],
+  picks: MapPickLike[],
+  targetRowId: string | undefined,
+  mode: SheetGradeMode,
+  sheetGradeBand?: string | null,
+): MapPickPlan {
+  const cellUpdates: MapPickCellUpdate[] = []
+  const newRows: MapPickNewRow[] = []
+  const notes: string[] = []
+  const usable = picks.filter(pick => (pick.standard ?? '').trim())
+  if (usable.length === 0) {
+    return { cellUpdates, newRows, notes: ['반영할 성취기준이 없습니다.'], appliedCount: 0 }
+  }
+
+  const target = targetRowId ? rows.find(row => row.id === targetRowId) : undefined
+  let appliedCount = 0
+  let remaining = usable
+
+  if (target) {
+    // 교과가 비어 있는 줄이면 첫 pick의 교과를 그 줄의 교과로 삼는다.
+    const lineSubject = (target.subject ?? '').trim() || (usable[0].subject ?? '').trim()
+    if (!(target.subject ?? '').trim() && lineSubject) {
+      cellUpdates.push({ rowId: target.id, field: 'subject', value: lineSubject })
+    }
+    const same = usable.filter(pick => (pick.subject ?? '').trim() === lineSubject)
+    remaining = usable.filter(pick => (pick.subject ?? '').trim() !== lineSubject)
+
+    if (same.length > 0) {
+      const existingCodes = new Set(
+        (target.standard ?? '').split(SHEET_SEP).map(part => extractStandardCode(part)).filter(Boolean),
+      )
+      const additions: string[] = []
+      for (const pick of same) {
+        const code = extractStandardCode(pick.standard) || extractStandardCode(pick.code)
+        if (code && existingCodes.has(code)) continue
+        if (code) existingCodes.add(code)
+        additions.push(pick.standard.trim())
+      }
+      if (additions.length > 0) {
+        const merged = [(target.standard ?? '').trim(), ...additions].filter(Boolean).join(SHEET_SEP)
+        cellUpdates.push({ rowId: target.id, field: 'standard', value: merged })
+        appliedCount += additions.length
+      }
+      if (!(target.coreIdea ?? '').trim()) {
+        const idea = pickIdea(same[0])
+        if (idea) cellUpdates.push({ rowId: target.id, field: 'coreIdea', value: idea })
+      }
+      const lineBand = effectiveRowGradeBand({ ...target, subject: lineSubject }, mode, sheetGradeBand)
+      const mismatched = same.filter(pick => {
+        const band = toGradeBandLabel(pick.band)
+        return !!band && !!lineBand && band !== lineBand
+      })
+      if (mismatched.length > 0) {
+        const codes = mismatched.map(pick => extractStandardCode(pick.standard) || pick.code).filter(Boolean).join(', ')
+        notes.push(`${codes}은(는) ${toGradeBandLabel(mismatched[0].band)} 성취기준입니다. 이 줄은 ${lineBand}을 유지했습니다.`)
+      }
+    }
+  }
+
+  for (const group of groupPicks(remaining)) {
+    const standard = joinStandards(group.picks)
+    if (!standard) continue
+    newRows.push({
+      ...(target ? { afterRowId: target.id } : {}),
+      subject: group.subject,
+      gradeBand: group.band,
+      coreIdea: group.coreIdea,
+      standard,
+    })
+    appliedCount += standard.split(SHEET_SEP).length
+  }
+
+  notes.unshift(`성취기준 ${appliedCount}개를 반영했습니다 (새 줄 ${newRows.length}개)`)
+  return {
+    cellUpdates,
+    newRows,
+    notes,
+    appliedCount,
+    ...(target && cellUpdates.length > 0 ? { focusRowId: target.id } : {}),
+  }
+}
+

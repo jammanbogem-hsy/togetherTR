@@ -14,6 +14,8 @@ import { resolveNextCycleChoice, type NextCycleChoice } from '@/lib/activity/cyc
 import { sanitizeArtifactSections } from '@/lib/artifacts/schemas'
 import { mergeMessagesForCycle } from '@/lib/chat/messageCycles'
 import { normalizeTeamGradeBands } from '@/lib/curriculum/teamGradeBands'
+import { defaultGradeMode, planMapPickApplication, resolveSheetGradeBand } from '@/lib/curriculum/sheetGradeBands'
+import type { MapPickLike } from '@/lib/curriculum/sheetGradeBands'
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 import { buildTeamGradeBandUpdate } from '@/lib/curriculum/teamGradeBandState'
 import { canFillRowDescription, type RowDescriptionUpdate } from '@/lib/curriculum/rowDescriptions'
@@ -874,6 +876,46 @@ export async function patchCurriculumSheet(
   })
 
   return nextRows
+}
+
+/**
+ * 분석맵(독립 페이지)에서 고른 성취기준을 시트에 새 줄로 추가한다.
+ * 시트 모달과 같은 계획 함수(planMapPickApplication)를 대상 줄 없이 돌려
+ * 교과·핵심아이디어·학년군별로 한 줄씩 upsert-row로 저장한다(동시 편집 안전).
+ * 반환값은 추가된 줄 수. undefined 필드는 cleanCurriculumSheetRow가 제거한다.
+ */
+export async function appendMapPicksToSheet(
+  projectId: string,
+  picks: MapPickLike[],
+  updatedBy?: string,
+): Promise<number> {
+  const snap = await getDoc(doc(db, 'projects', projectId))
+  if (!snap.exists()) throw new Error('project-not-found')
+  const data = snap.data() as Project
+  const currentRows = (data.curriculumSheet ?? []) as CurriculumSheetRow[]
+  const mode = data.curriculumSheetGradeMode ?? defaultGradeMode(currentRows)
+  const sheetBand = resolveSheetGradeBand(data.curriculumSheetGradeBand, data.targetGradeGroup)
+  const plan = planMapPickApplication(currentRows, picks, undefined, mode, sheetBand)
+
+  let added = 0
+  for (const newRow of plan.newRows) {
+    const row: CurriculumSheetRow = {
+      id: `cs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      session: '',
+      subject: newRow.subject,
+      ...(newRow.gradeBand ? { gradeBand: newRow.gradeBand } : {}),
+      coreIdea: newRow.coreIdea,
+      standard: newRow.standard,
+      knowledge: '',
+      processFunction: '',
+      valueAttitude: '',
+      agentLessonExample: '',
+      description: '',
+    }
+    await patchCurriculumSheet(projectId, { type: 'upsert-row', row, ...(updatedBy ? { updatedBy } : {}) })
+    added += 1
+  }
+  return added
 }
 
 /**

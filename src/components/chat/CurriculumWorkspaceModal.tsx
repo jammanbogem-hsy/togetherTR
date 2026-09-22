@@ -6,6 +6,7 @@ import { CurriculumSheetModal } from './CurriculumSheetModal'
 import type { CurriculumSheetRow } from '@/types'
 import type { CurriculumSheetPatch } from '@/lib/firebase/projects'
 import { buildGraphCodesFromSheet } from '@/lib/curriculum/graphSheetBridge'
+import { closeViaHistory, decidePopOwner, isMapLayerOpen, shouldPushEntry } from '@/lib/curriculum/sheetMapHistory'
 
 /**
  * 교육과정 분석 워크스페이스 — 분석시트 ↔ 지식그래프 통합 모달
@@ -83,17 +84,21 @@ export function CurriculumWorkspaceModal({
   const openRef = useRef(open)
   useEffect(() => { openRef.current = open }, [open])
 
+  const backPendingRef = useRef(false)
   useEffect(() => {
     if (!open || typeof window === 'undefined') return
+    backPendingRef.current = false
     // 이미 우리 항목이 최상단이면 다시 쌓지 않는다(StrictMode·remount 대비).
-    if (!(window.history.state as { tcidSheet?: boolean } | null)?.tcidSheet) {
+    if (shouldPushEntry(window.history.state, 'tcidSheet')) {
       window.history.pushState({ tcidSheet: true }, '')
     }
     const handlePop = () => {
-      // 열려 있을 때만 닫는다. cleanup에서는 history를 건드리지 않으므로
-      // (StrictMode의 mount→cleanup→mount가 자기 항목을 pop해 즉시 닫히던 문제)
-      // 남은 항목은 다음 뒤로가기에서 무해하게 소비된다.
-      if (!openRef.current) return
+      backPendingRef.current = false
+      // cleanup에서는 history를 건드리지 않는다(StrictMode의 mount→cleanup→mount가 자기
+      // 항목을 pop해 즉시 닫히던 문제). 남은 항목은 다음 뒤로가기에서 무해하게 소비된다.
+      // 분석맵(tcidMap)이 열려 있거나 우리 항목이 아직 위에 있으면 시트는 유지한다.
+      const owner = decidePopOwner({ sheetOpen: openRef.current, mapOpen: isMapLayerOpen(), newState: window.history.state })
+      if (owner !== 'sheet') return
       setView('sheet')
       onCloseRef.current()
     }
@@ -112,12 +117,14 @@ export function CurriculumWorkspaceModal({
   // 모달 닫힐 때 시트 뷰로 리셋. history 항목이 우리 것이면 back()으로 소비해
   // popstate 경로 하나로만 닫는다(이중 pop 방지).
   const handleClose = useCallback(() => {
-    if (typeof window !== 'undefined' && (window.history.state as { tcidSheet?: boolean } | null)?.tcidSheet) {
-      window.history.back()
-      return
-    }
-    setView('sheet')
-    onCloseRef.current()
+    if (typeof window === 'undefined') { setView('sheet'); onCloseRef.current(); return }
+    closeViaHistory({
+      currentState: window.history.state,
+      key: 'tcidSheet',
+      backPending: backPendingRef.current,
+      back: () => { backPendingRef.current = true; window.history.back() },
+      close: () => { setView('sheet'); onCloseRef.current() },
+    })
   }, [])
 
   if (!open || typeof document === 'undefined') return null

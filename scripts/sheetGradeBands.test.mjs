@@ -22,6 +22,8 @@ import {
   bandsWithStandards,
   bandsLackingStandards,
   makeBridgeRow,
+  extractStandardCode,
+  planMapPickApplication,
 } from '../src/lib/curriculum/sheetGradeBands.ts'
 
 test('ELEMENTARY_GRADE_BANDS: canonical labels in picker order', () => {
@@ -309,4 +311,75 @@ test('usedGradeBands: counts bridge rows in the source core-idea group', () => {
     { subject: '통합교과', coreIdea: '우리는 서로 관계를 맺으며 생활한다.', gradeBand: '1-2학년군', linkedCoreIdea: { subject: '사회', coreIdea: '아이디어 A' } },
   ]
   assert.deepEqual(usedGradeBands(rows, '사회', '아이디어 A', '초3-4'), ['3-4학년군', '1-2학년군'])
+})
+
+// ─── 분석맵 → 시트 반영 계획 ───────────────────────────────────────────
+
+const PICK_KOR = { code: '[4국01-01]', standard: '[4국01-01] 대화의 즐거움을 안다', subject: '국어', band: '3-4학년군', coreIdea: '듣기·말하기는 소통이다.', contentCoreIdea: '화자와 청자는 의미를 나눈다.' }
+const PICK_KOR2 = { code: '[4국01-02]', standard: '[4국01-02] 요약하며 듣는다', subject: '국어', band: '3-4학년군', coreIdea: '듣기·말하기는 소통이다.', contentCoreIdea: '화자와 청자는 의미를 나눈다.' }
+const PICK_MATH = { code: '[4수01-01]', standard: '[4수01-01] 큰 수를 안다', subject: '수학', band: '3-4학년군', coreIdea: '수는 양을 나타낸다.' }
+const PICK_MATH6 = { code: '[6수01-01]', standard: '[6수01-01] 분수의 나눗셈', subject: '수학', band: '5-6학년군', coreIdea: '수는 양을 나타낸다.' }
+
+test('extractStandardCode: bracketed or bare', () => {
+  assert.equal(extractStandardCode('[4국01-01] 대화'), '4국01-01')
+  assert.equal(extractStandardCode('4국01-01'), '4국01-01')
+  assert.equal(extractStandardCode('없음'), '')
+})
+
+test('planMapPickApplication: same-subject picks append to the target line, deduped by code', () => {
+  const rows = [{ id: 'r1', subject: '국어', coreIdea: '이미 있음', standard: '[4국01-01] 대화의 즐거움을 안다', gradeBand: '3-4학년군' }]
+  const plan = planMapPickApplication(rows, [PICK_KOR, PICK_KOR2], 'r1', 'multi', '3-4학년군')
+  assert.deepEqual(plan.cellUpdates, [
+    { rowId: 'r1', field: 'standard', value: '[4국01-01] 대화의 즐거움을 안다 | [4국01-02] 요약하며 듣는다' },
+  ])
+  assert.equal(plan.newRows.length, 0)
+  assert.equal(plan.appliedCount, 1)
+  assert.equal(plan.focusRowId, 'r1')
+  assert.equal(plan.notes[0], '성취기준 1개를 반영했습니다 (새 줄 0개)')
+})
+
+test('planMapPickApplication: fills an empty core idea (content-system sentence first) and keeps the band, noting mismatches', () => {
+  const rows = [{ id: 'r1', subject: '수학', coreIdea: '', standard: '', gradeBand: '3-4학년군' }]
+  const plan = planMapPickApplication(rows, [PICK_MATH6], 'r1', 'multi', '3-4학년군')
+  assert.deepEqual(plan.cellUpdates, [
+    { rowId: 'r1', field: 'standard', value: '[6수01-01] 분수의 나눗셈' },
+    { rowId: 'r1', field: 'coreIdea', value: '수는 양을 나타낸다.' },
+  ])
+  assert.ok(plan.notes.some(note => note.includes('5-6학년군 성취기준') && note.includes('3-4학년군을 유지')))
+})
+
+test('planMapPickApplication: cross-subject picks become new rows directly below the target', () => {
+  const rows = [{ id: 'r1', subject: '국어', coreIdea: '아이디어', standard: '', gradeBand: '3-4학년군' }, { id: 'r2', subject: '과학', coreIdea: '', standard: '' }]
+  const plan = planMapPickApplication(rows, [PICK_KOR, PICK_MATH, PICK_MATH6], 'r1', 'multi', '3-4학년군')
+  assert.equal(plan.cellUpdates.find(u => u.field === 'standard')?.value, '[4국01-01] 대화의 즐거움을 안다')
+  // 수학은 학년군이 달라 두 줄로 나뉜다.
+  assert.deepEqual(plan.newRows, [
+    { afterRowId: 'r1', subject: '수학', gradeBand: '3-4학년군', coreIdea: '수는 양을 나타낸다.', standard: '[4수01-01] 큰 수를 안다' },
+    { afterRowId: 'r1', subject: '수학', gradeBand: '5-6학년군', coreIdea: '수는 양을 나타낸다.', standard: '[6수01-01] 분수의 나눗셈' },
+  ])
+  assert.equal(plan.appliedCount, 3)
+})
+
+test('planMapPickApplication: an empty target line adopts the first pick subject', () => {
+  const rows = [{ id: 'r1', subject: '', coreIdea: '', standard: '' }]
+  const plan = planMapPickApplication(rows, [PICK_MATH], 'r1', 'single', '3-4학년군')
+  assert.deepEqual(plan.cellUpdates.map(u => u.field), ['subject', 'standard', 'coreIdea'])
+  assert.equal(plan.cellUpdates[0].value, '수학')
+})
+
+test('planMapPickApplication: no target groups by subject + core idea + band into new rows at the end', () => {
+  const plan = planMapPickApplication([], [PICK_KOR, PICK_KOR2, PICK_MATH, PICK_KOR], undefined, 'multi', '3-4학년군')
+  assert.deepEqual(plan.newRows, [
+    { subject: '국어', gradeBand: '3-4학년군', coreIdea: '화자와 청자는 의미를 나눈다.', standard: '[4국01-01] 대화의 즐거움을 안다 | [4국01-02] 요약하며 듣는다' },
+    { subject: '수학', gradeBand: '3-4학년군', coreIdea: '수는 양을 나타낸다.', standard: '[4수01-01] 큰 수를 안다' },
+  ])
+  assert.equal(plan.appliedCount, 3) // 중복 pick(국어 01-01)은 한 번만
+  assert.equal(plan.focusRowId, undefined)
+  assert.equal(plan.notes[0], '성취기준 3개를 반영했습니다 (새 줄 2개)')
+})
+
+test('planMapPickApplication: nothing usable yields an explanatory note only', () => {
+  const plan = planMapPickApplication([], [{ code: '', standard: '', subject: '국어', band: '', coreIdea: '' }], undefined, 'single', '3-4학년군')
+  assert.equal(plan.appliedCount, 0)
+  assert.deepEqual(plan.notes, ['반영할 성취기준이 없습니다.'])
 })

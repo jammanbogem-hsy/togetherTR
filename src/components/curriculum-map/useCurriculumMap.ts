@@ -4,15 +4,9 @@
 // 렌더러(캔버스)와 패널은 이 훅이 만든 파생값만 읽는다.
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { EDGE_THRESHOLD_MAX, EDGE_THRESHOLD_MIN, clamp, isEdgeVisible, isNodeVisible } from './mapMath'
-import {
-  DEFAULT_FILTERS,
-  getFiltersServerSnapshot,
-  getFiltersSnapshot,
-  subscribeFilters,
-  toggleInList,
-  updateFilters,
-} from './mapFilterStore'
+import { isEdgeVisible, isNodeVisible } from './mapMath'
+import { createFilterStore, sharedFilterStore, type FilterStore } from './mapFilterStore'
+import { useMapFilterActions, type MapFilterActions } from './useMapFilterActions'
 import type {
   AsyncStatus,
   CurriculumMapAsset,
@@ -81,24 +75,22 @@ export interface RelatedState {
   error: string | null
 }
 
-export interface CurriculumMapController {
+export interface CurriculumMapController extends MapFilterActions {
   asset: CurriculumMapAsset | null
   assetStatus: AsyncStatus
   assetError: string | null
   reloadAsset: () => void
 
   filters: MapFilters
-  toggleSubject: (subjectId: string) => void
-  toggleBand: (band: string) => void
-  setEdgeThreshold: (value: number) => void
-  setAlwaysLabels: (value: boolean) => void
-  setPhysics: (value: boolean) => void
-  resetFilters: () => void
 
   query: string
   setQuery: (value: string) => void
   search: SearchState
-  runSearch: (value?: string) => void
+  /**
+   * overrides 를 주면 현재 필터 대신 그 교과·학년군으로 요청한다.
+   * 필터를 방금 바꿔서 store 반영을 기다릴 수 없을 때(초기 자동 검색) 쓴다.
+   */
+  runSearch: (value?: string, overrides?: { subjects?: readonly string[]; bands?: readonly string[] }) => void
   clearSearch: () => void
 
   selectedId: string | null
@@ -134,13 +126,26 @@ const EMPTY_RELATED: RelatedState = {
   error: null,
 }
 
-export function useCurriculumMap(): CurriculumMapController {
+export interface CurriculumMapOptions {
+  /**
+   * true(기본): 앱 공유·영속 스토어(page 모드).
+   * false: 이 마운트 전용 비영속 스토어(embedded 모드) — 열 때마다 새로 시작한다.
+   */
+  persistFilters?: boolean
+}
+
+export function useCurriculumMap(options: CurriculumMapOptions = {}): CurriculumMapController {
+  const persistFilters = options.persistFilters !== false
+  // 마운트당 한 번만 만든다 (lazy initializer). 렌더 중 ref 를 쓰지 않는다.
+  const [store] = useState<FilterStore>(() =>
+    persistFilters ? sharedFilterStore : createFilterStore({ persist: false }),
+  )
   const [asset, setAsset] = useState<CurriculumMapAsset | null>(null)
   const [assetStatus, setAssetStatus] = useState<AsyncStatus>('loading')
   const [assetError, setAssetError] = useState<string | null>(null)
   const [assetReloadKey, setAssetReloadKey] = useState(0)
 
-  const filters = useSyncExternalStore(subscribeFilters, getFiltersSnapshot, getFiltersServerSnapshot)
+  const filters = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot)
 
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState<SearchState>(EMPTY_SEARCH)
@@ -183,27 +188,7 @@ export function useCurriculumMap(): CurriculumMapController {
   }, [])
 
   // ── 필터 조작 ──────────────────────────────────────────────────────────
-  const toggleSubject = useCallback((subjectId: string) => {
-    updateFilters(f => ({ ...f, hiddenSubjectIds: toggleInList(f.hiddenSubjectIds, subjectId) }))
-  }, [])
-
-  const toggleBand = useCallback((band: string) => {
-    updateFilters(f => ({ ...f, hiddenBands: toggleInList(f.hiddenBands, band) }))
-  }, [])
-
-  const setEdgeThreshold = useCallback((value: number) => {
-    updateFilters(f => ({ ...f, edgeThreshold: clamp(value, EDGE_THRESHOLD_MIN, EDGE_THRESHOLD_MAX) }))
-  }, [])
-
-  const setAlwaysLabels = useCallback((value: boolean) => {
-    updateFilters(f => ({ ...f, alwaysLabels: value }))
-  }, [])
-
-  const setPhysics = useCallback((value: boolean) => {
-    updateFilters(f => ({ ...f, physics: value }))
-  }, [])
-
-  const resetFilters = useCallback(() => updateFilters(() => DEFAULT_FILTERS), [])
+  const filterActions = useMapFilterActions(store)
 
   // ── 파생 데이터 ────────────────────────────────────────────────────────
   const nodeById = useMemo(() => {
@@ -243,7 +228,10 @@ export function useCurriculumMap(): CurriculumMapController {
   )
 
   // 검색 요청에 실을 학년군 목록 — 패널의 묶기 순서와 같은 기준을 쓴다
-  const runSearch = useCallback((value?: string) => {
+  const runSearch = useCallback((
+    value?: string,
+    overrides?: { subjects?: readonly string[]; bands?: readonly string[] },
+  ) => {
     const q = (value ?? query).trim()
     if (!q) {
       setSearch(EMPTY_SEARCH)
@@ -263,8 +251,8 @@ export function useCurriculumMap(): CurriculumMapController {
       // 체크된 교과·학년군을 항상 보낸다 — 백엔드가 학년군별로 균형 있게 뽑는다
       body: JSON.stringify({
         query: q,
-        subjects: visibleSubjectIds,
-        bands: visibleBands,
+        subjects: overrides?.subjects ?? visibleSubjectIds,
+        bands: overrides?.bands ?? visibleBands,
         limit: SEARCH_LIMIT,
       }),
     })
@@ -368,12 +356,7 @@ export function useCurriculumMap(): CurriculumMapController {
     assetError,
     reloadAsset,
     filters,
-    toggleSubject,
-    toggleBand,
-    setEdgeThreshold,
-    setAlwaysLabels,
-    setPhysics,
-    resetFilters,
+    ...filterActions,
     query,
     setQuery,
     search,

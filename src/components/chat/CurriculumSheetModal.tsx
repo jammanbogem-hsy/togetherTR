@@ -12,6 +12,8 @@ import { SheetBottomBar } from './curriculum-sheet/SheetBottomBar'
 import { InputChip, AssistChip, LabelChip } from './curriculum-sheet/SheetChips'
 import { BridgePicker, JUDGE_LABEL } from './curriculum-sheet/BridgePicker'
 import type { BridgeCandidate } from './curriculum-sheet/BridgePicker'
+import { SheetMapLayer, requestSheetMapClose } from './curriculum-sheet/SheetMapLayer'
+import type { SheetMapPick, SheetMapRequest } from './curriculum-sheet/SheetMapLayer'
 import { curriculumJsonAssetPath } from '@/lib/curriculum/curriculumFilters'
 import {
   ELEMENTARY_GRADE_BANDS,
@@ -24,6 +26,7 @@ import {
   effectiveRowGradeBand,
   integratedBandMismatch,
   nextUnusedGradeBand,
+  planMapPickApplication,
   resolveGradePrefixBandForMode,
   resolveSheetGradeBand,
   standardMatchesGradeBand,
@@ -405,12 +408,14 @@ function CellPicker({ options, value, onSelect, onClose, anchorRect, placeholder
 // ─── 태그 셀 ─────────────────────────────────────────────
 
 interface TagCellProps {
+  /** 어시스트 칩 옆에 놓을 추가 동작(예: 분석맵에서 찾기). */
+  extraAction?: React.ReactNode
   value: string; placeholder: string; color: string
   onClickAdd: (e: React.MouseEvent) => void; onRemove: (tag: string) => void
   otherEditor?: PresenceEntry; myEditing?: boolean; myColor?: string
 }
 
-function TagCell({ value, placeholder, color, onClickAdd, onRemove, otherEditor, myEditing, myColor }: TagCellProps) {
+function TagCell({ value, placeholder, color, onClickAdd, onRemove, otherEditor, myEditing, myColor, extraAction }: TagCellProps) {
   const tags = splitValues(value)
   // 프레즌스(다른 사용자·나) 표시는 2px 테두리로 유지, 기본은 M3 outline-variant.
   const borderStyle = otherEditor
@@ -422,12 +427,15 @@ function TagCell({ value, placeholder, color, onClickAdd, onRemove, otherEditor,
       {tags.map((tag, i) => (
         <InputChip key={i} label={tag} color={color} onRemove={() => onRemove(tag)} removeTitle={`${tag} 제거`} />
       ))}
-      <AssistChip
-        label={tags.length ? '추가' : placeholder ?? '추가'}
-        color={tags.length ? 'var(--md-on-surface-variant)' : color}
-        onClick={onClickAdd}
-        title={tags.length ? `${placeholder ?? ''} 추가` : placeholder}
-      />
+      <span className="flex flex-wrap items-center gap-1.5">
+        <AssistChip
+          label={tags.length ? '추가' : placeholder ?? '추가'}
+          color={tags.length ? 'var(--md-on-surface-variant)' : color}
+          onClick={onClickAdd}
+          title={tags.length ? `${placeholder ?? ''} 추가` : placeholder}
+        />
+        {extraAction}
+      </span>
     </div>
   )
 }
@@ -490,6 +498,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   }>({ loading: false, candidates: [], subjectsSearched: [], notes: [] })
   const [bridgeSubjectFilter, setBridgeSubjectFilter] = useState('')
   const bridgeRequestRef = useRef(0)
+  // 분석맵 레이어 — 열려 있으면 요청(대상 줄·초기 검색·교과·학년군)
+  const [mapRequest, setMapRequest] = useState<SheetMapRequest | null>(null)
   // 표시 전용 — 도움말 토글, 표 스크롤 시 앱 바 승격
   const [helpOpen, setHelpOpen] = useState(false)
   const [tableScrolled, setTableScrolled] = useState(false)
@@ -633,13 +643,14 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     if (!open) return
     function handleKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
+      if (mapRequest) { requestSheetMapClose(() => setMapRequest(null)); return }
       if (bridgeTarget) { setBridgeTarget(null); return }
       if (pickerTarget) { setPickerTarget(null); return }
       onClose()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
-  }, [open, bridgeTarget, pickerTarget, onClose])
+  }, [open, mapRequest, bridgeTarget, pickerTarget, onClose])
 
   useEffect(() => {
     if (!open && onPresenceUpdate) onPresenceUpdate(null)
@@ -1106,6 +1117,93 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       setRowFillState(prev => ({ ...prev, [rowId]: { message } }))
     } catch (error) {
       setRowFillState(prev => ({ ...prev, [rowId]: { error: error instanceof Error ? error.message : '수업내용 설명을 작성하지 못했습니다' } }))
+    }
+  }
+
+  /** 분석맵 열기 — 줄 컨텍스트가 있으면 그 줄의 핵심아이디어·교과·학년군으로 시작한다. */
+  function openMapForRow(row?: CurriculumSheetRow) {
+    setPickerTarget(null)
+    setBridgeTarget(null)
+    if (!row) {
+      const bands = sheetMode === 'single'
+        ? (sheetBand ? [sheetBand] : [])
+        : [...ELEMENTARY_GRADE_BANDS]
+      setMapRequest({ query: '', subjects: [], bands })
+      return
+    }
+    const band = rowBandOf(row)
+    setMapRequest({
+      rowId: row.id,
+      query: (row.coreIdea ?? '').trim() || row.subject || '',
+      subjects: row.subject ? [row.subject] : [],
+      bands: band ? [band] : [],
+      context: {
+        ...(row.subject ? { subject: row.subject } : {}),
+        ...(band ? { gradeBand: band } : {}),
+        ...((row.coreIdea ?? '').trim() ? { coreIdea: row.coreIdea.trim() } : {}),
+        rowId: row.id,
+      },
+    })
+  }
+
+  /**
+   * 분석맵에서 고른 성취기준 반영 — 계획(순수 함수)대로 셀 갱신은 updateRowFields,
+   * 새 줄은 upsert-row + reorder로 저장한다(팀원에게 실시간 반영). 지식·이해/과정·기능/
+   * 가치·태도는 기존 자동 보강 effect가 핵심아이디어를 기준으로 이어서 채운다.
+   */
+  function handleMapApply(picks: SheetMapPick[]) {
+    const request = mapRequest
+    const plan = planMapPickApplication(rows, picks, request?.rowId, sheetMode, sheetBand)
+    // 1) 기존 줄 셀 갱신 — 줄별로 묶어 한 번에
+    const byRow = new Map<string, SheetFieldPatch>()
+    for (const update of plan.cellUpdates) {
+      byRow.set(update.rowId, { ...(byRow.get(update.rowId) ?? {}), [update.field]: update.value })
+    }
+    for (const [rowId, fields] of byRow) updateRowFields(rowId, fields)
+
+    // 2) 새 줄 — 대상 줄 바로 아래(없으면 맨 끝), 순서 유지
+    const created = plan.newRows.map(newRow => ({
+      ...emptyRow(),
+      subject: newRow.subject,
+      ...(newRow.gradeBand ? { gradeBand: newRow.gradeBand } : {}),
+      coreIdea: newRow.coreIdea,
+      standard: newRow.standard,
+    } satisfies CurriculumSheetRow))
+    let firstRowId = plan.focusRowId ?? created[0]?.id
+    if (created.length > 0) {
+      const base = rowsRef.current
+      const afterId = plan.newRows[0]?.afterRowId
+      const anchor = afterId ? base.findIndex(r => r.id === afterId) : -1
+      const next = [...base]
+      next.splice(anchor < 0 ? next.length : anchor + 1, 0, ...created)
+      rowsRef.current = next
+      setRows(next)
+      setDirty(true)
+      if (!onPatchSave) triggerSave(next)
+      else {
+        const rowIds = next.map(r => r.id)
+        for (const row of created) pendingRowIdsRef.current.add(row.id)
+        void (async () => {
+          try {
+            for (const row of created) await saveStructuralPatch({ type: 'upsert-row', row, updatedBy: currentUserName })
+            await saveStructuralPatch({ type: 'reorder', rowIds })
+          } finally {
+            for (const row of created) pendingRowIdsRef.current.delete(row.id)
+            syncDirtyFromPending()
+          }
+        })()
+      }
+      firstRowId = plan.focusRowId ?? created[0].id
+    }
+
+    // 3) 안내 + 첫 반영 줄로 스크롤
+    setAutofillNotes(plan.notes)
+    requestSheetMapClose(() => setMapRequest(null))
+    if (firstRowId) {
+      const targetId = firstRowId
+      window.setTimeout(() => {
+        document.querySelector(`[data-row-id="${targetId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }, 80)
     }
   }
 
@@ -2128,6 +2226,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     return (
                   <tr
                     key={row.id}
+                    data-row-id={row.id}
                     draggable={isLeader}
                     onDragStart={isLeader ? () => setDragRowId(leader.id) : undefined}
                     onDragOver={isLeader ? (e => { e.preventDefault(); setDragOverRowId(leader.id) }) : undefined}
@@ -2237,7 +2336,10 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                         <td key={field} className="px-3 py-2 align-top relative">
                           <TagCell value={row[field] ?? ''} placeholder={FL[field]} color={FC[field]}
                             onClickAdd={e => handleCellClick(row.id, field, e)} onRemove={tag => removeTag(row.id, field, tag)}
-                            otherEditor={oe} myEditing={isMy} myColor={myColor} />
+                            otherEditor={oe} myEditing={isMy} myColor={myColor}
+                            extraAction={field === 'standard'
+                              ? <AssistChip label="분석맵에서 찾기" icon="hub" color="var(--md-primary)" onClick={() => openMapForRow(row)} title="교육과정 분석맵에서 이 줄의 성취기준을 찾아 반영합니다" />
+                              : undefined} />
                           {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
                           {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
                         </td>
@@ -2338,6 +2440,15 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             </MD3Button>
             <MD3Button
               variant="tonal"
+              tone="blue"
+              onClick={() => openMapForRow()}
+              title="교육과정 분석맵에서 성취기준을 찾아 새 줄로 반영합니다"
+              icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.sm }} aria-hidden>hub</span>}
+            >
+              분석맵에서 찾기
+            </MD3Button>
+            <MD3Button
+              variant="tonal"
               tone="green"
               onClick={handleAutofill}
               disabled={autofillLoading}
@@ -2387,6 +2498,15 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           anchorRect={pickerTarget.rect} placeholder={`${FL[pickerTarget.field]} 검색...`}
           color={FC[pickerTarget.field]} multi={MULTI_FIELDS.includes(pickerTarget.field)}
           optionGroups={pickerTarget.field === 'coreIdea' ? getCoreIdeaGroups(pickerTarget.rowId) : undefined} />
+      )}
+
+      {/* 분석맵 — 시트 위 전체 화면 레이어 (뒤로가기로 먼저 닫힘) */}
+      {mapRequest && (
+        <SheetMapLayer
+          request={mapRequest}
+          onApply={handleMapApply}
+          onClose={() => setMapRequest(null)}
+        />
       )}
 
       {/* 연결 줄 — 유사 성취기준 후보 팝오버 */}

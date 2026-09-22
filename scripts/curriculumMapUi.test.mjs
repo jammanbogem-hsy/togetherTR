@@ -67,6 +67,17 @@ import {
   edgeWidth,
 } from '../src/components/curriculum-map/edgeMath.ts'
 import {
+  contextChipLabel,
+  formatStandard,
+  isPicked,
+  pickFromItem,
+  pickFromNode,
+  removeFromBasket,
+  resolveInitialFilters,
+  subjectNamesToIds,
+  toggleBasket,
+} from '../src/components/curriculum-map/basketMath.ts'
+import {
   ALPHA_MIN,
   ALPHA_START,
   DEFAULT_PARAMS,
@@ -800,6 +811,126 @@ test('icon thresholds: only legible sizes, with a per-frame budget', () => {
   assert.ok(ICON_NODE_BUDGET > 0 && ICON_NODE_BUDGET <= 1000)
   // 아이콘은 반지름에 비례하되 노드를 넘치지 않는 범위
   assert.ok(ICON_MIN_SCREEN_RADIUS * ICON_SIZE_RATIO >= 9)
+})
+
+// ─── 담기 · 시트 연동 ──────────────────────────────────────────────────────
+
+const SUBJECTS = [
+  { id: 'sub_soc', name: '사회', color: '#D97706' },
+  { id: 'sub_int', name: '통합교과', color: '#0D9488' },
+  { id: 'sub_kor', name: '국어', color: '#7C3AED' },
+]
+
+test('subjectNamesToIds: sheet names map to asset ids, unknown names dropped, no dupes', () => {
+  assert.deepEqual(subjectNamesToIds(['사회', '통합교과'], SUBJECTS), ['sub_soc', 'sub_int'])
+  assert.deepEqual(subjectNamesToIds([' 사회 ', '사회', '없는교과'], SUBJECTS), ['sub_soc'])
+  assert.deepEqual(subjectNamesToIds([], SUBJECTS), [])
+  assert.deepEqual(subjectNamesToIds(['국어'], []), [])
+})
+
+test('formatStandard: "[code] text", never double-bracketed', () => {
+  assert.equal(formatStandard('[4과01-01]', '힘을 관찰한다.'), '[4과01-01] 힘을 관찰한다.')
+  assert.equal(formatStandard('4과01-01', '힘을 관찰한다.'), '[4과01-01] 힘을 관찰한다.')
+  assert.equal(formatStandard('[4과01-01]', ''), '[4과01-01]')
+  assert.equal(formatStandard(' 4과01-01 ', ' 본문 '), '[4과01-01] 본문')
+})
+
+const NODE = {
+  id: 'sub_soc_6사01-01', code: '[6사01-01]', subjectId: 'sub_soc', subject: '사회',
+  band: '5-6학년군', area: '지리 인식', coreIdeaId: 'ci', coreIdea: '위치는 관계로 이해한다',
+  text: '우리나라의 위치를 설명한다.', x: 0, y: 0, degree: 3,
+}
+
+test('pickFromNode: builds the sheet contract from an asset node', () => {
+  const pick = pickFromNode(NODE)
+  assert.deepEqual(pick, {
+    id: 'sub_soc_6사01-01',
+    code: '[6사01-01]',
+    text: '우리나라의 위치를 설명한다.',
+    standard: '[6사01-01] 우리나라의 위치를 설명한다.',
+    subject: '사회',
+    subjectId: 'sub_soc',
+    band: '5-6학년군',
+    area: '지리 인식',
+    coreIdea: '위치는 관계로 이해한다',
+  })
+  assert.equal(pick.contentCoreIdea, undefined)
+})
+
+test('pickFromItem: uses the asset node when available, else the item alone', () => {
+  const item = { id: 'x', code: '[4과10-02]', text: 't', subject: '과학', subjectId: 'sub_sci', band: '3-4학년군', area: '물질' }
+  const fromItem = pickFromItem(item, null)
+  assert.equal(fromItem.standard, '[4과10-02] t')
+  assert.equal(fromItem.coreIdea, '') // 응답에는 핵심 아이디어가 없다
+  const fromNode = pickFromItem(item, NODE)
+  assert.equal(fromNode.coreIdea, '위치는 관계로 이해한다') // 노드가 있으면 보충
+})
+
+test('toggleBasket / removeFromBasket / isPicked: pure, order-preserving, immutable', () => {
+  const a = pickFromNode(NODE)
+  const b = pickFromNode({ ...NODE, id: 'b', code: '[6사01-02]' })
+  const empty = []
+  const one = toggleBasket(empty, a)
+  assert.deepEqual(one.map(p => p.id), [a.id])
+  assert.deepEqual(empty, [], '원본 배열은 바뀌지 않는다')
+  const two = toggleBasket(one, b)
+  assert.deepEqual(two.map(p => p.id), [a.id, b.id])
+  // 다시 토글하면 빠진다 (순서 유지)
+  assert.deepEqual(toggleBasket(two, a).map(p => p.id), [b.id])
+  assert.deepEqual(removeFromBasket(two, b.id).map(p => p.id), [a.id])
+  assert.equal(isPicked(two, a.id), true)
+  assert.equal(isPicked(two, 'nope'), false)
+})
+
+test('contextChipLabel: joins present parts with a middle dot', () => {
+  assert.equal(contextChipLabel({ subject: '사회', gradeBand: '5-6학년군', coreIdea: '지리 인식' }), '사회 · 5-6학년군 · 지리 인식')
+  assert.equal(contextChipLabel({ subject: '사회', coreIdea: '' }), '사회')
+  assert.equal(contextChipLabel({}), '')
+})
+
+const ASSET = { subjects: SUBJECTS, bands: ['1-2학년군', '3-4학년군', '5-6학년군'] }
+const BASE = { hiddenSubjectIds: [], hiddenBands: [], edgeThreshold: 0.5, alwaysLabels: false, physics: true }
+
+test('resolveInitialFilters: given lists are the only ones on; absent means all on', () => {
+  const r = resolveInitialFilters({ initialSubjects: ['사회'], initialBands: ['5-6학년군'] }, ASSET, BASE)
+  assert.deepEqual(r.hiddenSubjectIds.sort(), ['sub_int', 'sub_kor'])
+  assert.deepEqual(r.hiddenBands.sort(), ['1-2학년군', '3-4학년군'])
+  const allOn = resolveInitialFilters({}, ASSET, BASE)
+  assert.deepEqual(allOn.hiddenSubjectIds, [])
+  assert.deepEqual(allOn.hiddenBands, [])
+})
+
+test('resolveInitialFilters: a previous open must not leak into the next one', () => {
+  // 실제 결함: 사회 줄에서 열었던 필터가 남아, 맥락 없는 다음 열기에서도 사회만 켜져 있었다
+  const leaked = { ...BASE, hiddenSubjectIds: ['sub_int', 'sub_kor'], hiddenBands: ['1-2학년군', '3-4학년군'] }
+  const r = resolveInitialFilters({}, ASSET, leaked)
+  assert.deepEqual(r.hiddenSubjectIds, [], '교과는 전부 켜져야 한다')
+  assert.deepEqual(r.hiddenBands, [], '학년군도 전부 켜져야 한다')
+  // 그 외 설정(선 굵기·라벨·움직임)은 그대로 둔다
+  assert.equal(r.edgeThreshold, 0.5)
+  assert.equal(r.physics, true)
+})
+
+test('resolveInitialFilters: unknown names or bands fall back to all on', () => {
+  const r = resolveInitialFilters({ initialSubjects: ['없는교과'], initialBands: ['7-8학년군'] }, ASSET, BASE)
+  assert.deepEqual(r.hiddenSubjectIds, [])
+  assert.deepEqual(r.hiddenBands, [])
+  // 일부만 알면 아는 것만 켠다
+  const partial = resolveInitialFilters({ initialSubjects: ['사회', '없는교과'] }, ASSET, BASE)
+  assert.deepEqual(partial.hiddenSubjectIds.sort(), ['sub_int', 'sub_kor'])
+})
+
+test('every icon the map components render is in the layout subset', () => {
+  // 컴포넌트에 아이콘을 추가하면 여기와 layout.tsx 둘 다 갱신해야 한다.
+  const used = [
+    'add', 'add_task', 'arrow_back', 'check', 'close', 'expand_less', 'expand_more',
+    'fit_screen', 'hub', 'radio_button_checked', 'radio_button_unchecked', 'remove',
+    'right_panel_close', 'right_panel_open', 'search', 'send', 'table_chart',
+  ]
+  const layout = fs.readFileSync(path.join(process.cwd(), 'src/app/layout.tsx'), 'utf8')
+  const subset = layout.slice(layout.indexOf('icon_names'), layout.indexOf('].sort()'))
+  const missing = used.filter(name => !subset.includes(`'${name}'`))
+  assert.deepEqual(missing, [], `missing from the subset: ${missing.join(', ')}`)
 })
 
 // ─── 히트 테스트 · 포맷 ────────────────────────────────────────────────────

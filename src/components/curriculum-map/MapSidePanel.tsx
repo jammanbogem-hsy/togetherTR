@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { EDGE_THRESHOLD_MAX, EDGE_THRESHOLD_MIN, groupResultsByBand } from './mapMath'
 import { JudgeBadge, M3Switch, SectionTitle } from './MapPanelBits'
-import { RelatedCard, ResultCard } from './MapResultCards'
+import { PickButton, RelatedCard, ResultCard } from './MapResultCards'
 import type { RelatedState, SearchState } from './useCurriculumMap'
 import { subjectIcon } from './subjectIcons'
 import type { MapFilters, MapNode } from './types'
@@ -32,6 +32,9 @@ export interface MapSidePanelProps {
   hiddenRelatedCount: number
   /** 결과를 묶어 보여 줄 학년군 순서 (체크된 것만) */
   bands: string[]
+  /** 담긴 성취기준 id */
+  pickedIds: ReadonlySet<string>
+  onTogglePick: (id: string) => void
 }
 
 function Hint({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -83,6 +86,8 @@ export default function MapSidePanel({
   onClearSelection,
   hiddenRelatedCount,
   bands,
+  pickedIds,
+  onTogglePick,
 }: MapSidePanelProps): React.ReactElement {
   const [filtersOpen, setFiltersOpen] = useState(true)
   const [weakOpen, setWeakOpen] = useState(false)
@@ -125,6 +130,9 @@ export default function MapSidePanel({
               <span className="text-[12px] font-medium text-[var(--md-on-surface-variant)]">{selectedNode.band}</span>
             </div>
             <p className="mb-3 text-[14px] leading-[1.5] text-[var(--md-on-surface)]">{selectedNode.text}</p>
+            <div className="mb-3">
+              <PickButton picked={pickedIds.has(selectedNode.id)} onToggle={() => onTogglePick(selectedNode.id)} />
+            </div>
             <dl className="space-y-1.5">
               {selectedNode.area && (
                 <div className="flex gap-2">
@@ -193,8 +201,10 @@ export default function MapSidePanel({
                   <RelatedCard
                     item={item}
                     color={subjectColors[item.subjectId] ?? 'var(--md-on-surface-variant)'}
+                    picked={pickedIds.has(item.id)}
                     onClick={() => onPickRelated(item.id)}
                     onHover={onHoverItem}
+                    onTogglePick={() => onTogglePick(item.id)}
                   />
                 </li>
               ))}
@@ -236,8 +246,10 @@ export default function MapSidePanel({
                       <ResultCard
                         result={r}
                         color={subjectColors[r.subjectId] ?? '#747775'}
+                        picked={pickedIds.has(r.id)}
                         onClick={() => onPickResult(r.id)}
                         onHover={onHoverItem}
+                        onTogglePick={() => onTogglePick(r.id)}
                       />
                     </li>
                   ))}
@@ -277,8 +289,10 @@ export default function MapSidePanel({
                     <ResultCard
                       result={r}
                       color={subjectColors[r.subjectId] ?? '#747775'}
+                      picked={pickedIds.has(r.id)}
                       onClick={() => onPickResult(r.id)}
                       onHover={onHoverItem}
+                      onTogglePick={() => onTogglePick(r.id)}
                     />
                   </li>
                 ))}
