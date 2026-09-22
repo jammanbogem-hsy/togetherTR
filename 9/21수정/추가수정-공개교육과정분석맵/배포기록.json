@@ -1,0 +1,12 @@
+{
+  "site": "jammanbo-curriculum-map",
+  "url": "https://jammanbo-curriculum-map.web.app",
+  "firebaseProject": "togethertr",
+  "codeCommit": "c8dd9e76eb24b34224d14aa9914aff7410d82fd7",
+  "version": "ead6730cbe30a73b",
+  "releaseTimeUTC": "2026-09-22T01:15:09.543Z",
+  "function": "ssrjammanbocurriculumma",
+  "region": "asia-northeast3",
+  "runtime": "nodejs24",
+  "originalHostingRedeployed": false
+}

@@ -1,0 +1,97 @@
+{
+  "origin": "https://jammanbo-curriculum-map.web.app",
+  "checkedAt": "2026-09-22T01:15:23.798Z",
+  "routes": {
+    "/": {
+      "status": 200,
+      "location": null
+    },
+    "/curriculum-map": {
+      "status": 307,
+      "location": "/"
+    },
+    "/dashboard": {
+      "status": 404,
+      "location": null
+    },
+    "/projects/example": {
+      "status": 404,
+      "location": null
+    },
+    "/api/chat": {
+      "status": 404,
+      "location": null
+    },
+    "/login": {
+      "status": 404,
+      "location": null
+    }
+  },
+  "api": {
+    "search": {
+      "status": 200,
+      "elapsedMs": 5421,
+      "keys": [
+        "results",
+        "weak",
+        "byBand",
+        "emptyBands",
+        "expandedTerms",
+        "judge",
+        "embeddings",
+        "simSource",
+        "elapsedMs"
+      ],
+      "judge": "jev",
+      "counts": 17,
+      "sample": [
+        {
+          "id": "sub_kor_6국06-02"
+        },
+        {
+          "id": "sub_soc_6사08-03"
+        }
+      ]
+    },
+    "related": {
+      "status": 200,
+      "elapsedMs": 1016,
+      "keys": [
+        "center",
+        "related",
+        "judge",
+        "embeddings",
+        "simSource",
+        "elapsedMs"
+      ],
+      "judge": "jev",
+      "counts": 12,
+      "sample": [
+        {
+          "id": "sub_art_6미01-04",
+          "relationType": "의미연결"
+        },
+        {
+          "id": "sub_soc_6사08-01",
+          "relationType": "의미연결"
+        }
+      ]
+    }
+  },
+  "map": {
+    "nodes": 627,
+    "edges": 3376
+  },
+  "browser": {
+    "url": "https://jammanbo-curriculum-map.web.app/",
+    "authenticated": false,
+    "pageTitle": "교육과정 분석맵",
+    "searchResultsInAllThreeBands": true,
+    "relatedCardsDisplayed": true,
+    "gradeBandToggleVerified": true,
+    "subjectIconFontLoaded": true,
+    "javascriptErrors": 0,
+    "mobileViewportWidth": 390,
+    "mobileScrollWidth": 390
+  }
+}

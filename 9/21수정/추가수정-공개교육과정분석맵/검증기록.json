@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-22",
+  "codeCommit": "c8dd9e76eb24b34224d14aa9914aff7410d82fd7",
+  "unitTests": {
+    "passed": 202,
+    "failed": 0,
+    "suites": [
+      "curriculumMap",
+      "curriculumMapUi",
+      "publicCurriculumMap"
+    ]
+  },
+  "eslint": "passed",
+  "typescript": "passed",
+  "productionBuild": "passed",
+  "standaloneRoutes": [
+    "/",
+    "/api/curriculum-map/search",
+    "/api/curriculum-map/related"
+  ],
+  "excludedRoutesVerified404": [
+    "/dashboard",
+    "/login",
+    "/projects/example",
+    "/api/chat"
+  ],
+  "sharedSourceFilesMatch": 32,
+  "clientBundleSecretCheck": {
+    "chunks": 11,
+    "secretValuesFound": false
+  },
+  "requiredServerAssetsPresent": true,
+  "localBrowser": {
+    "authenticated": false,
+    "mapNodes": 627,
+    "mapEdges": 3376,
+    "search": "미디어 리터러시",
+    "searchResultContains": "[6사08-03]",
+    "relatedAnalysis": "Jev 판정 결과 및 관계 유형 정상 표시",
+    "javascriptErrors": 0,
+    "mobileViewport": [
+      390,
+      844
+    ],
+    "horizontalOverflow": false,
+    "subjectIconsLoaded": true
+  },
+  "originalSiteAnonymousRedirect": "https://togethertr.web.app/login"
+}
