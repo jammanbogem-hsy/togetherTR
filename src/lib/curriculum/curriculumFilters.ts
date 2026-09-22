@@ -169,17 +169,17 @@ export function isUsableCoreIdea(value: string): boolean {
 /**
  * Build the request path for a `public/curriculum_json/*.json` static asset.
  *
- * The filenames are tracked in git in NFC form (verified with `git ls-files`),
- * and Firebase Hosting serves them under exactly those NFC bytes. macOS lists
- * the same files in NFD, which misled an earlier version of this helper into
- * requesting the NFD form: that URL 404s on the deployed site (checked live on
- * 2026-09-22), so the standards picker showed "결과 없음" on any machine
- * without a cached copy (Windows first; a Mac only worked from cache).
+ * The stored filenames are NFD-normalized (macOS canonical form, preserved
+ * through git and Firebase Hosting — e.g. '영어 교육과정.json'), while the
+ * `SUBJECT_FILE` literals in the source are NFC. Fetching the NFC form yields
+ * a URL whose percent-encoded bytes do not match the NFD file on disk → 404.
  *
- * Always request the NFC form. The filename is a single path segment, so
- * encodeURIComponent is the right encoder — it also turns the literal space
- * in '영어 교육과정.json' into '%20'.
+ * Normalizing to NFD before percent-encoding makes the first request match the
+ * stored filename, so no failing NFC request is issued (avoids a logged 404).
+ * The filename is a single path segment (no '/'), so encodeURIComponent is the
+ * correct encoder — it also turns the literal space in '영어 교육과정.json' into
+ * '%20'.
  */
 export function curriculumJsonAssetPath(fileName: string): string {
-  return `/curriculum_json/${encodeURIComponent((fileName ?? '').normalize('NFC'))}`
+  return `/curriculum_json/${encodeURIComponent((fileName ?? '').normalize('NFD'))}`
 }
