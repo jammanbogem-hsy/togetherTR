@@ -1,0 +1,32 @@
+{
+  "url": "https://togethertr.web.app",
+  "checkedAt": "2026-09-22T00:38:46.137Z",
+  "sourceCommit": "dc6d6ba688dcb01f88ee9dfbb809a6deb5035488",
+  "checks": [
+    {
+      "page": "/login",
+      "status": 200
+    },
+    {
+      "label": "nodeDetailModal",
+      "path": "/_next/static/chunks/02mwer-oy-ur5.js",
+      "sha256": "769ac25cb168cc94fa486cb192983ab41d803ed4b470c7de22311924e6c4f8ea",
+      "matchesBuild": true
+    },
+    {
+      "label": "responsiveModalStyles",
+      "path": "/_next/static/chunks/0k_ihf45g_2zx.css",
+      "sha256": "cda97be891519a384c9ae9df90301d737da15937e4e774a4537df0dc2c6152b1",
+      "matchesBuild": true
+    },
+    {
+      "label": "existingCurriculumMap",
+      "path": "/_next/static/chunks/02bp2.-59wxys.js",
+      "sha256": "5db574659c46dbde504cc30c8f6db5aabc81244c685d4855a57744773da3a7ba",
+      "matchesBuild": true
+    },
+    {
+      "backendRuntime": "nodejs24"
+    }
+  ]
+}

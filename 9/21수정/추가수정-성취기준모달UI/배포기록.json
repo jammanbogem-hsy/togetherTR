@@ -1,0 +1,51 @@
+{
+  "url": "https://togethertr.web.app",
+  "codeCommit": "dc6d6ba688dcb01f88ee9dfbb809a6deb5035488",
+  "releaseTime": "2026-09-22T00:38:37.650Z",
+  "hostingVersion": "projects/togethertr/sites/togethertr/versions/6cee83e272f107e2",
+  "hostingRelease": "projects/togethertr/sites/togethertr/channels/live/releases/1790037517650000",
+  "previousHostingVersion": "projects/togethertr/sites/togethertr/versions/b12cf528cb4d61ab",
+  "buildId": "qSHU9UoVB5HtXOLemHyK9",
+  "runtime": "nodejs24",
+  "checks": {
+    "sourceCommit": "dc6d6ba688dcb01f88ee9dfbb809a6deb5035488",
+    "browser": {
+      "viewports": [
+        [
+          1600,
+          1000
+        ],
+        [
+          390,
+          844
+        ]
+      ],
+      "passed": [
+        "two columns on desktop and one on mobile",
+        "body scroll with fixed header and footer",
+        "7 connected standards displayed",
+        "grade labels without duplicated suffix",
+        "Escape, Tab and Shift+Tab with focus restoration",
+        "reanalysis loading lock and result rendering",
+        "member permissions and wording",
+        "empty sheet context and no connections",
+        "sheet color consistency with dark OS preference"
+      ],
+      "fixture": "real NodePopup with fixed curriculum data and in-memory analysis response",
+      "consoleErrorsFinalCheck": 0
+    },
+    "regressionTestsPassed": 11,
+    "lintErrors": 0,
+    "lintWarnings": 0,
+    "typescript": "passed",
+    "productionProjectDataModified": false,
+    "productionBuild": "passed",
+    "curriculumValidation": {
+      "passed": 16,
+      "existingWarnings": 3,
+      "failed": 0
+    },
+    "runtimeAssets": "passed"
+  },
+  "productionClientMatchesBuild": true
+}
