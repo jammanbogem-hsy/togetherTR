@@ -13,7 +13,6 @@ import {
   type ViewTransform,
 } from './mapMath'
 import {
-  LABEL_FONT_PX,
   LABEL_HALO_PX,
   LABEL_ZOOM_THRESHOLD,
   isForcedLabel,
@@ -321,27 +320,8 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     ctx.fillText(entry.label, s.x, y)
   }
 
-  // 6) 관계 근거 — 선택 노드와 호버한 관련 노드를 잇는 선 가운데 한 줄
-  const reason = p.focusId && p.focusId !== p.selectedId ? relatedMeta.get(p.focusId)?.reason : undefined
-  const to = p.focusId ? screenById.get(p.focusId) : null
-  if (reason && from && to) {
-    const mx = (from.x + to.x) / 2
-    const my = (from.y + to.y) / 2
-    ctx.font = labelFont(LABEL_FONT_PX)
-    const w = ctx.measureText(reason).width
-    ctx.globalAlpha = 0.96
-    ctx.fillStyle = '#FFFFFF'
-    ctx.strokeStyle = '#C4C7C5'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.roundRect(mx - w / 2 - 8, my - LABEL_FONT_PX - 8, w + 16, LABEL_FONT_PX + 14)
-    ctx.fill()
-    ctx.stroke()
-    ctx.fillStyle = '#1F1F1F'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(reason, mx, my - 1)
-    ctx.textBaseline = 'top'
-  }
+  // 긴 관계 근거는 MapTooltip과 분석 패널에서만 표시한다.
+  // 선의 중간에도 그리면 툴팁 뒤에 같은 문장이 겹치고 캔버스 밖으로 잘린다.
 
   ctx.globalAlpha = 1
   return { hits }

@@ -265,8 +265,8 @@ export default function CurriculumMapCanvas({
         <MapTooltip
           node={hoverNode}
           color={subjectColors[hoverNode.subjectId] ?? '#747775'}
-          x={Math.min(Math.max(8, vp.hoverScreen.x + 18), Math.max(8, size.width - 352))}
-          y={Math.min(Math.max(8, vp.hoverScreen.y + 18), Math.max(8, size.height - 160))}
+          anchor={vp.hoverScreen}
+          viewport={size}
           relation={hoverNode.id === selectedId ? undefined : relatedMeta.get(hoverNode.id)}
           similarityNeighbor={focusNeighbors.size > 0 && !relatedMeta.has(hoverNode.id)}
           ghost={ghostIds.has(hoverNode.id)}

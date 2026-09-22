@@ -106,6 +106,10 @@ export function useMapViewport({
   const [dragging, setDragging] = useState(false)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [hoverScreen, setHoverScreen] = useState<Point | null>(null)
+  const clearHover = useCallback(() => {
+    setHoverId(null)
+    setHoverScreen(null)
+  }, [])
 
   const viewRef = useRef(view)
   const hitNodesRef = useRef<HitNode[]>([])
@@ -152,6 +156,7 @@ export function useMapViewport({
 
   // ── 카메라 애니메이션 ──────────────────────────────────────────────────
   const animateTo = useCallback((target: ViewTransform) => {
+    clearHover()
     cancelAnimationFrame(animRef.current)
     if (prefersReducedMotion()) {
       setView(target)
@@ -165,7 +170,7 @@ export function useMapViewport({
       if (p < 1) animRef.current = requestAnimationFrame(step)
     }
     animRef.current = requestAnimationFrame(step)
-  }, [])
+  }, [clearHover])
 
   const fitAll = useCallback(() => {
     if (size.width === 0 || size.height === 0) return
@@ -173,8 +178,9 @@ export function useMapViewport({
   }, [animateTo, bounds, size])
 
   const zoomBy = useCallback((factor: number) => {
+    clearHover()
     setView(v => zoomAtPoint(v, { x: size.width / 2, y: size.height / 2 }, factor))
-  }, [size.height, size.width])
+  }, [clearHover, size.height, size.width])
 
   // ── 크기 관찰 ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -223,6 +229,7 @@ export function useMapViewport({
     if (!el) return
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault()
+      clearHover()
       const rect = el.getBoundingClientRect()
       const anchor = { x: e.clientX - rect.left, y: e.clientY - rect.top }
       // 트랙패드 핀치는 ctrlKey 가 붙은 wheel 로 들어온다
@@ -232,7 +239,7 @@ export function useMapViewport({
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [clearHover])
 
   // ── 포인터: 드래그 이동 + 2점 핀치 + 클릭 선택 ──────────────────────────
   const localPoint = useCallback((e: React.PointerEvent): Point => {
@@ -241,6 +248,8 @@ export function useMapViewport({
   }, [])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
+    // Panning/pinching also moves the map away from the previous hover anchor.
+    clearHover()
     const p = localPoint(e)
     pointersRef.current.set(e.pointerId, p)
     movedRef.current = false
@@ -258,14 +267,11 @@ export function useMapViewport({
       dragStartRef.current = p
       panOriginRef.current = null
       setDragging(true)
-      // 끌기 중에는 툴팁을 숨긴다 — 노드가 움직이므로 옛 위치에 남으면 안 된다
-      setHoverId(null)
-      setHoverScreen(null)
       return
     }
     panOriginRef.current = { pointer: p, view: { ...viewRef.current } }
     setDragging(true)
-  }, [hitTest, localPoint, nodeDragEnabled])
+  }, [clearHover, hitTest, localPoint, nodeDragEnabled])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const p = localPoint(e)
@@ -339,11 +345,6 @@ export function useMapViewport({
     if (wasPanning && !movedRef.current) onSelect(released)
   }, [hitTest, localPoint, onNodeDragEnd, onSelect])
 
-  const onPointerLeave = useCallback(() => {
-    setHoverId(null)
-    setHoverScreen(null)
-  }, [])
-
   useEffect(() => () => cancelAnimationFrame(animRef.current), [])
 
   return {
@@ -363,7 +364,7 @@ export function useMapViewport({
       onPointerMove,
       onPointerUp: endPointer,
       onPointerCancel: endPointer,
-      onPointerLeave,
+      onPointerLeave: clearHover,
     },
   }
 }

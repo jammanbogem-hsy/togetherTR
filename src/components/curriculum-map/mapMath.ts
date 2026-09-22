@@ -27,6 +27,17 @@ export interface Bounds {
   maxY: number
 }
 
+/** Measure the rendered tooltip first, then flip it away from viewport edges. */
+export function placeMapTooltip(anchor: Point, tooltip: Viewport, viewport: Viewport): Point {
+  const margin = 8
+  const gap = 18
+  const maxX = Math.max(margin, viewport.width - tooltip.width - margin)
+  const maxY = Math.max(margin, viewport.height - tooltip.height - margin)
+  const x = anchor.x + gap <= maxX ? anchor.x + gap : anchor.x - tooltip.width - gap
+  const y = anchor.y + gap <= maxY ? anchor.y + gap : anchor.y - tooltip.height - gap
+  return { x: clamp(x, margin, maxX), y: clamp(y, margin, maxY) }
+}
+
 export const MIN_SCALE = 0.15
 export const MAX_SCALE = 6
 export const FIT_PADDING = 56

@@ -2,13 +2,15 @@
 
 // 노드 호버 툴팁 — 코드·교과·학년군·본문과 (있으면) 키워드, 관계 근거.
 
+import { useLayoutEffect, useRef } from 'react'
+import { placeMapTooltip, type Point, type Viewport } from './mapMath'
 import { subjectIcon } from './subjectIcons'
 import type { MapNode } from './types'
 
 export interface MapTooltipProps {
   node: MapNode
-  x: number
-  y: number
+  anchor: Point
+  viewport: Viewport
   color: string
   /** 선택 노드와의 관계 근거 (Jev 관련 목록에 있을 때만) */
   relation?: { relationType: string; reason?: string; strength: number }
@@ -20,17 +22,42 @@ export interface MapTooltipProps {
 
 export default function MapTooltip({
   node,
-  x,
-  y,
+  anchor,
+  viewport,
   color,
   relation,
   similarityNeighbor = false,
   ghost = false,
 }: MapTooltipProps): React.ReactElement {
+  const tooltipRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = tooltipRef.current
+    if (!element) return
+    const position = (): void => {
+      const rect = element.getBoundingClientRect()
+      const point = placeMapTooltip(anchor, rect, viewport)
+      element.style.left = `${point.x}px`
+      element.style.top = `${point.y}px`
+      element.style.visibility = 'visible'
+    }
+    // Before paint, including when a different node has a longer description.
+    position()
+    const observer = new ResizeObserver(position)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [anchor, viewport])
+
   return (
     <div
-      className="pointer-events-none absolute z-10 w-[340px] rounded-xl border border-[var(--md-outline-variant)] bg-[var(--md-surface)] px-4 py-3"
-      style={{ left: x, top: y, boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 8px 24px rgba(0,0,0,0.1)' }}
+      ref={tooltipRef}
+      role="tooltip"
+      className="pointer-events-none absolute z-10 overflow-hidden break-words rounded-xl border border-[var(--md-outline-variant)] bg-[var(--md-surface)] px-4 py-3"
+      style={{
+        visibility: 'hidden',
+        width: Math.max(0, Math.min(340, viewport.width - 16)),
+        maxHeight: Math.max(0, viewport.height - 16),
+        boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 8px 24px rgba(0,0,0,0.1)',
+      }}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span
