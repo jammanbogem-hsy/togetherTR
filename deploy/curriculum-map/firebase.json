@@ -2,11 +2,37 @@
   "hosting": {
     "site": "jammanbo-curriculum-map",
     "source": ".",
-    "predeploy": ["node scripts/clean-next-artifacts.mjs"],
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "predeploy": [
+      "node scripts/clean-next-artifacts.mjs"
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
     "frameworksBackend": {
       "region": "asia-northeast3",
       "memory": "512MiB"
-    }
+    },
+    "headers": [
+      {
+        "source": "/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/curriculum_map.json",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
   }
 }
