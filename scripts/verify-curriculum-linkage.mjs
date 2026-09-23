@@ -549,6 +549,39 @@ const graph = loadGraph()
   report('R8', `성취수준 A·B·C가 앱 초등 성취기준 ${appCodes.size}건과 코드로 연결되고 원문이 깨끗함`, dedupe(failures))
 }
 
+// R9 — 성취기준 원문 = 교육과정 고시 원문(교육부 별책). 앱 교육과정 JSON과 지식 그래프의
+// 초등 성취기준 문장이 한 글자라도 다르면 실패 — 단어 중간 공백("파 악한다") 같은 추출 흔적이
+// 그래프 재생성·데이터 교체로 되돌아오는 것을 막는다. 가운뎃점 문자 차이만 같게 본다.
+{
+  const failures = []
+  const official = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'scripts', 'fixtures', 'official-elementary-standards.json'), 'utf-8')).standards
+  const dots = (t) => String(t ?? '').replace(/[･ㆍ·⋅]/g, '⋅').trim()
+  const bracket = (c) => { const raw = String(c ?? '').trim(); return raw.startsWith('[') ? raw : `[${raw}]` }
+  let checked = 0
+  // prefixOnly: 그래프의 normalized_text_for_similarity 는 "원문 + 핵심아이디어 + 키워드" 합성 필드라 앞부분만 본다.
+  const check = (where, code, text, prefixOnly = false) => {
+    const ref = official[code]
+    if (!ref) return
+    checked += 1
+    const ok = prefixOnly ? dots(text).startsWith(dots(ref.text)) : dots(text) === dots(ref.text)
+    if (!ok) failures.push(`${where} ${code}: "${String(text).slice(0, 120)}" ≠ 고시 "${ref.text}"`)
+  }
+  for (const file of fs.readdirSync(CUR_DIR).filter(name => name.endsWith('.json'))) {
+    const data = JSON.parse(fs.readFileSync(path.join(CUR_DIR, file), 'utf-8'))
+    for (const group of data.core_idea_groups ?? []) {
+      for (const set of group.standard_sets ?? []) {
+        for (const std of set.standards ?? []) check(`curriculum_json/${file}`, bracket(std.code), std.text)
+      }
+    }
+  }
+  for (const std of graphForCorpus?.achievementStandards ?? []) {
+    check('knowledge_graph', bracket(std.code), std.text)
+    if (std.normalized_text_for_similarity != null) check('knowledge_graph(normalized)', bracket(std.code), std.normalized_text_for_similarity, true)
+  }
+  for (const code of Object.keys(official)) if (!graphForCorpus?.achievementStandards?.some(s => bracket(s.code) === code)) failures.push(`knowledge_graph: ${code} 없음`)
+  report('R9', `성취기준 원문이 교육과정 고시 원문과 일치 (${checked}건 대조)`, dedupe(failures))
+}
+
 // ───────────────────────────── summary ─────────────────────────────
 const failed = results.filter(r => r.status === 'FAIL')
 const warned = results.filter(r => r.status === 'WARN')
