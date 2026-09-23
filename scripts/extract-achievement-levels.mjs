@@ -6,7 +6,7 @@
 // 다른 표보다 뒤에 나온다. 스트림을 그대로 읽으면 이어지는 B·C 수준이 엉뚱한
 // 성취기준에 붙는다(1~2학년군 p24에서 [2국05-03]의 이어지는 행이 [2국06-02]에 붙음).
 // y로 정렬해도 성취기준 칸이 세로 가운데 정렬이라 자기 A보다 아래에 오는 등 행이
-// 어긋난다. 그래서 스트림 순서를 유지하되, 블록의 x로 열을 구분해
+// 어긋난다. 그래서 스트림 순서를 유지하되, 줄의 x로 열을 구분해
 // "수준이 이미 찬 성취기준 뒤에 코드 없는 왼쪽 칸이 오면 앞 쪽에서 넘어온 행"
 // 으로 판정해 직전 쪽의 열린 성취기준으로 되돌린다.
 //
@@ -30,27 +30,32 @@ const SUBJECTS = ['국어', '수학', '바른 생활', '슬기로운 생활', '�
 // 성취기준 칸·제목은 x0≈79~90, 수준/서술 칸은 x0≥166 (세 학년군 공통).
 const LEFT_COLUMN_MAX_X0 = 120
 
-/** 페이지별 텍스트 블록(bbox + 텍스트). */
-function pdfBlocks(file) {
+/**
+ * 페이지별 텍스트 줄(스트림 순서, 줄마다 x0).
+ * 블록 단위 x0로는 열을 못 가른다: 성취기준 칸과 A 수준 칸이 한 블록으로 묶이는 표가 있어
+ * (3~4 p193 [4영01-06]) 블록 x0만 보면 A 서술까지 왼쪽 칸으로 판정된다.
+ */
+function pdfLines(file) {
   const py = `
 import fitz, json, sys
 d = fitz.open(sys.argv[1])
 pages = []
 for i in range(d.page_count):
-    blocks = []
-    for b in d[i].get_text('blocks'):
-        text = b[4].strip()
-        if text:
-            blocks.append({'x0': b[0], 'y0': b[1], 'x1': b[2], 'y1': b[3], 'text': text})
-    pages.append(blocks)
+    lines = []
+    for b in d[i].get_text('dict')['blocks']:
+        for l in b.get('lines', []):
+            text = ''.join(s['text'] for s in l['spans']).strip()
+            if text:
+                lines.append({'x0': l['bbox'][0], 'text': text})
+    pages.append(lines)
 print(json.dumps(pages, ensure_ascii=False))
 `
   return JSON.parse(execFileSync('python3', ['-c', py, file], { maxBuffer: 1 << 28 }).toString())
 }
 
-/** 한 쪽의 블록을 스트림 순서 그대로 줄 단위로 펴되, 열 정보(왼쪽 칸 여부)를 남긴다. */
-function pageLines(blocks) {
-  return blocks.flatMap(b => b.text.split('\n').map(line => ({ text: line.trim(), left: b.x0 < LEFT_COLUMN_MAX_X0 })))
+/** 한 쪽의 줄에 열 정보(왼쪽 칸 여부)를 붙인다. */
+function pageLines(lines) {
+  return lines.map(l => ({ text: l.text, left: l.x0 < LEFT_COLUMN_MAX_X0 }))
 }
 
 const SECTION_ON = /^가\.\s*성취기준별 성취수준/
@@ -58,11 +63,15 @@ const SECTION_OFF = /^(나\.\s*영역별 성취수준|다\.\s*(수행평가\s*)?
 const CODE_RE = /^\[(\d[가-힣]{1,3}\d{2}-\d{2})\]\s*(.*)$/
 const TABLE_HEADER_RE = /^성취기준(\s+성취기준별 성취수준)?$|^성취기준별 성취수준$/
 // 영역 제목은 두 단계다: "(1) 수와 연산"(대영역) 아래 "① 네 자리 이하의 수"(소영역).
+// 소영역 번호는 사설 영역 글리프다(U+F02B1=①…). 10 이상은 글리프 두 개가 두 줄로 찍힌다
+// (3~4 p74: "U+F02BA" 줄 + "U+F02C3 무게" 줄 = "⑩ 무게"). 글리프만 있는 줄은 버린다.
 const AREA_RE = /^\(\d+\)\s*(.+)$/
-const SUB_AREA_RE = /^[\u{f02b1}-\u{f02b9}①-⑨]\s*(.+)$/u
+const SUB_AREA_RE = /^[\u{f02b1}-\u{f02cf}①-⑳]\s*(.+)$/u
+const GLYPH_ONLY_RE = /^[\u{f0000}-\u{fffff}\s]+$/u
 
 function isChrome(t) {
   if (!t) return true
+  if (GLYPH_ONLY_RE.test(t)) return true
   if (/^\d{1,3}$/.test(t)) return true
   if (/^(성취기준|성취기준별 성취수준|성취기준별 성취수준 진술|영역별 성취수준|평가기준)$/.test(t)) return true
   if (/^Ⅲ\s*\.?\s*교과별 성취수준$/.test(t) || t === 'Ⅲ교과별 성취수준') return true
@@ -81,7 +90,7 @@ function splitThree(text) {
 const tidy = (t) => t.replace(/\s+/g, ' ').trim()
 
 function extractBand({ band, file }) {
-  const pages = pdfBlocks(file)
+  const pages = pdfLines(file)
   const records = []
   let inSection = false
   let subject = ''
@@ -98,8 +107,16 @@ function extractBand({ band, file }) {
     }
     level = null
   }
+  // 수준 글자 없이 남은 서술 = 쪽을 넘어간 수준 서술의 뒷부분(1~2 p24 [2국05-03] A,
+  // 5~6 p59 [6도03-03] B). 문장이 끝나지 않은 수준에 이어 붙인다. 버리면 서술이 중간에 끊긴다.
+  const settlePending = () => {
+    if (!current || !pending.length || Object.keys(current.levels).length === 0) return
+    const open = ['A', 'B', 'C'].find(k => current.levels[k] && !/다\.$/.test(current.levels[k]))
+    if (open) { current.levels[open] = tidy(`${current.levels[open]} ${pending.join(' ')}`); pending = [] }
+  }
   const closeRecord = () => {
     flushLevel()
+    settlePending()
     if (current && Object.keys(current.levels).length === 0 && pending.length) {
       const three = splitThree(tidy(pending.join(' ')))
       if (three) {
@@ -151,17 +168,23 @@ function extractBand({ band, file }) {
       // 코드 없는 왼쪽 칸: 지금 성취기준의 수준이 이미 찼다면 새 행 = 앞 쪽에서 넘어온 성취기준.
       if (left && current && Object.keys(current.levels).length > 0 && pageStartRecord && pageStartRecord !== current) {
         flushLevel()
+        settlePending()
+        pending = []
         current = pageStartRecord
         area = current.area
         subArea = current.subArea ?? ''
       }
 
-      if (level) { level.text.push(t); continue }
+      // 왼쪽 칸 줄은 성취기준 원문이다. 열려 있는 수준에 넣으면 원문 조각이 서술에 섞인다
+      // (3~4 p193 [4영01-06] A 끝의 "정보를 파악한다.").
+      if (level && !left) { level.text.push(t); continue }
       if (!current) continue
       if (!current.pages.includes(pi + 1)) current.pages.push(pi + 1)
       // 수준 표시 전 구간: 성취기준 문장이 끝나기 전이면 문장에, 끝난 뒤면 (글자 없는 표의) 서술에.
-      if (!/다\.$|다$|있다\.$/.test(tidy(current.standardText.join(' ')))) current.standardText.push(t)
-      else pending.push(t)
+      // "다$"로 끝을 판정하면 "우리 사회에 다⏎양한"처럼 단어 중간 줄바꿈에서 원문이 잘린다.
+      // 원문이 끝난 뒤의 왼쪽 칸 줄은 부가 정보다(과학 "탐구 활동 •…", 수학 각주 "3) …") → 버린다.
+      if (!/다\.$/.test(tidy(current.standardText.join(' ')))) current.standardText.push(t)
+      else if (!left) pending.push(t)
     }
   }
   closeRecord()
