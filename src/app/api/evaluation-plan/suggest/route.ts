@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { contextFromBody, verifySuggestion } from '@/lib/curriculum/suggestVerify'
+import { buildAchievementLevelContext, knownStandardCodesIn } from '@/lib/curriculum/achievementLevels'
 import { claudeJsonParams, resolveClaudeModel } from '@/lib/llm/anthropic'
 import { recoverTruncatedJson } from '@/lib/llm/recoverJson'
 
@@ -32,6 +33,8 @@ export interface EvaluationPlanSuggestRequest {
   integratedGoal?: string          // A-2-2 통합 수업목표
   subjectGoals?: Array<{ subject: string; goal: string }>  // A-2-2 교과별 목표
   learnerProfile?: string          // A-2-3 학습자·맥락 요약
+  /** 성취기준 코드를 찾을 글(A-2-1 산출물·교육과정 시트) — 서버가 코드를 뽑아 공식 성취수준을 붙인다 */
+  standardSources?: string[]
   /** 현재 워크스페이스 초안 */
   currentDraft?: { rubric?: EvaluationPlanRubricRow[] }
   mode?: 'artifact' | 'chat'
@@ -78,6 +81,7 @@ Ds-1 "평가 설계"의 최신 기본 형식(확인 지점·평가 요소·평�
 - 과정 평가 항목은 추상어('협력·참여·노력·태도')를 관찰 가능한 행동 문장으로 변환합니다.
 - 교사가 감당할 기록량인지 점검해 actor와 timing을 분산하고 한 교사에게 관찰·기록 부담이 쏠리지 않게 합니다.
 - 상·중·하 루브릭은 기본 응답에 만들지 않습니다. 팀이 별도로 상세 기준을 요청했을 때만 high·mid·low를 선택적으로 추가합니다.
+- "성취기준별 성취수준" 자료가 주어지면: item 끝에 근거 성취기준 코드를 괄호로 적고(예: "(… [4사03-02])"), 그 성취기준의 A·B·C 원문에 쓰인 행동을 확인할 수 있는 평가 요소로 씁니다. high·mid·low를 채울 때는 해당 코드의 A·B·C 원문에서 출발해 과제 장면에 맞게 구체화하고, 일반 문구로 새로 지어내지 않습니다.
 - 추상적 표현('열심히 함') 금지.
 - 학습자 다양성(learnerProfile)을 고려해 평가 접근성을 반영.
 - 항목 수는 과도하지 않게(통상 4~7개). 실제 차시 수업에서 운영 가능한 수준.
@@ -155,6 +159,11 @@ function buildUserPrompt(body: EvaluationPlanSuggestRequest, mode: 'artifact' | 
       for (const p of meaningful) lines.push(`- ${p.teacherName || '팀원'}: ${p.text.trim()}`)
       lines.push('')
     }
+  }
+  const levelContext = buildAchievementLevelContext('Ds-1-1', knownStandardCodesIn(body.standardSources ?? []))
+  if (levelContext) {
+    lines.push(levelContext.trim())
+    lines.push('')
   }
   lines.push('위 정보를 종합하여 최신 5항목 평가 계획 산출물 형식의 JSON으로만 응답하세요. basedOn 필드를 반드시 채우세요.')
   return lines.join('\n')

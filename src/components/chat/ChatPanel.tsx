@@ -62,6 +62,7 @@ import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import { defaultGradeMode, effectiveRowGradeBand, resolveSheetGradeBand, toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
 import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
+import { designStandardSources } from '@/lib/curriculum/standardCodes'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
@@ -4804,6 +4805,7 @@ ${discussionSummary}
             if (!a23) return undefined
             return Object.entries(a23).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
           })()}
+          standardSources={designStandardSources(proj.artifacts, proj.curriculumSheet)}
           chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}

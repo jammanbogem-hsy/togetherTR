@@ -38,6 +38,7 @@ const {
 } = await import('../src/lib/curriculum/contentSystemReader.ts')
 const { filterContentItemsByGrade } = await import('../src/lib/curriculum/curriculumFilters.ts')
 const { buildCurriculumContext } = await import('../src/lib/curriculum/contextInject.ts')
+const { loadAchievementLevels, buildAchievementLevelContext } = await import('../src/lib/curriculum/achievementLevels.ts')
 
 const GRADE_GROUPS = ['초1-2', '초3-4', '초5-6']
 const CONTEXT_ACTIVITIES = ['A-1-2', 'A-2-1', 'A-2-2', 'A-2-3', 'Ds-1-1', 'Ds-1-3']
@@ -506,6 +507,46 @@ const graph = loadGraph()
     }
   }
   report('R7', 'A-2-1 확정 매핑(그래프 저장 데이터 경로)이 프로젝트 학년군 내용체계 항목만 인용', dedupe(failures))
+}
+
+// R8 — 성취수준(A·B·C): 앱의 초등 성취기준 전부가 공식 성취수준과 코드로 연결되고,
+// 서술에 추출 흔적(글리프·잘린 문장)이 없으며, 주입 블록이 원문을 그대로 싣는다.
+{
+  const failures = []
+  const { standards: levels } = loadAchievementLevels()
+  const BAND_BY_DIGIT = { 2: '1-2학년군', 4: '3-4학년군', 6: '5-6학년군' }
+  const appCodes = new Set()
+  for (const file of fs.readdirSync(CUR_DIR).filter(name => name.endsWith('.json'))) {
+    const data = JSON.parse(fs.readFileSync(path.join(CUR_DIR, file), 'utf-8'))
+    for (const group of data.core_idea_groups ?? []) {
+      for (const set of group.standard_sets ?? []) {
+        for (const std of set.standards ?? []) {
+          const raw = String(std.code ?? '').trim()
+          const code = raw.startsWith('[') ? raw : `[${raw}]`
+          if (/^\[[246]/.test(code)) appCodes.add(code)
+        }
+      }
+    }
+  }
+  for (const code of appCodes) {
+    const entry = levels[code]
+    if (!entry) { failures.push(`${code}: 성취수준 없음`); continue }
+    if (entry.band !== BAND_BY_DIGIT[code[1]]) failures.push(`${code}: 학년군 불일치 (${entry.band})`)
+    for (const key of ['A', 'B', 'C']) {
+      const text = entry[key] ?? ''
+      if (!text.trim()) failures.push(`${code} ${key}: 서술 비어 있음`)
+      else if (/[\u{f0000}-\u{fffff}]/u.test(text)) failures.push(`${code} ${key}: PDF 글리프 섞임`)
+      else if (!/다\.?$/.test(text.trim())) failures.push(`${code} ${key}: 문장이 끝나지 않음 "…${text.slice(-20)}"`)
+    }
+  }
+  for (const code of Object.keys(levels)) if (!appCodes.has(code)) failures.push(`${code}: 앱 교육과정에 없는 성취수준 코드`)
+  const sample = [...appCodes].slice(0, 3)
+  const block = buildAchievementLevelContext('Ds-1-1', sample)
+  for (const code of sample) {
+    if (!block.includes(`- A: ${levels[code]?.A}`)) failures.push(`${code}: Ds-1-1 주입 블록에 A 원문이 그대로 실리지 않음`)
+  }
+  if (buildAchievementLevelContext('T-1-1', sample) !== '') failures.push('대상이 아닌 활동(T-1-1)에 성취수준 블록이 주입됨')
+  report('R8', `성취수준 A·B·C가 앱 초등 성취기준 ${appCodes.size}건과 코드로 연결되고 원문이 깨끗함`, dedupe(failures))
 }
 
 // ───────────────────────────── summary ─────────────────────────────

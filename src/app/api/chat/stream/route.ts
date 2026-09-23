@@ -3,6 +3,7 @@ import { buildSystemPrompt } from '@/lib/prompts/system'
 import { generationParams, logLlmUsage, resolveOpenAIModel, chatEffort } from '@/lib/llm/openai'
 import { judgeProgress } from '@/lib/chat/progressJudge'
 import { buildCurriculumContext } from '@/lib/curriculum/contextInject'
+import { buildAchievementLevelContext, collectDesignStandardCodes } from '@/lib/curriculum/achievementLevels'
 import { buildA21DirectAnswer } from '@/lib/curriculum/a21DirectAnswer'
 import { buildProjectMaterialContext, searchProjectMaterials } from '@/lib/rag/search'
 import type { StageCode, ActivityCode, ActorType, Project } from '@/types'
@@ -83,6 +84,11 @@ export async function POST(request: Request) {
       project.targetSubjects,
       project.teamGradeBands,
     )
+    // A-2-2 / Ds 단계: 확정된 성취기준의 공식 성취수준(A·B·C) 원문 주입 — 코드로만 매칭
+    const achievementLevelContext = buildAchievementLevelContext(
+      activityCode,
+      collectDesignStandardCodes(confirmedArtifacts, project.curriculumSheet),
+    )
     let materialContext = ''
     if (projectId) {
       try {
@@ -151,7 +157,7 @@ ${sections.join('\n\n')}
 `
     })()
 
-    const systemPrompt = baseSystemPrompt + curriculumContext + materialContext + keyNotesContext
+    const systemPrompt = baseSystemPrompt + curriculumContext + achievementLevelContext + materialContext + keyNotesContext
 
     // SSE 스트리밍
     const encoder = new TextEncoder()

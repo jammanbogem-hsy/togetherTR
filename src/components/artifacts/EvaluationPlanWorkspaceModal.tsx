@@ -58,6 +58,8 @@ interface Props {
   integratedGoal?: string
   subjectGoals?: Array<{ subject: string; goal: string }>
   learnerProfile?: string
+  /** 성취기준 코드를 찾을 글(A-2-1 산출물·교육과정 시트) — AI 제안에 공식 성취수준을 붙이는 근거 */
+  standardSources?: string[]
   /** AI 제안 chat-mode에서 사용할 현재 활동의 채팅 메시지 (시간순, 최근 N개 권장) */
   chatMessages?: Array<{ role: 'user' | 'assistant' | string; content: string; displayName?: string }>
   /** 협업 프롬프트 모달용 */
@@ -294,6 +296,7 @@ export function EvaluationPlanWorkspaceModal({
   integratedGoal,
   subjectGoals,
   learnerProfile,
+  standardSources,
   chatMessages,
   projectId,
   collaborativeMembers,
@@ -614,6 +617,7 @@ export function EvaluationPlanWorkspaceModal({
         integratedGoal,
         subjectGoals,
         learnerProfile,
+        standardSources,
         currentDraft: {
           rubric: workspace.rows.map(row => ({
             checkpoint: getCell(row, 'checkpoint'),

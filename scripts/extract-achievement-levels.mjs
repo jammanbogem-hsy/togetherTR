@@ -25,6 +25,9 @@ const BANDS = [
   { band: '5-6학년군', file: 'data/2022개정교육과정에따른성취수준(5~6학년군).pdf' },
 ]
 const OUT_DIR = 'data/achievement-levels'
+// 앱 런타임용 단일 파일(커밋됨). data/는 배포 번들에 실리지 않으므로 public/에 둔다
+// (scripts/sync-runtime-assets.mjs 머리말 참고). 파일명은 NFC/NFD 문제를 피해 ASCII.
+const RUNTIME_OUT = 'public/achievement-levels.json'
 const SUBJECTS = ['국어', '수학', '바른 생활', '슬기로운 생활', '즐거운 생활', '통합교과', '사회', '도덕', '과학', '체육', '음악', '미술', '영어', '실과']
 
 // 성취기준 칸·제목은 x0≈79~90, 수준/서술 칸은 x0≥166 (세 학년군 공통).
@@ -44,18 +47,23 @@ for i in range(d.page_count):
     lines = []
     for b in d[i].get_text('dict')['blocks']:
         for l in b.get('lines', []):
-            text = ''.join(s['text'] for s in l['spans']).strip()
+            raw = ''.join(s['text'] for s in l['spans'])
+            text = raw.strip()
             if text:
-                lines.append({'x0': l['bbox'][0], 'text': text})
+                lines.append({'x0': l['bbox'][0], 'text': text, 'sp': raw != raw.rstrip()})
     pages.append(lines)
 print(json.dumps(pages, ensure_ascii=False))
 `
   return JSON.parse(execFileSync('python3', ['-c', py, file], { maxBuffer: 1 << 28 }).toString())
 }
 
-/** 한 쪽의 줄에 열 정보(왼쪽 칸 여부)를 붙인다. */
+/**
+ * 한 쪽의 줄에 열 정보(왼쪽 칸 여부)와 이음 문자열을 붙인다.
+ * 줄 끝 공백 = 단어 경계. 공백 없이 끝난 줄은 단어 중간에서 끊긴 것이라("나타나는 긍⏎정적")
+ * 다음 줄과 붙여 써야 한다. 모든 줄을 공백으로 이으면 "긍 정적"이 된다.
+ */
 function pageLines(lines) {
-  return lines.map(l => ({ text: l.text, left: l.x0 < LEFT_COLUMN_MAX_X0 }))
+  return lines.map(l => ({ text: l.text, piece: l.sp ? `${l.text} ` : l.text, left: l.x0 < LEFT_COLUMN_MAX_X0 }))
 }
 
 const SECTION_ON = /^가\.\s*성취기준별 성취수준/
@@ -83,7 +91,7 @@ function isChrome(t) {
 
 /** 수준 글자가 없는 표(사회 일부): 서술 3개가 이어진다 → 문장 단위로 A·B·C. */
 function splitThree(text) {
-  const parts = text.split(/(?<=다\.)\s+(?=[가-힣])/).map(s => s.trim()).filter(Boolean)
+  const parts = text.split(/(?<=다\.)\s*(?=[가-힣])/).map(s => s.trim()).filter(Boolean)
   return parts.length === 3 ? parts : null
 }
 
@@ -100,10 +108,16 @@ function extractBand({ band, file }) {
   let level = null
   let pending = []
 
+  // 수준 서술 끝이 단어 중간인지 기억한다 — 다음 쪽에서 이어 붙일 때 공백 여부를 정한다.
+  const levelOpenMidWord = new Map()
   const flushLevel = () => {
     if (current && level && level.text.length) {
-      const text = tidy(level.text.join(' '))
-      if (text) current.levels[level.key] = current.levels[level.key] ? `${current.levels[level.key]} ${text}` : text
+      const raw = level.text.join('')
+      const text = tidy(raw)
+      if (text) {
+        current.levels[level.key] = current.levels[level.key] ? `${current.levels[level.key]} ${text}` : text
+        levelOpenMidWord.set(`${current.code}:${level.key}`, !/\s$/.test(raw))
+      }
     }
     level = null
   }
@@ -112,13 +126,17 @@ function extractBand({ band, file }) {
   const settlePending = () => {
     if (!current || !pending.length || Object.keys(current.levels).length === 0) return
     const open = ['A', 'B', 'C'].find(k => current.levels[k] && !/다\.$/.test(current.levels[k]))
-    if (open) { current.levels[open] = tidy(`${current.levels[open]} ${pending.join(' ')}`); pending = [] }
+    if (open) {
+      const glue = levelOpenMidWord.get(`${current.code}:${open}`) ? '' : ' '
+      current.levels[open] = tidy(`${current.levels[open]}${glue}${pending.join('')}`)
+      pending = []
+    }
   }
   const closeRecord = () => {
     flushLevel()
     settlePending()
     if (current && Object.keys(current.levels).length === 0 && pending.length) {
-      const three = splitThree(tidy(pending.join(' ')))
+      const three = splitThree(tidy(pending.join('')))
       if (three) {
         current.levels = { A: three[0], B: three[1], C: three[2] }
         current.levelsInferred = true   // 원문에 A·B·C 글자가 없어 문장 순서로 배정
@@ -131,7 +149,7 @@ function extractBand({ band, file }) {
   for (let pi = 0; pi < pages.length; pi += 1) {
     const pageStartRecord = current   // 이 쪽을 시작할 때 열려 있던 성취기준(쪽을 넘어온 행의 주인)
     let tableJustStarted = false
-    for (const { text: t, left } of pageLines(pages[pi])) {
+    for (const { text: t, piece, left } of pageLines(pages[pi])) {
       if (SECTION_ON.test(t)) { closeRecord(); inSection = true; continue }
       if (SECTION_OFF.test(t)) { closeRecord(); inSection = false; continue }
       if (!inSection) { if (SUBJECTS.includes(t)) subject = t; continue }
@@ -152,7 +170,8 @@ function extractBand({ band, file }) {
       if (codeMatch) {
         tableJustStarted = false
         closeRecord()
-        current = { code: `[${codeMatch[1]}]`, subject, area, subArea, standardText: [codeMatch[2]], levels: {}, pages: [pi + 1] }
+        const first = piece.slice(piece.indexOf(']') + 1).replace(/^\s+/, '')
+        current = { code: `[${codeMatch[1]}]`, subject, area, subArea, standardText: [first], levels: {}, pages: [pi + 1] }
         records.push(current)
         continue
       }
@@ -177,21 +196,22 @@ function extractBand({ band, file }) {
 
       // 왼쪽 칸 줄은 성취기준 원문이다. 열려 있는 수준에 넣으면 원문 조각이 서술에 섞인다
       // (3~4 p193 [4영01-06] A 끝의 "정보를 파악한다.").
-      if (level && !left) { level.text.push(t); continue }
+      if (level && !left) { level.text.push(piece); continue }
       if (!current) continue
       if (!current.pages.includes(pi + 1)) current.pages.push(pi + 1)
       // 수준 표시 전 구간: 성취기준 문장이 끝나기 전이면 문장에, 끝난 뒤면 (글자 없는 표의) 서술에.
       // "다$"로 끝을 판정하면 "우리 사회에 다⏎양한"처럼 단어 중간 줄바꿈에서 원문이 잘린다.
       // 원문이 끝난 뒤의 왼쪽 칸 줄은 부가 정보다(과학 "탐구 활동 •…", 수학 각주 "3) …") → 버린다.
-      if (!/다\.$/.test(tidy(current.standardText.join(' ')))) current.standardText.push(t)
-      else if (!left) pending.push(t)
+      if (!/다\.$/.test(tidy(current.standardText.join('')))) current.standardText.push(piece)
+      else if (!left) pending.push(piece)
     }
   }
   closeRecord()
 
   const byCode = {}
   for (const r of records) {
-    r.standardText = tidy(r.standardText.join(' '))
+    // 각주 번호("덧셈과 뺄셈3)의")는 원문이 아니다 — 한글 바로 뒤 "숫자)"만 지운다.
+    r.standardText = tidy(r.standardText.join('')).replace(/(?<=[가-힣])\d\)/g, '')
     const prev = byCode[r.code]
     if (!prev) { byCode[r.code] = r; continue }
     for (const k of ['A', 'B', 'C']) if (r.levels[k] && !prev.levels[k]) prev.levels[k] = r.levels[k]
@@ -202,8 +222,19 @@ function extractBand({ band, file }) {
 
 fs.mkdirSync(OUT_DIR, { recursive: true })
 const summary = []
+const runtime = {}
 for (const b of BANDS) {
   const { band, source, standards } = extractBand(b)
+  for (const s of standards) {
+    runtime[s.code] = {
+      band,
+      subject: s.subject,
+      A: s.levels.A,
+      B: s.levels.B,
+      C: s.levels.C,
+      ...(s.levelsInferred ? { inferred: true } : {}),
+    }
+  }
   const out = { band, source, builtAt: new Date().toISOString(), count: standards.length, standards }
   fs.writeFileSync(path.join(OUT_DIR, `성취수준-${band}.json`), JSON.stringify(out, null, 2) + '\n')
   summary.push({
@@ -215,3 +246,12 @@ for (const b of BANDS) {
   })
 }
 console.table(summary)
+
+const sources = BANDS.map(b => path.basename(b.file))
+fs.writeFileSync(RUNTIME_OUT, JSON.stringify({
+  source: '교육부·한국교육과정평가원, 2022 개정 교육과정에 따른 성취수준(초등 1~2·3~4·5~6학년군)',
+  files: sources,
+  count: Object.keys(runtime).length,
+  standards: runtime,
+}) + '\n')
+console.log(`runtime: ${RUNTIME_OUT} (${Object.keys(runtime).length} codes)`)
