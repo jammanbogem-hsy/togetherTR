@@ -12,11 +12,11 @@
  *  1. 짧은 질의 확장(보조 모델 1회) + 질의 임베딩을 동시 실행
  *  2. 후보 풀 = 임베딩 상위(학년군별 라운드로빈) ∪ 글자 적중 전부 → 최대 120
  *     (풀 선별은 v2 문서 임베딩, 화면에 보이는 sim·동점 처리는 v1 코사인)
- *  3. Jev 주제 관련도를 30문항씩 병렬 fan-out 으로 전부 판정
+ *  3. Jev 주제 관련도를 30문항씩 병렬 fan-out 으로 전부 판정(성취수준 A 원문을 근거로 함께 넘김)
  *  4. score = Jev(판정 실패 시 코사인), 0.02 이내 동점은 코사인으로 가름
  *  5. 학년군별 상위 perBand 개를 먼저 확보한 뒤 남는 자리를 점수 순으로 채움
  *
- * 글자 적중 보장: 질의 토큰(2자 이상)이 성취기준 문장·키워드·영역·핵심아이디어에
+ * 글자 적중 보장: 질의 토큰(2자 이상)이 성취기준 문장·키워드·영역·핵심아이디어·성취수준(A·B·C)에
  * 글자로 들어 있으면 임베딩 순위와 무관하게 후보에 들어간다('이슬' → [6과06-02]).
  *
  * Jev 가 꺼져 있거나 전 조각이 실패하면 코사인 점수로 응답한다(judge:'embedding').
@@ -40,6 +40,7 @@ import {
   judgeTopicRelevanceChunked,
   keywordHit,
   levelForScore,
+  loadStandardLevelsById,
   matchedQueryTerms,
   mergeSearchPool,
   resolvePerBand,
@@ -227,6 +228,7 @@ export async function POST(request: NextRequest) {
 
     // ── 2. 후보 풀 = 임베딩 상위 ∪ 글자 적중 ──
     const tokens = searchTokens(query, expandedTerms)
+    const levelsById = loadStandardLevelsById()
     const scoredById = new Map<string, ScoredCandidate>()
     for (const std of pool) {
       let poolSim = 0
@@ -249,7 +251,7 @@ export async function POST(request: NextRequest) {
         poolSim,
         sim,
         ...(matchedExpansion ? { matchedExpansion } : {}),
-        hit: keywordHit(std, coreIdeaSentence(std, graph), tokens),
+        hit: keywordHit(std, coreIdeaSentence(std, graph), tokens, levelsById.get(std.id)),
       })
     }
 
@@ -302,7 +304,14 @@ export async function POST(request: NextRequest) {
       singleBand,
       poolEntries.map(entry => {
         const { std } = entryOf(entry.id)
-        return { id: std.id, code: std.code, subject: toStandardSummary(std, graph).subject, text: std.text }
+        const levelA = levelsById.get(std.id)?.A
+        return {
+          id: std.id,
+          code: std.code,
+          subject: toStandardSummary(std, graph).subject,
+          text: std.text,
+          ...(levelA ? { levelA } : {}),
+        }
       }),
       { deadlineMs: JUDGE_DEADLINE_MS },
     )

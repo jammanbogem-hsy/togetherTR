@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { EDGE_THRESHOLD_MAX, EDGE_THRESHOLD_MIN, groupResultsByBand } from './mapMath'
 import { JudgeBadge, M3Switch, SectionTitle } from './MapPanelBits'
+import { AchievementLevelList } from './MapLevelBits'
 import { PickButton, RelatedCard, ResultCard } from './MapResultCards'
 import type { RelatedState, SearchState } from './useCurriculumMap'
 import { subjectIcon } from './subjectIcons'
@@ -18,6 +19,8 @@ export interface MapSidePanelProps {
   onEdgeThresholdChange: (value: number) => void
   onAlwaysLabelsChange: (value: boolean) => void
   onPhysicsChange: (value: boolean) => void
+  /** 관련 카드에 양쪽 성취수준 원문을 붙이기 위한 조회표 */
+  nodeById: Map<string, MapNode>
   onResetFilters: () => void
   /** 카드 호버 → 캔버스에서 해당 노드·연결 강조 */
   onHoverItem: (id: string | null) => void
@@ -34,7 +37,8 @@ export interface MapSidePanelProps {
   bands: string[]
   /** 담긴 성취기준 id */
   pickedIds: ReadonlySet<string>
-  onTogglePick: (id: string) => void
+  /** 없으면 담기 버튼을 숨긴다(보낼 곳이 없는 공개 사이트) */
+  onTogglePick?: (id: string) => void
 }
 
 function Hint({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -75,6 +79,7 @@ export default function MapSidePanel({
   onEdgeThresholdChange,
   onAlwaysLabelsChange,
   onPhysicsChange,
+  nodeById,
   onResetFilters,
   onHoverItem,
   search,
@@ -131,7 +136,9 @@ export default function MapSidePanel({
             </div>
             <p className="mb-3 text-[14px] leading-[1.5] text-[var(--md-on-surface)]">{selectedNode.text}</p>
             <div className="mb-3">
-              <PickButton picked={pickedIds.has(selectedNode.id)} onToggle={() => onTogglePick(selectedNode.id)} />
+              {onTogglePick && (
+                <PickButton picked={pickedIds.has(selectedNode.id)} onToggle={() => onTogglePick(selectedNode.id)} />
+              )}
             </div>
             <dl className="space-y-1.5">
               {selectedNode.area && (
@@ -148,7 +155,20 @@ export default function MapSidePanel({
                   <dd className="text-[14px] leading-[1.5] text-[var(--md-on-surface)]">{selectedNode.coreIdea}</dd>
                 </div>
               )}
+              <div className="flex gap-2">
+                <dt className="flex-shrink-0 text-[12px] font-medium text-[var(--md-on-surface-variant)]">연결</dt>
+                <dd className="text-[14px] text-[var(--md-on-surface)]">
+                  유사도 이웃·교과 간 링크 {selectedNode.degree}개
+                </dd>
+              </div>
             </dl>
+
+            <div className="mt-4 border-t border-[var(--md-outline-variant)] pt-3">
+              <h4 className="mb-2 text-[13px] font-medium text-[var(--md-on-surface-variant)]">
+                성취수준 (공식 원문)
+              </h4>
+              <AchievementLevelList levels={selectedNode.levels} />
+            </div>
           </div>
 
           {/* 관련 성취기준 */}
@@ -177,7 +197,8 @@ export default function MapSidePanel({
             </SectionTitle>
 
             <p className="mb-2 text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">
-              색 선 = Jev 관계 판정 · 회색 얇은 선 = 임베딩 유사도 이웃
+              색 선 = Jev 관계 판정(두 성취기준의 성취수준 A·B·C 원문까지 근거로 판정) · 회색 선 = 임베딩
+              유사도 이웃(마우스를 올렸을 때). 카드의 ‘성취수준 비교’에서 두 원문을 수준별로 나란히 볼 수 있습니다.
             </p>
 
             {related.status === 'loading' && (
@@ -204,7 +225,10 @@ export default function MapSidePanel({
                     picked={pickedIds.has(item.id)}
                     onClick={() => onPickRelated(item.id)}
                     onHover={onHoverItem}
-                    onTogglePick={() => onTogglePick(item.id)}
+                    onTogglePick={onTogglePick ? () => onTogglePick(item.id) : undefined}
+                    centerCode={selectedNode.code}
+                    centerLevels={selectedNode.levels}
+                    itemLevels={nodeById.get(item.id)?.levels}
                   />
                 </li>
               ))}
@@ -249,7 +273,7 @@ export default function MapSidePanel({
                         picked={pickedIds.has(r.id)}
                         onClick={() => onPickResult(r.id)}
                         onHover={onHoverItem}
-                        onTogglePick={() => onTogglePick(r.id)}
+                        onTogglePick={onTogglePick ? () => onTogglePick(r.id) : undefined}
                       />
                     </li>
                   ))}
@@ -292,7 +316,7 @@ export default function MapSidePanel({
                       picked={pickedIds.has(r.id)}
                       onClick={() => onPickResult(r.id)}
                       onHover={onHoverItem}
-                      onTogglePick={() => onTogglePick(r.id)}
+                      onTogglePick={onTogglePick ? () => onTogglePick(r.id) : undefined}
                     />
                   </li>
                 ))}
@@ -345,14 +369,23 @@ export default function MapSidePanel({
               </p>
             </div>
 
-            <M3Switch
-              checked={filters.physics}
-              onChange={onPhysicsChange}
-              label="움직임"
-            />
-            <p className="-mt-3 text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">
-              끄면 노드가 지금 위치에 멈춥니다. 노드를 끌어 옮기는 것은 계속 됩니다.
-            </p>
+            {filters.layout === 'similarity' ? (
+              <>
+                <M3Switch
+                  checked={filters.physics}
+                  onChange={onPhysicsChange}
+                  label="움직임"
+                />
+                <p className="-mt-3 text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">
+                  끄면 노드가 지금 위치에 멈춥니다. 노드를 끌어 옮기는 것은 계속 됩니다.
+                </p>
+              </>
+            ) : (
+              <p className="text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">
+                정렬 배치에서는 자리가 교과·학년군·영역을 뜻하므로 움직이거나 끌어 옮기지 않습니다.
+                유사도 지도는 캔버스 왼쪽 위 ‘유사도’ 버튼으로 볼 수 있습니다.
+              </p>
+            )}
 
             <M3Switch
               checked={filters.alwaysLabels}

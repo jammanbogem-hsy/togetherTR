@@ -22,6 +22,8 @@ export const DEFAULT_FILTERS: MapFilters = {
   // 1.2 배율을 넘으면 나머지도 가림 검사를 거쳐 나타난다.
   alwaysLabels: false,
   physics: true,
+  // 기본은 정렬 배치 — 유사도 지도의 거리는 읽을 수 있는 수치가 아니다(2026-09-23 교사 피드백).
+  layout: 'grid',
 }
 
 function readStoredFilters(): MapFilters {
@@ -46,6 +48,8 @@ function readStoredFilters(): MapFilters {
       alwaysLabels: obj.alwaysLabels === true,
       // 저장값이 없으면 움직임은 기본 켜짐
       physics: obj.physics === undefined ? true : obj.physics === true,
+      // 저장값이 없으면(예전 저장 포함) 정렬 배치
+      layout: obj.layout === 'similarity' ? 'similarity' : 'grid',
     }
   } catch {
     return DEFAULT_FILTERS

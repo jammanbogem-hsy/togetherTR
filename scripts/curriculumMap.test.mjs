@@ -12,8 +12,7 @@ import {
   DOC_KNOWLEDGE_LIMIT,
   LAYOUT_SIZE,
   MIN_NODE_GAP,
-  NODE_MIN_RADIUS,
-  NODE_RADIUS_RANGE,
+  NODE_RADIUS,
   SIMILAR_EDGE_MIN_SIM,
   SIM_FLOOR_ABSOLUTE,
   SIM_FLOOR_RATIO,
@@ -410,46 +409,15 @@ test('runForceLayout: ignores edges whose endpoints are not nodes', () => {
 
 // ─── node radii ────────────────────────────────────────────────────────────
 
-test('nodeRadii: r = 8 + 18 x degree rank, spanning the full range', () => {
+test('nodeRadii: every node gets the same radius regardless of degree (teacher feedback 2026-09-23)', () => {
   const radii = nodeRadii([
     { id: 'lo', degree: 0 },
     { id: 'mid', degree: 5 },
-    { id: 'hi', degree: 40 },
-  ])
-  assert.equal(radii.get('lo'), NODE_MIN_RADIUS)
-  assert.equal(radii.get('hi'), NODE_MIN_RADIUS + NODE_RADIUS_RANGE)
-  assert.equal(radii.get('mid'), 17)
-})
-
-test('nodeRadii: uses rank not raw degree, so one hub does not flatten the rest', () => {
-  // Raw-degree normalization would give the three low nodes r ~= 8.0-8.4.
-  const radii = nodeRadii([
-    { id: 'a', degree: 1 },
-    { id: 'b', degree: 2 },
-    { id: 'c', degree: 3 },
     { id: 'hub', degree: 900 },
   ])
-  assert.equal(radii.get('a'), 8)
-  assert.equal(radii.get('b'), 14)
-  assert.equal(radii.get('c'), 20)
-  assert.equal(radii.get('hub'), 26)
-})
-
-test('nodeRadii: equal degrees get equal radii (tie midpoint)', () => {
-  const radii = nodeRadii([
-    { id: 'a', degree: 4 },
-    { id: 'b', degree: 4 },
-    { id: 'c', degree: 9 },
-  ])
-  assert.equal(radii.get('a'), radii.get('b'))
-  assert.ok(radii.get('c') > radii.get('a'))
-})
-
-test('nodeRadii: rounded to one decimal, empty and single input handled', () => {
-  const many = nodeRadii(Array.from({ length: 7 }, (_, i) => ({ id: `n${i}`, degree: i })))
-  for (const r of many.values()) assert.equal(r, Math.round(r * 10) / 10)
+  assert.deepEqual([...radii.values()], [NODE_RADIUS, NODE_RADIUS, NODE_RADIUS])
   assert.equal(nodeRadii([]).size, 0)
-  assert.equal(nodeRadii([{ id: 'only', degree: 3 }]).get('only'), 17)
+  assert.equal(nodeRadii([{ id: 'only', degree: 3 }]).get('only'), NODE_RADIUS)
 })
 
 // ─── overlap inspection ────────────────────────────────────────────────────

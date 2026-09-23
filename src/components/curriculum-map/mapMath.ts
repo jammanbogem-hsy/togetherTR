@@ -45,9 +45,9 @@ export const EDGE_THRESHOLD_MIN = 0.3
 export const EDGE_THRESHOLD_MAX = 0.8
 export const EDGE_THRESHOLD_DEFAULT = 0.5
 
-// 노드 반지름은 월드 단위 — 백엔드 레이아웃의 겹침 방지 계산과 같은 공식을 쓴다.
-export const NODE_R_BASE = 8
-export const NODE_R_RANGE = 18
+// 노드 반지름은 월드 단위 — 백엔드 레이아웃(NODE_RADIUS)과 같은 값이다.
+// 모든 성취기준이 같은 크기다: 크기 차이는 중요도로 오독된다(2026-09-23 교사 피드백).
+export const NODE_R_BASE = 12
 export const NODE_PADDING = 8
 /** 축소해도 클릭할 수 있는 최소 화면 반지름 */
 export const MIN_SCREEN_RADIUS = 2.5
@@ -225,9 +225,9 @@ export function degreeRankNorm(nodes: readonly { id: string; degree: number }[])
   return result
 }
 
-/** 월드 단위 노드 반지름 — 백엔드 레이아웃의 겹침 방지 공식과 동일. */
-export function worldRadius(degreeNorm: number): number {
-  return NODE_R_BASE + NODE_R_RANGE * clamp(degreeNorm, 0, 1)
+/** 월드 단위 노드 반지름 — 에셋에 r 이 없을 때의 폴백. 모든 노드가 같다. */
+export function worldRadius(): number {
+  return NODE_R_BASE
 }
 
 /**

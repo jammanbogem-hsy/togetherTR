@@ -6,6 +6,7 @@
 
 import { RELATION_COLORS } from '@/components/knowledge-graph/constants'
 import {
+  RENDER_RADIUS_SCALE,
   isInSelectionSet,
   screenRadius,
   worldToScreen,
@@ -33,6 +34,7 @@ import {
   edgeWidth,
 } from './edgeMath'
 import type { SimNode } from './forceMath'
+import { GRID_AREA_LABEL_HEIGHT, type GridGuides } from './gridLayout'
 import {
   ICON_FONT_FAMILY,
   ICON_MIN_SCREEN_RADIUS,
@@ -84,6 +86,147 @@ export interface DrawMapParams {
   alwaysLabels: boolean
   /** 아이콘 폰트가 준비됐는지 — 아니면 원만 그린다 */
   iconFontReady: boolean
+  /**
+   * 정렬 배치의 안내선(레이아웃 공간, K 적용 완료). 있으면 칸·교과·학년군·영역 머리글을
+   * 그리고, 배경 유사도 선은 생략한다 — 정렬 배치에서 거리는 관계를 뜻하지 않으므로
+   * 격자를 가로지르는 수천 개의 선은 잡음일 뿐이다. 호버·관계선은 그대로 그린다.
+   */
+  guides?: GridGuides | null
+}
+
+const GUIDE_CELL_FILL = '#FFFFFF'
+const GUIDE_CELL_STROKE = '#E1E3E1'
+const GUIDE_HEADER_COLOR = '#1F1F1F'
+const GUIDE_AREA_COLOR = '#5E5E5E'
+const GUIDE_HEADER_PX = 15
+/** 학년군 머리글이 올라갈 수 있는 가장 위 y — 도구 막대를 피한다 */
+const GUIDE_HEADER_MIN_Y = 76
+const GUIDE_AREA_PX = 12
+/** 영역 라벨 줄이 화면에서 이 높이(px) 이상일 때만 영역 이름을 그린다 */
+const GUIDE_AREA_MIN_LINE_PX = 15
+
+/** 정렬 배치에서 선이 휘는 정도 — 거리의 비율, 상한 px */
+const ARC_BEND_RATIO = 0.18
+const ARC_BEND_MAX_PX = 120
+
+/**
+ * 두 점을 잇는다. 정렬 배치에서는 같은 줄의 관계선이 한 직선 위에 겹치고 사이의 원을
+ * 관통하므로, 거리에 비례해 휘는 호로 그린다(길이가 다른 선이 서로 다른 높이로 갈라진다).
+ */
+function traceLink(ctx: CanvasRenderingContext2D, a: Point, b: Point, curved: boolean): void {
+  ctx.moveTo(a.x, a.y)
+  if (!curved) {
+    ctx.lineTo(b.x, b.y)
+    return
+  }
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const d = Math.hypot(dx, dy)
+  if (d === 0) return
+  const bend = Math.min(ARC_BEND_MAX_PX, d * ARC_BEND_RATIO)
+  // 방향과 무관하게 같은 쪽(화면 위쪽 성분)으로 휜다 — 왕복 선이 같은 호가 되게
+  let nx = -dy / d
+  let ny = dx / d
+  if (ny > 0 || (ny === 0 && nx > 0)) {
+    nx = -nx
+    ny = -ny
+  }
+  ctx.quadraticCurveTo((a.x + b.x) / 2 + nx * bend, (a.y + b.y) / 2 + ny * bend, b.x, b.y)
+}
+
+/** 머리글 뒤 반투명 알약 — 원 위에 겹쳐도 글자가 읽히게 한다. (x, top) = 글자 왼쪽 위 */
+function headerPill(ctx: CanvasRenderingContext2D, x: number, top: number, textWidth: number): void {
+  const padX = 8
+  const padY = 4
+  ctx.save()
+  ctx.fillStyle = 'rgba(248,250,253,0.92)'
+  ctx.beginPath()
+  const w = textWidth + padX * 2
+  const h = GUIDE_HEADER_PX + padY * 2
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(x - padX, top - padY, w, h, h / 2)
+  else ctx.rect(x - padX, top - padY, w, h)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** 정렬 배치 안내선 — 칸 배경, 영역 라벨, 달라붙는(sticky) 교과·학년군 머리글. */
+function drawGridGuides(
+  ctx: CanvasRenderingContext2D,
+  guides: GridGuides,
+  t: ViewTransform,
+  width: number,
+  height: number,
+  subjectColors: Record<string, string>,
+): void {
+  ctx.globalAlpha = 1
+  ctx.setLineDash([])
+  ctx.lineWidth = 1
+  for (const c of guides.cells) {
+    const a = worldToScreen({ x: c.x0, y: c.y0 }, t)
+    const b = worldToScreen({ x: c.x1, y: c.y1 }, t)
+    if (b.x < 0 || b.y < 0 || a.x > width || a.y > height) continue
+    ctx.fillStyle = GUIDE_CELL_FILL
+    ctx.strokeStyle = GUIDE_CELL_STROKE
+    ctx.beginPath()
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(a.x, a.y, b.x - a.x, b.y - a.y, Math.min(12, (b.x - a.x) / 20))
+    else ctx.rect(a.x, a.y, b.x - a.x, b.y - a.y)
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  // 영역 이름 — 확대했을 때만 (축소 상태에선 글자가 칸을 덮는다)
+  // 안내선은 이미 K 배가 적용된 레이아웃 공간이다
+  const areaLinePx = GRID_AREA_LABEL_HEIGHT * RENDER_RADIUS_SCALE * t.scale
+  if (areaLinePx >= GUIDE_AREA_MIN_LINE_PX) {
+    ctx.font = `500 ${GUIDE_AREA_PX}px system-ui, -apple-system, 'Noto Sans KR', sans-serif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.fillStyle = GUIDE_AREA_COLOR
+    for (const a of guides.areas) {
+      const s = worldToScreen({ x: a.x, y: a.y }, t)
+      if (s.x > width || s.y > height || s.y < -20 || s.x < -400) continue
+      ctx.fillText(a.area, s.x, s.y + 4)
+    }
+  }
+
+  // 학년군 머리글 — 표 윗변에 붙되 위로 스크롤되면 화면 맨 위에 머문다
+  const top = guides.rows.length > 0 ? worldToScreen({ x: 0, y: guides.rows[0].y0 }, t).y : 0
+  // 캔버스 왼쪽 위 도구 막대(높이 약 56px) 아래에 머문다
+  const colY = Math.max(GUIDE_HEADER_MIN_Y, top - 30)
+  ctx.font = `600 ${GUIDE_HEADER_PX}px system-ui, -apple-system, 'Noto Sans KR', sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.lineJoin = 'round'
+  ctx.lineWidth = LABEL_HALO_PX
+  for (const col of guides.columns) {
+    const a = worldToScreen({ x: col.x0, y: 0 }, t)
+    const b = worldToScreen({ x: col.x1, y: 0 }, t)
+    if (b.x < 0 || a.x > width) continue
+    const x = Math.min(Math.max((a.x + b.x) / 2, a.x + 40), b.x - 40)
+    headerPill(ctx, x - ctx.measureText(col.band).width / 2, colY, ctx.measureText(col.band).width)
+    ctx.fillStyle = GUIDE_HEADER_COLOR
+    ctx.fillText(col.band, x, colY)
+  }
+
+  // 교과 머리글 — 표 왼변에 붙되 왼쪽으로 스크롤되면 화면 왼쪽에 머문다
+  const left = guides.columns.length > 0 ? worldToScreen({ x: guides.columns[0].x0, y: 0 }, t).x : 0
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'middle'
+  for (const row of guides.rows) {
+    const a = worldToScreen({ x: 0, y: row.y0 }, t)
+    const b = worldToScreen({ x: 0, y: row.y1 }, t)
+    if (b.y < 0 || a.y > height) continue
+    const label = row.label
+    const w = ctx.measureText(label).width
+    const x = Math.max(10 + w, left - 12)
+    // 행의 화면에 보이는 구간 안에서 가운데 — 긴 행도 머리글이 화면 밖으로 나가지 않는다
+    const visTop = Math.max(a.y + 14, GUIDE_HEADER_MIN_Y + 30)
+    const visBottom = Math.min(b.y - 14, height - 40)
+    const y = visTop > visBottom ? (a.y + b.y) / 2 : Math.min(Math.max((a.y + b.y) / 2, visTop), visBottom)
+    headerPill(ctx, x - w, y - GUIDE_HEADER_PX / 2, w)
+    ctx.fillStyle = subjectColors[row.subjectId] ?? GUIDE_HEADER_COLOR
+    ctx.fillText(label, x, y)
+  }
 }
 
 export interface DrawMapResult {
@@ -96,6 +239,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
 
   ctx.fillStyle = CANVAS_BG
   ctx.fillRect(0, 0, width, height)
+  if (p.guides) drawGridGuides(ctx, p.guides, t, width, height, p.subjectColors)
 
   // 0) 좌표·반지름 선계산 (히트 테스트와 같은 값)
   const screenById = new Map<string, Point>()
@@ -158,6 +302,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
       focusEdges.push(e)
       continue
     }
+    if (p.guides) continue
     const alpha = Math.round(edgeAlpha(e.sim) * dim * 40) / 40
     const w = Math.round(edgeWidth(e.sim) * 2) / 2
     const key = `${alpha}|${w}`
@@ -177,6 +322,8 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     ctx.stroke(path)
   }
 
+  const curved = Boolean(p.guides)
+
   // 2) 호버 이웃 = 유사도 이웃. 호버 중에만 회색으로 진하게 한다.
   //    (선택 상태에서는 어떤 에셋 엣지도 진해지지 않는다)
   ctx.strokeStyle = '#747775'
@@ -187,8 +334,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     const b = screenById.get(e.target)
     if (!a || !b) continue
     ctx.beginPath()
-    ctx.moveTo(a.x, a.y)
-    ctx.lineTo(b.x, b.y)
+    traceLink(ctx, a, b, curved)
     ctx.stroke()
   }
 
@@ -202,8 +348,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
       ctx.globalAlpha = id === p.focusId ? 0.95 : 0.85
       ctx.lineWidth = id === p.focusId ? FOCUS_EDGE_WIDTH : Math.max(1.5, 1.5 + meta.strength * 2)
       ctx.beginPath()
-      ctx.moveTo(from.x, from.y)
-      ctx.lineTo(to.x, to.y)
+      traceLink(ctx, from, to, curved)
       ctx.stroke()
     }
   }

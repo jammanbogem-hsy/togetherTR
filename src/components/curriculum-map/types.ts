@@ -23,16 +23,27 @@ export interface MapNode {
    */
   x: number
   y: number
-  /** 연결 차수 — 노드 반지름 산정 기준 */
+  /** 연결 차수(유사도 이웃·교과 간 링크 수) — 라벨 우선순위와 "연결 N개" 표시용. 크기에는 쓰지 않는다 */
   degree: number
   /**
    * 월드 단위 노드 반지름. 빌더가 겹침 방지 레이아웃을 계산할 때 쓴 값을
-   * 실어 보내면 렌더러가 그대로 따른다. 없으면 degree 순위로 계산한다.
+   * 실어 보내면 렌더러가 그대로 따른다. 모든 노드가 같은 값이다.
    */
   r?: number
   /** 성취기준 키워드 — 툴팁 근거 표시용 (에셋에 있을 때만) */
   keywords?: string[]
+  /** 공식 성취수준 A·B·C 원문 (창체 등 문서 대상이 아니면 없음) */
+  levels?: MapNodeLevels
 }
+
+export interface MapNodeLevels {
+  A: string
+  B: string
+  C: string
+  /** 원문에 A·B·C 표시가 없어 서술 순서로 배정한 경우 */
+  inferred?: boolean
+}
+
 
 export type MapEdgeKind = 'similar' | 'cross' | 'both'
 
@@ -152,9 +163,16 @@ export interface MapFilters {
   edgeThreshold: number
   /** 라벨 항상 표시 */
   alwaysLabels: boolean
-  /** 힘 기반 레이아웃(움직임) 사용 여부 */
+  /** 힘 기반 레이아웃(움직임) 사용 여부 — 유사도 지도에서만 의미가 있다 */
   physics: boolean
+  /**
+   * 배치 방식. 'grid' = 교과×학년군×영역 정렬(위치가 문서 속성만으로 정해짐, 기본),
+   * 'similarity' = 임베딩 유사도 힘 배치(거리는 근사치).
+   */
+  layout: MapLayoutMode
 }
+
+export type MapLayoutMode = 'grid' | 'similarity'
 
 export type AsyncStatus = 'idle' | 'loading' | 'ready' | 'error'
 

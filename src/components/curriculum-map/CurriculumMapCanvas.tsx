@@ -20,9 +20,10 @@ import { REHEAT_CHANGE } from './forceMath'
 import { drawMap, type RelatedMeta } from './drawMap'
 import { useForceLayout } from './useForceLayout'
 import { useMapViewport } from './useMapViewport'
+import { scaleGridGuides, type GridGuides } from './gridLayout'
 import MapTooltip from './MapTooltip'
 import { ICON_FONT_SPEC } from './subjectIcons'
-import type { MapEdge, MapNode } from './types'
+import type { MapEdge, MapLayoutMode, MapNode } from './types'
 
 export type { RelatedMeta }
 
@@ -45,7 +46,17 @@ export interface CurriculumMapCanvasProps {
   onSelect: (id: string | null) => void
   onClearSelection: () => void
   focusRequest: { id: string; nonce: number } | null
+  /** 현재 배치 방식 — 'grid' 면 guides 를 그리고 끌어 옮기기를 막는다 */
+  layoutMode: MapLayoutMode
+  onLayoutChange: (mode: MapLayoutMode) => void
+  /** 정렬 배치 안내선(에셋 좌표). 유사도 지도에서는 null */
+  guides: GridGuides | null
 }
+
+const LAYOUT_OPTIONS: Array<{ mode: MapLayoutMode; label: string; title: string }> = [
+  { mode: 'grid', label: '정렬', title: '교과 × 학년군 × 영역 순서로 정렬 — 위치는 문서 속성만으로 정해집니다' },
+  { mode: 'similarity', label: '유사도', title: '문장 의미가 비슷할수록 가깝게 — 거리는 근사치입니다' },
+]
 
 function IconButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }): React.ReactElement {
   return (
@@ -79,7 +90,11 @@ export default function CurriculumMapCanvas({
   onSelect,
   onClearSelection,
   focusRequest,
+  layoutMode,
+  onLayoutChange,
+  guides,
 }: CurriculumMapCanvasProps): React.ReactElement {
+  const isGrid = layoutMode === 'grid'
   const drawRef = useRef<() => void>(() => {})
   const onTick = useCallback(() => drawRef.current(), [])
   // 아이콘 폰트가 준비될 때까지는 원만 그린다 (준비되면 상태 변경으로 재렌더)
@@ -111,6 +126,11 @@ export default function CurriculumMapCanvas({
     [nodes, ghostNodes],
   )
   const ghostIds = useMemo(() => new Set(ghostNodes.map(n => n.id)), [ghostNodes])
+  // 안내선도 노드 좌표와 같은 K 를 곱한다
+  const layoutGuides = useMemo(
+    () => (guides ? scaleGridGuides(guides, RENDER_RADIUS_SCALE) : null),
+    [guides],
+  )
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, MapNode>()
@@ -122,8 +142,8 @@ export default function CurriculumMapCanvas({
 
   // 그리기와 충돌이 같은 반지름을 쓴다 (선택·결과 강조로 키우지 않는다)
   const radiusOf = useCallback(
-    (node: MapNode) => drawWorldRadius(node.r ?? worldRadius(degreeNorms.get(node.id) ?? 0)),
-    [degreeNorms],
+    (node: MapNode) => drawWorldRadius(node.r ?? worldRadius()),
+    [],
   )
 
   const medianWorldRadius = useMemo(
@@ -143,10 +163,12 @@ export default function CurriculumMapCanvas({
     nodes: layoutNodes,
     onSelect,
     focusRequest,
-    onNodeDrag: pinNode,
-    onNodeDragEnd: unpinNode,
+    // 정렬 배치에서는 자리가 곧 의미라 끌어 옮기지 않는다
+    onNodeDrag: isGrid ? undefined : pinNode,
+    onNodeDragEnd: isGrid ? undefined : unpinNode,
     positionOf,
     medianWorldRadius,
+    initialFit: isGrid ? 'width-top' : 'all',
   })
   const { canvasRef, wrapRef, size, view, hoverId, setHitNodes } = vp
 
@@ -208,12 +230,13 @@ export default function CurriculumMapCanvas({
       relatedPending,
       alwaysLabels,
       iconFontReady,
+      guides: layoutGuides,
     })
     setHitNodes(hits)
   }, [
     canvasRef, setHitNodes, nodeMapRef, layoutNodes, ghostIds, degreeNorms, radiusOf, edges,
     view, size, focusId, focusNeighbors, selectedId, selectedNeighbors, relatedPending,
-    scoreById, searchActive, alwaysLabels, subjectColors, relatedMeta, iconFontReady,
+    scoreById, searchActive, alwaysLabels, subjectColors, relatedMeta, iconFontReady, layoutGuides,
   ])
 
   // 물리 루프와 상태 변경이 같은 draw 를 부른다
@@ -238,7 +261,7 @@ export default function CurriculumMapCanvas({
       />
 
       <div
-        className="absolute left-4 top-4 flex w-max items-center gap-1 rounded-full border border-[var(--md-outline-variant)] bg-[var(--md-surface)] px-1.5 py-1"
+        className="absolute left-4 top-4 flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-1 rounded-[24px] border border-[var(--md-outline-variant)] bg-[var(--md-surface)] px-1.5 py-1"
         style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08)' }}
       >
         <IconButton icon="fit_screen" label="전체 보기" onClick={vp.fitAll} />
@@ -247,6 +270,29 @@ export default function CurriculumMapCanvas({
         <span className="shrink-0 px-1.5 text-[13px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
           {Math.round(view.scale * 100)}%
         </span>
+        <div
+          role="radiogroup"
+          aria-label="배치 방식"
+          className="ml-1 flex shrink-0 items-center rounded-full bg-[var(--md-surface-container-high)] p-0.5"
+        >
+          {LAYOUT_OPTIONS.map(option => (
+            <button
+              key={option.mode}
+              type="button"
+              role="radio"
+              aria-checked={layoutMode === option.mode}
+              title={option.title}
+              onClick={() => onLayoutChange(option.mode)}
+              className={`m3-state h-9 rounded-full px-3 text-[13px] font-medium ${
+                layoutMode === option.mode
+                  ? 'bg-[var(--md-secondary-container)] text-[var(--md-on-secondary-container)]'
+                  : 'text-[var(--md-on-surface-variant)]'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         {selectedId && (
           <button
             type="button"
@@ -260,6 +306,14 @@ export default function CurriculumMapCanvas({
           </button>
         )}
       </div>
+
+      <p
+        className="pointer-events-none absolute bottom-3 left-4 max-w-[calc(100%-2rem)] rounded-lg bg-[var(--md-surface)]/90 px-3 py-1.5 text-[12px] leading-[1.5] text-[var(--md-on-surface-variant)]"
+      >
+        {isGrid
+          ? '정렬 배치: 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 가깝다고 관련 있는 것은 아닙니다 — 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.'
+          : '유사도 지도: 문장 의미가 비슷할수록 가깝게 놓았지만 거리는 근사치입니다. 정확한 관계는 성취기준을 눌러 확인하세요.'}
+      </p>
 
       {hoverNode && vp.hoverScreen && (
         <MapTooltip

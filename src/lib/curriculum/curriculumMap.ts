@@ -94,9 +94,14 @@ export const LAYOUT_MARGIN = 60
 /** 핵심아이디어 문장 최대 길이(노드 툴팁용). */
 export const CORE_IDEA_MAX_CHARS = 120
 
-/** 노드 반지름(월드 단위): 8 + 18 · degree순위(0~1). */
-export const NODE_MIN_RADIUS = 8
-export const NODE_RADIUS_RANGE = 18
+/**
+ * 노드 반지름(월드 단위) — 모든 성취기준이 같은 크기다.
+ *
+ * 2026-09-23 교사 피드백: "성취기준 원의 크기가 다른데 그럴 필요가 없다".
+ * 예전에는 8 + 18 · 연결 차수 순위였는데, 차수는 "비슷한 성취기준이 많다"는 뜻일 뿐
+ * 중요도가 아니다. 크기가 다르면 큰 원을 핵심 성취기준으로 오독하므로 통일했다.
+ */
+export const NODE_RADIUS = 12
 
 /** 두 노드 사이에 최소로 남겨야 하는 빈 간격. dist ≥ r_i + r_j + MIN_NODE_GAP. */
 export const MIN_NODE_GAP = 8
@@ -819,6 +824,55 @@ export function buildSearchReason(input: SearchReasonInput): string {
   return parts.join(' · ')
 }
 
+// ─── 순수 헬퍼: 성취수준(A·B·C) ─────────────────────────────────────────────
+
+/**
+ * 성취기준 하나의 공식 성취수준 원문. 출처는 교육부·한국교육과정평가원
+ * 「2022 개정 교육과정에 따른 성취수준」(초등 3권, scripts/extract-achievement-levels.mjs).
+ * 빌더가 public/curriculum_map.json 노드마다 실어 두고, 서버·화면이 같은 값을 읽는다.
+ */
+export interface StandardLevels {
+  A: string
+  B: string
+  C: string
+  /** 원문에 A·B·C 글자가 없어 서술 순서로 배정한 경우 */
+  inferred?: boolean
+}
+
+export const ACHIEVEMENT_LEVEL_KEYS = ['A', 'B', 'C'] as const
+export type AchievementLevelKey = (typeof ACHIEVEMENT_LEVEL_KEYS)[number]
+
+/** '4사01-01' · '[4사01-01]' → '[4사01-01]' (성취수준 파일의 키 형식). */
+export function achievementLevelCodeKey(code: string): string {
+  const trimmed = (code ?? '').trim()
+  if (!trimmed) return ''
+  return trimmed.startsWith('[') ? trimmed : `[${trimmed}]`
+}
+
+/**
+ * 성취수준 파일에서 코드 하나의 수준을 꺼낸다. 매칭은 코드로만 한다 — 교과명·영역명은
+ * 문서마다 달라 신뢰하지 않는다. A·B·C 중 하나라도 비면 null(반쪽 수준은 보여 주지 않는다).
+ */
+export function pickStandardLevels(
+  standards: Record<string, Partial<StandardLevels> | undefined>,
+  code: string,
+): StandardLevels | null {
+  const entry = standards[achievementLevelCodeKey(code)]
+  if (!entry) return null
+  const A = (entry.A ?? '').trim()
+  const B = (entry.B ?? '').trim()
+  const C = (entry.C ?? '').trim()
+  if (!A || !B || !C) return null
+  return entry.inferred ? { A, B, C, inferred: true } : { A, B, C }
+}
+
+// 수준 연계 라벨("A 수준에서 연계" 등)은 두 번 시험하고 뺐다(2026-09-23 실측).
+//  - A·B·C·none 중 하나를 고르게 하면 중심 6개 중 4개에서 관련 10개가 전부 'B'.
+//  - 수준별 Score 세 번으로 바꾸면 A·B·C 점수가 쌍마다 함께 움직였다(예: 0.88/0.90/0.82).
+// A·B·C 원문은 "정확하게"·"부분적으로" 같은 정도 표현만 달라 수준별 판정이 쌍의 전체
+// 관련도를 되풀이할 뿐이다. 그래서 수준은 관계 판정의 근거로만 넘기고(standardBlock),
+// 화면에는 두 성취기준의 원문을 나란히 보여 교사가 직접 비교하게 한다.
+
 // ─── 순수 헬퍼: v2 임베딩 문서 ──────────────────────────────────────────────
 
 /** v2 문서에 넣는 내용체계 요소 상한. */
@@ -856,6 +910,8 @@ export interface StandardDocumentInput {
   functions?: readonly string[]
   /** 그래프 원본 키워드. 잡음을 걸러 쓴다. */
   keywords?: readonly string[]
+  /** 공식 성취수준. 문서에는 A 원문만 넣는다(아래 buildStandardDocument 참고). */
+  levels?: StandardLevels | null
 }
 
 /**
@@ -887,6 +943,11 @@ export function buildStandardDocument(input: StandardDocumentInput): string {
   if (functions.length > 0) lines.push(`과정·기능: ${functions.join(', ')}`)
   const keywords = displayKeywords(input.keywords ?? [], DOC_KEYWORD_LIMIT)
   if (keywords.length > 0) lines.push(`키워드: ${keywords.join(', ')}`)
+  // 성취수준은 A 원문 하나만 넣는다. B·C 는 A 와 같은 내용어에 정도 부사
+  // ("부분적으로", "도움을 받아")만 바뀐 문장이라 세 개를 다 넣으면 문서가 길어져
+  // 짧은 질의 신호만 희석된다. 수준 낱말의 글자 일치는 keywordHit 이 A·B·C 전부 본다.
+  const levelA = input.levels?.A?.replace(/\s+/g, ' ').trim()
+  if (levelA) lines.push(`성취수준 A: ${levelA}`)
 
   return lines.join('\n')
 }
@@ -1008,7 +1069,7 @@ export function searchTokens(query: string, expansions: readonly string[] = []):
 export interface KeywordHit {
   /** 실제로 걸린 토큰. */
   terms: string[]
-  /** 걸린 자리: '성취기준 문장' | '키워드' | '영역' | '핵심아이디어'. */
+  /** 걸린 자리: '성취기준 문장' | '키워드' | '영역' | '핵심아이디어' | '성취수준'. */
   fields: string[]
 }
 
@@ -1017,6 +1078,7 @@ const HIT_FIELD_LABELS = {
   keywords: '키워드',
   area: '영역',
   coreIdea: '핵심아이디어',
+  levels: '성취수준',
 } as const
 
 /**
@@ -1027,6 +1089,7 @@ export function keywordHit(
   standard: { text?: string; keywords?: readonly string[]; area?: string },
   coreIdea: string,
   tokens: readonly string[],
+  levels?: StandardLevels | null,
 ): KeywordHit | null {
   if (tokens.length === 0) return null
   const haystacks: Array<[keyof typeof HIT_FIELD_LABELS, string]> = [
@@ -1034,6 +1097,8 @@ export function keywordHit(
     ['keywords', (standard.keywords ?? []).join(' ').toLowerCase()],
     ['area', (standard.area ?? '').toLowerCase()],
     ['coreIdea', (coreIdea ?? '').toLowerCase()],
+    // 성취수준은 마지막 — 같은 토큰이 문장에도 있으면 '성취기준 문장' 이 근거로 앞선다.
+    ['levels', levels ? `${levels.A} ${levels.B} ${levels.C}`.toLowerCase() : ''],
   ]
   const terms: string[] = []
   const fields: string[] = []
@@ -1155,38 +1220,14 @@ export function resolvePerBand(value: unknown): number {
 // ─── 순수 헬퍼: 반지름 · 충돌 해소 · 맞춤 ───────────────────────────────────
 
 /**
- * degree 순위를 0~1 로 정규화해 반지름을 준다: r = 8 + 18 · degreeNorm.
+ * 노드마다 반지름을 준다 — 전부 NODE_RADIUS(균일).
  *
- * 원 degree 가 아니라 순위를 쓴다. 차수 분포가 한쪽으로 몰려 있어(대부분 한 자리,
- * 소수가 20 이상) 원값을 그대로 정규화하면 허브 몇 개만 커지고 나머지가 전부
- * 최소 크기로 깔린다. 동점은 백분위 순위(같은 degree = 같은 반지름)로 묶어
- * 같은 차수의 노드가 이유 없이 다른 크기로 보이지 않게 한다.
+ * 크기로 차수를 표현하지 않는다(NODE_RADIUS 머리말 참고). 연결 개수는 패널·툴팁에
+ * 글자로 보여 준다. 반환형을 Map 으로 유지해 레이아웃·충돌 코드가 노드별 반지름을
+ * 그대로 받는다.
  */
-export function nodeRadii(nodes: readonly { id: string; degree: number }[]): Map<string, number> {
-  const radii = new Map<string, number>()
-  const n = nodes.length
-  if (n === 0) return radii
-  if (n === 1) {
-    radii.set(nodes[0].id, round1(NODE_MIN_RADIUS + NODE_RADIUS_RANGE / 2))
-    return radii
-  }
-  // degree → (더 작은 노드 수, 같은 노드 수)
-  const sorted = [...nodes].map(node => node.degree).sort((a, b) => a - b)
-  const lessThan = new Map<number, number>()
-  const equalTo = new Map<number, number>()
-  for (let i = 0; i < sorted.length; i++) {
-    const degree = sorted[i]
-    if (!lessThan.has(degree)) lessThan.set(degree, i)
-    equalTo.set(degree, (equalTo.get(degree) ?? 0) + 1)
-  }
-  for (const node of nodes) {
-    const less = lessThan.get(node.degree) ?? 0
-    const equal = equalTo.get(node.degree) ?? 1
-    // 백분위 순위: 동점 구간의 중앙을 쓴다.
-    const degreeNorm = clamp01((less + (equal - 1) / 2) / (n - 1))
-    radii.set(node.id, round1(NODE_MIN_RADIUS + NODE_RADIUS_RANGE * degreeNorm))
-  }
-  return radii
+export function nodeRadii(nodes: readonly { id: string }[]): Map<string, number> {
+  return new Map(nodes.map(node => [node.id, NODE_RADIUS]))
 }
 
 function round1(value: number): number {
@@ -1451,7 +1492,7 @@ export function layoutCurriculumMap(
   const targetNnFactor = options.targetNnFactor ?? TARGET_NN_RADIUS_FACTOR
 
   const radii = nodeRadii(nodes)
-  const radiusList = nodes.map(node => radii.get(node.id) ?? NODE_MIN_RADIUS)
+  const radiusList = nodes.map(node => radii.get(node.id) ?? NODE_RADIUS)
   const meanRadius = radiusList.length === 0
     ? 0
     : radiusList.reduce((sum, r) => sum + r, 0) / radiusList.length
@@ -1575,6 +1616,32 @@ export function loadDocumentEmbeddings(): StandardDocumentEmbeddings | null {
   }
   _v2Embeddings = null
   return _v2Embeddings
+}
+
+let _levelsById: Map<string, StandardLevels> | undefined
+
+/**
+ * 성취기준 id → 공식 성취수준. 빌더가 public/curriculum_map.json 노드에 실어 둔 값을 읽는다
+ * (화면과 서버가 같은 원문을 쓰게 하려고 별도 파일을 다시 읽지 않는다).
+ * 파일이 없거나 깨지면 빈 Map — 수준 없이도 검색·관계 판정은 동작하지만 로그는 남긴다.
+ */
+export function loadStandardLevelsById(): Map<string, StandardLevels> {
+  if (_levelsById) return _levelsById
+  const file = path.join(process.cwd(), 'public/curriculum_map.json')
+  const out = new Map<string, StandardLevels>()
+  try {
+    const asset = JSON.parse(fs.readFileSync(file, 'utf-8')) as { nodes?: Array<{ id: string; levels?: StandardLevels }> }
+    for (const node of asset.nodes ?? []) {
+      if (node.levels?.A && node.levels.B && node.levels.C) out.set(node.id, node.levels)
+    }
+  } catch (error) {
+    console.error('[curriculum-map] achievement levels load failed', {
+      file,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+  _levelsById = out
+  return out
 }
 
 export type EmbeddingSource = 'v1' | 'v2'
@@ -1847,7 +1914,7 @@ export interface ChunkedJudgement {
 export async function judgeTopicRelevanceChunked(
   theme: string,
   gradeGroup: string | undefined,
-  standards: readonly { id: string; code: string; subject: string; text: string }[],
+  standards: readonly { id: string; code: string; subject: string; text: string; levelA?: string }[],
   options: { chunkSize?: number; deadlineMs?: number } = {},
 ): Promise<ChunkedJudgement | null> {
   if (!jevJudgeEnabled() || standards.length === 0) return null

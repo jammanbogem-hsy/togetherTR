@@ -11,7 +11,6 @@ import {
   MIN_SCREEN_RADIUS,
   RENDER_RADIUS_SCALE,
   NODE_R_BASE,
-  NODE_R_RANGE,
   centerOn,
   clamp,
   clampScale,
@@ -184,7 +183,7 @@ test('initialViewScale: boosts the fit but never lets the median node fall under
 test('initialViewScale: the real asset lands at or above the 6 px floor', () => {
   const nodes = loadRealNodes()
   const scaled = nodes.map(n => scaleLayoutPoint({ x: n.x, y: n.y }))
-  const radii = nodes.map(n => drawWorldRadius(n.r ?? worldRadius(0.5)))
+  const radii = nodes.map(n => drawWorldRadius(n.r ?? worldRadius()))
   const median = medianRadius(radii)
   const fit = fitToView(computeBounds(scaled), REAL_VIEWPORT)
   const scale = initialViewScale(fit.scale, 1.35, median)
@@ -303,12 +302,9 @@ test('degreeRankNorm: real asset spans the full range without NaN', () => {
   assert.equal(Math.max(...values), 1)
 })
 
-test('worldRadius: 8..26 in world units, matching the layout formula', () => {
-  assert.equal(worldRadius(0), NODE_R_BASE)
-  assert.equal(worldRadius(1), NODE_R_BASE + NODE_R_RANGE)
-  assert.equal(worldRadius(0.5), NODE_R_BASE + NODE_R_RANGE / 2)
-  assert.equal(worldRadius(-1), NODE_R_BASE)
-  assert.equal(worldRadius(9), NODE_R_BASE + NODE_R_RANGE)
+test('worldRadius: one uniform size, same value as the builder NODE_RADIUS', () => {
+  assert.equal(worldRadius(), NODE_R_BASE)
+  assert.equal(NODE_R_BASE, 12)
 })
 
 test('drawWorldRadius / scaleLayoutPoint: K is applied to radius AND coordinates', () => {
@@ -692,7 +688,7 @@ test('K-scaled seed of the real asset has zero overlapping pairs', () => {
   const nodes = loadRealNodes()
   const scaled = nodes.map(n => ({
     id: n.id,
-    r: drawWorldRadius(n.r ?? worldRadius(0.5)),
+    r: drawWorldRadius(n.r ?? worldRadius()),
     ...scaleLayoutPoint({ x: n.x, y: n.y }),
   }))
   let violations = 0
@@ -714,7 +710,7 @@ test('K-scaled seed keeps the collision pad, so the first tick has nothing to fi
   const nodes = loadRealNodes()
   const sim = createSimNodes(
     nodes.map(n => ({ ...n, ...scaleLayoutPoint({ x: n.x, y: n.y }) })),
-    id => drawWorldRadius(nodes.find(n => n.id === id)?.r ?? worldRadius(0.5)),
+    id => drawWorldRadius(nodes.find(n => n.id === id)?.r ?? worldRadius()),
   )
   let padViolations = 0
   for (let i = 0; i < sim.length; i++) {
@@ -889,7 +885,7 @@ test('contextChipLabel: joins present parts with a middle dot', () => {
 })
 
 const ASSET = { subjects: SUBJECTS, bands: ['1-2학년군', '3-4학년군', '5-6학년군'] }
-const BASE = { hiddenSubjectIds: [], hiddenBands: [], edgeThreshold: 0.5, alwaysLabels: false, physics: true }
+const BASE = { hiddenSubjectIds: [], hiddenBands: [], edgeThreshold: 0.5, alwaysLabels: false, physics: true, layout: 'grid' }
 
 test('resolveInitialFilters: given lists are the only ones on; absent means all on', () => {
   const r = resolveInitialFilters({ initialSubjects: ['사회'], initialBands: ['5-6학년군'] }, ASSET, BASE)
