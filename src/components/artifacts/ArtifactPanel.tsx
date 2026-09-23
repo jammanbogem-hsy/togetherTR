@@ -19,6 +19,7 @@ import { Timestamp } from 'firebase/firestore'
 import { cn } from '@/lib/utils'
 import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, Trash, type Icon } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
+import { AlignmentMatrixCard } from '@/components/curriculum/AlignmentMatrixCard'
 import { CumulativeReportModal } from '@/components/modals/CumulativeReportModal'
 // 스펙 §1-2 — 단계 컬러 단일 출처. 로컬 선언 제거하고 공통 모듈 참조.
 // 기존 corner 0.10 → 0.11 통일 (team-lead-2 결정, 시각 차이 미미).
@@ -1699,6 +1700,13 @@ function InteractiveArtifactPanel() {
         {/* §7-3.9 — Ds 진입 시 A-2-3 가드레일 요약 카드 상단 고정 (기본 펼침) */}
         {showDsGuardrail && a23Artifact && (
           <DsGuardrailCard a23Artifact={a23Artifact} />
+        )}
+
+        {/* Ds 단계: 성취기준 → 성취수준 → 학습활동 → 평가 정렬 점검 (성취기준 코드가 있을 때만) */}
+        {viewingStage === 'Ds' && (
+          <div className="mb-4">
+            <AlignmentMatrixCard artifacts={project?.artifacts} curriculumSheet={project?.curriculumSheet} />
+          </div>
         )}
 
         {!displayArtifact || !hasContent ? (

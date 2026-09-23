@@ -1,5 +1,6 @@
 'use client'
 import type { A21Row, A21Structured } from '@/lib/artifacts/schemas'
+import { AchievementLevelDisclosure } from '@/components/curriculum/AchievementLevelDisclosure'
 
 function displayCell(value?: string): string {
   const cleaned = (value ?? '')
@@ -140,7 +141,7 @@ export function A21Renderer({ data }: { data: A21Structured }) {
     return (
       <>
         {hasStandard && (
-          <td className={`${cell} text-[#1A73E8] min-w-[220px]`}>{chipEl}{displayCell(r.standard)}</td>
+          <td className={`${cell} text-[#1A73E8] min-w-[220px]`}>{chipEl}{displayCell(r.standard)}<AchievementLevelDisclosure standard={r.standard} /></td>
         )}
         <td className={`${cell} text-[#5F6368] min-w-[160px]`}>
           {!hasStandard && chipEl}{displayContentElement(r.knowledgeUnderstanding, r.standard)}
@@ -161,7 +162,7 @@ export function A21Renderer({ data }: { data: A21Structured }) {
       <>
         <td className="px-3 py-3 font-semibold text-[#1A73E8] whitespace-nowrap align-top">{displayCell(r.subject)}</td>
         <td className={`${cell} text-[#202124] min-w-[220px]`}>{displayCell(r.coreIdea)}</td>
-        {hasStandard && <td className={`${cell} text-[#1A73E8] min-w-[220px]`}>{displayCell(r.standard)}</td>}
+        {hasStandard && <td className={`${cell} text-[#1A73E8] min-w-[220px]`}>{displayCell(r.standard)}<AchievementLevelDisclosure standard={r.standard} /></td>}
         <td className={`${cell} text-[#5F6368] min-w-[160px]`}>{displayContentElement(r.knowledgeUnderstanding, r.standard)}</td>
         <td className={`${cell} text-[#5F6368] min-w-[160px]`}>{displayContentElement(r.processFunction, r.standard)}</td>
         {hasValueAttitude && <td className={`${cell} text-[#5F6368] min-w-[160px]`}>{displayContentElement(r.valueAttitude, r.standard)}</td>}

@@ -38,6 +38,7 @@ import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/t
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 import { canFillRowDescription, requestRowDescription } from '@/lib/curriculum/rowDescriptions'
 import { needsRowBridge, rowBridgeSource, canApplyRowBridge, rowBridgeSelection, filterContentByStandardCourse } from '@/lib/curriculum/rowBridge'
+import { AchievementLevelDisclosure } from '@/components/curriculum/AchievementLevelDisclosure'
 
 // ─── 교육과정 데이터 타입 ─────────────────────────────────
 
@@ -2340,6 +2341,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                             extraAction={field === 'standard'
                               ? <AssistChip label="분석맵에서 찾기" icon="hub" color="var(--md-primary)" onClick={() => openMapForRow(row)} title="교육과정 분석맵에서 이 줄의 성취기준을 찾아 반영합니다" />
                               : undefined} />
+                          {field === 'standard' && <AchievementLevelDisclosure standard={row.standard} />}
                           {oe && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: oe.color }}>{oe.displayName}</span>}
                           {!oe && isMy && <span className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full text-[12px] font-bold text-white" style={{ backgroundColor: myColor }}>{currentUserName}</span>}
                         </td>
