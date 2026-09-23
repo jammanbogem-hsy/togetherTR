@@ -160,7 +160,10 @@ export function useCurriculumMap(options: CurriculumMapOptions = {}): Curriculum
   // 상태 전환은 reloadAsset 에서 처리한다 (effect 본문에서 동기 setState 금지)
   useEffect(() => {
     const controller = new AbortController()
-    fetch(ASSET_URL, { signal: controller.signal, cache: 'force-cache' })
+    // 'no-cache' = 매번 ETag 로 재검증(바뀌지 않았으면 304 라 비용이 거의 없다).
+    // 예전 'force-cache' 는 만료된 사본도 그대로 써서, 배포 뒤 재방문자에게 새 화면 +
+    // 옛 에셋(제각각 반지름·성취수준 없음)이 섞여 보였다(2026-09-23 공개 사이트에서 발생).
+    fetch(ASSET_URL, { signal: controller.signal, cache: 'no-cache' })
       .then(async res => {
         if (!res.ok) throw new Error(`분석맵 데이터를 불러오지 못했습니다 (HTTP ${res.status})`)
         return (await res.json()) as CurriculumMapAsset
