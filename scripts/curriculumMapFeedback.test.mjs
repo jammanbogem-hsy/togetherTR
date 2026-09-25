@@ -163,3 +163,69 @@ test('buildStandardDocument: includes the A level only', () => {
   assert.doesNotMatch(doc, /B 원문|C 원문/)
   assert.doesNotMatch(buildStandardDocument({ subject: '과학', area: '', band: '', coreIdea: '', code: '', text: 't' }), /성취수준/)
 })
+
+// ─── 성좌 배치 · 로컬 그래프 ────────────────────────────────────────────────
+import {
+  LOCAL_MIN_RADIUS,
+  LOCAL_RADIUS_RANGE,
+  computeConstellationLayout,
+  computeLocalLayout,
+  localRadiusForStrength,
+} from '../src/components/curriculum-map/constellationLayout.ts'
+
+test('constellation on the real asset: every node placed, zero overlaps, one hub per subject', () => {
+  const asset = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public/curriculum_map.json'), 'utf8'))
+  const { positions, guides } = computeConstellationLayout(asset.nodes, asset.subjects, asset.bands)
+  assert.equal(positions.size, asset.nodes.length)
+  const pts = [...positions.values()]
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      assert.ok(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) >= 2 * NODE_RADIUS + 4, 'overlap')
+    }
+  }
+  assert.equal(guides.hubs.length, new Set(asset.nodes.map(n => n.subjectId)).size)
+  assert.equal(guides.branches.length, asset.nodes.length)
+})
+
+test('constellation: distance from the hub grows with grade band (objective meaning of distance)', () => {
+  const nodes = [
+    node('a', '[2국01-01]', 'kor', '1-2학년군', '듣기'),
+    node('b', '[4국01-01]', 'kor', '3-4학년군', '듣기'),
+    node('c', '[6국01-01]', 'kor', '5-6학년군', '듣기'),
+  ]
+  const { positions, guides } = computeConstellationLayout(nodes, SUBJECTS, BANDS)
+  const hub = guides.hubs[0]
+  const d = id => Math.hypot(positions.get(id).x - hub.x, positions.get(id).y - hub.y)
+  assert.ok(d('a') < d('b') && d('b') < d('c'))
+  assert.deepEqual(guides.rings.map(r => r.band), BANDS)
+})
+
+test('constellation: same area shares a direction, different areas point different ways', () => {
+  const nodes = [
+    node('a1', '[4국01-01]', 'kor', '3-4학년군', '듣기'),
+    node('b1', '[4국02-01]', 'kor', '3-4학년군', '읽기'),
+  ]
+  const { guides } = computeConstellationLayout(nodes, SUBJECTS, BANDS)
+  const angles = guides.areaHubs.map(h => h.angle)
+  assert.equal(new Set(angles).size, 2)
+})
+
+test('constellation: deterministic for any input order', () => {
+  const asset = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public/curriculum_map.json'), 'utf8'))
+  const a = computeConstellationLayout(asset.nodes, asset.subjects, asset.bands)
+  const b = computeConstellationLayout([...asset.nodes].reverse(), asset.subjects, asset.bands)
+  for (const n of asset.nodes) assert.deepEqual(a.positions.get(n.id), b.positions.get(n.id))
+})
+
+test('local graph: distance from the centre is the relation strength', () => {
+  assert.equal(localRadiusForStrength(1), LOCAL_MIN_RADIUS)
+  assert.equal(localRadiusForStrength(0), LOCAL_MIN_RADIUS + LOCAL_RADIUS_RANGE)
+  assert.equal(localRadiusForStrength(Number.NaN), LOCAL_MIN_RADIUS + LOCAL_RADIUS_RANGE)
+  const out = computeLocalLayout({ x: 10, y: 20 }, [
+    { id: 'strong', relationType: '개념-적용', strength: 0.9 },
+    { id: 'weak', relationType: '개념-적용', strength: 0.2 },
+  ])
+  const r = id => Math.hypot(out.get(id).x - 10, out.get(id).y - 20)
+  assert.ok(Math.abs(r('strong') - localRadiusForStrength(0.9)) < 1e-9)
+  assert.ok(r('strong') < r('weak'))
+})

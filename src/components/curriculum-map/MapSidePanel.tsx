@@ -382,7 +382,7 @@ export default function MapSidePanel({
               </>
             ) : (
               <p className="text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">
-                정렬 배치에서는 자리가 교과·학년군·영역을 뜻하므로 움직이거나 끌어 옮기지 않습니다.
+                성좌·표 배치에서는 자리가 교과·영역·학년군을 뜻하므로 움직이거나 끌어 옮기지 않습니다.
                 유사도 지도는 캔버스 왼쪽 위 ‘유사도’ 버튼으로 볼 수 있습니다.
               </p>
             )}

@@ -166,13 +166,17 @@ export interface MapFilters {
   /** 힘 기반 레이아웃(움직임) 사용 여부 — 유사도 지도에서만 의미가 있다 */
   physics: boolean
   /**
-   * 배치 방식. 'grid' = 교과×학년군×영역 정렬(위치가 문서 속성만으로 정해짐, 기본),
-   * 'similarity' = 임베딩 유사도 힘 배치(거리는 근사치).
+   * 배치 방식 — 셋 다 위치의 뜻이 정해져 있다.
+   * 'constellation'(기본) = 교과 허브 꽃: 방향=영역, 허브에서의 거리=학년군
+   * 'grid' = 교과×학년군×영역 표
+   * 'similarity' = 임베딩 유사도 힘 배치(거리는 근사치)
    */
   layout: MapLayoutMode
+  /** 캔버스 색 — 'dark' 는 옵시디언 그래프 보기 느낌(기본) */
+  canvasTheme: 'dark' | 'light'
 }
 
-export type MapLayoutMode = 'grid' | 'similarity'
+export type MapLayoutMode = 'constellation' | 'grid' | 'similarity'
 
 export type AsyncStatus = 'idle' | 'loading' | 'ready' | 'error'
 

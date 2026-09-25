@@ -13,6 +13,7 @@ import MapTopBar from './MapTopBar'
 import { contextChipLabel, pickFromItem, pickFromNode, resolveInitialFilters } from './basketMath'
 import { nextSelection } from './mapMath'
 import { computeGridLayout } from './gridLayout'
+import { computeConstellationLayout } from './constellationLayout'
 import { useCurriculumMap } from './useCurriculumMap'
 import { useMapBasket } from './useMapBasket'
 import type { MapNode, MapPick } from './types'
@@ -149,13 +150,20 @@ export function CurriculumMapView({
     () => (asset ? computeGridLayout(asset.nodes, asset.subjects, asset.bands) : null),
     [asset],
   )
+  const constellation = useMemo(
+    () => (asset ? computeConstellationLayout(asset.nodes, asset.subjects, asset.bands) : null),
+    [asset],
+  )
   const placeNodes = useCallback((list: MapNode[]): MapNode[] => {
-    if (layoutMode !== 'grid' || !grid) return list
+    const positions = layoutMode === 'grid' ? grid?.positions
+      : layoutMode === 'constellation' ? constellation?.positions
+        : undefined
+    if (!positions) return list
     return list.map(n => {
-      const p = grid.positions.get(n.id)
+      const p = positions.get(n.id)
       return p ? { ...n, x: p.x, y: p.y } : n
     })
-  }, [grid, layoutMode])
+  }, [constellation, grid, layoutMode])
   const canvasNodes = useMemo(() => placeNodes(map.visibleNodes), [map.visibleNodes, placeNodes])
   const canvasGhostNodes = useMemo(() => placeNodes(ghostNodes), [ghostNodes, placeNodes])
 
@@ -323,6 +331,9 @@ export function CurriculumMapView({
               layoutMode={layoutMode}
               onLayoutChange={map.setLayout}
               guides={layoutMode === 'grid' ? grid?.guides ?? null : null}
+              constellation={layoutMode === 'constellation' ? constellation?.guides ?? null : null}
+              canvasTheme={map.filters.canvasTheme}
+              onCanvasThemeChange={map.setCanvasTheme}
               relatedMeta={relatedMeta}
               relatedPending={map.related.status === 'loading'}
               externalHoverId={hoverCardId}

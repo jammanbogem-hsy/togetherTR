@@ -35,6 +35,9 @@ import {
 } from './edgeMath'
 import type { SimNode } from './forceMath'
 import { GRID_AREA_LABEL_HEIGHT, type GridGuides } from './gridLayout'
+import type { ConstellationGuides } from './constellationLayout'
+import { drawConstellationHubs, drawConstellationStructure, drawLocalRings } from './drawConstellation'
+import { CANVAS_PALETTES, readableOn, type CanvasTheme } from './mapTheme'
 import {
   ICON_FONT_FAMILY,
   ICON_MIN_SCREEN_RADIUS,
@@ -92,6 +95,19 @@ export interface DrawMapParams {
    * 격자를 가로지르는 수천 개의 선은 잡음일 뿐이다. 호버·관계선은 그대로 그린다.
    */
   guides?: GridGuides | null
+  /** 성좌 배치의 구조 요소(레이아웃 공간). 있으면 허브·가지·고리를 그리고 배경 유사도 선은 생략 */
+  constellation?: ConstellationGuides | null
+  /**
+   * 선택 시 로컬 그래프. targets 의 노드는 progress(0..1)만큼 제자리 → 로컬 자리로 옮겨 그린다.
+   * 히트 테스트도 같은 좌표를 쓰므로 옮겨진 자리를 누르면 된다.
+   */
+  local?: {
+    center: Point
+    targets: Map<string, Point>
+    progress: number
+    rings: ReadonlyArray<{ radius: number; label: string }>
+  } | null
+  theme?: CanvasTheme
 }
 
 const GUIDE_CELL_FILL = '#FFFFFF'
@@ -132,6 +148,12 @@ function traceLink(ctx: CanvasRenderingContext2D, a: Point, b: Point, curved: bo
     ny = -ny
   }
   ctx.quadraticCurveTo((a.x + b.x) / 2 + nx * bend, (a.y + b.y) / 2 + ny * bend, b.x, b.y)
+}
+
+/** 0..1 부드러운 가감속 */
+function easeInOut(x: number): number {
+  const v = Math.min(1, Math.max(0, x))
+  return v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2
 }
 
 /** 머리글 뒤 반투명 알약 — 원 위에 겹쳐도 글자가 읽히게 한다. (x, top) = 글자 왼쪽 위 */
@@ -237,9 +259,13 @@ export interface DrawMapResult {
 export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMapResult {
   const { width, height, view: t, nodes, edges, sim, ghostIds, relatedMeta } = p
 
-  ctx.fillStyle = CANVAS_BG
+  const theme: CanvasTheme = p.theme ?? 'light'
+  const palette = CANVAS_PALETTES[theme]
+  ctx.fillStyle = theme === 'light' ? CANVAS_BG : palette.bg
   ctx.fillRect(0, 0, width, height)
   if (p.guides) drawGridGuides(ctx, p.guides, t, width, height, p.subjectColors)
+  const local = p.local && p.local.progress > 0 ? p.local : null
+  const localEase = local ? easeInOut(local.progress) : 0
 
   // 0) 좌표·반지름 선계산 (히트 테스트와 같은 값)
   const screenById = new Map<string, Point>()
@@ -248,7 +274,11 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
   let iconCandidates = 0
   for (const n of nodes) {
     const s = sim.get(n.id)
-    const world = { x: s?.x ?? n.x, y: s?.y ?? n.y }
+    let world = { x: s?.x ?? n.x, y: s?.y ?? n.y }
+    const target = local?.targets.get(n.id)
+    if (target) {
+      world = { x: world.x + (target.x - world.x) * localEase, y: world.y + (target.y - world.y) * localEase }
+    }
     const screen = worldToScreen(world, t)
     screenById.set(n.id, screen)
     const r = screenRadius(s?.r ?? p.radiusOf(n), t.scale)
@@ -262,6 +292,14 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
   // 축소 상태에서 수백 개의 리거처를 그리면 프레임이 무너지므로 예산을 둔다
   const drawIcons = p.iconFontReady && iconCandidates <= ICON_NODE_BUDGET
 
+  const constellationCtx = p.constellation
+    ? {
+      guides: p.constellation, t, width, height, theme, palette,
+      subjectColors: p.subjectColors, screenById, fade: localEase,
+    }
+    : null
+  if (constellationCtx) drawConstellationStructure(ctx, constellationCtx)
+
   /** 선택 모드에서 밝게 둘 집합 — 응답 전엔 잠정(에셋 이웃), 후엔 Jev 관련 */
   const relatedIds = new Set(relatedMeta.keys())
   const inSelectionSet = (id: string): boolean =>
@@ -273,6 +311,8 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     })
 
   const nodeAlpha = (id: string): number => {
+    if (local && !(id === p.selectedId || local.targets.has(id))) return DIMMED_ALPHA * (1 - 0.6 * localEase)
+    if (local && id !== p.focusId && (id === p.selectedId || local.targets.has(id)) && !p.focusId) return 1
     if (ghostIds.has(id)) return GHOST_ALPHA
     if (p.focusId) return id === p.focusId || p.focusNeighbors.has(id) ? 1 : DIMMED_ALPHA
     if (p.searchActive) return p.scoreById.has(id) || id === p.selectedId ? 1 : DIMMED_ALPHA
@@ -302,7 +342,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
       focusEdges.push(e)
       continue
     }
-    if (p.guides) continue
+    if (p.guides || p.constellation) continue
     const alpha = Math.round(edgeAlpha(e.sim) * dim * 40) / 40
     const w = Math.round(edgeWidth(e.sim) * 2) / 2
     const key = `${alpha}|${w}`
@@ -314,7 +354,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     path.moveTo(a.x, a.y)
     path.lineTo(b.x, b.y)
   }
-  ctx.strokeStyle = BASE_EDGE_COLOR
+  ctx.strokeStyle = theme === 'light' ? BASE_EDGE_COLOR : palette.edge
   for (const [key, path] of buckets) {
     const [alpha, w] = key.split('|')
     ctx.globalAlpha = Number(alpha)
@@ -326,7 +366,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
 
   // 2) 호버 이웃 = 유사도 이웃. 호버 중에만 회색으로 진하게 한다.
   //    (선택 상태에서는 어떤 에셋 엣지도 진해지지 않는다)
-  ctx.strokeStyle = '#747775'
+  ctx.strokeStyle = palette.focusEdge
   ctx.globalAlpha = 0.8
   ctx.lineWidth = FOCUS_EDGE_WIDTH
   for (const e of focusEdges) {
@@ -339,6 +379,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
   }
 
   // 3) Jev 관계선 — 선택 노드 ↔ /related 결과만. 색=유형, 굵기=강도.
+  const drawRelationLines = (): void => {
   const from = p.selectedId ? screenById.get(p.selectedId) : null
   if (from) {
     for (const [id, meta] of relatedMeta) {
@@ -352,15 +393,16 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
       ctx.stroke()
     }
   }
+  }
 
   // 4) 노드 — 강조는 링으로만 (반지름을 키우면 겹침이 생긴다)
-  for (const n of nodes) {
+  const drawNode = (n: MapNode): void => {
     const s = screenById.get(n.id)
-    if (!s) continue
+    if (!s) return
     if (
       s.x < -CULL_MARGIN_PX || s.y < -CULL_MARGIN_PX ||
       s.x > width + CULL_MARGIN_PX || s.y > height + CULL_MARGIN_PX
-    ) continue
+    ) return
     const r = radiusById.get(n.id) ?? 4
     const color = p.subjectColors[n.subjectId] ?? FALLBACK_COLOR
     const isGhost = ghostIds.has(n.id)
@@ -375,9 +417,17 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
       ctx.setLineDash([])
     } else {
       ctx.fillStyle = color
+      const glowing = palette.glow && (
+        n.id === p.selectedId || relatedMeta.has(n.id) || (p.searchActive && p.scoreById.has(n.id))
+      )
+      if (glowing) {
+        ctx.shadowColor = color
+        ctx.shadowBlur = 16
+      }
       ctx.beginPath()
       ctx.arc(s.x, s.y, r, 0, Math.PI * 2)
       ctx.fill()
+      if (glowing) ctx.shadowBlur = 0
     }
     // 교과 아이콘 — 노드와 같은 알파(고스트는 60%)로 흰색 리거처를 얹는다
     if (drawIcons && r >= ICON_MIN_SCREEN_RADIUS) {
@@ -392,16 +442,45 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     }
     const isSelected = n.id === p.selectedId
     const isResult = p.searchActive && p.scoreById.has(n.id)
-    if (isSelected || n.id === p.focusId || isResult) {
+    if ((isSelected || n.id === p.focusId || isResult) && (!local || inLens(n.id) || n.id === p.focusId)) {
       ctx.globalAlpha = 1
       ctx.setLineDash([])
       ctx.lineWidth = isSelected ? 3 : 2
-      ctx.strokeStyle = isSelected ? '#1F1F1F' : isResult ? color : '#444746'
+      ctx.strokeStyle = isSelected ? palette.selectRing : isResult ? color : palette.focusEdge
       ctx.beginPath()
       ctx.arc(s.x, s.y, r + (isSelected ? 5 : 3.5), 0, Math.PI * 2)
       ctx.stroke()
     }
   }
+  // 로컬 그래프가 켜지면 둘레에 모인 노드와 중심은 '렌즈' 위에 따로 그린다
+  const inLens = (id: string): boolean => Boolean(local && (id === p.selectedId || local.targets.has(id)))
+  for (const n of nodes) if (!inLens(n.id)) drawNode(n)
+
+  if (constellationCtx) drawConstellationHubs(ctx, constellationCtx)
+
+  if (local) {
+    // 렌즈: 로컬 그래프 뒤를 바탕색 원판으로 덮어 배경 지도와 섞이지 않게 한다
+    const c = worldToScreen(local.center, t)
+    const outer = (local.rings.length > 0 ? Math.max(...local.rings.map(r => r.radius)) : 0) * t.scale
+    const lensR = outer + 120 * t.scale
+    const grad = ctx.createRadialGradient(c.x, c.y, outer * 0.6, c.x, c.y, lensR)
+    grad.addColorStop(0, palette.bg)
+    grad.addColorStop(0.8, palette.bg)
+    grad.addColorStop(1, palette.bgTransparent)
+    ctx.globalAlpha = 0.94 * localEase
+    ctx.fillStyle = theme === 'light' ? CANVAS_BG : grad
+    ctx.beginPath()
+    ctx.arc(c.x, c.y, lensR, 0, Math.PI * 2)
+    ctx.fill()
+    drawLocalRings(ctx, c, local.rings.map(r => ({ radiusPx: r.radius * t.scale, label: r.label })), palette, localEase)
+    drawRelationLines()
+    for (const n of nodes) if (inLens(n.id)) drawNode(n)
+  } else {
+    drawRelationLines()
+    for (const n of nodes) if (inLens(n.id)) drawNode(n)
+  }
+
+
 
   // 5) 라벨 — 탐욕적 가림 제거
   ctx.textAlign = 'center'
@@ -424,7 +503,9 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     if (!isGhost) {
       if (!shouldDrawLabel(labelCtx)) continue
       if (p.focusId && !isHovered && !isNeighbor && !isSelected) continue
-      if (p.searchActive && !isResult && !isSelected && t.scale < LABEL_ZOOM_THRESHOLD) continue
+      if (p.searchActive && !isResult && !isSelected && !(local && isRelated) && t.scale < LABEL_ZOOM_THRESHOLD) continue
+      // 로컬 그래프 밖의 라벨은 렌즈와 겹치므로 그리지 않는다
+      if (local && !isSelected && !local.targets.has(n.id)) continue
     }
     // 크기는 CSS 픽셀 고정 — 배율이나 dpr 을 곱하지 않는다
     const font = labelFontSize({ focused: isSelected || isResult || isHovered || isRelated })
@@ -436,7 +517,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     plan.set(n.id, { label, font, node: n })
     candidates.push({
       id: n.id,
-      forced: isGhost || isForcedLabel(labelCtx),
+      forced: isGhost || isForcedLabel(labelCtx) || Boolean(local?.targets.has(n.id)),
       priority: p.degreeNorms.get(n.id) ?? 0,
       box: labelBox(s.x, y, w, font),
     })
@@ -459,9 +540,9 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
     ctx.globalAlpha = ghostIds.has(c.id) ? GHOST_ALPHA : 1
     ctx.font = labelFont(entry.font)
     const y = labelAnchorY(s.y, radiusById.get(c.id) ?? 4)
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+    ctx.strokeStyle = palette.labelHalo
     ctx.strokeText(entry.label, s.x, y)
-    ctx.fillStyle = p.subjectColors[entry.node.subjectId] ?? '#444746'
+    ctx.fillStyle = readableOn(theme, p.subjectColors[entry.node.subjectId] ?? palette.labelInk)
     ctx.fillText(entry.label, s.x, y)
   }
 

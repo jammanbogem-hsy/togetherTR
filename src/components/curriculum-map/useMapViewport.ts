@@ -65,7 +65,7 @@ export interface MapViewportOptions {
    * 윗부분부터(정렬 배치 — 세로로 긴 표를 통째로 맞추면 원이 점이 된다).
    * 'width-top' 의 여백은 교과·학년군 머리글 자리다.
    */
-  initialFit?: 'all' | 'width-top'
+  initialFit?: 'all' | 'width-top' | 'exact'
 }
 
 /** 'width-top' 맞춤에서 왼쪽(교과 머리글)·위쪽(도구 막대 + 학년군 머리글) 여백 px */
@@ -76,6 +76,7 @@ const GRID_FIT_RIGHT_PX = 24
 const GRID_FIT_MAX_SCALE = 0.55
 
 export interface MapViewport {
+  flyTo: (target: Point, scale: number) => void
   wrapRef: React.RefObject<HTMLDivElement | null>
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   size: { width: number; height: number }
@@ -187,6 +188,12 @@ export function useMapViewport({
     animRef.current = requestAnimationFrame(step)
   }, [clearHover])
 
+  /** 월드 좌표 한 점을 가운데로, 주어진 배율로 부드럽게 이동 */
+  const flyTo = useCallback((target: Point, scale: number) => {
+    if (size.width === 0 || size.height === 0) return
+    animateTo(centerOn(target, size, scale))
+  }, [animateTo, size])
+
   const fitAll = useCallback(() => {
     if (size.width === 0 || size.height === 0) return
     animateTo(fitToView(bounds, size, FIT_PADDING))
@@ -235,6 +242,11 @@ export function useMapViewport({
       return
     }
     const fit = fitToView(bounds, size, FIT_PADDING)
+    // 'exact' = 전체가 딱 들어오게(성좌 — 꽃 전체 모양이 곧 지도의 첫인상이다)
+    if (initialFit === 'exact') {
+      setView(fit)
+      return
+    }
     // 첫 화면은 조금 당겨서 보여 준다 ('전체 보기' 버튼은 정확한 fit 유지)
     const target = initialViewScale(fit.scale, initialZoomBoost, medianWorldRadius)
     setView(zoomAtPoint(fit, { x: size.width / 2, y: size.height / 2 }, target / fit.scale))
@@ -376,6 +388,7 @@ export function useMapViewport({
   useEffect(() => () => cancelAnimationFrame(animRef.current), [])
 
   return {
+    flyTo,
     wrapRef,
     canvasRef,
     size,

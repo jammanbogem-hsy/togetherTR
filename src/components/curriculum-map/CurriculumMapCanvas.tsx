@@ -21,6 +21,16 @@ import { drawMap, type RelatedMeta } from './drawMap'
 import { useForceLayout } from './useForceLayout'
 import { useMapViewport } from './useMapViewport'
 import { scaleGridGuides, type GridGuides } from './gridLayout'
+import {
+  LOCAL_MIN_RADIUS,
+  LOCAL_RADIUS_RANGE,
+  LOCAL_RINGS,
+  computeLocalLayout,
+  localRadiusForStrength,
+  scaleConstellationGuides,
+  type ConstellationGuides,
+} from './constellationLayout'
+import { CANVAS_PALETTES, type CanvasTheme } from './mapTheme'
 import MapTooltip from './MapTooltip'
 import { ICON_FONT_SPEC } from './subjectIcons'
 import type { MapEdge, MapLayoutMode, MapNode } from './types'
@@ -49,14 +59,28 @@ export interface CurriculumMapCanvasProps {
   /** 현재 배치 방식 — 'grid' 면 guides 를 그리고 끌어 옮기기를 막는다 */
   layoutMode: MapLayoutMode
   onLayoutChange: (mode: MapLayoutMode) => void
-  /** 정렬 배치 안내선(에셋 좌표). 유사도 지도에서는 null */
+  /** 표 배치 안내선(에셋 좌표). 다른 배치에서는 null */
   guides: GridGuides | null
+  /** 성좌 배치 구조 요소(에셋 좌표). 다른 배치에서는 null */
+  constellation: ConstellationGuides | null
+  canvasTheme: CanvasTheme
+  onCanvasThemeChange: (theme: CanvasTheme) => void
 }
 
 const LAYOUT_OPTIONS: Array<{ mode: MapLayoutMode; label: string; title: string }> = [
-  { mode: 'grid', label: '정렬', title: '교과 × 학년군 × 영역 순서로 정렬 — 위치는 문서 속성만으로 정해집니다' },
+  { mode: 'constellation', label: '성좌', title: '교과 허브 둘레에 영역 방향으로 — 허브에서 멀수록 높은 학년군' },
+  { mode: 'grid', label: '표', title: '교과 × 학년군 × 영역 순서로 정렬한 표' },
   { mode: 'similarity', label: '유사도', title: '문장 의미가 비슷할수록 가깝게 — 거리는 근사치입니다' },
 ]
+
+const LEGENDS: Record<MapLayoutMode, string> = {
+  constellation: '성좌: 큰 점 = 교과, 방향 = 영역, 교과에서 멀수록 높은 학년군(점선 고리). 성취기준을 누르면 관련 성취기준이 둘레로 모이고, 가까울수록 관계가 강합니다.',
+  grid: '표: 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.',
+  similarity: '유사도 지도: 문장 의미가 비슷할수록 가깝게 놓았지만 거리는 근사치입니다. 정확한 관계는 성취기준을 눌러 확인하세요.',
+}
+
+/** 로컬 그래프로 모이고 흩어지는 시간(ms) */
+const LOCAL_TRANSITION_MS = 480
 
 function IconButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }): React.ReactElement {
   return (
@@ -93,8 +117,13 @@ export default function CurriculumMapCanvas({
   layoutMode,
   onLayoutChange,
   guides,
+  constellation,
+  canvasTheme,
+  onCanvasThemeChange,
 }: CurriculumMapCanvasProps): React.ReactElement {
   const isGrid = layoutMode === 'grid'
+  const isConstellation = layoutMode === 'constellation'
+  const palette = CANVAS_PALETTES[canvasTheme]
   const drawRef = useRef<() => void>(() => {})
   const onTick = useCallback(() => drawRef.current(), [])
   // 아이콘 폰트가 준비될 때까지는 원만 그린다 (준비되면 상태 변경으로 재렌더)
@@ -131,6 +160,10 @@ export default function CurriculumMapCanvas({
     () => (guides ? scaleGridGuides(guides, RENDER_RADIUS_SCALE) : null),
     [guides],
   )
+  const layoutConstellation = useMemo(
+    () => (constellation ? scaleConstellationGuides(constellation, RENDER_RADIUS_SCALE) : null),
+    [constellation],
+  )
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, MapNode>()
@@ -163,14 +196,65 @@ export default function CurriculumMapCanvas({
     nodes: layoutNodes,
     onSelect,
     focusRequest,
-    // 정렬 배치에서는 자리가 곧 의미라 끌어 옮기지 않는다
-    onNodeDrag: isGrid ? undefined : pinNode,
-    onNodeDragEnd: isGrid ? undefined : unpinNode,
+    // 표·성좌 배치에서는 자리가 곧 의미라 끌어 옮기지 않는다
+    onNodeDrag: layoutMode === 'similarity' ? pinNode : undefined,
+    onNodeDragEnd: layoutMode === 'similarity' ? unpinNode : undefined,
     positionOf,
     medianWorldRadius,
-    initialFit: isGrid ? 'width-top' : 'all',
+    initialFit: isGrid ? 'width-top' : isConstellation ? 'exact' : 'all',
   })
-  const { canvasRef, wrapRef, size, view, hoverId, setHitNodes } = vp
+  const { canvasRef, wrapRef, size, view, hoverId, setHitNodes, flyTo } = vp
+
+  // ── 로컬 그래프(성좌 배치에서 선택 + 관련 판정 완료) ───────────────────
+  const localActive = isConstellation && Boolean(selectedId) && !relatedPending && relatedMeta.size > 0
+  const localLayout = useMemo(() => {
+    if (!localActive || !selectedId) return null
+    const c = nodeMap.get(selectedId)
+    if (!c) return null
+    const center = { x: c.x, y: c.y }
+    const related = [...relatedMeta.entries()]
+      .filter(([id]) => id !== selectedId)
+      .map(([id, m]) => ({ id, relationType: m.relationType, strength: m.strength }))
+    return { center, targets: computeLocalLayout(center, related, RENDER_RADIUS_SCALE) }
+  }, [localActive, nodeMap, relatedMeta, selectedId])
+  // 흩어질 때도 마지막 자리에서 제자리로 돌아가야 하므로 마지막 배치를 기억한다
+  const lastLocalRef = useRef<typeof localLayout>(null)
+  if (localLayout) lastLocalRef.current = localLayout
+  const localProgressRef = useRef(0)
+  const localRings = useMemo(
+    () => LOCAL_RINGS.map(r => ({
+      radius: localRadiusForStrength(r.strength) * RENDER_RADIUS_SCALE,
+      label: `안쪽 ${r.label} (${r.strength.toFixed(2)}↑)`,
+    })),
+    [],
+  )
+
+  useEffect(() => {
+    const target = localLayout ? 1 : 0
+    const from = localLayout ? 0 : localProgressRef.current
+    if (from === target) return
+    let raf = 0
+    const started = performance.now()
+    const step = (): void => {
+      const p = Math.min(1, (performance.now() - started) / LOCAL_TRANSITION_MS)
+      localProgressRef.current = from + (target - from) * p
+      drawRef.current()
+      if (p < 1) raf = requestAnimationFrame(step)
+      else if (target === 0) lastLocalRef.current = null
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [localLayout])
+
+  // 로컬 그래프가 열리면 카메라를 그 둘레에 맞춘다
+  useEffect(() => {
+    if (!localLayout || size.width === 0) return
+    const outer = (LOCAL_MIN_RADIUS + LOCAL_RADIUS_RANGE + 40) * RENDER_RADIUS_SCALE
+    const scale = (Math.min(size.width, size.height) * 0.46) / outer
+    flyTo(localLayout.center, scale)
+  // 선택·판정이 바뀔 때만 이동한다(창 크기 변화로 다시 날지 않게)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localLayout])
 
   useEffect(() => {
     reheat(REHEAT_CHANGE)
@@ -231,12 +315,18 @@ export default function CurriculumMapCanvas({
       alwaysLabels,
       iconFontReady,
       guides: layoutGuides,
+      constellation: layoutConstellation,
+      local: lastLocalRef.current
+        ? { ...lastLocalRef.current, progress: localProgressRef.current, rings: localRings }
+        : null,
+      theme: canvasTheme,
     })
     setHitNodes(hits)
   }, [
     canvasRef, setHitNodes, nodeMapRef, layoutNodes, ghostIds, degreeNorms, radiusOf, edges,
     view, size, focusId, focusNeighbors, selectedId, selectedNeighbors, relatedPending,
     scoreById, searchActive, alwaysLabels, subjectColors, relatedMeta, iconFontReady, layoutGuides,
+    layoutConstellation, localRings, canvasTheme,
   ])
 
   // 물리 루프와 상태 변경이 같은 draw 를 부른다
@@ -248,7 +338,7 @@ export default function CurriculumMapCanvas({
   const hoverNode = hoverId ? nodeMap.get(hoverId) ?? null : null
 
   return (
-    <div ref={wrapRef} className="relative h-full w-full overflow-hidden bg-[var(--md-surface-container-low)]">
+    <div ref={wrapRef} className="relative h-full w-full overflow-hidden" style={{ backgroundColor: palette.bg }}>
       <canvas
         ref={canvasRef}
         className="block touch-none"
@@ -293,6 +383,11 @@ export default function CurriculumMapCanvas({
             </button>
           ))}
         </div>
+        <IconButton
+          icon={canvasTheme === 'dark' ? 'light_mode' : 'dark_mode'}
+          label={canvasTheme === 'dark' ? '밝은 캔버스' : '어두운 캔버스'}
+          onClick={() => onCanvasThemeChange(canvasTheme === 'dark' ? 'light' : 'dark')}
+        />
         {selectedId && (
           <button
             type="button"
@@ -308,11 +403,13 @@ export default function CurriculumMapCanvas({
       </div>
 
       <p
-        className="pointer-events-none absolute bottom-3 left-4 max-w-[calc(100%-2rem)] rounded-lg bg-[var(--md-surface)]/90 px-3 py-1.5 text-[12px] leading-[1.5] text-[var(--md-on-surface-variant)]"
+        className="pointer-events-none absolute bottom-3 left-4 max-w-[min(720px,calc(100%-2rem))] rounded-lg px-3 py-1.5 text-[12px] leading-[1.5]"
+        style={{
+          backgroundColor: canvasTheme === 'dark' ? 'rgba(33,36,43,0.85)' : 'rgba(255,255,255,0.9)',
+          color: palette.guideInk,
+        }}
       >
-        {isGrid
-          ? '정렬 배치: 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 가깝다고 관련 있는 것은 아닙니다 — 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.'
-          : '유사도 지도: 문장 의미가 비슷할수록 가깝게 놓았지만 거리는 근사치입니다. 정확한 관계는 성취기준을 눌러 확인하세요.'}
+        {LEGENDS[layoutMode]}
       </p>
 
       {hoverNode && vp.hoverScreen && (
