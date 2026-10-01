@@ -777,7 +777,7 @@ test('buildRelationReason: shared keywords alone', () => {
 
 test('buildRelationReason: similarity-only fallback reports the Jev verdict', () => {
   const reason = buildRelationReason({ ...BASE_REASON, jevScore: 0.75 })
-  assert.equal(reason, '의미 유사도 0.61 (Jev 판정 핵심 0.75)')
+  assert.equal(reason, '의미 유사도 0.61 (AI 판정 핵심 0.75)')
 })
 
 test('buildRelationReason: never empty, even with no evidence and no Jev score', () => {
@@ -789,7 +789,7 @@ test('buildRelationReason: never empty, even with no evidence and no Jev score',
 test('buildSearchReason: matched query terms lead, scores follow', () => {
   const reason = buildSearchReason({ matchedTerms: ['물', '환경'], sim: 0.39, jevScore: 1 })
   assert.ok(reason.startsWith('질의어 일치: 물, 환경'), reason)
-  assert.ok(reason.includes('Jev 판정 핵심 1.00'), reason)
+  assert.ok(reason.includes('AI 판정 핵심 1.00'), reason)
   assert.ok(reason.includes('의미 유사도 0.39'), reason)
 })
 
@@ -965,7 +965,7 @@ test('similarityFloor: never negative and clamps a bogus top score', () => {
 test('buildSearchReason: names the expansion term that pulled a standard in', () => {
   const reason = buildSearchReason({ matchedTerms: [], sim: 0.58, jevScore: 0.9, matchedExpansion: '응결' })
   assert.ok(reason.includes("확장어 '응결' 로 연결"), reason)
-  assert.ok(reason.includes('Jev 판정 핵심 0.90'), reason)
+  assert.ok(reason.includes('AI 판정 핵심 0.90'), reason)
 })
 
 // ─── search tokens ────────────────────────────────────────────────────────

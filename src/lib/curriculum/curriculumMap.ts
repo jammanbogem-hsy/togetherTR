@@ -773,7 +773,7 @@ export function buildRelationReason(input: RelationReasonInput): string {
     const sim = `의미 유사도 ${input.sim.toFixed(2)}`
     parts.push(
       typeof input.jevScore === 'number'
-        ? `${sim} (Jev 판정 ${levelForScore(input.jevScore)} ${input.jevScore.toFixed(2)})`
+        ? `${sim} (AI 판정 ${levelForScore(input.jevScore)} ${input.jevScore.toFixed(2)})`
         : sim,
     )
   }
@@ -818,7 +818,7 @@ export function buildSearchReason(input: SearchReasonInput): string {
   if (input.matchedExpansion) parts.push(`확장어 '${input.matchedExpansion}' 로 연결`)
   parts.push(
     typeof input.jevScore === 'number'
-      ? `Jev 판정 ${levelForScore(input.jevScore)} ${input.jevScore.toFixed(2)} · 의미 유사도 ${input.sim.toFixed(2)}`
+      ? `AI 판정 ${levelForScore(input.jevScore)} ${input.jevScore.toFixed(2)} · 의미 유사도 ${input.sim.toFixed(2)}`
       : `의미 유사도 ${input.sim.toFixed(2)}`,
   )
   return parts.join(' · ')

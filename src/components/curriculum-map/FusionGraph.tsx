@@ -1,33 +1,45 @@
 'use client'
 
-// 교육과정 분석맵 — 융합 그래프(옵시디언 그래프 보기 느낌의 SVG 겹층).
-// 핵심 성취기준 하나를 가운데 두고, 같은 학년군 다른 교과의 융합 짝만 둘레에 모은다.
-// 방향 = 교과(부채꼴), 거리 = 엮기 자연스러움(가까울수록 강함), 선 색 = 융합 방식.
+// 교육과정 분석맵 — 융합 묶음 그래프(옵시디언 그래프 보기 느낌, 밝은 바탕).
+// 핵심 성취기준 하나를 가운데 고정하고, 같은 학년군 다른 교과의 융합 짝을 힘 배치로 둘레에 모은다.
+//  - 핵심↔짝 선: 색 = 융합 방식, 굵기·길이 = 엮기 자연스러움(강할수록 굵고 가깝다)
+//  - 짝↔짝 선: 지도 에셋의 교과 간 링크·유사도 이웃(옅은 회색) — 짝끼리도 그물처럼 이어진다
+//  - 노드는 끌어 옮길 수 있고(놓으면 다시 자리를 찾는다), 올리면 이웃만 밝게 남는다.
 // ✕ 를 누르면 겹층이 사라지고 아래에 그대로 있던 원래 지도로 돌아간다.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RELATION_COLORS } from '@/components/knowledge-graph/constants'
 import { RELATION_TYPE_HINTS } from './MapFusionBits'
-import { computeFusionLayout } from './fusionLayout'
-import { readableOn } from './mapTheme'
+import {
+  FUSION_ALPHA_MIN,
+  FUSION_ALPHA_START,
+  computeFusionLayout,
+  fusionAlphaStep,
+  fusionForceTick,
+  type FusionForceLink,
+  type FusionForceNode,
+} from './fusionLayout'
 import type { FusionState } from './useCurriculumMap'
 import type { MapEdge, MapNode } from './types'
 
 /** 이 강도 미만은 '약한 연결' — 기본으로 숨긴다 */
 export const FUSION_STRONG_MIN = 0.5
 const FALLBACK = '#94A3B8'
-const BG = '#15171C'
-const INK = '#E6E8EC'
-const MUTED = '#9AA0AC'
-const GOLD = '#F5B301'
-const NODE_R = 15
-const HUB_R = 30
+const BG = '#FBFBFC'
+const INK = '#1F2328'
+const MUTED = '#5F6672'
+const EDGE = '#C3C8D0'
+const GOLD = '#E3A400'
+const NODE_R = 13
+const HUB_R = 26
+/** 끌기를 놓았을 때 다시 데우는 정도 */
+const REHEAT = 0.5
 
 export interface FusionGraphProps {
   fusion: FusionState
   hubNode: MapNode | null
   nodeById: Map<string, MapNode>
-  /** 짝끼리의 옅은 연결선(에셋의 교과 간 링크·유사도 이웃) */
+  /** 짝끼리의 연결선(에셋의 교과 간 링크·유사도 이웃) */
   edges: readonly MapEdge[]
   subjectColors: Record<string, string>
   subjectOrder: readonly string[]
@@ -50,6 +62,8 @@ function starPoints(cx: number, cy: number, r: number): string {
   return pts.join(' ')
 }
 
+const HUB_ID = '__hub__'
+
 export default function FusionGraph({
   fusion,
   hubNode,
@@ -66,10 +80,13 @@ export default function FusionGraph({
   onRetry,
 }: FusionGraphProps): React.ReactElement {
   const wrapRef = useRef<HTMLDivElement | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
   const [size, setSize] = useState({ w: 800, h: 600 })
-  // 펼침 연출이 끝난 항목 묶음 — 묶음이 바뀌면(새 판정·약한 연결 토글) 다시 가운데에서 펼친다
-  const [settledKey, setSettledKey] = useState<string | null>(null)
   const [hoverId, setHoverId] = useState<string | null>(null)
+  // 시뮬레이션 좌표는 ref 에 두고, 그릴 때만 frame 상태로 다시 렌더한다
+  const simRef = useRef<{ nodes: FusionForceNode[]; links: FusionForceLink[]; alpha: number } | null>(null)
+  const [frame, setFrame] = useState(0)
+  const dragRef = useRef<{ index: number; pointerId: number; moved: boolean } | null>(null)
 
   useEffect(() => {
     const el = wrapRef.current
@@ -92,68 +109,153 @@ export default function FusionGraph({
     () => fusion.items.filter(i => effectiveShowWeak || i.strength >= FUSION_STRONG_MIN),
     [effectiveShowWeak, fusion.items],
   )
+  const floor = effectiveShowWeak ? 0 : FUSION_STRONG_MIN
 
-  const rMax = Math.max(140, Math.min(size.w, size.h) / 2 - 78)
-  const rMin = Math.max(HUB_R + NODE_R + 60, rMax * 0.42)
-  const layout = useMemo(
-    () => computeFusionLayout(
-      shown.map(i => ({ id: i.id, subjectId: i.subjectId, strength: i.strength })),
-      subjectOrder,
-      rMin,
-      rMax,
-      effectiveShowWeak ? 0 : FUSION_STRONG_MIN,
-    ),
-    [effectiveShowWeak, rMax, rMin, shown, subjectOrder],
-  )
-
-  // 들어올 때 가운데에서 퍼져 나가는 연출 — 새 판정 결과마다 한 번
-  const itemsKey = shown.map(i => i.id).join(',')
-  const settled = settledKey === itemsKey
-  useEffect(() => {
-    let inner = 0
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setSettledKey(itemsKey))
-    })
-    return () => {
-      cancelAnimationFrame(outer)
-      cancelAnimationFrame(inner)
-    }
-  }, [itemsKey])
+  const bound = Math.max(150, Math.min(size.w, size.h) / 2 - 64)
+  const rMin = Math.max(HUB_R + NODE_R + 50, bound * 0.36)
+  const rMax = bound * 0.92
 
   const shownIds = useMemo(() => new Set(shown.map(i => i.id)), [shown])
   const peerEdges = useMemo(
     () => edges.filter(e => e.source !== e.target && shownIds.has(e.source) && shownIds.has(e.target)),
     [edges, shownIds],
   )
-  const relationsPresent = useMemo(
-    () => [...new Set(shown.map(i => i.relationType))],
-    [shown],
-  )
+
+  // ── 시뮬레이션 시작: 부채꼴 자리(교과별 방향, 강도별 거리)를 출발점으로 ──
+  const itemsKey = `${shown.map(i => i.id).join(',')}|${Math.round(bound)}`
+  useEffect(() => {
+    const seed = computeFusionLayout(
+      shown.map(i => ({ id: i.id, subjectId: i.subjectId, strength: i.strength })),
+      subjectOrder,
+      rMin,
+      rMax,
+      floor,
+    )
+    const span = Math.max(1e-6, 1 - floor)
+    const nodes: FusionForceNode[] = [
+      { id: HUB_ID, x: 0, y: 0, vx: 0, vy: 0, fixed: true },
+      ...shown.map(i => {
+        const p = seed.positions.get(i.id) ?? { x: 0, y: 0 }
+        return { id: i.id, x: p.x, y: p.y, vx: 0, vy: 0, fixed: false, homeX: p.x, homeY: p.y }
+      }),
+    ]
+    const indexById = new Map(nodes.map((n, idx) => [n.id, idx]))
+    const links: FusionForceLink[] = shown.map(i => {
+      const norm = Math.min(1, Math.max(0, (i.strength - floor) / span))
+      return { a: 0, b: indexById.get(i.id)!, rest: rMin + (1 - norm) * (rMax - rMin), k: 0.25 + norm * 0.45 }
+    })
+    for (const e of peerEdges) {
+      const a = indexById.get(e.source)
+      const b = indexById.get(e.target)
+      if (a === undefined || b === undefined) continue
+      links.push({ a, b, rest: Math.max(90, rMin * 0.8), k: 0.12 + e.sim * 0.2 })
+    }
+    simRef.current = { nodes, links, alpha: FUSION_ALPHA_START }
+    setFrame(f => f + 1)
+  // 항목 묶음·화면 크기가 바뀔 때만 새로 시작한다
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsKey])
+
+  // ── 시뮬레이션 루프 ──
+  useEffect(() => {
+    let raf = 0
+    const step = (): void => {
+      const sim = simRef.current
+      if (sim && (sim.alpha > FUSION_ALPHA_MIN || dragRef.current)) {
+        // 숨김 탭에서는 rAF 가 멈추므로 한 번에 여러 틱을 돌려 따라잡을 필요는 없다
+        for (let k = 0; k < 2; k++) {
+          fusionForceTick(sim.nodes, sim.links, Math.max(sim.alpha, dragRef.current ? 0.3 : 0), { collide: NODE_R * 2 + 26, bound })
+          sim.alpha = fusionAlphaStep(sim.alpha)
+        }
+        setFrame(f => (f + 1) % 1_000_000)
+      }
+      raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [bound])
+
+  // 숨김 탭으로 열린 경우(rAF 정지) 화면이 출발점에 머물러도 겹치지 않게, 처음 한 번 동기 정착
+  useEffect(() => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') return
+    const sim = simRef.current
+    if (!sim) return
+    while (sim.alpha > FUSION_ALPHA_MIN) {
+      fusionForceTick(sim.nodes, sim.links, sim.alpha, { collide: NODE_R * 2 + 26, bound })
+      sim.alpha = fusionAlphaStep(sim.alpha)
+    }
+    setFrame(f => f + 1)
+  }, [bound, itemsKey])
+
+  // ── 끌기 ──
+  const toLocal = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return { x: 0, y: 0 }
+    return { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 }
+  }, [])
+
+  const onNodePointerDown = (e: React.PointerEvent, id: string): void => {
+    const sim = simRef.current
+    if (!sim) return
+    const index = sim.nodes.findIndex(n => n.id === id)
+    if (index <= 0) return
+    e.stopPropagation()
+    ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
+    dragRef.current = { index, pointerId: e.pointerId, moved: false }
+    sim.nodes[index].fixed = true
+  }
+  const onPointerMove = (e: React.PointerEvent): void => {
+    const drag = dragRef.current
+    const sim = simRef.current
+    if (!drag || !sim || drag.pointerId !== e.pointerId) return
+    const p = toLocal(e.clientX, e.clientY)
+    const r = Math.hypot(p.x, p.y)
+    const k = r > bound ? bound / r : 1
+    const node = sim.nodes[drag.index]
+    if (Math.hypot(node.x - p.x * k, node.y - p.y * k) > 2) drag.moved = true
+    node.x = p.x * k
+    node.y = p.y * k
+    sim.alpha = Math.max(sim.alpha, 0.3)
+  }
+  const endDrag = (e: React.PointerEvent): void => {
+    const drag = dragRef.current
+    const sim = simRef.current
+    if (!drag || !sim || drag.pointerId !== e.pointerId) return
+    const node = sim.nodes[drag.index]
+    node.fixed = false
+    sim.alpha = Math.max(sim.alpha, REHEAT)
+    dragRef.current = null
+    // 끌지 않고 눌렀다 뗀 것은 선택
+    if (!drag.moved) onFocus(focusedId === node.id ? null : node.id)
+  }
+
+  // ── 그릴 좌표 ──
+  void frame
+  const pos = new Map<string, { x: number; y: number }>()
+  for (const n of simRef.current?.nodes ?? []) pos.set(n.id, { x: n.x, y: n.y })
+  const posOf = (id: string): { x: number; y: number } => pos.get(id) ?? { x: 0, y: 0 }
 
   const activeId = hoverId ?? focusedId
-  const posOf = (id: string): { x: number; y: number } => layout.positions.get(id) ?? { x: 0, y: 0 }
-  const hoverItem = hoverId ? fusion.items.find(i => i.id === hoverId) ?? null : null
+  const neighborIds = useMemo(() => {
+    if (!activeId) return null
+    const set = new Set<string>([activeId])
+    for (const e of peerEdges) {
+      if (e.source === activeId) set.add(e.target)
+      if (e.target === activeId) set.add(e.source)
+    }
+    return set
+  }, [activeId, peerEdges])
+  const isLit = (id: string): boolean => !neighborIds || neighborIds.has(id)
 
+  const relationsPresent = [...new Set(shown.map(i => i.relationType))]
+  const hoverItem = hoverId ? fusion.items.find(i => i.id === hoverId) ?? null : null
   const hubColor = hubNode ? subjectColors[hubNode.subjectId] ?? GOLD : GOLD
-  // 짝 층 전체를 가운데에서 펼친다(SVG 선 좌표는 CSS 전환이 안 되므로 층 단위 배율로)
-  // 탭이 숨겨진 동안 브라우저는 CSS 전환을 멈춘다 — 그 상태로 열리면 짝 층이 투명·축소된 채
-  // 남으므로(2026-10-01 공개 사이트에서 확인) 숨김 탭·동작 줄이기 설정에서는 연출 없이 바로 보인다.
-  const animate = typeof document !== 'undefined'
-    && document.visibilityState === 'visible'
-    && !(typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
-  const spread: React.CSSProperties = animate
-    ? {
-        transform: settled ? 'scale(1)' : 'scale(0.05)',
-        opacity: settled ? 1 : 0,
-        transition: 'transform 650ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease-out',
-      }
-    : {}
 
   return (
     <div
       ref={wrapRef}
       className="absolute inset-0 z-20 overflow-hidden"
-      style={{ background: `radial-gradient(circle at 50% 50%, #1E2129 0%, ${BG} 70%)` }}
+      style={{ background: BG, backgroundImage: 'radial-gradient(#E4E7EC 1px, transparent 1px)', backgroundSize: '22px 22px' }}
       role="dialog"
       aria-label="융합 묶음 그래프"
     >
@@ -167,7 +269,8 @@ export default function FusionGraph({
         </div>
         {hubNode && (
           <p className="mt-1 text-[13px] leading-[1.5]" style={{ color: MUTED }}>
-            중심 {hubNode.code} {hubNode.subject} · {hubNode.band} — 같은 학년군의 다른 교과 중 이 주제로 함께 엮을 수 있는 성취기준
+            중심 {hubNode.code} {hubNode.subject} · {hubNode.band} — 같은 학년군의 다른 교과 중 이 주제로 함께 엮을 수 있는 성취기준.
+            노드를 끌어 옮길 수 있습니다.
           </p>
         )}
       </div>
@@ -176,7 +279,7 @@ export default function FusionGraph({
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-4 top-4 z-10 flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-4 text-[14px] font-medium backdrop-blur transition-colors hover:bg-white/20"
+        className="absolute right-4 top-4 z-10 flex h-10 items-center gap-1.5 rounded-full border border-[#D5D9E0] bg-white px-4 text-[14px] font-medium shadow-sm transition-colors hover:bg-[#F1F3F6]"
         style={{ color: INK }}
         aria-label="융합 보기 닫고 원래 지도로"
         title="원래 지도로 (Esc)"
@@ -186,42 +289,19 @@ export default function FusionGraph({
       </button>
 
       <svg
-        className="absolute inset-0 h-full w-full"
+        ref={svgRef}
+        className="absolute inset-0 h-full w-full touch-none select-none"
         viewBox={`${-size.w / 2} ${-size.h / 2} ${size.w} ${size.h}`}
         onClick={() => onFocus(null)}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
       >
-        {/* 거리 안내 고리 */}
-        {[rMin, (rMin + rMax) / 2, rMax].map((r, i) => (
-          <circle key={r} r={r} fill="none" stroke="#FFFFFF" strokeOpacity={0.06 + (2 - i) * 0.02} strokeDasharray="2 6" />
-        ))}
-
-        {/* 교과 부채꼴 이름 */}
-        {settled && layout.sectors.map(sector => {
-          const r = sector.outerRadius + 52
-          const x = Math.cos(sector.angle) * r
-          const y = Math.sin(sector.angle) * r
-          const color = readableOn('dark', subjectColors[sector.subjectId] ?? MUTED)
-          return (
-            <text
-              key={sector.subjectId}
-              x={x}
-              y={y}
-              textAnchor={Math.abs(Math.cos(sector.angle)) < 0.3 ? 'middle' : Math.cos(sector.angle) > 0 ? 'start' : 'end'}
-              dominantBaseline="middle"
-              fontSize={14}
-              fontWeight={700}
-              fill={color}
-            >
-              {subjectNames[sector.subjectId] ?? sector.subjectId} {sector.count}
-            </text>
-          )
-        })}
-
-        <g style={spread}>
-        {/* 짝끼리의 옅은 연결 */}
+        {/* 짝끼리의 연결 — 옅은 회색 그물 */}
         {peerEdges.map(e => {
           const a = posOf(e.source)
           const b = posOf(e.target)
+          const lit = activeId !== null && (e.source === activeId || e.target === activeId)
           return (
             <line
               key={`${e.source}-${e.target}`}
@@ -229,35 +309,35 @@ export default function FusionGraph({
               y1={a.y}
               x2={b.x}
               y2={b.y}
-              stroke="#FFFFFF"
-              strokeOpacity={activeId && (activeId === e.source || activeId === e.target) ? 0.35 : 0.08}
-              strokeWidth={1}
+              stroke={lit ? '#7A828F' : EDGE}
+              strokeOpacity={activeId && !lit ? 0.35 : 0.9}
+              strokeWidth={lit ? 1.6 : 1}
             />
           )
         })}
 
-        {/* 중심 → 짝 선: 색 = 융합 방식, 굵기 = 강도 */}
+        {/* 핵심 → 짝: 색 = 융합 방식, 굵기 = 강도 */}
         {shown.map(item => {
           const p = posOf(item.id)
           const color = RELATION_COLORS[item.relationType] ?? FALLBACK
           const weak = item.strength < FUSION_STRONG_MIN
-          const dim = activeId !== null && activeId !== item.id
+          const lit = activeId === item.id
           return (
-            <g key={`edge-${item.id}`} style={{ opacity: dim ? 0.18 : 1, transition: 'opacity 150ms' }}>
+            <g key={`edge-${item.id}`} style={{ opacity: activeId && !lit ? 0.22 : 1 }}>
               <line
                 x1={0}
                 y1={0}
                 x2={p.x}
                 y2={p.y}
                 stroke={color}
-                strokeOpacity={weak ? 0.45 : 0.85}
-                strokeWidth={1.2 + item.strength * 3.2}
+                strokeOpacity={weak ? 0.5 : 0.75}
+                strokeWidth={1 + item.strength * 2.6 + (lit ? 1 : 0)}
                 strokeDasharray={weak ? '5 5' : undefined}
               />
-              {!weak && (
-                <g transform={`translate(${p.x * 0.6},${p.y * 0.6})`}>
-                  <rect x={-item.relationType.length * 6.5 - 8} y={-10} width={item.relationType.length * 13 + 16} height={20} rx={10} fill={BG} stroke={color} strokeOpacity={0.7} />
-                  <text textAnchor="middle" dominantBaseline="central" fontSize={11.5} fontWeight={600} fill={color}>
+              {lit && (
+                <g transform={`translate(${p.x * 0.5},${p.y * 0.5})`}>
+                  <rect x={-item.relationType.length * 6.5 - 8} y={-11} width={item.relationType.length * 13 + 16} height={22} rx={11} fill="#FFFFFF" stroke={color} />
+                  <text textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={600} fill={color}>
                     {item.relationType}
                   </text>
                 </g>
@@ -272,37 +352,53 @@ export default function FusionGraph({
           const color = subjectColors[item.subjectId] ?? FALLBACK
           const weak = item.strength < FUSION_STRONG_MIN
           const active = activeId === item.id
-          const dim = activeId !== null && !active
           return (
             <g
               key={item.id}
               transform={`translate(${p.x},${p.y})`}
-              style={{ cursor: 'pointer', opacity: dim ? 0.45 : 1 }}
-              onMouseEnter={() => setHoverId(item.id)}
-              onMouseLeave={() => setHoverId(h => (h === item.id ? null : h))}
-              onClick={e => {
-                e.stopPropagation()
-                onFocus(focusedId === item.id ? null : item.id)
-              }}
+              style={{ cursor: dragRef.current ? 'grabbing' : 'grab', opacity: isLit(item.id) ? 1 : 0.3 }}
+              onPointerEnter={() => setHoverId(item.id)}
+              onPointerLeave={() => setHoverId(h => (h === item.id ? null : h))}
+              onPointerDown={e => onNodePointerDown(e, item.id)}
+              onClick={e => e.stopPropagation()}
             >
-              {active && <circle r={NODE_R + 9} fill={color} opacity={0.25} />}
-              <circle r={NODE_R} fill={color} fillOpacity={weak ? 0.45 : 1} stroke={active ? '#FFFFFF' : BG} strokeWidth={active ? 2.5 : 2} strokeDasharray={weak ? '3 3' : undefined} />
-              <text y={NODE_R + 15} textAnchor="middle" fontSize={12.5} fontWeight={600} fill={readableOn('dark', color)} stroke={BG} strokeWidth={4} paintOrder="stroke">
+              {active && <circle r={NODE_R + 8} fill={color} opacity={0.18} />}
+              <circle
+                r={NODE_R}
+                fill={color}
+                fillOpacity={weak ? 0.55 : 1}
+                stroke="#FFFFFF"
+                strokeWidth={2.5}
+                strokeDasharray={weak ? '3 3' : undefined}
+              />
+              <text
+                y={NODE_R + 15}
+                textAnchor="middle"
+                fontSize={12.5}
+                fontWeight={active ? 700 : 600}
+                fill={color}
+                stroke={BG}
+                strokeWidth={4}
+                paintOrder="stroke"
+              >
                 {item.code}
               </text>
+              {active && (
+                <text y={NODE_R + 30} textAnchor="middle" fontSize={11.5} fill={MUTED} stroke={BG} strokeWidth={4} paintOrder="stroke">
+                  {subjectNames[item.subjectId] ?? item.subject}
+                </text>
+              )}
             </g>
           )
         })}
 
-        </g>
-
         {/* 중심(핵심) */}
         {hubNode && (
-          <g>
-            <circle r={HUB_R + 16} fill={GOLD} opacity={0.12} />
-            <circle r={HUB_R + 7} fill="none" stroke={GOLD} strokeWidth={3} />
-            <circle r={HUB_R} fill={hubColor} stroke={BG} strokeWidth={2} />
-            <polygon points={starPoints(0, 0, 15)} fill={GOLD} stroke="#8A5A00" strokeWidth={1.2} />
+          <g style={{ opacity: activeId ? 0.95 : 1 }}>
+            <circle r={HUB_R + 14} fill={GOLD} opacity={0.14} />
+            <circle r={HUB_R + 6} fill="none" stroke={GOLD} strokeWidth={3} />
+            <circle r={HUB_R} fill={hubColor} stroke="#FFFFFF" strokeWidth={2.5} />
+            <polygon points={starPoints(0, 0, 13)} fill="#FFD54A" stroke="#8A5A00" strokeWidth={1.2} />
             <text y={HUB_R + 26} textAnchor="middle" fontSize={15} fontWeight={700} fill={INK} stroke={BG} strokeWidth={5} paintOrder="stroke">
               {hubNode.code} {hubNode.subject}
             </text>
@@ -313,11 +409,11 @@ export default function FusionGraph({
       {/* 호버 설명 */}
       {hoverItem && (
         <div
-          className="pointer-events-none absolute bottom-16 left-1/2 z-10 w-[min(520px,calc(100%-32px))] -translate-x-1/2 rounded-xl px-4 py-3"
-          style={{ background: 'rgba(30,33,41,0.96)', border: '1px solid rgba(255,255,255,0.12)', color: INK }}
+          className="pointer-events-none absolute bottom-16 left-1/2 z-10 w-[min(520px,calc(100%-32px))] -translate-x-1/2 rounded-xl border border-[#D5D9E0] bg-white px-4 py-3 shadow-md"
+          style={{ color: INK }}
         >
           <div className="mb-1 flex flex-wrap items-center gap-2 text-[13px] font-semibold">
-            <span style={{ color: readableOn('dark', subjectColors[hoverItem.subjectId] ?? MUTED) }}>
+            <span style={{ color: subjectColors[hoverItem.subjectId] ?? MUTED }}>
               {hoverItem.code} {hoverItem.subject}
             </span>
             <span
@@ -338,8 +434,11 @@ export default function FusionGraph({
       )}
 
       {/* 범례 · 약한 연결 토글 */}
-      <div className="absolute bottom-4 left-16 z-10 flex max-w-[calc(100%-32px)] flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl bg-black/30 px-3 py-2 text-[12px] backdrop-blur" style={{ color: MUTED }}>
-        <span style={{ color: INK }}>가까울수록·굵을수록 엮기 자연스러움</span>
+      <div
+        className="absolute bottom-4 left-16 z-10 flex max-w-[calc(100%-80px)] flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-[#E1E4E9] bg-white/90 px-3 py-2 text-[12px] backdrop-blur"
+        style={{ color: MUTED }}
+      >
+        <span style={{ color: INK }}>가까울수록·굵을수록 엮기 자연스러움 · 회색 선 = 짝끼리의 연결</span>
         {relationsPresent.map(rel => (
           <span key={rel} className="inline-flex items-center gap-1.5" title={RELATION_TYPE_HINTS[rel]}>
             <span className="inline-block h-[3px] w-4 rounded" style={{ background: RELATION_COLORS[rel] ?? FALLBACK }} />
@@ -348,7 +447,7 @@ export default function FusionGraph({
         ))}
         {weakCount > 0 && strongCount >= 3 && (
           <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5" style={{ color: INK }}>
-            <input type="checkbox" checked={showWeak} onChange={e => onShowWeakChange(e.target.checked)} className="accent-[#F5B301]" />
+            <input type="checkbox" checked={showWeak} onChange={e => onShowWeakChange(e.target.checked)} className="accent-[#E3A400]" />
             약한 연결 {weakCount}개도 보기
           </label>
         )}
@@ -357,14 +456,14 @@ export default function FusionGraph({
       {/* 상태 */}
       {fusion.status === 'loading' && (
         <div className="absolute inset-x-0 bottom-24 z-10 flex justify-center">
-          <div className="rounded-full bg-black/40 px-4 py-2 text-[13px] backdrop-blur" style={{ color: INK }}>
+          <div className="rounded-full border border-[#E1E4E9] bg-white px-4 py-2 text-[13px] shadow-sm" style={{ color: INK }}>
             이 주제로 함께 엮을 수 있는 성취기준을 판정하는 중…
           </div>
         </div>
       )}
       {fusion.status === 'error' && (
         <div className="absolute inset-x-0 bottom-24 z-10 flex justify-center">
-          <div className="flex items-center gap-3 rounded-xl bg-black/50 px-4 py-2 text-[13px]" style={{ color: INK }}>
+          <div className="flex items-center gap-3 rounded-xl border border-[#E1E4E9] bg-white px-4 py-2 text-[13px]" style={{ color: INK }}>
             {fusion.error}
             <button type="button" onClick={onRetry} className="underline">다시 시도</button>
           </div>
@@ -372,7 +471,7 @@ export default function FusionGraph({
       )}
       {fusion.status === 'ready' && fusion.items.length === 0 && (
         <div className="absolute inset-x-0 bottom-24 z-10 flex justify-center">
-          <div className="rounded-full bg-black/40 px-4 py-2 text-[13px]" style={{ color: INK }}>
+          <div className="rounded-full border border-[#E1E4E9] bg-white px-4 py-2 text-[13px]" style={{ color: INK }}>
             같은 학년군에서 함께 엮을 다른 교과 성취기준을 찾지 못했습니다.
           </div>
         </div>

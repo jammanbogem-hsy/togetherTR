@@ -34,7 +34,7 @@ import {
   edgeWidth,
 } from './edgeMath'
 import type { SimNode } from './forceMath'
-import { GRID_AREA_LABEL_HEIGHT, type GridGuides } from './gridLayout'
+import { GRID_AREA_LABEL_HEIGHT, GRID_HEADER_FONT, GRID_HEADER_HEIGHT, GRID_LABEL_GUTTER, type GridGuides } from './gridLayout'
 import type { ConstellationGuides } from './constellationLayout'
 import { drawConstellationHubs, drawConstellationStructure, drawLocalRings } from './drawConstellation'
 import { CANVAS_PALETTES, readableOn, type CanvasTheme } from './mapTheme'
@@ -162,7 +162,8 @@ const GUIDE_HEADER_COLOR = '#1F1F1F'
 const GUIDE_AREA_COLOR = '#5E5E5E'
 const GUIDE_HEADER_PX = 15
 /** 학년군 머리글이 올라갈 수 있는 가장 위 y — 도구 막대를 피한다 */
-const GUIDE_HEADER_MIN_Y = 76
+/** 머리글이 이보다 작아지면(px) 그리지 않는다 */
+const GUIDE_HEADER_MIN_PX = 7
 const GUIDE_AREA_PX = 12
 /** 영역 라벨 줄이 화면에서 이 높이(px) 이상일 때만 영역 이름을 그린다 */
 const GUIDE_AREA_MIN_LINE_PX = 15
@@ -203,21 +204,26 @@ function easeInOut(x: number): number {
 }
 
 /** 머리글 뒤 반투명 알약 — 원 위에 겹쳐도 글자가 읽히게 한다. (x, top) = 글자 왼쪽 위 */
-function headerPill(ctx: CanvasRenderingContext2D, x: number, top: number, textWidth: number): void {
-  const padX = 8
-  const padY = 4
+function headerPill(ctx: CanvasRenderingContext2D, x: number, top: number, textWidth: number, fontPx: number): void {
+  const padX = fontPx * 0.5
+  const padY = fontPx * 0.25
   ctx.save()
   ctx.fillStyle = 'rgba(248,250,253,0.92)'
   ctx.beginPath()
   const w = textWidth + padX * 2
-  const h = GUIDE_HEADER_PX + padY * 2
+  const h = fontPx + padY * 2
   if (typeof ctx.roundRect === 'function') ctx.roundRect(x - padX, top - padY, w, h, h / 2)
   else ctx.rect(x - padX, top - padY, w, h)
   ctx.fill()
   ctx.restore()
 }
 
-/** 정렬 배치 안내선 — 칸 배경, 영역 라벨, 묶음마다 달라붙는(sticky) 교과·학년군 머리글. */
+/**
+ * 정렬 배치 안내선 — 칸 배경, 영역 라벨, 교과·학년군 머리글.
+ * 머리글은 지도 좌표에 붙어 함께 확대·축소된다(화면 가장자리에 달라붙지 않는다).
+ * 예전에는 화면 고정 크기 + sticky 라서 축소하면 이름이 옆 묶음 칸을 덮고, 스크롤하면
+ * 이름이 다른 줄 옆으로 미끄러져 "어느 줄이 어느 교과인지"가 어긋났다(2026-10-01 피드백).
+ */
 function drawGridGuides(
   ctx: CanvasRenderingContext2D,
   guides: GridGuides,
@@ -257,43 +263,41 @@ function drawGridGuides(
     }
   }
 
-  // 학년군 머리글 — 묶음마다 표 윗변에 붙되, 위로 스크롤되면 화면 맨 위에 머문다
-  // (그 묶음이 화면 위로 다 지나가면 감춘다)
-  ctx.font = `600 ${GUIDE_HEADER_PX}px system-ui, -apple-system, 'Noto Sans KR', sans-serif`
+  // 머리글 글자 크기 = 월드 크기 × 배율(상한만 둔다). 너무 작아 읽을 수 없으면 그리지 않는다.
+  const fontPx = Math.min(GUIDE_HEADER_PX + 3, GRID_HEADER_FONT * RENDER_RADIUS_SCALE * t.scale)
+  if (fontPx < GUIDE_HEADER_MIN_PX) return
+  const unit = RENDER_RADIUS_SCALE * t.scale
+  ctx.font = `600 ${fontPx}px system-ui, -apple-system, 'Noto Sans KR', sans-serif`
+
+  // 학년군 머리글 — 각 열 바로 위 (묶음 머리 자리 안)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.lineJoin = 'round'
-  ctx.lineWidth = LABEL_HALO_PX
   for (const col of guides.columns) {
     const a = worldToScreen({ x: col.x0, y: col.y0 }, t)
-    const b = worldToScreen({ x: col.x1, y: col.y1 }, t)
-    if (b.x < 0 || a.x > width || a.y > height) continue
-    // 캔버스 왼쪽 위 도구 막대(높이 약 56px) 아래에 머문다
-    const colY = Math.max(GUIDE_HEADER_MIN_Y, a.y - 30)
-    if (colY > b.y - 40) continue
-    const x = Math.min(Math.max((a.x + b.x) / 2, a.x + 40), b.x - 40)
-    headerPill(ctx, x - ctx.measureText(col.band).width / 2, colY, ctx.measureText(col.band).width)
+    const b = worldToScreen({ x: col.x1, y: col.y0 }, t)
+    if (b.x < 0 || a.x > width) continue
+    const y = a.y - (GRID_HEADER_HEIGHT - 8) * unit
+    if (y > height || y + fontPx < 0) continue
+    const x = (a.x + b.x) / 2
+    const w = ctx.measureText(col.band).width
+    headerPill(ctx, x - w / 2, y, w, fontPx)
     ctx.fillStyle = GUIDE_HEADER_COLOR
-    ctx.fillText(col.band, x, colY)
+    ctx.fillText(col.band, x, y)
   }
 
-  // 교과 머리글 — 묶음 왼변에 붙되, 왼쪽으로 스크롤되면 화면 왼쪽에 머문다
-  // (그 묶음이 화면 왼쪽으로 다 지나가면 감춘다)
+  // 교과 머리글 — 묶음 왼쪽 이름 자리 안, 줄 가운데
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
   for (const row of guides.rows) {
     const a = worldToScreen({ x: row.x0, y: row.y0 }, t)
-    const b = worldToScreen({ x: row.x1, y: row.y1 }, t)
-    if (b.y < 0 || a.y > height || b.x < 0 || a.x - 12 > width) continue
+    const b = worldToScreen({ x: row.x0, y: row.y1 }, t)
+    if (b.y < 0 || a.y > height) continue
+    const x = a.x - 14 * unit
+    if (x < 0 || x - GRID_LABEL_GUTTER * unit > width) continue
+    const y = (a.y + b.y) / 2
     const label = row.label
     const w = ctx.measureText(label).width
-    const x = Math.max(10 + w, a.x - 12)
-    if (x > b.x - 40) continue
-    // 행의 화면에 보이는 구간 안에서 가운데 — 긴 행도 머리글이 화면 밖으로 나가지 않는다
-    const visTop = Math.max(a.y + 14, GUIDE_HEADER_MIN_Y + 30)
-    const visBottom = Math.min(b.y - 14, height - 40)
-    const y = visTop > visBottom ? (a.y + b.y) / 2 : Math.min(Math.max((a.y + b.y) / 2, visTop), visBottom)
-    headerPill(ctx, x - w, y - GUIDE_HEADER_PX / 2, w)
+    headerPill(ctx, x - w, y - fontPx / 2, w, fontPx)
     ctx.fillStyle = subjectColors[row.subjectId] ?? GUIDE_HEADER_COLOR
     ctx.fillText(label, x, y)
   }

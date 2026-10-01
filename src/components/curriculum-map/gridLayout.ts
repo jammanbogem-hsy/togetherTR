@@ -91,8 +91,22 @@ export const GRID_AREA_LABEL_HEIGHT = 22
 export const GRID_AREA_GAP = 10
 /** 칸 사이 간격(가로·세로) */
 export const GRID_GUTTER = 28
-/** 묶음 사이 가로 간격 — 다음 묶음의 교과 머리글(화면 글자)이 앞 묶음과 부딪치지 않을 만큼 */
-export const GRID_BLOCK_GAP = 220
+/**
+ * 묶음 왼쪽의 교과 이름 자리(월드 단위). 이름도 지도와 함께 확대·축소되므로 어느 배율에서도
+ * 이 자리 안에만 그려진다(2026-10-01: 화면 고정 글자 + 화면 가장자리 달라붙기 때문에 축소하면
+ * 이름이 옆 묶음 칸을 덮어 '어느 줄이 어느 교과인지' 어긋났다).
+ */
+export const GRID_LABEL_GUTTER = 175
+/** 묶음 위의 학년군 이름 자리(월드 단위) */
+export const GRID_HEADER_HEIGHT = 56
+/** 묶음 사이 가로 간격(교과 이름 자리와 별도) */
+export const GRID_BLOCK_GAP = 60
+/**
+ * 머리글 글자 크기(월드 단위) — 렌더러가 배율을 곱한다. 첫 화면(배율 약 0.25)에서 약 12px 이 되게
+ * 크게 잡고, 확대하면 렌더러가 상한(18px)에서 멈춘다. 이름 자리(GRID_LABEL_GUTTER)는
+ * '통합교과' 4글자가 이 크기로 들어가는 폭이다.
+ */
+export const GRID_HEADER_FONT = 29
 
 /**
  * 교과 묶음(교과 이름 기준, 묶음 안 순서 = 행 순서). 묶음끼리는 왼쪽→오른쪽으로 놓인다.
@@ -189,7 +203,7 @@ export function computeGridLayout(
   // 빈 묶음(노드가 하나도 없는 묶음)은 자리를 남기지 않는다 — 다음 묶음이 당겨진다.
   let blockX = 0
   for (const blockSubjects of subjectBlocks) {
-    const bx0 = blockX
+    const bx0 = blockX + GRID_LABEL_GUTTER
     const bx1 = bx0 + blockWidth
     const colX0 = bandOrder.map((_, i) => bx0 + i * (cellWidth + GRID_GUTTER))
     const rowStart = rows.length

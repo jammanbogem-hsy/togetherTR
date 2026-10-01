@@ -12,7 +12,9 @@ export const SOURCE_LABELS: Record<string, string> = {
   cross: '교과 간 링크',
   mixed: '링크+유사도',
   similar: '유사 이웃',
-  embedding: '임베딩',
+  embedding: '의미 이웃',
+  // 융합 모드: 검색 결과에서 주제와 닿아 함께 올라온 짝
+  topic: '주제 짝',
 }
 
 /** 관련도 4단계 → M3 컨테이너 색. */
@@ -35,7 +37,7 @@ export function JudgeBadge({ judge, elapsedMs }: { judge: MapJudge | null; elaps
             : 'bg-[var(--md-surface-container-high)] text-[var(--md-on-surface-variant)]'
         }`}
       >
-        {isJev ? 'Jev 판정' : '임베딩'}
+        {isJev ? 'AI 판정' : '유사도 기준'}
       </span>
       <span className="text-[12px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
         {formatElapsed(elapsedMs)}

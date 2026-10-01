@@ -181,7 +181,7 @@ export default function MapSidePanel({
                 <div className="flex items-center gap-2">
                   {related.status === 'loading' && (
                     <span className="rounded-lg bg-[var(--md-surface-container-high)] px-2 py-0.5 text-[13px] font-medium text-[var(--md-on-surface-variant)]">
-                      유사도 이웃 · Jev 판정 중…
+                      AI 판정 중…
                     </span>
                   )}
                   <JudgeBadge judge={related.judge} elapsedMs={related.elapsedMs} />
@@ -200,12 +200,12 @@ export default function MapSidePanel({
             </SectionTitle>
 
             <p className="mb-2 text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">
-              색 선 = Jev 관계 판정(두 성취기준의 성취수준 A·B·C 원문까지 근거로 판정) · 회색 선 = 임베딩
-              유사도 이웃(마우스를 올렸을 때). 카드의 ‘성취수준 비교’에서 두 원문을 수준별로 나란히 볼 수 있습니다.
+              색 선 = AI 관계 판정(두 성취기준의 성취수준 A·B·C 원문까지 근거로 판정) · 회색 선 = 의미가
+              비슷한 이웃(마우스를 올렸을 때). 카드의 ‘성취수준 비교’에서 두 원문을 수준별로 나란히 볼 수 있습니다.
             </p>
 
             {related.status === 'loading' && (
-              <Loading>지금은 유사도 이웃을 보여 주는 중입니다. Jev 관계 판정이 끝나면 교체됩니다.</Loading>
+              <Loading>지금은 의미가 비슷한 이웃을 보여 주는 중입니다. AI 관계 판정이 끝나면 바뀝니다.</Loading>
             )}
             {related.status === 'ready' && hiddenRelatedCount > 0 && (
               <p className="mb-2 text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">

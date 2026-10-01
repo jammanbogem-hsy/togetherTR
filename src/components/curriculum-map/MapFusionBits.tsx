@@ -215,7 +215,7 @@ export function FusionPanel({
         )}
         <p className="mt-3 text-[13px] leading-[1.5] text-[var(--md-on-surface-variant)]">
           ‘{fusion.query || '주제 없음'}’을 수업 주제로 두고, 같은 학년군 다른 교과 성취기준 중 이 핵심과 한 수업으로 엮기 자연스러운 것을
-          Jev 가 판정했습니다. 선 색은 융합 방식, 가까울수록 엮기 쉽습니다.
+          AI 가 판정했습니다. 선 색은 융합 방식, 가까울수록 엮기 쉽습니다.
         </p>
         {onTogglePick && hubNode && visible.length > 0 && (
           <div className="mt-3">

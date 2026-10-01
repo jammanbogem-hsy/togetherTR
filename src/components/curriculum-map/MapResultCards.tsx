@@ -235,7 +235,7 @@ export function RelatedCard({
       <div className="mt-2 flex items-center justify-between gap-2">
         {hasScores ? (
           <p className="text-[13px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
-            {typeof item.jevScore === 'number' && `Jev 판정 ${item.jevScore.toFixed(2)} · `}
+            {typeof item.jevScore === 'number' && `AI 판정 ${item.jevScore.toFixed(2)} · `}
             유사도 {item.sim.toFixed(2)}
           </p>
         ) : (

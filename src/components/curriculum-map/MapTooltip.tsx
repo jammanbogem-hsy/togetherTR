@@ -96,7 +96,7 @@ export default function MapTooltip({
 
       {!relation && similarityNeighbor && (
         <p className="mt-2 text-[13px] font-medium text-[var(--md-on-surface-variant)]">
-          유사도 이웃 — Jev 관계 판정은 아닙니다
+          의미가 비슷한 이웃 — AI 관계 판정은 아닙니다
         </p>
       )}
 

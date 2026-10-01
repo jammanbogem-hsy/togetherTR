@@ -116,3 +116,55 @@ test('layout: strength floor stretches the visible range across the whole ring',
   assert.equal(Math.round(Math.hypot(positions.get('b').x, positions.get('b').y)), 100)
   assert.equal(Math.round(sectors.find(s => s.subjectId === 'kor').outerRadius), 300)
 })
+
+test('force: settles with the hub pinned, no overlaps, inside the bound, stronger partners nearer', async () => {
+  const { fusionForceTick, fusionAlphaStep, FUSION_ALPHA_START, FUSION_ALPHA_MIN } = await import('../src/components/curriculum-map/fusionLayout.ts')
+  const items = Array.from({ length: 16 }, (_, i) => ({ id: `p${i}`, subjectId: ['a', 'b', 'c', 'd'][i % 4], strength: 0.5 + (i % 6) / 12 }))
+  const { positions } = computeFusionLayout(items, ['a', 'b', 'c', 'd'], 120, 300, 0.5)
+  const nodes = [{ id: 'hub', x: 0, y: 0, vx: 0, vy: 0, fixed: true },
+    ...items.map(it => ({ id: it.id, ...positions.get(it.id), vx: 0, vy: 0, fixed: false, homeX: positions.get(it.id).x, homeY: positions.get(it.id).y }))]
+  const links = items.map((it, i) => ({ a: 0, b: i + 1, rest: 120 + (1 - (it.strength - 0.5) / 0.5) * 180, k: 0.3 + it.strength * 0.5 }))
+  links.push({ a: 1, b: 2, rest: 110, k: 0.2 }, { a: 3, b: 7, rest: 110, k: 0.2 })
+  let alpha = FUSION_ALPHA_START
+  let ticks = 0
+  while (alpha > FUSION_ALPHA_MIN && ticks < 1000) {
+    fusionForceTick(nodes, links, alpha, { collide: 40, bound: 340 })
+    alpha = fusionAlphaStep(alpha)
+    ticks++
+  }
+  assert.ok(ticks < 1000, '식는다')
+  assert.deepEqual([nodes[0].x, nodes[0].y], [0, 0])
+  for (const node of nodes) {
+    assert.ok(Number.isFinite(node.x) && Number.isFinite(node.y))
+    assert.ok(Math.hypot(node.x, node.y) <= 340 + 1e-6)
+  }
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      assert.ok(Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y) >= 38, `겹침 ${i},${j}`)
+    }
+  }
+  const dist = id => { const n = nodes.find(x => x.id === id); return Math.hypot(n.x, n.y) }
+  const strong = items.filter(i => i.strength >= 0.85).map(i => dist(i.id))
+  const weak = items.filter(i => i.strength <= 0.6).map(i => dist(i.id))
+  const avg = xs => xs.reduce((a, b) => a + b, 0) / xs.length
+  assert.ok(avg(strong) < avg(weak), `강 ${avg(strong).toFixed(0)} < 약 ${avg(weak).toFixed(0)}`)
+})
+
+test('force: home pull keeps partners spread around the hub (not all on one side)', async () => {
+  const { fusionForceTick, fusionAlphaStep, FUSION_ALPHA_START, FUSION_ALPHA_MIN } = await import('../src/components/curriculum-map/fusionLayout.ts')
+  const items = Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, subjectId: ['a', 'b', 'c', 'd', 'e'][i % 5], strength: 0.7 }))
+  const { positions } = computeFusionLayout(items, ['a', 'b', 'c', 'd', 'e'], 120, 300, 0.5)
+  const nodes = [{ id: 'hub', x: 0, y: 0, vx: 0, vy: 0, fixed: true },
+    ...items.map(it => ({ id: it.id, ...positions.get(it.id), vx: 0, vy: 0, fixed: false, homeX: positions.get(it.id).x, homeY: positions.get(it.id).y }))]
+  // 짝끼리 촘촘히 이은 그물 — 홈 당김이 없으면 한쪽으로 뭉친다
+  const links = items.map((_, i) => ({ a: 0, b: i + 1, rest: 200, k: 0.5 }))
+  for (let i = 1; i <= 9; i++) for (let j = i + 1; j <= 9; j++) links.push({ a: i, b: j, rest: 90, k: 0.2 })
+  let alpha = FUSION_ALPHA_START
+  while (alpha > FUSION_ALPHA_MIN) {
+    fusionForceTick(nodes, links, alpha, { collide: 40, bound: 340 })
+    alpha = fusionAlphaStep(alpha)
+  }
+  const cx = nodes.slice(1).reduce((s, n) => s + n.x, 0) / 9
+  const cy = nodes.slice(1).reduce((s, n) => s + n.y, 0) / 9
+  assert.ok(Math.hypot(cx, cy) < 80, `무게중심이 핵심 가까이 (${Math.hypot(cx, cy).toFixed(0)})`)
+})
