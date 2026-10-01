@@ -136,11 +136,18 @@ export default function FusionGraph({
 
   const hubColor = hubNode ? subjectColors[hubNode.subjectId] ?? GOLD : GOLD
   // 짝 층 전체를 가운데에서 펼친다(SVG 선 좌표는 CSS 전환이 안 되므로 층 단위 배율로)
-  const spread: React.CSSProperties = {
-    transform: settled ? 'scale(1)' : 'scale(0.05)',
-    opacity: settled ? 1 : 0,
-    transition: 'transform 650ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease-out',
-  }
+  // 탭이 숨겨진 동안 브라우저는 CSS 전환을 멈춘다 — 그 상태로 열리면 짝 층이 투명·축소된 채
+  // 남으므로(2026-10-01 공개 사이트에서 확인) 숨김 탭·동작 줄이기 설정에서는 연출 없이 바로 보인다.
+  const animate = typeof document !== 'undefined'
+    && document.visibilityState === 'visible'
+    && !(typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+  const spread: React.CSSProperties = animate
+    ? {
+        transform: settled ? 'scale(1)' : 'scale(0.05)',
+        opacity: settled ? 1 : 0,
+        transition: 'transform 650ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease-out',
+      }
+    : {}
 
   return (
     <div
