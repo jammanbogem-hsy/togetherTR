@@ -31,6 +31,7 @@ import {
   buildSearchReason,
   clamp01,
   compareJevFirst,
+  cosineSim,
   coreIdeaSentence,
   embedTexts,
   expandShortQuery,
@@ -55,6 +56,7 @@ import {
   type SearchCandidateSource,
   type StandardSummary,
 } from '@/lib/curriculum/curriculumMap'
+import { rankFusionHubs } from '@/lib/curriculum/fusion'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -82,6 +84,10 @@ const EXPANSION_DEADLINE_MS = 1_400
 const KEYWORD_SCORE_MAX = 15
 /** results(관련·핵심) / weak(약함·무관) 경계. level 과 같은 기준이다. */
 const WEAK_SCORE_CUTOFF = 0.5
+/** 융합 핵심 추천 개수(1위 + 다른 후보 2). */
+const FUSION_HUB_LIMIT = 3
+/** 핵심마다 클라이언트에 넘기는 주제 짝 상한 — 융합 그래프 요청의 후보로 그대로 돌아온다. */
+const FUSION_PARTNER_LIMIT = 12
 
 interface ScoredCandidate {
   std: CurriculumStandard
@@ -157,6 +163,10 @@ function interleaveByBand(ranked: Map<string, string[]>, bands: readonly string[
     }
   }
   return out
+}
+
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
 export async function POST(request: NextRequest) {
@@ -360,6 +370,17 @@ export async function POST(request: NextRequest) {
     results.sort(compareJevFirst)
     const weak = ranked.filter(item => item.score < WEAK_SCORE_CUTOFF).slice(0, limit)
 
+    // ── 6. 융합 핵심 추천 — 판정한 후보 풀 전체(약함 포함)를 짝 후보로 본다 ──
+    const linkedPairs = new Set(
+      (graph.links_cross_subject ?? []).map(link => pairKey(link.source_id, link.target_id)),
+    )
+    const fusionHubs = rankFusionHubs(
+      ranked.map(item => ({ id: item.id, subjectId: item.subjectId, band: item.band, topic: item.score })),
+      (a, b) => (displayVectors[a] && displayVectors[b] ? clamp01(cosineSim(displayVectors[a], displayVectors[b])) : 0),
+      (a, b) => linkedPairs.has(pairKey(a, b)),
+      { limit: FUSION_HUB_LIMIT },
+    ).map(hub => ({ ...hub, partnerIds: hub.partnerIds.slice(0, FUSION_PARTNER_LIMIT) }))
+
     const elapsedMs = Math.round(performance.now() - startedAt)
     console.log('[curriculum-map/search]', JSON.stringify({
       query: query.slice(0, 40),
@@ -374,6 +395,7 @@ export async function POST(request: NextRequest) {
       weak: weak.length,
       emptyBands,
       expandedTerms,
+      fusionHub: fusionHubs[0] ? `${fusionHubs[0].id}:${fusionHubs[0].hubScore}` : null,
       floor: Math.round(floor * 1000) / 1000,
       elapsedMs,
       graphMs,
@@ -388,6 +410,7 @@ export async function POST(request: NextRequest) {
       byBand,
       emptyBands,
       expandedTerms,
+      fusion: { hubs: fusionHubs },
       judge,
       embeddings: poolSource,
       simSource: displaySource,

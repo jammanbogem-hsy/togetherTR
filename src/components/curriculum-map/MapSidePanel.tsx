@@ -39,6 +39,8 @@ export interface MapSidePanelProps {
   pickedIds: ReadonlySet<string>
   /** 없으면 담기 버튼을 숨긴다(보낼 곳이 없는 공개 사이트) */
   onTogglePick?: (id: string) => void
+  /** 검색 결과 맨 위에 놓는 조각(융합 핵심 추천 카드) */
+  searchTop?: React.ReactNode
 }
 
 function Hint({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -93,6 +95,7 @@ export default function MapSidePanel({
   bands,
   pickedIds,
   onTogglePick,
+  searchTop,
 }: MapSidePanelProps): React.ReactElement {
   const [filtersOpen, setFiltersOpen] = useState(true)
   const [weakOpen, setWeakOpen] = useState(false)
@@ -245,13 +248,16 @@ export default function MapSidePanel({
 
         {search.status === 'idle' && (
           <Hint>
-            수업 주제나 키워드를 입력하면
+            수업 주제(예: 기후 위기, 우리 마을)를 검색하면
             <br />
-            가장 가까운 성취기준을 찾아 줍니다.
+            함께 엮을 성취기준과 융합의 중심이 될
+            <br />
+            ★ 핵심 성취기준을 추천해 줍니다.
           </Hint>
         )}
         {search.status === 'loading' && <Loading>성취기준을 찾는 중…</Loading>}
         {search.status === 'error' && search.error && <ErrorBox message={search.error} />}
+        {search.status === 'ready' && searchTop}
         {search.status === 'ready' && search.results.length === 0 && (
           <Hint>일치하는 성취기준이 없습니다. 다른 키워드를 시도해 보세요.</Hint>
         )}

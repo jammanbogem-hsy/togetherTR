@@ -7,6 +7,8 @@ import 'material-symbols/rounded.css'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import CurriculumMapCanvas from './CurriculumMapCanvas'
+import FusionGraph, { FUSION_STRONG_MIN } from './FusionGraph'
+import { FusionHubCard, FusionPanel } from './MapFusionBits'
 import MapBasketBar from './MapBasketBar'
 import MapSidePanel from './MapSidePanel'
 import MapTopBar from './MapTopBar'
@@ -75,6 +77,8 @@ export function CurriculumMapView({
   const [hoverCardId, setHoverCardId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [snackbar, setSnackbar] = useState<string | null>(null)
+  const [fusionShowWeak, setFusionShowWeak] = useState(false)
+  const [fusionFocusId, setFusionFocusId] = useState<string | null>(null)
   const initialAppliedRef = useRef(false)
 
   const subjectColors = useMemo(() => {
@@ -84,6 +88,30 @@ export function CurriculumMapView({
   }, [map.asset])
 
   const selectedNode = map.selectedId ? map.nodeById.get(map.selectedId) ?? null : null
+
+  // ── 융합 찾기 ──────────────────────────────────────────────────────────
+  const subjectOrder = useMemo(() => (map.asset?.subjects ?? []).map(s => s.id), [map.asset])
+  const subjectNames = useMemo(() => {
+    const record: Record<string, string> = {}
+    for (const s of map.asset?.subjects ?? []) record[s.id] = s.name
+    return record
+  }, [map.asset])
+  const fusionOpen = map.fusion.hubId !== null
+  const fusionHubNode = map.fusion.hubId ? map.nodeById.get(map.fusion.hubId) ?? null : null
+  // 지도 위 ★ — 융합 보기 중이면 그 중심, 아니면 검색의 1위 추천
+  const starHubId = map.fusion.hubId
+    ?? (map.search.status === 'ready' ? map.search.fusionHubs[0]?.id ?? null : null)
+  const { openFusion, closeFusion } = map
+  const toggleFusion = useCallback((hubId: string) => {
+    setFusionFocusId(null)
+    setFusionShowWeak(false)
+    if (map.fusion.hubId === hubId) closeFusion()
+    else openFusion(hubId)
+  }, [closeFusion, map.fusion.hubId, openFusion])
+  const closeFusionView = useCallback(() => {
+    setFusionFocusId(null)
+    closeFusion()
+  }, [closeFusion])
 
   const checkedBands = useMemo(
     () => (map.asset?.bands ?? []).filter(b => !map.filters.hiddenBands.includes(b)),
@@ -186,6 +214,10 @@ export function CurriculumMapView({
         setDialogOpen(false)
         return
       }
+      if (fusionOpen) {
+        closeFusionView()
+        return
+      }
       if (selectedId) {
         selectNode(null)
         return
@@ -194,7 +226,7 @@ export function CurriculumMapView({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [clearSearch, dialogOpen, selectNode, selectedId])
+  }, [clearSearch, closeFusionView, dialogOpen, fusionOpen, selectNode, selectedId])
 
   const onSubmitSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -269,8 +301,39 @@ export function CurriculumMapView({
       bands={checkedBands}
       pickedIds={basket.pickedIds}
       onTogglePick={canPick ? togglePickById : undefined}
+      searchTop={
+        <FusionHubCard
+          hubs={map.search.fusionHubs}
+          nodeById={map.nodeById}
+          subjectColors={subjectColors}
+          subjectNames={subjectNames}
+          activeHubId={map.fusion.hubId}
+          onOpen={toggleFusion}
+          onLocate={focusNode}
+        />
+      }
     />
   )
+
+  const fusionPanel = (
+    <FusionPanel
+      fusion={map.fusion}
+      hubNode={fusionHubNode}
+      nodeById={map.nodeById}
+      subjectColors={subjectColors}
+      subjectOrder={subjectOrder}
+      subjectNames={subjectNames}
+      strongMin={FUSION_STRONG_MIN}
+      showWeak={fusionShowWeak}
+      focusedId={fusionFocusId}
+      onFocus={setFusionFocusId}
+      pickedIds={basket.pickedIds}
+      onTogglePick={canPick ? togglePickById : undefined}
+      onHover={setHoverCardId}
+      onClose={closeFusionView}
+    />
+  )
+  const activePanel = fusionOpen ? fusionPanel : panel
 
   return (
     <div className="m3-map flex h-screen flex-col bg-[var(--md-surface-container-low)]">
@@ -340,6 +403,24 @@ export function CurriculumMapView({
               onSelect={handleCanvasSelect}
               onClearSelection={() => map.selectNode(null)}
               focusRequest={focusRequest}
+              hubId={starHubId}
+            />
+          )}
+          {map.assetStatus === 'ready' && fusionOpen && (
+            <FusionGraph
+              fusion={map.fusion}
+              hubNode={fusionHubNode}
+              nodeById={map.nodeById}
+              edges={map.asset?.edges ?? []}
+              subjectColors={subjectColors}
+              subjectOrder={subjectOrder}
+              subjectNames={subjectNames}
+              showWeak={fusionShowWeak}
+              onShowWeakChange={setFusionShowWeak}
+              focusedId={fusionFocusId ?? hoverCardId}
+              onFocus={setFusionFocusId}
+              onClose={closeFusionView}
+              onRetry={() => map.fusion.hubId && openFusion(map.fusion.hubId)}
             />
           )}
         </main>
@@ -347,7 +428,7 @@ export function CurriculumMapView({
         {panelOpen && (
           <>
             <aside className="hidden w-[380px] flex-shrink-0 border-l border-[var(--md-outline-variant)] md:block">
-              {panel}
+              {activePanel}
             </aside>
             <div
               className="fixed inset-x-0 bottom-0 z-30 max-h-[58vh] overflow-hidden rounded-t-[28px] border-t border-[var(--md-outline-variant)] bg-[var(--md-surface-container-low)] md:hidden"
@@ -364,7 +445,7 @@ export function CurriculumMapView({
                   <span className="material-symbols-rounded text-[20px] leading-none">close</span>
                 </button>
               </div>
-              <div className="max-h-[calc(58vh-53px)] overflow-y-auto">{panel}</div>
+              <div className="max-h-[calc(58vh-53px)] overflow-y-auto">{activePanel}</div>
             </div>
           </>
         )}

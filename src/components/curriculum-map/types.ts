@@ -89,6 +89,19 @@ export interface MapSearchResult {
   matchedTerms?: string[]
 }
 
+/** 융합 핵심 추천 — 주제 관련도 + 같은 학년군 다른 교과를 엮는 힘 */
+export interface MapFusionHub {
+  id: string
+  /** 0..1 핵심 추천 점수 */
+  hubScore: number
+  /** 0..1 주제 관련도 */
+  topic: number
+  /** 같은 학년군에서 짝이 있는 다른 교과 id */
+  partnerSubjectIds: string[]
+  /** 주제 짝 성취기준 id — 융합 그래프 요청에 그대로 넘긴다 */
+  partnerIds: string[]
+}
+
 export interface MapSearchResponse {
   /** 관련·핵심 등급 */
   results: MapSearchResult[]
@@ -98,6 +111,8 @@ export interface MapSearchResponse {
   byBand?: Record<string, MapSearchResult[]>
   /** 관련 성취기준이 없는 학년군 */
   emptyBands?: string[]
+  /** 융합 핵심 추천(1위 + 다른 후보) */
+  fusion?: { hubs: MapFusionHub[] }
   judge: MapJudge
   elapsedMs: number
 }

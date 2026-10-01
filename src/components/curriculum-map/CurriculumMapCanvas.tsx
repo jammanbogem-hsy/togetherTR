@@ -65,17 +65,19 @@ export interface CurriculumMapCanvasProps {
   constellation: ConstellationGuides | null
   canvasTheme: CanvasTheme
   onCanvasThemeChange: (theme: CanvasTheme) => void
+  /** 융합 핵심 추천 성취기준 — 별 배지로 표시 */
+  hubId?: string | null
 }
 
 const LAYOUT_OPTIONS: Array<{ mode: MapLayoutMode; label: string; title: string }> = [
   { mode: 'constellation', label: '성좌', title: '교과 허브 둘레에 영역 방향으로 — 허브에서 멀수록 높은 학년군' },
-  { mode: 'grid', label: '표', title: '교과 × 학년군 × 영역 순서로 정렬한 표' },
+  { mode: 'grid', label: '선행 찾기', title: '교과 × 학년군 × 영역 순서로 정렬한 표 — 같은 교과의 앞 학년군 성취기준(선행 학습 요소)을 찾을 때' },
   { mode: 'similarity', label: '유사도', title: '문장 의미가 비슷할수록 가깝게 — 거리는 근사치입니다' },
 ]
 
 const LEGENDS: Record<MapLayoutMode, string> = {
   constellation: '성좌: 큰 점 = 교과, 방향 = 영역, 교과에서 멀수록 높은 학년군(점선 고리). 성취기준을 누르면 관련 성취기준이 둘레로 모이고, 가까울수록 관계가 강합니다.',
-  grid: '표: 교과 묶음(국수과사·도미음체·영실통합)을 나란히, 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.',
+  grid: '선행 찾기(표): 교과 묶음(국수과사·도미음체·영실통합)을 나란히, 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.',
   similarity: '유사도 지도: 문장 의미가 비슷할수록 가깝게 놓았지만 거리는 근사치입니다. 정확한 관계는 성취기준을 눌러 확인하세요.',
 }
 
@@ -120,6 +122,7 @@ export default function CurriculumMapCanvas({
   constellation,
   canvasTheme,
   onCanvasThemeChange,
+  hubId = null,
 }: CurriculumMapCanvasProps): React.ReactElement {
   const isGrid = layoutMode === 'grid'
   const isConstellation = layoutMode === 'constellation'
@@ -320,13 +323,14 @@ export default function CurriculumMapCanvas({
         ? { ...lastLocalRef.current, progress: localProgressRef.current, rings: localRings }
         : null,
       theme: canvasTheme,
+      hubId,
     })
     setHitNodes(hits)
   }, [
     canvasRef, setHitNodes, nodeMapRef, layoutNodes, ghostIds, degreeNorms, radiusOf, edges,
     view, size, focusId, focusNeighbors, selectedId, selectedNeighbors, relatedPending,
     scoreById, searchActive, alwaysLabels, subjectColors, relatedMeta, iconFontReady, layoutGuides,
-    layoutConstellation, localRings, canvasTheme,
+    layoutConstellation, localRings, canvasTheme, hubId,
   ])
 
   // 물리 루프와 상태 변경이 같은 draw 를 부른다

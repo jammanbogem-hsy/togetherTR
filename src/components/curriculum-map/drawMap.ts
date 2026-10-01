@@ -108,6 +108,52 @@ export interface DrawMapParams {
     rings: ReadonlyArray<{ radius: number; label: string }>
   } | null
   theme?: CanvasTheme
+  /** 융합 핵심 추천 성취기준 — 금색 고리와 별 배지로 표시한다 */
+  hubId?: string | null
+}
+
+const HUB_GOLD = '#F5B301'
+const HUB_GOLD_DARK = '#8A5A00'
+
+/** 다섯 꼭짓점 별 경로 (cx, cy 중심, 바깥 반지름 r) */
+function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
+  ctx.beginPath()
+  for (let i = 0; i < 10; i++) {
+    const radius = i % 2 === 0 ? r : r * 0.45
+    const a = -Math.PI / 2 + (i * Math.PI) / 5
+    const x = cx + Math.cos(a) * radius
+    const y = cy + Math.sin(a) * radius
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.closePath()
+}
+
+/** 융합 핵심 배지 — 노드 둘레 금색 이중 고리 + 오른쪽 위 별. 축소해도 보이게 화면 px 고정 크기. */
+function drawHubBadge(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  ctx.save()
+  ctx.globalAlpha = 1
+  ctx.setLineDash([])
+  ctx.lineWidth = 3
+  ctx.strokeStyle = HUB_GOLD
+  ctx.beginPath()
+  ctx.arc(x, y, r + 6, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.globalAlpha = 0.35
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.arc(x, y, r + 12, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.globalAlpha = 1
+  const sx = x + r + 6
+  const sy = y - r - 6
+  starPath(ctx, sx, sy, 11)
+  ctx.fillStyle = HUB_GOLD
+  ctx.fill()
+  ctx.lineWidth = 1.5
+  ctx.strokeStyle = HUB_GOLD_DARK
+  ctx.stroke()
+  ctx.restore()
 }
 
 const GUIDE_CELL_FILL = '#FFFFFF'
@@ -483,6 +529,11 @@ export function drawMap(ctx: CanvasRenderingContext2D, p: DrawMapParams): DrawMa
   }
 
 
+
+  if (p.hubId) {
+    const s = screenById.get(p.hubId)
+    if (s) drawHubBadge(ctx, s.x, s.y, radiusById.get(p.hubId) ?? 4)
+  }
 
   // 5) 라벨 — 탐욕적 가림 제거
   ctx.textAlign = 'center'
