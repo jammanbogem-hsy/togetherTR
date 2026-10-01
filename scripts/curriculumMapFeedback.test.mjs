@@ -95,6 +95,40 @@ test('grid: scaleGridGuides multiplies every coordinate by K', () => {
   assert.equal(scaled.areas[0].x, guides.areas[0].x * 2)
 })
 
+test('grid: subject blocks sit side by side, each with its own band columns', () => {
+  const subjects = [
+    { id: 'kor', name: '국어' }, { id: 'math', name: '수학' },
+    { id: 'mor', name: '도덕' }, { id: 'eng', name: '영어' }, { id: 'odd', name: '기타' },
+  ]
+  const nodes = [
+    node('k', '[2국01-01]', 'kor', '1-2학년군', '듣기'),
+    node('m', '[2수01-01]', 'math', '1-2학년군', '수'),
+    node('d', '[4도01-01]', 'mor', '3-4학년군', '자신'),
+    node('e', '[4영01-01]', 'eng', '3-4학년군', '이해'),
+    node('o', '[4기01-01]', 'odd', '3-4학년군', ''),
+  ]
+  const { positions, guides } = computeGridLayout(nodes, subjects, BANDS)
+  const p = id => positions.get(id)
+  assert.ok(p('k').y < p('m').y && Math.abs(p('k').x - p('m').x) < 1, '같은 묶음(국·수)은 위아래')
+  assert.ok(p('d').x > p('k').x + 900, '도덕 묶음은 국어 묶음 오른쪽')
+  assert.ok(p('e').x > p('d').x + 900, '영어 묶음은 도덕 묶음 오른쪽')
+  assert.ok(Math.abs(p('d').y - p('e').y) < 1, '묶음마다 위에서부터 시작')
+  assert.ok(Math.abs(p('o').x - p('e').x) < 1 && p('o').y > p('e').y, '목록 밖 교과는 마지막 묶음 끝')
+  assert.equal(guides.columns.length, 9, '묶음 3개 × 학년군 3열')
+  for (const r of guides.rows) {
+    const ids = nodes.filter(n => n.subjectId === r.subjectId).map(n => n.id)
+    for (const id of ids) assert.ok(p(id).x >= r.x0 && p(id).x <= r.x1, `${id} 는 자기 묶음 안`)
+  }
+})
+
+test('grid on the real asset: blocks keep the map roughly screen-shaped', () => {
+  const asset = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public/curriculum_map.json'), 'utf8'))
+  const { guides } = computeGridLayout(asset.nodes, asset.subjects, asset.bands)
+  const w = Math.max(...guides.columns.map(c => c.x1))
+  const h = Math.max(...guides.rows.map(r => r.y1))
+  assert.ok(w / h > 1 && w / h < 2.5, `가로:세로 ${(w / h).toFixed(2)}`)
+})
+
 test('compareStandardCodes: numeric-aware', () => {
   const sorted = [{ code: '[4수01-10]', id: 'b' }, { code: '[4수01-02]', id: 'a' }].sort(compareStandardCodes)
   assert.deepEqual(sorted.map(s => s.id), ['a', 'b'])

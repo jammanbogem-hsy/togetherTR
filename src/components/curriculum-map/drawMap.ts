@@ -171,7 +171,7 @@ function headerPill(ctx: CanvasRenderingContext2D, x: number, top: number, textW
   ctx.restore()
 }
 
-/** 정렬 배치 안내선 — 칸 배경, 영역 라벨, 달라붙는(sticky) 교과·학년군 머리글. */
+/** 정렬 배치 안내선 — 칸 배경, 영역 라벨, 묶음마다 달라붙는(sticky) 교과·학년군 머리글. */
 function drawGridGuides(
   ctx: CanvasRenderingContext2D,
   guides: GridGuides,
@@ -211,36 +211,38 @@ function drawGridGuides(
     }
   }
 
-  // 학년군 머리글 — 표 윗변에 붙되 위로 스크롤되면 화면 맨 위에 머문다
-  const top = guides.rows.length > 0 ? worldToScreen({ x: 0, y: guides.rows[0].y0 }, t).y : 0
-  // 캔버스 왼쪽 위 도구 막대(높이 약 56px) 아래에 머문다
-  const colY = Math.max(GUIDE_HEADER_MIN_Y, top - 30)
+  // 학년군 머리글 — 묶음마다 표 윗변에 붙되, 위로 스크롤되면 화면 맨 위에 머문다
+  // (그 묶음이 화면 위로 다 지나가면 감춘다)
   ctx.font = `600 ${GUIDE_HEADER_PX}px system-ui, -apple-system, 'Noto Sans KR', sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.lineJoin = 'round'
   ctx.lineWidth = LABEL_HALO_PX
   for (const col of guides.columns) {
-    const a = worldToScreen({ x: col.x0, y: 0 }, t)
-    const b = worldToScreen({ x: col.x1, y: 0 }, t)
-    if (b.x < 0 || a.x > width) continue
+    const a = worldToScreen({ x: col.x0, y: col.y0 }, t)
+    const b = worldToScreen({ x: col.x1, y: col.y1 }, t)
+    if (b.x < 0 || a.x > width || a.y > height) continue
+    // 캔버스 왼쪽 위 도구 막대(높이 약 56px) 아래에 머문다
+    const colY = Math.max(GUIDE_HEADER_MIN_Y, a.y - 30)
+    if (colY > b.y - 40) continue
     const x = Math.min(Math.max((a.x + b.x) / 2, a.x + 40), b.x - 40)
     headerPill(ctx, x - ctx.measureText(col.band).width / 2, colY, ctx.measureText(col.band).width)
     ctx.fillStyle = GUIDE_HEADER_COLOR
     ctx.fillText(col.band, x, colY)
   }
 
-  // 교과 머리글 — 표 왼변에 붙되 왼쪽으로 스크롤되면 화면 왼쪽에 머문다
-  const left = guides.columns.length > 0 ? worldToScreen({ x: guides.columns[0].x0, y: 0 }, t).x : 0
+  // 교과 머리글 — 묶음 왼변에 붙되, 왼쪽으로 스크롤되면 화면 왼쪽에 머문다
+  // (그 묶음이 화면 왼쪽으로 다 지나가면 감춘다)
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
   for (const row of guides.rows) {
-    const a = worldToScreen({ x: 0, y: row.y0 }, t)
-    const b = worldToScreen({ x: 0, y: row.y1 }, t)
-    if (b.y < 0 || a.y > height) continue
+    const a = worldToScreen({ x: row.x0, y: row.y0 }, t)
+    const b = worldToScreen({ x: row.x1, y: row.y1 }, t)
+    if (b.y < 0 || a.y > height || b.x < 0 || a.x - 12 > width) continue
     const label = row.label
     const w = ctx.measureText(label).width
-    const x = Math.max(10 + w, left - 12)
+    const x = Math.max(10 + w, a.x - 12)
+    if (x > b.x - 40) continue
     // 행의 화면에 보이는 구간 안에서 가운데 — 긴 행도 머리글이 화면 밖으로 나가지 않는다
     const visTop = Math.max(a.y + 14, GUIDE_HEADER_MIN_Y + 30)
     const visBottom = Math.min(b.y - 14, height - 40)

@@ -5,6 +5,9 @@
 // 두 원 사이의 거리를 어떤 수치로도 읽을 수 없다. 정렬 배치는 위치를 문서에 적힌
 // 속성으로만 정한다:
 //   행 = 교과(범례 순서) · 열 = 학년군 · 칸 안 = 영역 묶음 → 코드 순서
+// 2026-10-01: 교과 12개를 한 줄로 세우면 세로로만 길어져(1열 × 12행) 보기 힘들다는
+// 피드백 → 교과를 묶음(국수과사 / 도미음체 / 영실통합·창체)으로 나눠 묶음끼리 가로로
+// 나란히 놓는다. 묶음마다 학년군 3열을 따로 갖고, 묶음 안에서는 위 규칙 그대로다.
 // 그래서 같은 입력이면 누구에게나 같은 자리이고, "가깝다"는 말은 "같은 교과·학년군·
 // 영역이고 코드가 이웃한다"는 뜻뿐이다. 성취기준 사이의 관계는 거리 대신 선
 // (/related 판정)과 패널의 수치로만 보여 준다.
@@ -28,6 +31,9 @@ export interface GridSubject {
 export interface GridRowGuide {
   subjectId: string
   label: string
+  /** 이 행이 속한 묶음의 왼쪽·오른쪽 끝 — 교과 머리글 자리 */
+  x0: number
+  x1: number
   y0: number
   y1: number
 }
@@ -36,6 +42,9 @@ export interface GridColumnGuide {
   band: string
   x0: number
   x1: number
+  /** 이 열이 속한 묶음의 위·아래 끝 — 학년군 머리글 자리 */
+  y0: number
+  y1: number
 }
 
 export interface GridCellGuide {
@@ -82,6 +91,18 @@ export const GRID_AREA_LABEL_HEIGHT = 22
 export const GRID_AREA_GAP = 10
 /** 칸 사이 간격(가로·세로) */
 export const GRID_GUTTER = 28
+/** 묶음 사이 가로 간격 — 다음 묶음의 교과 머리글(화면 글자)이 앞 묶음과 부딪치지 않을 만큼 */
+export const GRID_BLOCK_GAP = 220
+
+/**
+ * 교과 묶음(교과 이름 기준, 묶음 안 순서 = 행 순서). 묶음끼리는 왼쪽→오른쪽으로 놓인다.
+ * 여기 없는 교과는 마지막 묶음 끝에 붙는다.
+ */
+export const GRID_SUBJECT_BLOCKS: readonly (readonly string[])[] = [
+  ['국어', '수학', '과학', '사회'],
+  ['도덕', '미술', '음악', '체육'],
+  ['영어', '실과', '통합교과', '창체'],
+]
 
 const NO_AREA = '영역 없음'
 
@@ -96,16 +117,19 @@ export function compareStandardCodes(a: { code: string; id: string }, b: { code:
 }
 
 /**
- * 교과 × 학년군 격자 배치. 행 높이는 그 교과에서 가장 큰 칸, 열 너비는 모두 같다.
+ * 교과 묶음 × (교과 × 학년군) 격자 배치. 묶음은 가로로 나란히, 묶음 안 교과는 세로로 쌓는다.
+ * 행 높이는 그 교과에서 가장 큰 칸, 열 너비는 모두 같다.
  * 비어 있는 칸(예: 과학 1-2학년군)도 자리는 남겨 행·열이 어긋나지 않게 한다.
  */
 export function computeGridLayout(
   nodes: readonly GridLayoutNode[],
   subjects: readonly GridSubject[],
   bands: readonly string[],
+  blocks: readonly (readonly string[])[] = GRID_SUBJECT_BLOCKS,
 ): GridLayoutResult {
   const positions = new Map<string, { x: number; y: number }>()
   const rows: GridRowGuide[] = []
+  const columns: GridColumnGuide[] = []
   const cells: GridCellGuide[] = []
   const areas: GridAreaGuide[] = []
 
@@ -119,11 +143,23 @@ export function computeGridLayout(
     if (!bandOrder.includes(n.band)) bandOrder.push(n.band)
   }
 
-  const cellWidth = GRID_CELL_PADDING * 2 + (GRID_COLUMNS_PER_CELL - 1) * GRID_PITCH_X
-  const columns: GridColumnGuide[] = bandOrder.map((band, i) => {
-    const x0 = i * (cellWidth + GRID_GUTTER)
-    return { band, x0, x1: x0 + cellWidth }
+  // 교과 → 묶음. 묶음 안 순서는 GRID_SUBJECT_BLOCKS 순서, 목록 밖 교과는 마지막 묶음에 범례 순서로.
+  const blockCount = Math.max(1, blocks.length)
+  const subjectBlocks: GridSubject[][] = Array.from({ length: blockCount }, () => [])
+  const placed = new Set<string>()
+  blocks.forEach((names, bi) => {
+    for (const name of names) {
+      const s = subjectOrder.find(x => x.name === name && !placed.has(x.id))
+      if (s) {
+        subjectBlocks[bi].push(s)
+        placed.add(s.id)
+      }
+    }
   })
+  for (const s of subjectOrder) if (!placed.has(s.id)) subjectBlocks[blockCount - 1].push(s)
+
+  const cellWidth = GRID_CELL_PADDING * 2 + (GRID_COLUMNS_PER_CELL - 1) * GRID_PITCH_X
+  const blockWidth = bandOrder.length * cellWidth + Math.max(0, bandOrder.length - 1) * GRID_GUTTER
 
   // (교과, 학년군) → 영역 묶음(영역 안은 코드 순, 영역끼리는 첫 코드 순)
   const cellKey = (subjectId: string, band: string): string => `${subjectId}\u0000${band}`
@@ -150,35 +186,49 @@ export function computeGridLayout(
     return h + (byArea.size - 1) * GRID_AREA_GAP
   }
 
-  let y = 0
-  for (const subject of subjectOrder) {
-    const rowCells = bandOrder.map(band => grouped.get(cellKey(subject.id, band)))
-    if (rowCells.every(c => !c || c.size === 0)) continue
-    const rowHeight = GRID_CELL_PADDING * 2 + Math.max(...rowCells.map(cellContentHeight))
-    rows.push({ subjectId: subject.id, label: subject.name, y0: y, y1: y + rowHeight })
+  // 빈 묶음(노드가 하나도 없는 묶음)은 자리를 남기지 않는다 — 다음 묶음이 당겨진다.
+  let blockX = 0
+  for (const blockSubjects of subjectBlocks) {
+    const bx0 = blockX
+    const bx1 = bx0 + blockWidth
+    const colX0 = bandOrder.map((_, i) => bx0 + i * (cellWidth + GRID_GUTTER))
+    const rowStart = rows.length
+    let y = 0
+    for (const subject of blockSubjects) {
+      const rowCells = bandOrder.map(band => grouped.get(cellKey(subject.id, band)))
+      if (rowCells.every(c => !c || c.size === 0)) continue
+      const rowHeight = GRID_CELL_PADDING * 2 + Math.max(...rowCells.map(cellContentHeight))
+      rows.push({ subjectId: subject.id, label: subject.name, x0: bx0, x1: bx1, y0: y, y1: y + rowHeight })
 
-    bandOrder.forEach((band, bandIndex) => {
-      const byArea = rowCells[bandIndex]
-      const col = columns[bandIndex]
-      if (!byArea || byArea.size === 0) return
-      cells.push({ subjectId: subject.id, band, x0: col.x0, y0: y, x1: col.x1, y1: y + rowHeight })
-      const groups = [...byArea.entries()]
-        .map(([area, list]) => [area, [...list].sort(compareStandardCodes)] as const)
-        .sort((a, b) => compareStandardCodes(a[1][0], b[1][0]))
-      let cursor = y + GRID_CELL_PADDING
-      for (const [area, list] of groups) {
-        areas.push({ subjectId: subject.id, band, area, x: col.x0 + GRID_CELL_PADDING - 12, y: cursor })
-        cursor += GRID_AREA_LABEL_HEIGHT
-        list.forEach((n, i) => {
-          positions.set(n.id, {
-            x: col.x0 + GRID_CELL_PADDING + (i % GRID_COLUMNS_PER_CELL) * GRID_PITCH_X,
-            y: cursor + GRID_PITCH_Y / 2 + Math.floor(i / GRID_COLUMNS_PER_CELL) * GRID_PITCH_Y,
+      bandOrder.forEach((band, bandIndex) => {
+        const byArea = rowCells[bandIndex]
+        const x0 = colX0[bandIndex]
+        if (!byArea || byArea.size === 0) return
+        cells.push({ subjectId: subject.id, band, x0, y0: y, x1: x0 + cellWidth, y1: y + rowHeight })
+        const groups = [...byArea.entries()]
+          .map(([area, list]) => [area, [...list].sort(compareStandardCodes)] as const)
+          .sort((a, b) => compareStandardCodes(a[1][0], b[1][0]))
+        let cursor = y + GRID_CELL_PADDING
+        for (const [area, list] of groups) {
+          areas.push({ subjectId: subject.id, band, area, x: x0 + GRID_CELL_PADDING - 12, y: cursor })
+          cursor += GRID_AREA_LABEL_HEIGHT
+          list.forEach((n, i) => {
+            positions.set(n.id, {
+              x: x0 + GRID_CELL_PADDING + (i % GRID_COLUMNS_PER_CELL) * GRID_PITCH_X,
+              y: cursor + GRID_PITCH_Y / 2 + Math.floor(i / GRID_COLUMNS_PER_CELL) * GRID_PITCH_Y,
+            })
           })
-        })
-        cursor += Math.ceil(list.length / GRID_COLUMNS_PER_CELL) * GRID_PITCH_Y + GRID_AREA_GAP
-      }
+          cursor += Math.ceil(list.length / GRID_COLUMNS_PER_CELL) * GRID_PITCH_Y + GRID_AREA_GAP
+        }
+      })
+      y += rowHeight + GRID_GUTTER
+    }
+    if (rows.length === rowStart) continue
+    const blockBottom = y - GRID_GUTTER
+    bandOrder.forEach((band, i) => {
+      columns.push({ band, x0: colX0[i], x1: colX0[i] + cellWidth, y0: 0, y1: blockBottom })
     })
-    y += rowHeight + GRID_GUTTER
+    blockX = bx1 + GRID_BLOCK_GAP
   }
 
   return { positions, guides: { rows, columns, cells, areas } }
@@ -187,8 +237,8 @@ export function computeGridLayout(
 /** 렌더러의 가독성 배수 K 를 안내선에도 똑같이 곱한다(노드 좌표와 어긋나지 않게). */
 export function scaleGridGuides(guides: GridGuides, k: number): GridGuides {
   return {
-    rows: guides.rows.map(r => ({ ...r, y0: r.y0 * k, y1: r.y1 * k })),
-    columns: guides.columns.map(c => ({ ...c, x0: c.x0 * k, x1: c.x1 * k })),
+    rows: guides.rows.map(r => ({ ...r, x0: r.x0 * k, x1: r.x1 * k, y0: r.y0 * k, y1: r.y1 * k })),
+    columns: guides.columns.map(c => ({ ...c, x0: c.x0 * k, x1: c.x1 * k, y0: c.y0 * k, y1: c.y1 * k })),
     cells: guides.cells.map(c => ({ ...c, x0: c.x0 * k, y0: c.y0 * k, x1: c.x1 * k, y1: c.y1 * k })),
     areas: guides.areas.map(a => ({ ...a, x: a.x * k, y: a.y * k })),
   }

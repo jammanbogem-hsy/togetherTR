@@ -75,7 +75,7 @@ const LAYOUT_OPTIONS: Array<{ mode: MapLayoutMode; label: string; title: string 
 
 const LEGENDS: Record<MapLayoutMode, string> = {
   constellation: '성좌: 큰 점 = 교과, 방향 = 영역, 교과에서 멀수록 높은 학년군(점선 고리). 성취기준을 누르면 관련 성취기준이 둘레로 모이고, 가까울수록 관계가 강합니다.',
-  grid: '표: 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.',
+  grid: '표: 교과 묶음(국수과사·도미음체·영실통합)을 나란히, 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.',
   similarity: '유사도 지도: 문장 의미가 비슷할수록 가깝게 놓았지만 거리는 근사치입니다. 정확한 관계는 성취기준을 눌러 확인하세요.',
 }
 
