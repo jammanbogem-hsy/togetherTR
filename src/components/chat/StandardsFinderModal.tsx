@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, MagnifyingGlass, Check, PaperPlaneRight } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
-import { curriculumJsonAssetPath } from '@/lib/curriculum/curriculumFilters'
+import { fetchCurriculumJson } from '@/lib/curriculum/curriculumFilters'
 
 /**
  * 성취기준 찾기 모달.
@@ -98,9 +98,7 @@ export function StandardsFinderModal({
         try {
           const file = SUBJECT_FILE[s]
           if (!file) continue
-          const res = await fetch(curriculumJsonAssetPath(file))
-          if (!res.ok) continue
-          const data = (await res.json()) as CurriculumFile
+          const data = await fetchCurriculumJson<CurriculumFile>(file)
           const flat: FlatStandard[] = []
           for (const g of data.core_idea_groups ?? []) {
             for (const set of g.standard_sets ?? []) {

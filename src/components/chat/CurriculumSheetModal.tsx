@@ -14,7 +14,7 @@ import { BridgePicker, JUDGE_LABEL } from './curriculum-sheet/BridgePicker'
 import type { BridgeCandidate } from './curriculum-sheet/BridgePicker'
 import { SheetMapLayer, requestSheetMapClose } from './curriculum-sheet/SheetMapLayer'
 import type { SheetMapPick, SheetMapRequest } from './curriculum-sheet/SheetMapLayer'
-import { curriculumJsonAssetPath } from '@/lib/curriculum/curriculumFilters'
+import { fetchCurriculumJson } from '@/lib/curriculum/curriculumFilters'
 import {
   ELEMENTARY_GRADE_BANDS,
   allowedGradeBandsForSubject,
@@ -684,13 +684,10 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     // 이제 non-2xx를 실패로 취급하고 1회 재시도한 뒤, 그래도 실패한 교과는 상단 안내 띠에 드러낸다.
     const failedSubjects: string[] = []
     const fetchSubjectStandards = async (subj: string, file: string): Promise<FlatStandard[]> => {
-      const path = curriculumJsonAssetPath(file)
       let lastError: unknown = null
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          const res = await fetch(path, attempt === 0 ? undefined : { cache: 'reload' })
-          if (!res.ok) throw new Error(`HTTP ${res.status} ${path}`)
-          const data: CurriculumFile = await res.json()
+          const data = await fetchCurriculumJson<CurriculumFile>(file, attempt === 0 ? undefined : { cache: 'reload' })
           const flat: FlatStandard[] = []
           for (const g of data.core_idea_groups) for (const s of g.standard_sets) {
             if (!ELEMENTARY_LEVELS.some(lv => s.school_level.includes(lv))) continue
@@ -1839,7 +1836,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             ))}
           </select>
         )}
-        {inBandCell && isLeader && (
+        {/* Hide once every band with this subject's standards is used — the remaining
+            bands (if any) are offered only as '연결 줄', so the two never overlap. */}
+        {inBandCell && isLeader && (canSplit || !row.subject || !row.coreIdea?.trim()) && (
           <button
             onClick={() => addGradeBandRow(row)}
             disabled={!canSplit}

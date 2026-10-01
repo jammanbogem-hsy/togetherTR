@@ -167,19 +167,42 @@ export function isUsableCoreIdea(value: string): boolean {
 }
 
 /**
- * Build the request path for a `public/curriculum_json/*.json` static asset.
+ * Request paths for a `public/curriculum_json/*.json` static asset, in try order.
  *
- * The stored filenames are NFD-normalized (macOS canonical form, preserved
- * through git and Firebase Hosting — e.g. '영어 교육과정.json'), while the
- * `SUBJECT_FILE` literals in the source are NFC. Fetching the NFC form yields
- * a URL whose percent-encoded bytes do not match the NFD file on disk → 404.
- *
- * Normalizing to NFD before percent-encoding makes the first request match the
- * stored filename, so no failing NFC request is issued (avoids a logged 404).
- * The filename is a single path segment (no '/'), so encodeURIComponent is the
- * correct encoder — it also turns the literal space in '영어 교육과정.json' into
- * '%20'.
+ * Firebase Hosting serves the filename exactly as it is stored on disk, and the
+ * on-disk forms are MIXED: files untouched since the macOS copy are NFD
+ * (국어·영어·음악·통합교과…), files rewritten by scripts are NFC (수학·도덕·
+ * 과학…, e.g. after the 2026-09 standard-text corrections). A URL whose
+ * percent-encoded bytes do not match the stored form → 404, which silently
+ * emptied those subjects' standards (every band looked "missing").
+ * So callers try NFD first, then NFC. The filename is a single path segment,
+ * so encodeURIComponent is the right encoder ('영어 교육과정.json' → '%20').
  */
+export function curriculumJsonAssetPaths(fileName: string): string[] {
+  const name = fileName ?? ''
+  const forms = [name.normalize('NFD'), name.normalize('NFC')]
+  return [...new Set(forms)].map(form => `/curriculum_json/${encodeURIComponent(form)}`)
+}
+
+/** Primary (NFD) request path — prefer fetchCurriculumJson, which also falls back to NFC. */
 export function curriculumJsonAssetPath(fileName: string): string {
-  return `/curriculum_json/${encodeURIComponent((fileName ?? '').normalize('NFD'))}`
+  return curriculumJsonAssetPaths(fileName)[0]
+}
+
+/**
+ * Fetch a curriculum JSON asset, trying each normalization form until one is 2xx.
+ * Throws with the last status when none succeeds (callers surface the failure).
+ */
+export async function fetchCurriculumJson<T = unknown>(fileName: string, init?: RequestInit): Promise<T> {
+  let lastError: unknown = null
+  for (const path of curriculumJsonAssetPaths(fileName)) {
+    try {
+      const res = await fetch(path, init)
+      if (res.ok) return (await res.json()) as T
+      lastError = new Error(`HTTP ${res.status} ${path}`)
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError ?? new Error(`curriculum asset not found: ${fileName}`)
 }
