@@ -77,7 +77,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
       <header className="bg-white border-b border-[#DADCE0] px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div className="w-full max-w-[1680px] mx-auto flex items-center justify-between">
           {/* 로고 */}
           <div className="flex items-center gap-3">
             <div
@@ -166,7 +166,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="w-full max-w-[1680px] mx-auto px-6 lg:px-10 py-8">
         {/* 헤더 + 폴더 추가 버튼 */}
         <div className="flex items-end justify-between mb-8">
           <div>
@@ -240,7 +240,7 @@ export default function DashboardPage() {
             : notHidden.filter(p => !folderProjectIds.has(p.id))
 
           return (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
+            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(340px,100%),1fr))]">
               {/* 폴더 (루트에서만) */}
               {!openFolderId && folders.map(f => (
                 <FolderCard

@@ -114,7 +114,7 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
 
   return (
     <div
-      className="project-card w-full h-full min-h-[300px] text-left rounded-2xl group relative flex flex-col cursor-pointer transition-[transform,box-shadow,border-width] duration-200 ease-out motion-safe:hover:-translate-y-1.5 motion-safe:hover:scale-[1.035] hover:z-10 focus-within:z-10"
+      className="project-card w-full min-h-[320px] sm:min-h-0 sm:aspect-square text-left overflow-hidden rounded-2xl group relative flex flex-col cursor-pointer transition-[transform,box-shadow,border-width] duration-200 ease-out motion-safe:hover:-translate-y-1.5 motion-safe:hover:scale-[1.035] hover:z-10 focus-within:z-10"
       style={{
         '--cc': s.cc,
         '--cx1': s.cx1, '--cy1': s.cy1,
@@ -154,10 +154,10 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
         </button>
       )}
 
-      <div className="relative z-[1] flex flex-col flex-1 p-5 gap-3.5 text-left">
+      <div className="relative z-[1] flex flex-col flex-1 p-4 gap-2.5 sm:p-5 sm:gap-3 text-left">
         {/* 제목 — 두 줄까지 그대로 보인다 */}
         <div className="pr-9">
-          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
             {isHost && (
               <span className="inline-flex items-center gap-1 text-[12px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                 <Crown className="w-3.5 h-3.5" /> 방장
@@ -191,12 +191,12 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
         <div className="flex-1" />
 
         {/* 하단: 팀원 + 초대코드 */}
-        <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100">
+        <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-gray-100">
           <div className="flex items-center gap-2 min-w-0">
             {members.length > 0 ? (
               <>
                 <div className="flex -space-x-2">
-                  {members.slice(0, 4).map((m) => (
+                  {members.slice(0, 3).map((m) => (
                     <div
                       key={m.uid}
                       className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-[12px] font-bold text-white shadow-sm"
@@ -206,13 +206,13 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
                       {m.displayName?.[0] || '?'}
                     </div>
                   ))}
-                  {members.length > 4 && (
+                  {members.length > 3 && (
                     <div className="w-8 h-8 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[12px] font-bold text-gray-600 shadow-sm">
-                      +{members.length - 4}
+                      +{members.length - 3}
                     </div>
                   )}
                 </div>
-                <span className="text-[13px] font-semibold text-[#5F6368]">팀원 {members.length}명</span>
+                <span className="text-[13px] font-semibold text-[#5F6368] whitespace-nowrap">팀원 {members.length}명</span>
               </>
             ) : (
               <span className="text-[13px] font-semibold text-[#5F6368] flex items-center gap-1">
@@ -221,9 +221,9 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
             )}
           </div>
           {project.inviteCode && (
-            <span className="flex flex-col items-end leading-tight flex-shrink-0" title="팀원이 '방 참여하기'에 입력하는 코드">
+            <span className="flex flex-col items-end leading-tight min-w-0 flex-shrink" title={`초대코드 ${project.inviteCode} — 팀원이 '방 참여하기'에 입력하는 코드`}>
               <span className="text-[11px] text-[#80868B] font-medium">초대코드</span>
-              <span className="px-2 py-0.5 rounded-md font-bold text-[13px] tracking-wide" style={{ backgroundColor: s.cc, color: s.accent }}>
+              <span className="px-2 py-0.5 rounded-md font-bold text-[13px] tracking-wide whitespace-nowrap max-w-full truncate" style={{ backgroundColor: s.cc, color: s.accent }}>
                 {project.inviteCode}
               </span>
             </span>
@@ -259,7 +259,7 @@ export function FolderCard({ folder, projectTitles, onOpen, onDrop, onRename, on
   return (
     <div
       className={cn(
-        'folder-card w-full h-full min-h-[300px] rounded-2xl group relative flex flex-col cursor-pointer transition-[transform,box-shadow,background-color] duration-200 ease-out',
+        'folder-card w-full min-h-[320px] sm:min-h-0 sm:aspect-square rounded-2xl overflow-hidden group relative flex flex-col cursor-pointer transition-[transform,box-shadow,background-color] duration-200 ease-out',
         dragOver ? 'scale-105 z-10' : 'motion-safe:hover:-translate-y-1.5 motion-safe:hover:scale-[1.035] hover:z-10',
       )}
       style={{
