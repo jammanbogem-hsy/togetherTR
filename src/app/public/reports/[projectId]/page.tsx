@@ -8,19 +8,21 @@ import { PublicReportViewer } from '@/components/public/PublicReportViewer'
 
 export default function PublicReportPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = use(params)
-  const [report, setReport] = useState<PublicReport | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<{
+    id: string
+    report: PublicReport | null
+    error: string | null
+  } | null>(null)
+  const loading = result?.id !== projectId
+  const report = loading ? null : result.report
+  const error = loading ? null : result.error
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
     getPublicReport(projectId)
       .then(r => {
         if (cancelled) return
-        setReport(r)
-        setLoading(false)
+        setResult({ id: projectId, report: r, error: null })
         if (r) {
           // 탭 타이틀 — OG 공유는 추후 server metadata로 보강
           document.title = `${r.projectTitle} — T-CID2.0 협력적 수업설계`
@@ -28,8 +30,11 @@ export default function PublicReportPage({ params }: { params: Promise<{ project
       })
       .catch(err => {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : '보고서를 불러오지 못했습니다.')
-        setLoading(false)
+        setResult({
+          id: projectId,
+          report: null,
+          error: err instanceof Error ? err.message : '보고서를 불러오지 못했습니다.',
+        })
       })
     return () => { cancelled = true }
   }, [projectId])

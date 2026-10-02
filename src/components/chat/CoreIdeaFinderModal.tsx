@@ -31,19 +31,28 @@ const SUBJECT_CHIPS = [
 
 export function CoreIdeaFinderModal({ open, onClose, onInsert }: Props) {
   const [items, setItems] = useState<ContentItem[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(open)
+  const [prevOpen, setPrevOpen] = useState(open)
+  const [requestNumber, setRequestNumber] = useState(open ? 1 : 0)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
 
+  if (prevOpen !== open) {
+    setPrevOpen(open)
+    if (open) {
+      setLoading(true)
+      setRequestNumber(requestNumber + 1)
+    }
+  }
+
   useEffect(() => {
     if (!open) return
-    setLoading(true)
     fetch('/api/core-ideas')
       .then(r => r.json())
       .then(d => setItems(d.items ?? []))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [open])
+  }, [open, requestNumber])
 
   const filtered = useMemo(() => {
     let result = items

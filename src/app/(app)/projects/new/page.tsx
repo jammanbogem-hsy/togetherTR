@@ -169,7 +169,7 @@ export default function NewProjectPage() {
             </div>
 
             <p className="text-xs text-gray-400 mb-6">
-              팀원이 대시보드에서 "방 참여하기"를 누르고 이 코드를 입력하면 참여할 수 있어요
+              팀원이 대시보드에서 &quot;방 참여하기&quot;를 누르고 이 코드를 입력하면 참여할 수 있어요
             </p>
 
             <button

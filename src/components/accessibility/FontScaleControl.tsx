@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Minus, Plus, Chat, TextAa } from '@phosphor-icons/react'
 
 // 글자 크기 스케일. 1.0 = 기본. 시각적으로 의미 있는 간격으로 구성.
@@ -108,12 +108,12 @@ export function FontScaleControl() {
 
 // 채팅 전용 글자 크기 — 같은 탭 내 여러 소비자(Control 버튼 + 메시지 영역) 간 상태 공유 필요.
 // useScaleIdx처럼 컴포넌트 각자 state를 쓰면 동기화 안 되므로 모듈 레벨 pub/sub 구조 사용.
-const chatScaleListeners = new Set<(idx: number) => void>()
+const chatScaleListeners = new Set<() => void>()
 let currentChatIdx: number = DEFAULT_IDX
 let chatIdxLoaded = false
 
 function loadChatIdxOnce() {
-  if (chatIdxLoaded) return
+  if (typeof window === 'undefined' || chatIdxLoaded) return
   chatIdxLoaded = true
   try {
     const saved = localStorage.getItem(CHAT_STORAGE_KEY)
@@ -125,24 +125,32 @@ function loadChatIdxOnce() {
 }
 
 function setSharedChatIdx(updater: (idx: number) => number) {
+  loadChatIdxOnce()
   const next = updater(currentChatIdx)
   if (next === currentChatIdx) return
   currentChatIdx = next
   try { localStorage.setItem(CHAT_STORAGE_KEY, String(next)) } catch {}
-  chatScaleListeners.forEach(cb => cb(next))
+  chatScaleListeners.forEach(cb => cb())
 }
 
+function subscribeChatScale(onStoreChange: () => void) {
+  chatScaleListeners.add(onStoreChange)
+  return () => { chatScaleListeners.delete(onStoreChange) }
+}
+
+function getChatIdxSnapshot() {
+  loadChatIdxOnce()
+  return currentChatIdx
+}
+
+const getChatIdxServerSnapshot = () => DEFAULT_IDX
+const subscribeMounted = () => () => {}
+const getMountedSnapshot = () => true
+const getMountedServerSnapshot = () => false
+
 function useSharedChatIdx(): [number, (updater: (idx: number) => number) => void, boolean] {
-  const [idx, setIdxState] = useState(DEFAULT_IDX)
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => {
-    loadChatIdxOnce()
-    setIdxState(currentChatIdx)
-    setMounted(true)
-    const cb = (n: number) => setIdxState(n)
-    chatScaleListeners.add(cb)
-    return () => { chatScaleListeners.delete(cb) }
-  }, [])
+  const idx = useSyncExternalStore(subscribeChatScale, getChatIdxSnapshot, getChatIdxServerSnapshot)
+  const mounted = useSyncExternalStore(subscribeMounted, getMountedSnapshot, getMountedServerSnapshot)
   return [idx, setSharedChatIdx, mounted]
 }
 

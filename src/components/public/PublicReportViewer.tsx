@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { PublicReport, StageCode } from '@/types'
@@ -161,6 +161,10 @@ type Tab =
   | { key: StageCode; label: string; type: 'stage'; stage: StageCode; color: string; data: { content: string; savedAt: number } }
   | { key: 'final'; label: string; type: 'final'; color: string; data: { content: string; savedAt: number } }
 
+const subscribeMounted = () => () => {}
+const getMountedSnapshot = () => true
+const getMountedServerSnapshot = () => false
+
 export function PublicReportViewer({ report }: { report: PublicReport }) {
   const [copied, setCopied] = useState(false)
 
@@ -197,23 +201,31 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
 
   // URL 해시(#T, #final 등)로 탭 상태 동기화.
   // 링크 공유 시 특정 탭을 가리킬 수 있고, 뒤로가기로 탭 이동 가능.
-  const [activeKey, setActiveKey] = useState<string | null>(null)
+  const mounted = useSyncExternalStore(subscribeMounted, getMountedSnapshot, getMountedServerSnapshot)
+  const hash = mounted ? window.location.hash.slice(1) : ''
+  const [selection, setSelection] = useState<{
+    tabs: Tab[]
+    mounted: boolean
+    activeKey: string | null
+  }>(() => ({ tabs, mounted, activeKey: (tabs.find(t => t.key === hash) ?? tabs[0])?.key ?? null }))
+
+  if (selection.tabs !== tabs || selection.mounted !== mounted) {
+    // 처음 마운트하거나 탭 구성이 바뀔 때만 해시 불일치를 첫 탭으로 처리.
+    setSelection({ tabs, mounted, activeKey: (tabs.find(t => t.key === hash) ?? tabs[0])?.key ?? null })
+  }
+  const activeKey = selection.activeKey
+
   useEffect(() => {
-    if (tabs.length === 0) { setActiveKey(null); return }
-    const hash = typeof window !== 'undefined' ? window.location.hash.slice(1) : ''
-    const matched = tabs.find(t => t.key === hash)
-    setActiveKey(matched?.key ?? tabs[0].key)
     const onHashChange = () => {
-      const h = window.location.hash.slice(1)
-      const m = tabs.find(t => t.key === h)
-      if (m) setActiveKey(m.key)
+      const matched = tabs.find(t => t.key === window.location.hash.slice(1))
+      if (matched) setSelection(prev => ({ ...prev, activeKey: matched.key }))
     }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [tabs])
 
   function changeTab(key: string) {
-    setActiveKey(key)
+    setSelection(prev => ({ ...prev, activeKey: key }))
     if (typeof window !== 'undefined') {
       window.history.replaceState(null, '', `#${key}`)
     }

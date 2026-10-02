@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Graph as GraphIcon } from '@phosphor-icons/react'
 import ReactMarkdown, { type Components } from 'react-markdown'
@@ -39,7 +39,11 @@ export function ProjectOntologyModal({
   const inheritanceMap = useMemo(() => computeInheritance(graph.nodes), [graph.nodes])
 
   const [selectedId, setSelectedId] = useState<ActivityCode | null>(null)
-  useEffect(() => { if (open) setSelectedId(null) }, [open])
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
+    if (open) setSelectedId(null)
+  }
 
   if (!open || typeof document === 'undefined') return null
 

@@ -1075,7 +1075,7 @@ export default function ProblemSituationDesigner({
             {chatMessages.length === 0 && !chatStreamingText && (
               <div className="text-[11px] text-[#9AA0A6] text-center mt-4 leading-relaxed px-2">
                 결과를 보고 수정하고 싶은 내용을 입력하세요.<br /><br />
-                <span className="text-[#1A73E8]">"저장해줘"</span>라고 하면 채팅 내용을 반영한 시나리오로 산출물에 확정됩니다.
+                <span className="text-[#1A73E8]">&quot;저장해줘&quot;</span>라고 하면 채팅 내용을 반영한 시나리오로 산출물에 확정됩니다.
               </div>
             )}
             {chatMessages.map((m, i) => (
@@ -1138,10 +1138,10 @@ export default function ProblemSituationDesigner({
                 title="확정 내용 전체 보기"
               >
                 <ArrowsOut size={13} />
-                <span className="truncate">"{currentData.scenario.title}" 확정됨 — 클릭해서 전체 보기</span>
+                <span className="truncate">&quot;{currentData.scenario.title}&quot; 확정됨 — 클릭해서 전체 보기</span>
               </button>
             ) : (
-              <p className="text-xs text-[#9AA0A6]">결과에서 "이 시나리오로 확정" 버튼을 클릭하거나 채팅에서 "저장해줘"라고 하세요.</p>
+              <p className="text-xs text-[#9AA0A6]">결과에서 &quot;이 시나리오로 확정&quot; 버튼을 클릭하거나 채팅에서 &quot;저장해줘&quot;라고 하세요.</p>
             )}
           </div>
           <button
