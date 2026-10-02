@@ -210,14 +210,21 @@ body {
 
 /* ── Project Card — 단일 클래스, 코너 위치/색상은 CSS 변수로 주입 ─── */
 .project-card {
-  --corner-pct: 24%;
+  --corner-pct: 17%;
   background-color: white;
   background-image:
     radial-gradient(circle at var(--cx1, 100%) var(--cy1, 0%),   var(--cc, rgba(26,115,232,0.11)) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px)),
     radial-gradient(circle at var(--cx2, 0%)   var(--cy2, 100%), var(--cc, rgba(26,115,232,0.11)) 0% var(--corner-pct), transparent calc(var(--corner-pct) + 1px));
   transition: --corner-pct var(--card-speed, 0.65s) cubic-bezier(.4,0,.2,1);
 }
-.project-card:hover { --corner-pct: 56%; }
+.project-card:hover { --corner-pct: 34%; }
+/* 카드 그림자 — 평소엔 옅게, 올리면 테마색으로 크게 떠오른다 (대시보드 프로젝트·폴더 공통) */
+.project-card, .folder-card { box-shadow: 0 2px 10px var(--card-shadow, rgba(0,0,0,0.08)); }
+.project-card:hover, .folder-card:hover,
+.project-card:focus-within, .folder-card:focus-visible {
+  box-shadow: 0 14px 34px var(--card-shadow, rgba(0,0,0,0.16)), 0 2px 6px rgba(0,0,0,0.06);
+}
+.project-card:hover { border-width: 3px !important; }
 
 /* ── Squid Button (odd-squid style icon spin) ─────────── */
 .squid-btn:hover svg { animation: spin 2s linear infinite; }

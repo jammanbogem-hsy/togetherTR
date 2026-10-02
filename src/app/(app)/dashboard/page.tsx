@@ -7,218 +7,11 @@ import { useRouter } from 'next/navigation'
 import { getUserProjects, deleteProject, getUserFolders, saveUserFolders, getUserHiddenProjects, hideProjectFromDashboard, type DashboardFolder } from '@/lib/firebase/projects'
 import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
-import { formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
+import { FOLDER_COLORS, FolderCard, ProjectCard } from '@/components/dashboard/DashboardCards'
 import { cn } from '@/lib/utils'
-import { Plus, BookOpen, User, Loader2, LogOut, UserPlus, Crown, Play, FolderPlus, Folder, ArrowLeft, Pencil, Trash2, Network } from 'lucide-react'
+import { Plus, BookOpen, Loader2, LogOut, UserPlus, Play, FolderPlus, Folder, ArrowLeft, Network } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 
-const STAGE_LABELS = { T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가' }
-const STAGE_CHIP: Record<string, string> = {
-  T: 'bg-[#1A73E8] text-white',
-  A: 'bg-[#7B1FA2] text-white',
-  Ds: 'bg-[#00897B] text-white',
-  DI: 'bg-[#E65100] text-white',
-  E: 'bg-[#C62828] text-white',
-}
-
-// 12가지 보색 조합 × 4가지 코너 위치 변형 — ID 해시로 결정적 배정
-type CardTheme = { border: string; shadow: string; cc: string; accent: string; cx1: string; cy1: string; cx2: string; cy2: string; speed: string }
-const ALL_CARD_THEMES: CardTheme[] = [
-  { border: '#4285F4', shadow: 'rgba(26,115,232,0.18)',   cc: 'rgba(244,143,177,0.38)', accent: '#1A73E8', cx1:'100%', cy1:'0%',   cx2:'0%',   cy2:'100%', speed:'0.65s' }, // 블루+핑크 / 우상+좌하
-  { border: '#AB47BC', shadow: 'rgba(123,31,162,0.18)',   cc: 'rgba(255,213,79,0.44)',  accent: '#7B1FA2', cx1:'0%',   cy1:'0%',   cx2:'100%', cy2:'100%', speed:'0.9s'  }, // 퍼플+골드 / 좌상+우하
-  { border: '#26A69A', shadow: 'rgba(0,137,123,0.18)',    cc: 'rgba(255,152,0,0.34)',   accent: '#00897B', cx1:'100%', cy1:'0%',   cx2:'100%', cy2:'100%', speed:'0.5s'  }, // 틸+앰버 / 우상+우하
-  { border: '#EF6C00', shadow: 'rgba(230,81,0,0.18)',     cc: 'rgba(3,169,244,0.32)',   accent: '#E65100', cx1:'0%',   cy1:'0%',   cx2:'0%',   cy2:'100%', speed:'0.75s' }, // 오렌지+스카이 / 좌상+좌하
-  { border: '#E53935', shadow: 'rgba(198,40,40,0.18)',    cc: 'rgba(67,160,71,0.30)',   accent: '#C62828', cx1:'100%', cy1:'0%',   cx2:'0%',   cy2:'100%', speed:'0.6s'  }, // 레드+초록 / 우상+좌하
-  { border: '#5C6BC0', shadow: 'rgba(92,107,192,0.18)',   cc: 'rgba(255,138,101,0.36)', accent: '#3949AB', cx1:'0%',   cy1:'0%',   cx2:'100%', cy2:'100%', speed:'0.8s'  }, // 인디고+코랄 / 좌상+우하
-  { border: '#2E7D32', shadow: 'rgba(46,125,50,0.18)',    cc: 'rgba(206,147,216,0.38)', accent: '#388E3C', cx1:'100%', cy1:'0%',   cx2:'100%', cy2:'100%', speed:'0.55s' }, // 그린+라벤더 / 우상+우하
-  { border: '#F9A825', shadow: 'rgba(249,168,37,0.20)',   cc: 'rgba(66,133,244,0.32)',  accent: '#F57F17', cx1:'0%',   cy1:'0%',   cx2:'0%',   cy2:'100%', speed:'0.7s'  }, // 앰버+블루 / 좌상+좌하
-  { border: '#D81B8A', shadow: 'rgba(216,27,138,0.18)',   cc: 'rgba(128,203,196,0.34)', accent: '#AD1457', cx1:'100%', cy1:'0%',   cx2:'0%',   cy2:'100%', speed:'0.85s' }, // 핑크+틸 / 우상+좌하
-  { border: '#00ACC1', shadow: 'rgba(0,172,193,0.18)',    cc: 'rgba(171,71,188,0.32)',  accent: '#0097A7', cx1:'0%',   cy1:'0%',   cx2:'100%', cy2:'100%', speed:'0.6s'  }, // 시안+퍼플 / 좌상+우하
-  { border: '#7B1FA2', shadow: 'rgba(123,31,162,0.18)',   cc: 'rgba(255,193,7,0.40)',   accent: '#6A1B9A', cx1:'100%', cy1:'0%',   cx2:'100%', cy2:'100%', speed:'0.75s' }, // 딥퍼플+옐로 / 우상+우하
-  { border: '#C62828', shadow: 'rgba(198,40,40,0.18)',    cc: 'rgba(0,172,193,0.32)',   accent: '#B71C1C', cx1:'0%',   cy1:'0%',   cx2:'0%',   cy2:'100%', speed:'0.9s'  }, // 딥레드+시안 / 좌상+좌하
-]
-
-function pickCardTheme(id: string): CardTheme {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
-  return ALL_CARD_THEMES[Math.abs(h) % ALL_CARD_THEMES.length]
-}
-
-function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
-  project: Project; onClick: () => void; isHost?: boolean; onDelete?: () => void; onHide?: () => void
-}) {
-  const s = pickCardTheme(project.id ?? project.title ?? 'default')
-  const members = Object.values(project.memberInfo ?? {})
-
-  return (
-    <div
-      className="project-card w-full text-left rounded-2xl hover:scale-[1.02] transition-transform duration-200 group relative flex flex-col cursor-pointer"
-      style={{
-        '--cc': s.cc,
-        '--cx1': s.cx1, '--cy1': s.cy1,
-        '--cx2': s.cx2, '--cy2': s.cy2,
-        '--card-speed': s.speed,
-        border: `2.5px solid ${s.border}`,
-        boxShadow: `0 2px 12px ${s.shadow}`,
-        aspectRatio: '1 / 1',
-      } as React.CSSProperties}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        className="absolute inset-0 z-[2] rounded-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-[#1A73E8]/25"
-        aria-label={`${project.title} 프로젝트 열기`}
-      />
-
-      {/* 호스트: 삭제 / 팀원: 대시보드에서 숨김 (호버 시 노출) */}
-      {isHost && onDelete && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-red-50 border border-gray-200 hover:border-red-300 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-red-500"
-          title="프로젝트 삭제"
-        >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
-        </button>
-      )}
-      {!isHost && onHide && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onHide() }}
-          className="absolute top-2.5 right-2.5 z-10 w-7 h-7 rounded-full bg-white/80 hover:bg-gray-100 border border-gray-200 hover:border-gray-400 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-gray-600"
-          title="대시보드에서 숨기기"
-        >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-        </button>
-      )}
-
-      <div className="relative z-[1] flex flex-col flex-1 p-5 text-left">
-        {/* 상단: 제목 + 단계 */}
-        <div className="flex items-start gap-3 mb-3 pr-8">
-          <div className="flex items-center gap-2 min-w-0">
-            {isHost && <Crown className="w-4 h-4 text-amber-500 flex-shrink-0" />}
-            <h3 className="font-extrabold text-base leading-snug truncate text-[#202124]">
-              {project.title}
-            </h3>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          <span className={cn('text-[11px] px-2.5 py-0.5 rounded-full font-bold shadow-sm', STAGE_CHIP[project.currentStage])}>
-            {project.currentStage} · {STAGE_LABELS[project.currentStage]}
-          </span>
-          {project.demoExperience && (
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#F3E8FF] text-[#7C3AED] font-bold">DEMO</span>
-          )}
-          <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#F1F3F4] text-[#5F6368] font-semibold">
-            {/* 여러 학년군 팀은 학년군 전체를 '1-2·5-6학년군' 형태로 보여준다 */}
-            {formatGradeBandList(project.teamGradeBands) || project.targetGradeGroup}
-          </span>
-        </div>
-
-        {/* 교과 */}
-        {project.targetSubjects && project.targetSubjects.length > 0 && (
-          <p className="text-[11px] text-[#5F6368] font-medium mb-2 truncate">
-            {project.targetSubjects.join(', ')}
-          </p>
-        )}
-
-        {/* 스페이서 */}
-        <div className="flex-1" />
-
-        {/* 하단: 팀원 아바타 + 초대코드 */}
-        <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100">
-          <div className="flex items-center gap-1.5">
-            {members.length > 0 ? (
-              <>
-                <div className="flex -space-x-2">
-                  {members.slice(0, 4).map((m) => (
-                    <div
-                      key={m.uid}
-                      className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
-                      style={{ backgroundColor: m.color || '#9AA0A6' }}
-                      title={m.displayName}
-                    >
-                      {m.displayName?.[0] || '?'}
-                    </div>
-                  ))}
-                  {members.length > 4 && (
-                    <div className="w-7 h-7 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500 shadow-sm">
-                      +{members.length - 4}
-                    </div>
-                  )}
-                </div>
-                <span className="text-[11px] text-[#9AA0A6] ml-1">{members.length}명</span>
-              </>
-            ) : (
-              <span className="text-[11px] text-[#9AA0A6] flex items-center gap-1">
-                <User className="w-3 h-3" /> 개인
-              </span>
-            )}
-          </div>
-          {project.inviteCode && (
-            <span className="px-2 py-0.5 rounded-full font-bold text-[10px]"
-              style={{ backgroundColor: `${s.cc}`, color: s.accent }}>
-              {project.inviteCode}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const FOLDER_COLORS = ['#1A73E8', '#7B1FA2', '#00897B', '#E65100', '#C62828', '#3949AB', '#2E7D32', '#F57F17']
-
-function FolderCard({ folder, projectCount, onOpen, onDrop, onRename, onDelete }: {
-  folder: DashboardFolder
-  projectCount: number
-  onOpen: () => void
-  onDrop: (projectId: string) => void
-  onRename: () => void
-  onDelete: () => void
-}) {
-  const [dragOver, setDragOver] = useState(false)
-  return (
-    <div
-      className={cn(
-        'w-full rounded-2xl transition-all duration-200 group relative flex flex-col cursor-pointer',
-        dragOver ? 'scale-105 ring-4' : 'hover:scale-[1.02]'
-      )}
-      style={{
-        aspectRatio: '1 / 1',
-        border: `2.5px ${dragOver ? 'dashed' : 'solid'} ${folder.color}`,
-        background: dragOver ? `${folder.color}15` : '#FAFBFC',
-        ...(dragOver ? { ringColor: folder.color } : {}),
-      }}
-      onClick={onOpen}
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragOver(false)
-        const pid = e.dataTransfer.getData('text/project-id')
-        if (pid) onDrop(pid)
-      }}
-    >
-      {/* 액션 버튼 */}
-      <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={(e) => { e.stopPropagation(); onRename() }} className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-blue-50 text-gray-400 hover:text-blue-500" title="이름 변경">
-          <Pencil className="w-3 h-3" />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete() }} className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-red-50 text-gray-400 hover:text-red-500" title="폴더 삭제">
-          <Trash2 className="w-3 h-3" />
-        </button>
-      </div>
-
-      <div className="flex flex-col items-center justify-center flex-1 p-5 gap-3">
-        <Folder className="w-16 h-16" style={{ color: folder.color }} strokeWidth={1.5} />
-        <div className="text-center">
-          <p className="font-bold text-sm text-[#202124] truncate max-w-[160px]">{folder.name}</p>
-          <p className="text-[11px] text-[#9AA0A6] mt-0.5">{projectCount}개 프로젝트</p>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -447,13 +240,13 @@ export default function DashboardPage() {
             : notHidden.filter(p => !folderProjectIds.has(p.id))
 
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
               {/* 폴더 (루트에서만) */}
               {!openFolderId && folders.map(f => (
                 <FolderCard
                   key={f.id}
                   folder={f}
-                  projectCount={projects.filter(p => f.projectIds.includes(p.id)).length}
+                  projectTitles={projects.filter(p => f.projectIds.includes(p.id) && !hidden.has(p.id)).map(p => p.title)}
                   onOpen={() => setOpenFolderId(f.id)}
                   onDrop={(pid) => {
                     const next = folders.map(fo =>
@@ -475,6 +268,7 @@ export default function DashboardPage() {
                 return (
                   <div
                     key={p.id}
+                    className="h-full"
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('text/project-id', p.id)
