@@ -207,25 +207,36 @@ export function CurriculumMapView({
   }, [map])
 
   const { selectedId, selectNode, clearSearch } = map
+  // Esc 는 안쪽부터 하나씩 닫는다: 대화상자 → 융합 묶음 → 선택 → 검색.
+  // 문서 캡처 단계에서 먼저 받는다 — 분석시트(embedded)도 document 에서 Esc 로 분석맵 전체를
+  // 닫으므로, 지도 안에서 닫을 것이 있으면 여기서 소비하고 바깥으로 보내지 않는다
+  // (2026-10-02: 시트 안에서 융합 묶음을 Esc 로 닫으면 분석맵까지 닫히던 문제).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
+      const consume = (): void => {
+        e.stopPropagation()
+        e.preventDefault()
+      }
       if (dialogOpen) {
+        consume()
         setDialogOpen(false)
         return
       }
       if (fusionOpen) {
+        consume()
         closeFusionView()
         return
       }
       if (selectedId) {
+        consume()
         selectNode(null)
         return
       }
       clearSearch()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [clearSearch, closeFusionView, dialogOpen, fusionOpen, selectNode, selectedId])
 
   const onSubmitSearch = useCallback((e: React.FormEvent) => {
