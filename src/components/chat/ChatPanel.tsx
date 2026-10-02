@@ -2024,8 +2024,13 @@ function ChatPanelContent() {
 
   // ─── SSE 스트리밍 공통 함수 ──────────────────────────
   // 팀원 목록: AI가 누가 발언했는지 파악하기 위해 시스템 프롬프트에 주입
+  const teamLeaderUid = proj.hostUid ?? proj.createdBy
   const teamMembersList = proj.memberInfo
-    ? Object.values(proj.memberInfo).map(m => m.displayName).join(', ')
+    ? Object.entries(proj.memberInfo).map(([uid, m]) => (
+        proj.mode !== 'solo' && uid === teamLeaderUid && m.displayName
+          ? `${m.displayName}(팀장)`
+          : m.displayName
+      )).join(', ')
     : undefined
 
   // 메시지 배열 → API 전송 형식 (user 메시지에 발신자 이름 주입)
