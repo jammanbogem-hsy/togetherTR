@@ -6,6 +6,7 @@
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { CurriculumMapView } from '@/components/curriculum-map/CurriculumMapView'
+import AppSendToSheet from '@/components/curriculum-map/AppSendToSheet'
 
 function splitParam(value: string | null): string[] | undefined {
   if (!value) return undefined
@@ -21,6 +22,7 @@ function CurriculumMapRoute(): React.ReactElement {
       initialQuery={params.get('q') ?? undefined}
       initialSubjects={splitParam(params.get('subjects'))}
       initialBands={splitParam(params.get('bands'))}
+      SendDialog={AppSendToSheet}
     />
   )
 }

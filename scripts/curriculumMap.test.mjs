@@ -12,8 +12,7 @@ import {
   DOC_KNOWLEDGE_LIMIT,
   LAYOUT_SIZE,
   MIN_NODE_GAP,
-  NODE_MIN_RADIUS,
-  NODE_RADIUS_RANGE,
+  NODE_RADIUS,
   SIMILAR_EDGE_MIN_SIM,
   SIM_FLOOR_ABSOLUTE,
   SIM_FLOOR_RATIO,
@@ -410,46 +409,15 @@ test('runForceLayout: ignores edges whose endpoints are not nodes', () => {
 
 // ─── node radii ────────────────────────────────────────────────────────────
 
-test('nodeRadii: r = 8 + 18 x degree rank, spanning the full range', () => {
+test('nodeRadii: every node gets the same radius regardless of degree (teacher feedback 2026-09-23)', () => {
   const radii = nodeRadii([
     { id: 'lo', degree: 0 },
     { id: 'mid', degree: 5 },
-    { id: 'hi', degree: 40 },
-  ])
-  assert.equal(radii.get('lo'), NODE_MIN_RADIUS)
-  assert.equal(radii.get('hi'), NODE_MIN_RADIUS + NODE_RADIUS_RANGE)
-  assert.equal(radii.get('mid'), 17)
-})
-
-test('nodeRadii: uses rank not raw degree, so one hub does not flatten the rest', () => {
-  // Raw-degree normalization would give the three low nodes r ~= 8.0-8.4.
-  const radii = nodeRadii([
-    { id: 'a', degree: 1 },
-    { id: 'b', degree: 2 },
-    { id: 'c', degree: 3 },
     { id: 'hub', degree: 900 },
   ])
-  assert.equal(radii.get('a'), 8)
-  assert.equal(radii.get('b'), 14)
-  assert.equal(radii.get('c'), 20)
-  assert.equal(radii.get('hub'), 26)
-})
-
-test('nodeRadii: equal degrees get equal radii (tie midpoint)', () => {
-  const radii = nodeRadii([
-    { id: 'a', degree: 4 },
-    { id: 'b', degree: 4 },
-    { id: 'c', degree: 9 },
-  ])
-  assert.equal(radii.get('a'), radii.get('b'))
-  assert.ok(radii.get('c') > radii.get('a'))
-})
-
-test('nodeRadii: rounded to one decimal, empty and single input handled', () => {
-  const many = nodeRadii(Array.from({ length: 7 }, (_, i) => ({ id: `n${i}`, degree: i })))
-  for (const r of many.values()) assert.equal(r, Math.round(r * 10) / 10)
+  assert.deepEqual([...radii.values()], [NODE_RADIUS, NODE_RADIUS, NODE_RADIUS])
   assert.equal(nodeRadii([]).size, 0)
-  assert.equal(nodeRadii([{ id: 'only', degree: 3 }]).get('only'), 17)
+  assert.equal(nodeRadii([{ id: 'only', degree: 3 }]).get('only'), NODE_RADIUS)
 })
 
 // ─── overlap inspection ────────────────────────────────────────────────────
@@ -809,7 +777,7 @@ test('buildRelationReason: shared keywords alone', () => {
 
 test('buildRelationReason: similarity-only fallback reports the Jev verdict', () => {
   const reason = buildRelationReason({ ...BASE_REASON, jevScore: 0.75 })
-  assert.equal(reason, '의미 유사도 0.61 (Jev 판정 핵심 0.75)')
+  assert.equal(reason, '의미 유사도 0.61 (AI 판정 핵심 0.75)')
 })
 
 test('buildRelationReason: never empty, even with no evidence and no Jev score', () => {
@@ -821,7 +789,7 @@ test('buildRelationReason: never empty, even with no evidence and no Jev score',
 test('buildSearchReason: matched query terms lead, scores follow', () => {
   const reason = buildSearchReason({ matchedTerms: ['물', '환경'], sim: 0.39, jevScore: 1 })
   assert.ok(reason.startsWith('질의어 일치: 물, 환경'), reason)
-  assert.ok(reason.includes('Jev 판정 핵심 1.00'), reason)
+  assert.ok(reason.includes('AI 판정 핵심 1.00'), reason)
   assert.ok(reason.includes('의미 유사도 0.39'), reason)
 })
 
@@ -997,7 +965,7 @@ test('similarityFloor: never negative and clamps a bogus top score', () => {
 test('buildSearchReason: names the expansion term that pulled a standard in', () => {
   const reason = buildSearchReason({ matchedTerms: [], sim: 0.58, jevScore: 0.9, matchedExpansion: '응결' })
   assert.ok(reason.includes("확장어 '응결' 로 연결"), reason)
-  assert.ok(reason.includes('Jev 판정 핵심 0.90'), reason)
+  assert.ok(reason.includes('AI 판정 핵심 0.90'), reason)
 })
 
 // ─── search tokens ────────────────────────────────────────────────────────

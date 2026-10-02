@@ -6,19 +6,30 @@
 import 'material-symbols/rounded.css'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useProjectStore } from '@/store/project'
 import CurriculumMapCanvas from './CurriculumMapCanvas'
+import FusionGraph, { FUSION_STRONG_MIN } from './FusionGraph'
+import { FusionHubCard, FusionPanel } from './MapFusionBits'
 import MapBasketBar from './MapBasketBar'
 import MapSidePanel from './MapSidePanel'
 import MapTopBar from './MapTopBar'
-import SendToSheetDialog from './SendToSheetDialog'
 import { contextChipLabel, pickFromItem, pickFromNode, resolveInitialFilters } from './basketMath'
 import { nextSelection } from './mapMath'
+import { computeGridLayout } from './gridLayout'
+import { computeConstellationLayout } from './constellationLayout'
 import { useCurriculumMap } from './useCurriculumMap'
 import { useMapBasket } from './useMapBasket'
-import type { MapPick } from './types'
+import type { MapNode, MapPick } from './types'
 
 export type { MapPick }
+
+/** page 모드 "시트로 보내기" 대화상자 슬롯 — 앱 라우트만 꽂는다(공개 사이트는 없음). */
+export interface SendDialogProps {
+  open: boolean
+  picks: MapPick[]
+  onClose: () => void
+  /** 추가된 행 수 */
+  onDone: (rowsAdded: number) => void
+}
 
 export interface CurriculumMapViewProps {
   mode?: 'page' | 'embedded'
@@ -36,6 +47,11 @@ export interface CurriculumMapViewProps {
   onApply?: (picks: MapPick[]) => void
   /** embedded: 뒤로 가기 화살표가 라우터 대신 호출 */
   onClose?: () => void
+  /**
+   * page 모드의 "시트로 보내기" 대화상자. 없으면(공개 사이트) 담기·바구니를 숨긴다 —
+   * 보낼 곳이 없는데 담기 버튼만 보이면 막다른 길이 된다.
+   */
+  SendDialog?: React.ComponentType<SendDialogProps>
 }
 
 const SNACKBAR_MS = 4000
@@ -49,17 +65,20 @@ export function CurriculumMapView({
   context,
   onApply,
   onClose,
+  SendDialog,
 }: CurriculumMapViewProps): React.ReactElement {
   const router = useRouter()
   // embedded: 열 때마다 새 비영속 필터 스토어 — 이전 열기의 교과·학년군이 새지 않는다
   const map = useCurriculumMap({ persistFilters: mode === 'page' })
   const basket = useMapBasket()
-  const userProfile = useProjectStore(s => s.userProfile)
+  const canPick = mode === 'embedded' || Boolean(SendDialog)
   const [panelOpen, setPanelOpen] = useState(true)
   const [focusRequest, setFocusRequest] = useState<{ id: string; nonce: number } | null>(null)
   const [hoverCardId, setHoverCardId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [snackbar, setSnackbar] = useState<string | null>(null)
+  const [fusionShowWeak, setFusionShowWeak] = useState(false)
+  const [fusionFocusId, setFusionFocusId] = useState<string | null>(null)
   const initialAppliedRef = useRef(false)
 
   const subjectColors = useMemo(() => {
@@ -69,6 +88,30 @@ export function CurriculumMapView({
   }, [map.asset])
 
   const selectedNode = map.selectedId ? map.nodeById.get(map.selectedId) ?? null : null
+
+  // ── 융합 찾기 ──────────────────────────────────────────────────────────
+  const subjectOrder = useMemo(() => (map.asset?.subjects ?? []).map(s => s.id), [map.asset])
+  const subjectNames = useMemo(() => {
+    const record: Record<string, string> = {}
+    for (const s of map.asset?.subjects ?? []) record[s.id] = s.name
+    return record
+  }, [map.asset])
+  const fusionOpen = map.fusion.hubId !== null
+  const fusionHubNode = map.fusion.hubId ? map.nodeById.get(map.fusion.hubId) ?? null : null
+  // 지도 위 ★ — 융합 보기 중이면 그 중심, 아니면 검색의 1위 추천
+  const starHubId = map.fusion.hubId
+    ?? (map.search.status === 'ready' ? map.search.fusionHubs[0]?.id ?? null : null)
+  const { openFusion, closeFusion } = map
+  const toggleFusion = useCallback((hubId: string) => {
+    setFusionFocusId(null)
+    setFusionShowWeak(false)
+    if (map.fusion.hubId === hubId) closeFusion()
+    else openFusion(hubId)
+  }, [closeFusion, map.fusion.hubId, openFusion])
+  const closeFusionView = useCallback(() => {
+    setFusionFocusId(null)
+    closeFusion()
+  }, [closeFusion])
 
   const checkedBands = useMemo(
     () => (map.asset?.bands ?? []).filter(b => !map.filters.hiddenBands.includes(b)),
@@ -127,6 +170,31 @@ export function CurriculumMapView({
     return out
   }, [map.related.items, map.nodeById, map.visibleIds, relatedReady])
 
+  // ── 배치: 정렬(기본) / 유사도 ─────────────────────────────────────────
+  // 정렬 좌표는 필터와 무관하게 전체 에셋으로 한 번만 계산한다 — 교과를 숨겨도 남은
+  // 성취기준의 자리가 바뀌지 않아야 "자리 = 교과·학년군·영역" 이라는 약속이 지켜진다.
+  const layoutMode = map.filters.layout
+  const grid = useMemo(
+    () => (asset ? computeGridLayout(asset.nodes, asset.subjects, asset.bands) : null),
+    [asset],
+  )
+  const constellation = useMemo(
+    () => (asset ? computeConstellationLayout(asset.nodes, asset.subjects, asset.bands) : null),
+    [asset],
+  )
+  const placeNodes = useCallback((list: MapNode[]): MapNode[] => {
+    const positions = layoutMode === 'grid' ? grid?.positions
+      : layoutMode === 'constellation' ? constellation?.positions
+        : undefined
+    if (!positions) return list
+    return list.map(n => {
+      const p = positions.get(n.id)
+      return p ? { ...n, x: p.x, y: p.y } : n
+    })
+  }, [constellation, grid, layoutMode])
+  const canvasNodes = useMemo(() => placeNodes(map.visibleNodes), [map.visibleNodes, placeNodes])
+  const canvasGhostNodes = useMemo(() => placeNodes(ghostNodes), [ghostNodes, placeNodes])
+
   // ── 선택 · 검색 상호작용 ───────────────────────────────────────────────
   const focusNode = useCallback((id: string) => {
     map.selectNode(id)
@@ -146,6 +214,10 @@ export function CurriculumMapView({
         setDialogOpen(false)
         return
       }
+      if (fusionOpen) {
+        closeFusionView()
+        return
+      }
       if (selectedId) {
         selectNode(null)
         return
@@ -154,7 +226,7 @@ export function CurriculumMapView({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [clearSearch, dialogOpen, selectNode, selectedId])
+  }, [clearSearch, closeFusionView, dialogOpen, fusionOpen, selectNode, selectedId])
 
   const onSubmitSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -215,6 +287,7 @@ export function CurriculumMapView({
       onEdgeThresholdChange={map.setEdgeThreshold}
       onAlwaysLabelsChange={map.setAlwaysLabels}
       onPhysicsChange={map.setPhysics}
+      nodeById={map.nodeById}
       onResetFilters={map.resetFilters}
       onHoverItem={setHoverCardId}
       search={map.search}
@@ -227,9 +300,40 @@ export function CurriculumMapView({
       hiddenRelatedCount={ghostNodes.length}
       bands={checkedBands}
       pickedIds={basket.pickedIds}
-      onTogglePick={togglePickById}
+      onTogglePick={canPick ? togglePickById : undefined}
+      searchTop={
+        <FusionHubCard
+          hubs={map.search.fusionHubs}
+          nodeById={map.nodeById}
+          subjectColors={subjectColors}
+          subjectNames={subjectNames}
+          activeHubId={map.fusion.hubId}
+          onOpen={toggleFusion}
+          onLocate={focusNode}
+        />
+      }
     />
   )
+
+  const fusionPanel = (
+    <FusionPanel
+      fusion={map.fusion}
+      hubNode={fusionHubNode}
+      nodeById={map.nodeById}
+      subjectColors={subjectColors}
+      subjectOrder={subjectOrder}
+      subjectNames={subjectNames}
+      strongMin={FUSION_STRONG_MIN}
+      showWeak={fusionShowWeak}
+      focusedId={fusionFocusId}
+      onFocus={setFusionFocusId}
+      pickedIds={basket.pickedIds}
+      onTogglePick={canPick ? togglePickById : undefined}
+      onHover={setHoverCardId}
+      onClose={closeFusionView}
+    />
+  )
+  const activePanel = fusionOpen ? fusionPanel : panel
 
   return (
     <div className="m3-map flex h-screen flex-col bg-[var(--md-surface-container-low)]">
@@ -275,21 +379,48 @@ export function CurriculumMapView({
           )}
           {map.assetStatus === 'ready' && (
             <CurriculumMapCanvas
-              nodes={map.visibleNodes}
-              ghostNodes={ghostNodes}
+              // 배치를 바꾸면 캔버스를 새로 마운트한다 — 물리 상태가 이전 좌표를 물려받지
+              // 않고, 새 배치에 맞춰 전체 보기로 다시 맞춘다.
+              key={layoutMode}
+              nodes={canvasNodes}
+              ghostNodes={canvasGhostNodes}
               edges={map.visibleEdges}
               subjectColors={subjectColors}
               scoreById={map.scoreById}
               searchActive={map.searchActive}
               selectedId={map.selectedId}
               alwaysLabels={map.filters.alwaysLabels}
-              physicsEnabled={map.filters.physics}
+              physicsEnabled={layoutMode === 'similarity' && map.filters.physics}
+              layoutMode={layoutMode}
+              onLayoutChange={map.setLayout}
+              guides={layoutMode === 'grid' ? grid?.guides ?? null : null}
+              constellation={layoutMode === 'constellation' ? constellation?.guides ?? null : null}
+              canvasTheme={map.filters.canvasTheme}
+              onCanvasThemeChange={map.setCanvasTheme}
               relatedMeta={relatedMeta}
               relatedPending={map.related.status === 'loading'}
               externalHoverId={hoverCardId}
               onSelect={handleCanvasSelect}
               onClearSelection={() => map.selectNode(null)}
               focusRequest={focusRequest}
+              hubId={starHubId}
+            />
+          )}
+          {map.assetStatus === 'ready' && fusionOpen && (
+            <FusionGraph
+              fusion={map.fusion}
+              hubNode={fusionHubNode}
+              nodeById={map.nodeById}
+              edges={map.asset?.edges ?? []}
+              subjectColors={subjectColors}
+              subjectOrder={subjectOrder}
+              subjectNames={subjectNames}
+              showWeak={fusionShowWeak}
+              onShowWeakChange={setFusionShowWeak}
+              focusedId={fusionFocusId ?? hoverCardId}
+              onFocus={setFusionFocusId}
+              onClose={closeFusionView}
+              onRetry={() => map.fusion.hubId && openFusion(map.fusion.hubId)}
             />
           )}
         </main>
@@ -297,7 +428,7 @@ export function CurriculumMapView({
         {panelOpen && (
           <>
             <aside className="hidden w-[380px] flex-shrink-0 border-l border-[var(--md-outline-variant)] md:block">
-              {panel}
+              {activePanel}
             </aside>
             <div
               className="fixed inset-x-0 bottom-0 z-30 max-h-[58vh] overflow-hidden rounded-t-[28px] border-t border-[var(--md-outline-variant)] bg-[var(--md-surface-container-low)] md:hidden"
@@ -314,27 +445,27 @@ export function CurriculumMapView({
                   <span className="material-symbols-rounded text-[20px] leading-none">close</span>
                 </button>
               </div>
-              <div className="max-h-[calc(58vh-53px)] overflow-y-auto">{panel}</div>
+              <div className="max-h-[calc(58vh-53px)] overflow-y-auto">{activePanel}</div>
             </div>
           </>
         )}
       </div>
 
-      <MapBasketBar
-        picks={basket.picks}
-        mode={mode}
-        busy={dialogOpen}
-        onRemove={basket.remove}
-        onClear={basket.clear}
-        onPrimary={onPrimary}
-      />
+      {canPick && (
+        <MapBasketBar
+          picks={basket.picks}
+          mode={mode}
+          busy={dialogOpen}
+          onRemove={basket.remove}
+          onClear={basket.clear}
+          onPrimary={onPrimary}
+        />
+      )}
 
-      {mode === 'page' && userProfile && (
-        <SendToSheetDialog
+      {mode === 'page' && SendDialog && (
+        <SendDialog
           open={dialogOpen}
           picks={basket.picks}
-          uid={userProfile.uid}
-          displayName={userProfile.displayName}
           onClose={() => setDialogOpen(false)}
           onDone={onSent}
         />

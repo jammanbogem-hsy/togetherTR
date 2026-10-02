@@ -12,11 +12,21 @@
  * 후보마다 "왜 연결됐는가"를 결정적으로 계산해 함께 준다(추가 LLM 호출 없음):
  * 공통 키워드·같은 영역/핵심아이디어·교과 간 링크 근거를 모아 reason 한 줄로
  * 조립한다. 사용자 피드백("연결 근거가 불분명하다")에 대한 응답이다.
+ *
+ * 융합 모드(mode:'fusion', 2026-10-01 교사 피드백 "유사도보다 융합할 수 있는 성취기준끼리"):
+ * 후보를 중심과 같은 학년군·다른 교과로만 좁힌다. 출처는 교과 간 링크 > 검색이 넘긴 주제 짝
+ * (partnerIds) > v1 코사인 이웃 순. 판정 질문은 같다(수업 주제 = 검색어) — 강도는 "이 주제로
+ * 두 성취기준을 한 수업에 엮는 것이 얼마나 자연스러운가"다.
+ *
+ * 성취수준(2026-09-23 교사 피드백 "성취기준 속 성취수준까지 고려"): 양쪽 성취기준의
+ * A·B·C 원문을 Jev 관계 판정(유형·강도)의 근거로 함께 넘긴다. 수준별 연계 라벨은
+ * 변별력이 없어 싣지 않는다(curriculumMap.ts 의 기록 참고) — 화면은 두 원문을 나란히 보여 준다.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { loadGraph, type CurriculumStandard, type KnowledgeGraph } from '@/lib/curriculum/graphReader'
 import { jevJudgeEnabled, judgeRelations, RELATION_TYPE_CRITERIA } from '@/lib/curriculum/jevJudge'
+import { selectFusionCandidates, type FusionCandidateInput } from '@/lib/curriculum/fusion'
 import {
   buildRelationReason,
   clamp01,
@@ -24,6 +34,7 @@ import {
   cosineSim,
   formatLinkEvidence,
   levelForScore,
+  loadStandardLevelsById,
   normalizeRelationType,
   resolveVectorTables,
   sharedKeywordTerms,
@@ -32,7 +43,9 @@ import {
   withDeadline,
   type CandidateInput,
   type CandidateSource,
+  type UnionedCandidate,
   type RelevanceLevel,
+  type StandardLevels,
   type StandardSummary,
 } from '@/lib/curriculum/curriculumMap'
 
@@ -49,19 +62,29 @@ const EMBEDDING_CANDIDATES = 15
 const JUDGE_DEADLINE_MS = 6_000
 
 const DEFAULT_RELATION_TYPE = '의미연결'
+/** 융합 모드 응답 상한 — 그래프 한 화면에 담기는 수. */
+const FUSION_MAX_LIMIT = 24
+/** 융합 모드에서 v1 코사인으로 보강할 같은 학년군·다른 교과 후보 수. */
+const FUSION_EMBEDDING_CANDIDATES = 16
 
 interface RelatedRequestBody {
   id?: unknown
   query?: unknown
   limit?: unknown
+  /** 'fusion' 이면 같은 학년군·다른 교과 후보만 */
+  mode?: unknown
+  /** 융합 모드: 검색이 고른 주제 짝 id */
+  partnerIds?: unknown
 }
+
+type RelatedSource = CandidateSource | 'topic'
 
 interface RelatedItem extends StandardSummary {
   sim: number
   relationType: string
   strength: number
   level: RelevanceLevel
-  source: CandidateSource
+  source: RelatedSource
   /** Jev 원점수 0~1. 판정이 없으면 생략(UI 가 '유사도만' 으로 표시). */
   jevScore?: number
   /** 두 성취기준의 공통 키워드 어간(최대 6). */
@@ -76,11 +99,13 @@ interface RelatedItem extends StandardSummary {
   reason: string
 }
 
-function resolveLimit(value: unknown): number {
+function resolveLimit(value: unknown, max: number): number {
   const n = typeof value === 'number' ? Math.floor(value) : Number.NaN
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_LIMIT
-  return Math.min(MAX_LIMIT, n)
+  return Math.min(max, n)
 }
+
+type Candidate = Pick<UnionedCandidate, 'id' | 'sim' | 'relation'> & { source: RelatedSource }
 
 /** 관계 유형이 RELATION_TYPE_CRITERIA 의 키인지 확인하고 아니면 기본값으로. */
 function safeRelationType(value?: string | null): string {
@@ -88,8 +113,8 @@ function safeRelationType(value?: string | null): string {
   return DEFAULT_RELATION_TYPE
 }
 
-/** Jev 판정용 성취기준 블록. */
-function toRelationStandard(std: CurriculumStandard, graph: KnowledgeGraph) {
+/** Jev 판정용 성취기준 블록. 성취수준 원문이 있으면 함께 싣는다. */
+function toRelationStandard(std: CurriculumStandard, graph: KnowledgeGraph, levels?: StandardLevels) {
   const summary = toStandardSummary(std, graph)
   return {
     id: std.id,
@@ -97,8 +122,11 @@ function toRelationStandard(std: CurriculumStandard, graph: KnowledgeGraph) {
     subjectName: summary.subject,
     text: std.text ?? '',
     coreIdea: coreIdeaSentence(std, graph),
+    ...(levels ? { levels: { A: levels.A, B: levels.B, C: levels.C } } : {}),
   }
 }
+
+
 
 export async function POST(request: NextRequest) {
   const startedAt = performance.now()
@@ -126,7 +154,11 @@ export async function POST(request: NextRequest) {
     }
 
     const query = typeof body.query === 'string' ? body.query.trim() : ''
-    const limit = resolveLimit(body.limit)
+    const fusion = body.mode === 'fusion'
+    const limit = resolveLimit(body.limit, fusion ? FUSION_MAX_LIMIT : MAX_LIMIT)
+    const partnerIds = Array.isArray(body.partnerIds)
+      ? body.partnerIds.filter((value): value is string => typeof value === 'string').slice(0, CANDIDATE_CAP)
+      : []
 
     // ── 1. 후보 수집 (사전 이웃 · 교과 간 링크 · 실시간 코사인) ──
     const inputs: CandidateInput[] = []
@@ -177,7 +209,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const candidates = unionCandidates(inputs, CANDIDATE_CAP)
+    let candidates: Candidate[]
+    if (fusion) {
+      const centerBand = toStandardSummary(center, graph).band
+      const fusionInputs: FusionCandidateInput[] = []
+      const push = (otherId: string, origin: FusionCandidateInput['origin'], sim: number, relation?: string) => {
+        const std = byId.get(otherId)
+        if (!std) return
+        const summary = toStandardSummary(std, graph)
+        fusionInputs.push({ id: otherId, subjectId: summary.subjectId, band: summary.band, origin, sim, relation })
+      }
+      for (const input of inputs) {
+        if (input.origin === 'cross') push(input.id, 'cross', displaySimOf(input.id) || input.sim, input.relation)
+      }
+      for (const otherId of partnerIds) push(otherId, 'topic', displaySimOf(otherId))
+      if (displayCenter) {
+        const near = graph.achievementStandards
+          .filter(std => std.id !== id && std.subject_id !== center.subject_id && displayVectors[std.id])
+          .filter(std => toStandardSummary(std, graph).band === centerBand)
+          .map(std => ({ id: std.id, sim: displaySimOf(std.id) }))
+          .sort((a, b) => b.sim - a.sim || (a.id < b.id ? -1 : 1))
+          .slice(0, FUSION_EMBEDDING_CANDIDATES)
+        for (const entry of near) push(entry.id, 'embedding', entry.sim)
+      }
+      candidates = selectFusionCandidates(
+        { id, subjectId: center.subject_id, band: centerBand },
+        fusionInputs,
+        CANDIDATE_CAP,
+      ).map(entry => ({ id: entry.id, sim: entry.sim, source: entry.origin, relation: entry.relation }))
+    } else {
+      candidates = unionCandidates(inputs, CANDIDATE_CAP)
+    }
     if (candidates.length === 0) {
       return NextResponse.json(
         {
@@ -194,14 +256,18 @@ export async function POST(request: NextRequest) {
 
     // ── 2. Jev 관계 판정 (유형 Choice + 강도 Score, 1회 fan-out) ──
     let judge: 'jev' | 'embedding' = 'embedding'
-    let judged: Record<string, { relationType: string; strength: number }> = {}
+    let judged: Record<string, {
+      relationType: string
+      strength: number
+    }> = {}
+    const levelsById = loadStandardLevelsById()
     const judgeStartedAt = performance.now()
     if (jevJudgeEnabled()) {
       const judgement = await withDeadline(
         judgeRelations(
           query || center.text || '',
-          toRelationStandard(center, graph),
-          candidates.map(candidate => toRelationStandard(byId.get(candidate.id)!, graph)),
+          toRelationStandard(center, graph, levelsById.get(center.id)),
+          candidates.map(candidate => toRelationStandard(byId.get(candidate.id)!, graph, levelsById.get(candidate.id))),
         ),
         JUDGE_DEADLINE_MS,
         'related',
@@ -227,7 +293,7 @@ export async function POST(request: NextRequest) {
         const sameCoreIdea = Boolean(center.core_idea_id && center.core_idea_id === std.core_idea_id)
         const sameArea = Boolean(center.area && center.area === std.area)
         const coreIdeaArea = std.area ?? ''
-        const sim = Math.round(candidate.sim * 1000) / 1000
+        const sim = Math.round(clamp01(candidate.sim) * 1000) / 1000
         const jevScore = verdict ? Math.round(verdict.strength * 1000) / 1000 : undefined
         return {
           ...toStandardSummary(std, graph),
@@ -260,9 +326,11 @@ export async function POST(request: NextRequest) {
     console.log('[curriculum-map/related]', JSON.stringify({
       id,
       code: center.code,
+      mode: fusion ? 'fusion' : 'related',
       judge,
       candidates: candidates.length,
       returned: related.length,
+      withLevels: levelsById.has(id) ? candidates.filter(candidate => levelsById.has(candidate.id)).length : 0,
       embeddings: poolSource,
       simSource: displaySource,
       elapsedMs,
@@ -274,6 +342,7 @@ export async function POST(request: NextRequest) {
       {
         center: { ...toStandardSummary(center, graph), coreIdea: coreIdeaSentence(center, graph) },
         related,
+        mode: fusion ? 'fusion' : 'related',
         judge,
         embeddings: poolSource,
         simSource: displaySource,

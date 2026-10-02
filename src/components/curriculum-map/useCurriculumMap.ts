@@ -12,6 +12,7 @@ import type {
   CurriculumMapAsset,
   MapEdge,
   MapFilters,
+  MapFusionHub,
   MapJudge,
   MapNode,
   MapRelatedCenter,
@@ -26,6 +27,8 @@ const SEARCH_URL = '/api/curriculum-map/search'
 const RELATED_URL = '/api/curriculum-map/related'
 const SEARCH_LIMIT = 30
 const RELATED_LIMIT = 12
+/** 융합 그래프 상한 — 한 화면에 담기는 수 */
+const FUSION_LIMIT = 20
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
@@ -64,6 +67,22 @@ export interface SearchState {
   error: string | null
   /** 실제로 서버에 보낸 질의 — 결과 헤더·관련 재판정에 재사용 */
   submittedQuery: string
+  /** 융합 핵심 추천(1위 + 다른 후보). 없으면 빈 배열 */
+  fusionHubs: MapFusionHub[]
+}
+
+/** 융합 그래프 — 핵심 성취기준 하나를 중심으로 같은 학년군 다른 교과의 융합 짝 */
+export interface FusionState {
+  /** null 이면 융합 보기가 닫혀 있다 */
+  hubId: string | null
+  status: AsyncStatus
+  center: MapRelatedCenter | null
+  items: MapRelatedItem[]
+  judge: MapJudge | null
+  elapsedMs: number
+  error: string | null
+  /** 판정에 쓴 수업 주제(검색어) */
+  query: string
 }
 
 export interface RelatedState {
@@ -98,6 +117,11 @@ export interface CurriculumMapController extends MapFilterActions {
   related: RelatedState
   refetchRelated: () => void
 
+  fusion: FusionState
+  /** 핵심 성취기준을 중심으로 융합 그래프를 연다 */
+  openFusion: (hubId: string) => void
+  closeFusion: () => void
+
   visibleNodes: MapNode[]
   visibleEdges: MapEdge[]
   nodeById: Map<string, MapNode>
@@ -115,6 +139,18 @@ const EMPTY_SEARCH: SearchState = {
   elapsedMs: 0,
   error: null,
   submittedQuery: '',
+  fusionHubs: [],
+}
+
+const EMPTY_FUSION: FusionState = {
+  hubId: null,
+  status: 'idle',
+  center: null,
+  items: [],
+  judge: null,
+  elapsedMs: 0,
+  error: null,
+  query: '',
 }
 
 const EMPTY_RELATED: RelatedState = {
@@ -151,16 +187,21 @@ export function useCurriculumMap(options: CurriculumMapOptions = {}): Curriculum
   const [search, setSearch] = useState<SearchState>(EMPTY_SEARCH)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [related, setRelated] = useState<RelatedState>(EMPTY_RELATED)
+  const [fusion, setFusion] = useState<FusionState>(EMPTY_FUSION)
 
   const searchAbortRef = useRef<AbortController | null>(null)
   const relatedAbortRef = useRef<AbortController | null>(null)
+  const fusionAbortRef = useRef<AbortController | null>(null)
   const submittedQueryRef = useRef('')
 
   // ── 정적 에셋 로드 ─────────────────────────────────────────────────────
   // 상태 전환은 reloadAsset 에서 처리한다 (effect 본문에서 동기 setState 금지)
   useEffect(() => {
     const controller = new AbortController()
-    fetch(ASSET_URL, { signal: controller.signal, cache: 'force-cache' })
+    // 'no-cache' = 매번 ETag 로 재검증(바뀌지 않았으면 304 라 비용이 거의 없다).
+    // 예전 'force-cache' 는 만료된 사본도 그대로 써서, 배포 뒤 재방문자에게 새 화면 +
+    // 옛 에셋(제각각 반지름·성취수준 없음)이 섞여 보였다(2026-09-23 공개 사이트에서 발생).
+    fetch(ASSET_URL, { signal: controller.signal, cache: 'no-cache' })
       .then(async res => {
         if (!res.ok) throw new Error(`분석맵 데이터를 불러오지 못했습니다 (HTTP ${res.status})`)
         return (await res.json()) as CurriculumMapAsset
@@ -233,6 +274,9 @@ export function useCurriculumMap(options: CurriculumMapOptions = {}): Curriculum
     overrides?: { subjects?: readonly string[]; bands?: readonly string[] },
   ) => {
     const q = (value ?? query).trim()
+    // 새 검색이면 이전 주제의 융합 보기는 닫는다
+    fusionAbortRef.current?.abort()
+    setFusion(EMPTY_FUSION)
     if (!q) {
       setSearch(EMPTY_SEARCH)
       submittedQueryRef.current = ''
@@ -271,6 +315,7 @@ export function useCurriculumMap(options: CurriculumMapOptions = {}): Curriculum
           elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : 0,
           error: null,
           submittedQuery: q,
+          fusionHubs: Array.isArray(data.fusion?.hubs) ? data.fusion.hubs : [],
         })
       })
       .catch((err: unknown) => {
@@ -286,6 +331,8 @@ export function useCurriculumMap(options: CurriculumMapOptions = {}): Curriculum
 
   const clearSearch = useCallback(() => {
     searchAbortRef.current?.abort()
+    fusionAbortRef.current?.abort()
+    setFusion(EMPTY_FUSION)
     submittedQueryRef.current = ''
     setQuery('')
     setSearch(EMPTY_SEARCH)
@@ -344,10 +391,67 @@ export function useCurriculumMap(options: CurriculumMapOptions = {}): Curriculum
     fetchRelated(selectedId, true)
   }, [fetchRelated, selectedId])
 
+  // ── 융합 그래프 ────────────────────────────────────────────────────────
+  // 검색이 넘긴 주제 짝(partnerIds)을 후보로 함께 보내고, 서버가 같은 학년군·다른 교과만
+  // 남겨 Jev 로 관계 유형·강도를 판정한다(수업 주제 = 검색어).
+  const openFusion = useCallback((hubId: string) => {
+    fusionAbortRef.current?.abort()
+    const controller = new AbortController()
+    fusionAbortRef.current = controller
+    const q = submittedQueryRef.current.trim()
+    const hub = search.fusionHubs.find(h => h.id === hubId)
+    setFusion({ ...EMPTY_FUSION, hubId, status: 'loading', query: q })
+
+    fetch(RELATED_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        id: hubId,
+        query: q || undefined,
+        mode: 'fusion',
+        partnerIds: hub?.partnerIds ?? [],
+        limit: FUSION_LIMIT,
+      }),
+    })
+      .then(async res => {
+        if (!res.ok) throw new Error(await apiErrorMessage(res, '융합 성취기준을 불러오지 못했습니다'))
+        return (await res.json()) as MapRelatedResponse
+      })
+      .then(data => {
+        setFusion({
+          hubId,
+          status: 'ready',
+          center: data.center ?? null,
+          items: Array.isArray(data.related) ? data.related : [],
+          judge: data.judge ?? null,
+          elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : 0,
+          error: null,
+          query: q,
+        })
+      })
+      .catch((err: unknown) => {
+        if (isAbortError(err)) return
+        setFusion({
+          ...EMPTY_FUSION,
+          hubId,
+          status: 'error',
+          error: errorMessage(err, '융합 성취기준을 불러오지 못했습니다.'),
+          query: q,
+        })
+      })
+  }, [search.fusionHubs])
+
+  const closeFusion = useCallback(() => {
+    fusionAbortRef.current?.abort()
+    setFusion(EMPTY_FUSION)
+  }, [])
+
   // 언마운트 시 진행 중 요청 정리
   useEffect(() => () => {
     searchAbortRef.current?.abort()
     relatedAbortRef.current?.abort()
+    fusionAbortRef.current?.abort()
   }, [])
 
   return {
@@ -366,6 +470,9 @@ export function useCurriculumMap(options: CurriculumMapOptions = {}): Curriculum
     selectNode,
     related,
     refetchRelated,
+    fusion,
+    openFusion,
+    closeFusion,
     visibleNodes,
     visibleEdges,
     nodeById,

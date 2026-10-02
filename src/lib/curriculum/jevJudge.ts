@@ -285,6 +285,8 @@ export interface RelationStandard {
   subjectName: string
   text: string
   coreIdea?: string
+  /** 공식 성취수준 A·B·C 원문. 있으면 판정 근거(상태 블록)로 함께 넘긴다. */
+  levels?: { A: string; B: string; C: string }
 }
 
 export interface RelationJudgement {
@@ -299,7 +301,13 @@ export interface RelationJudgement {
 }
 
 function standardBlock(std: RelationStandard): Record<string, string> {
-  return { 교과: std.subjectName, 코드: std.code, 성취기준: std.text, 핵심아이디어: std.coreIdea ?? '' }
+  const block: Record<string, string> = { 교과: std.subjectName, 코드: std.code, 성취기준: std.text, 핵심아이디어: std.coreIdea ?? '' }
+  if (std.levels) {
+    block.성취수준_A = std.levels.A
+    block.성취수준_B = std.levels.B
+    block.성취수준_C = std.levels.C
+  }
+  return block
 }
 
 /** 후보마다 관계 유형 Choice + 관계 강도 Score 를 한 번의 fan-out 으로 판정한다. */
@@ -400,14 +408,17 @@ export interface TopicRelevanceJudgement {
 export async function judgeTopicRelevance(
   theme: string,
   gradeGroup: string | undefined,
-  standards: Array<{ id: string; code: string; subject: string; text: string }>,
+  standards: Array<{ id: string; code: string; subject: string; text: string; levelA?: string }>,
 ): Promise<TopicRelevanceJudgement | null> {
   if (standards.length === 0) return null
   const questions: Record<string, JevQuestion> = {}
   standards.forEach((std, index) => {
+    // 성취수준 A 원문은 이 성취기준이 요구하는 가장 높은 도달 행동이다. 주제가 "어떤
+    // 행동을 하는 수업인가"로 주어질 때(예: '자료를 비교해 설명하기') 판정 근거가 된다.
+    const level = std.levelA ? ` (성취수준 A: ${std.levelA})` : ''
     questions[`r${index}`] = {
       type: 'score',
-      instructions: `다음 성취기준이 이 수업 주제의 중심 성취기준이 될 만큼 관련 있는가? ${std.code} (${std.subject}) ${std.text}`,
+      instructions: `다음 성취기준이 이 수업 주제의 중심 성취기준이 될 만큼 관련 있는가? ${std.code} (${std.subject}) ${std.text}${level}`,
       criteria: RELEVANCE_LEVELS,
     }
   })

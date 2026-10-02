@@ -3,7 +3,7 @@
 // v1(public/embeddings_cache.json)은 성취기준 "문장만" 임베딩했다. 그래서 문장에
 // 없는 낱말로 찾으면 코사인이 거의 무의미해지고("이슬" 검색에 수학·영어가 섞임)
 // 교과 무관 성취기준과 점수 차가 사라졌다. v2 는 성취기준마다 수업 설계용 문서
-// (교과·영역·학년군 / 핵심아이디어 / 성취기준 / 지식·이해 / 과정·기능 / 키워드)를
+// (교과·영역·학년군 / 핵심아이디어 / 성취기준 / 지식·이해 / 과정·기능 / 키워드 / 성취수준 A)를
 // 만들어 임베딩한다. 문서 조립은 buildStandardDocument 가 담당한다.
 //
 // v1 파일은 건드리지 않는다 — /api/knowledge-graph 등 다른 라우트가 계속 쓴다.
@@ -32,6 +32,7 @@ import { canonicalSubjectName } from '@/lib/curriculum/subjectAliases'
 import {
   buildStandardDocument,
   coreIdeaSentence,
+  pickStandardLevels,
   standardBandLabel,
   subjectDisplayName,
 } from '@/lib/curriculum/curriculumMap'
@@ -81,6 +82,12 @@ function contentFor(subjectName, area) {
   return contentBySubjectArea.get(key) ?? { knowledge: [], functions: [] }
 }
 
+// ─── 성취수준 (코드로만 매칭) ───────────────────────────────────────────────
+
+const LEVELS_PATH = path.join(process.cwd(), 'public', 'achievement-levels.json')
+if (!fs.existsSync(LEVELS_PATH)) fail(`성취수준 파일이 없습니다: ${path.relative(process.cwd(), LEVELS_PATH)}`)
+const levelStandards = JSON.parse(fs.readFileSync(LEVELS_PATH, 'utf-8')).standards ?? {}
+
 // ─── 문서 조립 ──────────────────────────────────────────────────────────────
 
 const standards = graph.achievementStandards
@@ -105,6 +112,7 @@ const documents = standards.map(std => {
       knowledge,
       functions,
       keywords: std.keywords ?? [],
+      levels: pickStandardLevels(levelStandards, std.code ?? ''),
     }),
   }
 })

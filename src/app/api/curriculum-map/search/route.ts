@@ -12,11 +12,11 @@
  *  1. 짧은 질의 확장(보조 모델 1회) + 질의 임베딩을 동시 실행
  *  2. 후보 풀 = 임베딩 상위(학년군별 라운드로빈) ∪ 글자 적중 전부 → 최대 120
  *     (풀 선별은 v2 문서 임베딩, 화면에 보이는 sim·동점 처리는 v1 코사인)
- *  3. Jev 주제 관련도를 30문항씩 병렬 fan-out 으로 전부 판정
+ *  3. Jev 주제 관련도를 30문항씩 병렬 fan-out 으로 전부 판정(성취수준 A 원문을 근거로 함께 넘김)
  *  4. score = Jev(판정 실패 시 코사인), 0.02 이내 동점은 코사인으로 가름
  *  5. 학년군별 상위 perBand 개를 먼저 확보한 뒤 남는 자리를 점수 순으로 채움
  *
- * 글자 적중 보장: 질의 토큰(2자 이상)이 성취기준 문장·키워드·영역·핵심아이디어에
+ * 글자 적중 보장: 질의 토큰(2자 이상)이 성취기준 문장·키워드·영역·핵심아이디어·성취수준(A·B·C)에
  * 글자로 들어 있으면 임베딩 순위와 무관하게 후보에 들어간다('이슬' → [6과06-02]).
  *
  * Jev 가 꺼져 있거나 전 조각이 실패하면 코사인 점수로 응답한다(judge:'embedding').
@@ -31,6 +31,7 @@ import {
   buildSearchReason,
   clamp01,
   compareJevFirst,
+  cosineSim,
   coreIdeaSentence,
   embedTexts,
   expandShortQuery,
@@ -40,6 +41,7 @@ import {
   judgeTopicRelevanceChunked,
   keywordHit,
   levelForScore,
+  loadStandardLevelsById,
   matchedQueryTerms,
   mergeSearchPool,
   resolvePerBand,
@@ -54,6 +56,7 @@ import {
   type SearchCandidateSource,
   type StandardSummary,
 } from '@/lib/curriculum/curriculumMap'
+import { rankFusionHubs } from '@/lib/curriculum/fusion'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -81,6 +84,10 @@ const EXPANSION_DEADLINE_MS = 1_400
 const KEYWORD_SCORE_MAX = 15
 /** results(관련·핵심) / weak(약함·무관) 경계. level 과 같은 기준이다. */
 const WEAK_SCORE_CUTOFF = 0.5
+/** 융합 핵심 추천 개수(1위 + 다른 후보 2). */
+const FUSION_HUB_LIMIT = 3
+/** 핵심마다 클라이언트에 넘기는 주제 짝 상한 — 융합 그래프 요청의 후보로 그대로 돌아온다. */
+const FUSION_PARTNER_LIMIT = 12
 
 interface ScoredCandidate {
   std: CurriculumStandard
@@ -158,6 +165,10 @@ function interleaveByBand(ranked: Map<string, string[]>, bands: readonly string[
   return out
 }
 
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = performance.now()
   const noStore = { 'Cache-Control': 'no-store' }
@@ -227,6 +238,7 @@ export async function POST(request: NextRequest) {
 
     // ── 2. 후보 풀 = 임베딩 상위 ∪ 글자 적중 ──
     const tokens = searchTokens(query, expandedTerms)
+    const levelsById = loadStandardLevelsById()
     const scoredById = new Map<string, ScoredCandidate>()
     for (const std of pool) {
       let poolSim = 0
@@ -249,7 +261,7 @@ export async function POST(request: NextRequest) {
         poolSim,
         sim,
         ...(matchedExpansion ? { matchedExpansion } : {}),
-        hit: keywordHit(std, coreIdeaSentence(std, graph), tokens),
+        hit: keywordHit(std, coreIdeaSentence(std, graph), tokens, levelsById.get(std.id)),
       })
     }
 
@@ -302,7 +314,14 @@ export async function POST(request: NextRequest) {
       singleBand,
       poolEntries.map(entry => {
         const { std } = entryOf(entry.id)
-        return { id: std.id, code: std.code, subject: toStandardSummary(std, graph).subject, text: std.text }
+        const levelA = levelsById.get(std.id)?.A
+        return {
+          id: std.id,
+          code: std.code,
+          subject: toStandardSummary(std, graph).subject,
+          text: std.text,
+          ...(levelA ? { levelA } : {}),
+        }
       }),
       { deadlineMs: JUDGE_DEADLINE_MS },
     )
@@ -351,6 +370,17 @@ export async function POST(request: NextRequest) {
     results.sort(compareJevFirst)
     const weak = ranked.filter(item => item.score < WEAK_SCORE_CUTOFF).slice(0, limit)
 
+    // ── 6. 융합 핵심 추천 — 판정한 후보 풀 전체(약함 포함)를 짝 후보로 본다 ──
+    const linkedPairs = new Set(
+      (graph.links_cross_subject ?? []).map(link => pairKey(link.source_id, link.target_id)),
+    )
+    const fusionHubs = rankFusionHubs(
+      ranked.map(item => ({ id: item.id, subjectId: item.subjectId, band: item.band, topic: item.score })),
+      (a, b) => (displayVectors[a] && displayVectors[b] ? clamp01(cosineSim(displayVectors[a], displayVectors[b])) : 0),
+      (a, b) => linkedPairs.has(pairKey(a, b)),
+      { limit: FUSION_HUB_LIMIT },
+    ).map(hub => ({ ...hub, partnerIds: hub.partnerIds.slice(0, FUSION_PARTNER_LIMIT) }))
+
     const elapsedMs = Math.round(performance.now() - startedAt)
     console.log('[curriculum-map/search]', JSON.stringify({
       query: query.slice(0, 40),
@@ -365,6 +395,7 @@ export async function POST(request: NextRequest) {
       weak: weak.length,
       emptyBands,
       expandedTerms,
+      fusionHub: fusionHubs[0] ? `${fusionHubs[0].id}:${fusionHubs[0].hubScore}` : null,
       floor: Math.round(floor * 1000) / 1000,
       elapsedMs,
       graphMs,
@@ -379,6 +410,7 @@ export async function POST(request: NextRequest) {
       byBand,
       emptyBands,
       expandedTerms,
+      fusion: { hubs: fusionHubs },
       judge,
       embeddings: poolSource,
       simSource: displaySource,

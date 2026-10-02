@@ -15,6 +15,7 @@ import {
   centerOn,
   computeBounds,
   easeOutCubic,
+  clampScale,
   fitToView,
   initialViewScale,
   lerpTransform,
@@ -59,9 +60,23 @@ export interface MapViewportOptions {
   positionOf?: (id: string) => Point | null
   /** 중앙값 노드 반지름(월드) — 첫 화면에서 너무 작아지지 않게 하는 기준 */
   medianWorldRadius?: number
+  /**
+   * 첫 화면 맞춤 방식. 'all' = 전체를 가운데에(유사도 지도), 'width-top' = 표 너비에 맞추고
+   * 윗부분부터(정렬 배치 — 세로로 긴 표를 통째로 맞추면 원이 점이 된다).
+   * 'width-top' 의 여백은 교과·학년군 머리글 자리다.
+   */
+  initialFit?: 'all' | 'width-top' | 'exact'
 }
 
+/** 'width-top' 맞춤에서 왼쪽(교과 머리글)·위쪽(도구 막대 + 학년군 머리글) 여백 px */
+const GRID_FIT_LEFT_PX = 96
+const GRID_FIT_TOP_PX = 132
+const GRID_FIT_RIGHT_PX = 24
+/** 정렬 배치 첫 화면 배율 상한 — 원 반지름 약 10px, 교과 2~3줄이 한 화면에 든다 */
+const GRID_FIT_MAX_SCALE = 0.55
+
 export interface MapViewport {
+  flyTo: (target: Point, scale: number) => void
   wrapRef: React.RefObject<HTMLDivElement | null>
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   size: { width: number; height: number }
@@ -98,6 +113,7 @@ export function useMapViewport({
   initialZoomBoost = 1.35,
   positionOf,
   medianWorldRadius = 0,
+  initialFit = 'all',
 }: MapViewportOptions): MapViewport {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -172,6 +188,12 @@ export function useMapViewport({
     animRef.current = requestAnimationFrame(step)
   }, [clearHover])
 
+  /** 월드 좌표 한 점을 가운데로, 주어진 배율로 부드럽게 이동 */
+  const flyTo = useCallback((target: Point, scale: number) => {
+    if (size.width === 0 || size.height === 0) return
+    animateTo(centerOn(target, size, scale))
+  }, [animateTo, size])
+
   const fitAll = useCallback(() => {
     if (size.width === 0 || size.height === 0) return
     animateTo(fitToView(bounds, size, FIT_PADDING))
@@ -206,11 +228,29 @@ export function useMapViewport({
   useEffect(() => {
     if (fittedRef.current || nodes.length === 0 || size.width === 0 || size.height === 0) return
     fittedRef.current = true
+    if (initialFit === 'width-top' && bounds) {
+      const worldWidth = Math.max(1, bounds.maxX - bounds.minX)
+      const available = size.width - GRID_FIT_LEFT_PX - GRID_FIT_RIGHT_PX
+      // 넓은 화면에서 너비에 딱 맞추면 한 교과만 보일 만큼 커진다 — 상한을 두고 가운데 정렬
+      const scale = clampScale(Math.min(available / worldWidth, GRID_FIT_MAX_SCALE))
+      const slack = Math.max(0, available - worldWidth * scale) / 2
+      setView(sanitizeTransform({
+        x: GRID_FIT_LEFT_PX + slack - bounds.minX * scale,
+        y: GRID_FIT_TOP_PX - bounds.minY * scale,
+        scale,
+      }))
+      return
+    }
     const fit = fitToView(bounds, size, FIT_PADDING)
+    // 'exact' = 전체가 딱 들어오게(성좌 — 꽃 전체 모양이 곧 지도의 첫인상이다)
+    if (initialFit === 'exact') {
+      setView(fit)
+      return
+    }
     // 첫 화면은 조금 당겨서 보여 준다 ('전체 보기' 버튼은 정확한 fit 유지)
     const target = initialViewScale(fit.scale, initialZoomBoost, medianWorldRadius)
     setView(zoomAtPoint(fit, { x: size.width / 2, y: size.height / 2 }, target / fit.scale))
-  }, [bounds, initialZoomBoost, medianWorldRadius, nodes.length, size.width, size.height, size])
+  }, [bounds, initialFit, initialZoomBoost, medianWorldRadius, nodes.length, size.width, size.height, size])
 
   // ── 외부 포커스 요청 ───────────────────────────────────────────────────
   useEffect(() => {
@@ -348,6 +388,7 @@ export function useMapViewport({
   useEffect(() => () => cancelAnimationFrame(animRef.current), [])
 
   return {
+    flyTo,
     wrapRef,
     canvasRef,
     size,

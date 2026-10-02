@@ -20,9 +20,20 @@ import { REHEAT_CHANGE } from './forceMath'
 import { drawMap, type RelatedMeta } from './drawMap'
 import { useForceLayout } from './useForceLayout'
 import { useMapViewport } from './useMapViewport'
+import { scaleGridGuides, type GridGuides } from './gridLayout'
+import {
+  LOCAL_MIN_RADIUS,
+  LOCAL_RADIUS_RANGE,
+  LOCAL_RINGS,
+  computeLocalLayout,
+  localRadiusForStrength,
+  scaleConstellationGuides,
+  type ConstellationGuides,
+} from './constellationLayout'
+import { CANVAS_PALETTES, type CanvasTheme } from './mapTheme'
 import MapTooltip from './MapTooltip'
 import { ICON_FONT_SPEC } from './subjectIcons'
-import type { MapEdge, MapNode } from './types'
+import type { MapEdge, MapLayoutMode, MapNode } from './types'
 
 export type { RelatedMeta }
 
@@ -45,7 +56,33 @@ export interface CurriculumMapCanvasProps {
   onSelect: (id: string | null) => void
   onClearSelection: () => void
   focusRequest: { id: string; nonce: number } | null
+  /** 현재 배치 방식 — 'grid' 면 guides 를 그리고 끌어 옮기기를 막는다 */
+  layoutMode: MapLayoutMode
+  onLayoutChange: (mode: MapLayoutMode) => void
+  /** 표 배치 안내선(에셋 좌표). 다른 배치에서는 null */
+  guides: GridGuides | null
+  /** 성좌 배치 구조 요소(에셋 좌표). 다른 배치에서는 null */
+  constellation: ConstellationGuides | null
+  canvasTheme: CanvasTheme
+  onCanvasThemeChange: (theme: CanvasTheme) => void
+  /** 융합 핵심 추천 성취기준 — 별 배지로 표시 */
+  hubId?: string | null
 }
+
+const LAYOUT_OPTIONS: Array<{ mode: MapLayoutMode; label: string; title: string }> = [
+  { mode: 'constellation', label: '성좌', title: '교과 허브 둘레에 영역 방향으로 — 허브에서 멀수록 높은 학년군' },
+  { mode: 'grid', label: '선행 찾기', title: '교과 × 학년군 × 영역 순서로 정렬한 표 — 같은 교과의 앞 학년군 성취기준(선행 학습 요소)을 찾을 때' },
+  { mode: 'similarity', label: '유사도', title: '문장 의미가 비슷할수록 가깝게 — 거리는 근사치입니다' },
+]
+
+const LEGENDS: Record<MapLayoutMode, string> = {
+  constellation: '성좌: 큰 점 = 교과, 방향 = 영역, 교과에서 멀수록 높은 학년군(점선 고리). 성취기준을 누르면 관련 성취기준이 둘레로 모이고, 가까울수록 관계가 강합니다.',
+  grid: '선행 찾기(표): 교과 묶음(국수과사·도미음체·영실통합)을 나란히, 행 = 교과, 열 = 학년군, 칸 안 = 영역·코드 순서. 관계는 성취기준을 눌러 색 선과 패널로 확인하세요.',
+  similarity: '유사도 지도: 문장 의미가 비슷할수록 가깝게 놓았지만 거리는 근사치입니다. 정확한 관계는 성취기준을 눌러 확인하세요.',
+}
+
+/** 로컬 그래프로 모이고 흩어지는 시간(ms) */
+const LOCAL_TRANSITION_MS = 480
 
 function IconButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }): React.ReactElement {
   return (
@@ -79,7 +116,17 @@ export default function CurriculumMapCanvas({
   onSelect,
   onClearSelection,
   focusRequest,
+  layoutMode,
+  onLayoutChange,
+  guides,
+  constellation,
+  canvasTheme,
+  onCanvasThemeChange,
+  hubId = null,
 }: CurriculumMapCanvasProps): React.ReactElement {
+  const isGrid = layoutMode === 'grid'
+  const isConstellation = layoutMode === 'constellation'
+  const palette = CANVAS_PALETTES[canvasTheme]
   const drawRef = useRef<() => void>(() => {})
   const onTick = useCallback(() => drawRef.current(), [])
   // 아이콘 폰트가 준비될 때까지는 원만 그린다 (준비되면 상태 변경으로 재렌더)
@@ -111,6 +158,15 @@ export default function CurriculumMapCanvas({
     [nodes, ghostNodes],
   )
   const ghostIds = useMemo(() => new Set(ghostNodes.map(n => n.id)), [ghostNodes])
+  // 안내선도 노드 좌표와 같은 K 를 곱한다
+  const layoutGuides = useMemo(
+    () => (guides ? scaleGridGuides(guides, RENDER_RADIUS_SCALE) : null),
+    [guides],
+  )
+  const layoutConstellation = useMemo(
+    () => (constellation ? scaleConstellationGuides(constellation, RENDER_RADIUS_SCALE) : null),
+    [constellation],
+  )
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, MapNode>()
@@ -122,8 +178,8 @@ export default function CurriculumMapCanvas({
 
   // 그리기와 충돌이 같은 반지름을 쓴다 (선택·결과 강조로 키우지 않는다)
   const radiusOf = useCallback(
-    (node: MapNode) => drawWorldRadius(node.r ?? worldRadius(degreeNorms.get(node.id) ?? 0)),
-    [degreeNorms],
+    (node: MapNode) => drawWorldRadius(node.r ?? worldRadius()),
+    [],
   )
 
   const medianWorldRadius = useMemo(
@@ -143,12 +199,65 @@ export default function CurriculumMapCanvas({
     nodes: layoutNodes,
     onSelect,
     focusRequest,
-    onNodeDrag: pinNode,
-    onNodeDragEnd: unpinNode,
+    // 표·성좌 배치에서는 자리가 곧 의미라 끌어 옮기지 않는다
+    onNodeDrag: layoutMode === 'similarity' ? pinNode : undefined,
+    onNodeDragEnd: layoutMode === 'similarity' ? unpinNode : undefined,
     positionOf,
     medianWorldRadius,
+    initialFit: isGrid ? 'width-top' : isConstellation ? 'exact' : 'all',
   })
-  const { canvasRef, wrapRef, size, view, hoverId, setHitNodes } = vp
+  const { canvasRef, wrapRef, size, view, hoverId, setHitNodes, flyTo } = vp
+
+  // ── 로컬 그래프(성좌 배치에서 선택 + 관련 판정 완료) ───────────────────
+  const localActive = isConstellation && Boolean(selectedId) && !relatedPending && relatedMeta.size > 0
+  const localLayout = useMemo(() => {
+    if (!localActive || !selectedId) return null
+    const c = nodeMap.get(selectedId)
+    if (!c) return null
+    const center = { x: c.x, y: c.y }
+    const related = [...relatedMeta.entries()]
+      .filter(([id]) => id !== selectedId)
+      .map(([id, m]) => ({ id, relationType: m.relationType, strength: m.strength }))
+    return { center, targets: computeLocalLayout(center, related, RENDER_RADIUS_SCALE) }
+  }, [localActive, nodeMap, relatedMeta, selectedId])
+  // 흩어질 때도 마지막 자리에서 제자리로 돌아가야 하므로 마지막 배치를 기억한다
+  const lastLocalRef = useRef<typeof localLayout>(null)
+  if (localLayout) lastLocalRef.current = localLayout
+  const localProgressRef = useRef(0)
+  const localRings = useMemo(
+    () => LOCAL_RINGS.map(r => ({
+      radius: localRadiusForStrength(r.strength) * RENDER_RADIUS_SCALE,
+      label: `안쪽 ${r.label} (${r.strength.toFixed(2)}↑)`,
+    })),
+    [],
+  )
+
+  useEffect(() => {
+    const target = localLayout ? 1 : 0
+    const from = localLayout ? 0 : localProgressRef.current
+    if (from === target) return
+    let raf = 0
+    const started = performance.now()
+    const step = (): void => {
+      const p = Math.min(1, (performance.now() - started) / LOCAL_TRANSITION_MS)
+      localProgressRef.current = from + (target - from) * p
+      drawRef.current()
+      if (p < 1) raf = requestAnimationFrame(step)
+      else if (target === 0) lastLocalRef.current = null
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [localLayout])
+
+  // 로컬 그래프가 열리면 카메라를 그 둘레에 맞춘다
+  useEffect(() => {
+    if (!localLayout || size.width === 0) return
+    const outer = (LOCAL_MIN_RADIUS + LOCAL_RADIUS_RANGE + 40) * RENDER_RADIUS_SCALE
+    const scale = (Math.min(size.width, size.height) * 0.46) / outer
+    flyTo(localLayout.center, scale)
+  // 선택·판정이 바뀔 때만 이동한다(창 크기 변화로 다시 날지 않게)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localLayout])
 
   useEffect(() => {
     reheat(REHEAT_CHANGE)
@@ -208,12 +317,20 @@ export default function CurriculumMapCanvas({
       relatedPending,
       alwaysLabels,
       iconFontReady,
+      guides: layoutGuides,
+      constellation: layoutConstellation,
+      local: lastLocalRef.current
+        ? { ...lastLocalRef.current, progress: localProgressRef.current, rings: localRings }
+        : null,
+      theme: canvasTheme,
+      hubId,
     })
     setHitNodes(hits)
   }, [
     canvasRef, setHitNodes, nodeMapRef, layoutNodes, ghostIds, degreeNorms, radiusOf, edges,
     view, size, focusId, focusNeighbors, selectedId, selectedNeighbors, relatedPending,
-    scoreById, searchActive, alwaysLabels, subjectColors, relatedMeta, iconFontReady,
+    scoreById, searchActive, alwaysLabels, subjectColors, relatedMeta, iconFontReady, layoutGuides,
+    layoutConstellation, localRings, canvasTheme, hubId,
   ])
 
   // 물리 루프와 상태 변경이 같은 draw 를 부른다
@@ -225,7 +342,7 @@ export default function CurriculumMapCanvas({
   const hoverNode = hoverId ? nodeMap.get(hoverId) ?? null : null
 
   return (
-    <div ref={wrapRef} className="relative h-full w-full overflow-hidden bg-[var(--md-surface-container-low)]">
+    <div ref={wrapRef} className="relative h-full w-full overflow-hidden" style={{ backgroundColor: palette.bg }}>
       <canvas
         ref={canvasRef}
         className="block touch-none"
@@ -238,7 +355,7 @@ export default function CurriculumMapCanvas({
       />
 
       <div
-        className="absolute left-4 top-4 flex w-max items-center gap-1 rounded-full border border-[var(--md-outline-variant)] bg-[var(--md-surface)] px-1.5 py-1"
+        className="absolute left-4 top-4 flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-1 rounded-[24px] border border-[var(--md-outline-variant)] bg-[var(--md-surface)] px-1.5 py-1"
         style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08)' }}
       >
         <IconButton icon="fit_screen" label="전체 보기" onClick={vp.fitAll} />
@@ -247,6 +364,34 @@ export default function CurriculumMapCanvas({
         <span className="shrink-0 px-1.5 text-[13px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
           {Math.round(view.scale * 100)}%
         </span>
+        <div
+          role="radiogroup"
+          aria-label="배치 방식"
+          className="ml-1 flex shrink-0 items-center rounded-full bg-[var(--md-surface-container-high)] p-0.5"
+        >
+          {LAYOUT_OPTIONS.map(option => (
+            <button
+              key={option.mode}
+              type="button"
+              role="radio"
+              aria-checked={layoutMode === option.mode}
+              title={option.title}
+              onClick={() => onLayoutChange(option.mode)}
+              className={`m3-state h-9 rounded-full px-3 text-[13px] font-medium ${
+                layoutMode === option.mode
+                  ? 'bg-[var(--md-secondary-container)] text-[var(--md-on-secondary-container)]'
+                  : 'text-[var(--md-on-surface-variant)]'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <IconButton
+          icon={canvasTheme === 'dark' ? 'light_mode' : 'dark_mode'}
+          label={canvasTheme === 'dark' ? '밝은 캔버스' : '어두운 캔버스'}
+          onClick={() => onCanvasThemeChange(canvasTheme === 'dark' ? 'light' : 'dark')}
+        />
         {selectedId && (
           <button
             type="button"
@@ -260,6 +405,16 @@ export default function CurriculumMapCanvas({
           </button>
         )}
       </div>
+
+      <p
+        className="pointer-events-none absolute bottom-3 left-4 max-w-[min(720px,calc(100%-2rem))] rounded-lg px-3 py-1.5 text-[12px] leading-[1.5]"
+        style={{
+          backgroundColor: canvasTheme === 'dark' ? 'rgba(33,36,43,0.85)' : 'rgba(255,255,255,0.9)',
+          color: palette.guideInk,
+        }}
+      >
+        {LEGENDS[layoutMode]}
+      </p>
 
       {hoverNode && vp.hoverScreen && (
         <MapTooltip

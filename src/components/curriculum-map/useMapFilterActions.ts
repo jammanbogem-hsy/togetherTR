@@ -18,6 +18,8 @@ export interface MapFilterActions {
   setEdgeThreshold: (value: number) => void
   setAlwaysLabels: (value: boolean) => void
   setPhysics: (value: boolean) => void
+  setLayout: (value: MapFilters['layout']) => void
+  setCanvasTheme: (value: MapFilters['canvasTheme']) => void
   resetFilters: () => void
 }
 
@@ -56,6 +58,14 @@ export function useMapFilterActions(store: FilterStore): MapFilterActions {
     updateFilters(f => ({ ...f, physics: value }))
   }, [updateFilters])
 
+  const setLayout = useCallback((value: MapFilters['layout']) => {
+    updateFilters(f => ({ ...f, layout: value }))
+  }, [updateFilters])
+
+  const setCanvasTheme = useCallback((value: MapFilters['canvasTheme']) => {
+    updateFilters(f => ({ ...f, canvasTheme: value }))
+  }, [updateFilters])
+
   const resetFilters = useCallback(() => updateFilters(() => DEFAULT_FILTERS), [updateFilters])
 
   return {
@@ -67,6 +77,8 @@ export function useMapFilterActions(store: FilterStore): MapFilterActions {
     setEdgeThreshold,
     setAlwaysLabels,
     setPhysics,
+    setLayout,
+    setCanvasTheme,
     resetFilters,
   }
 }

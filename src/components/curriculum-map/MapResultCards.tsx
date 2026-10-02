@@ -7,8 +7,9 @@
 import { RELATION_COLORS } from '@/components/knowledge-graph/constants'
 import { formatScore } from './mapMath'
 import { LevelChip, ScoreBar, SOURCE_LABELS } from './MapPanelBits'
+import { LevelCompareBox } from './MapLevelBits'
 import { subjectIcon } from './subjectIcons'
-import type { MapRelatedItem, MapSearchResult } from './types'
+import type { MapNodeLevels, MapRelatedItem, MapSearchResult } from './types'
 
 const FALLBACK_RELATION_COLOR = '#94A3B8'
 
@@ -85,7 +86,7 @@ export function ResultCard({
   picked: boolean
   onClick: () => void
   onHover: (id: string | null) => void
-  onTogglePick: () => void
+  onTogglePick?: () => void
 }): React.ReactElement {
   return (
     <div
@@ -122,7 +123,7 @@ export function ResultCard({
         </span>
         <LevelChip level={result.level} />
         <span className="ml-auto">
-          <PickButton picked={picked} onToggle={onTogglePick} />
+          {onTogglePick && <PickButton picked={picked} onToggle={onTogglePick} />}
         </span>
       </div>
     </div>
@@ -136,13 +137,20 @@ export function RelatedCard({
   onClick,
   onHover,
   onTogglePick,
+  centerCode = '',
+  centerLevels,
+  itemLevels,
 }: {
   item: MapRelatedItem
   color: string
   picked: boolean
   onClick: () => void
   onHover: (id: string | null) => void
-  onTogglePick: () => void
+  onTogglePick?: () => void
+  /** 성취수준 비교를 펼칠 때 쓰는 선택 성취기준 코드·성취수준 */
+  centerCode?: string
+  centerLevels?: MapNodeLevels
+  itemLevels?: MapNodeLevels
 }): React.ReactElement {
   const relColor = RELATION_COLORS[item.relationType] ?? FALLBACK_RELATION_COLOR
   const hasScores = typeof item.jevScore === 'number' || typeof item.sim === 'number'
@@ -204,6 +212,13 @@ export function RelatedCard({
         </div>
       )}
 
+      <LevelCompareBox
+        centerCode={centerCode}
+        centerLevels={centerLevels}
+        itemCode={item.code}
+        itemLevels={itemLevels}
+      />
+
       <div className="mt-2.5 flex items-center gap-2">
         <ScoreBar value={item.strength} color={relColor} />
         <span className="text-[13px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
@@ -220,13 +235,13 @@ export function RelatedCard({
       <div className="mt-2 flex items-center justify-between gap-2">
         {hasScores ? (
           <p className="text-[13px] font-medium tabular-nums text-[var(--md-on-surface-variant)]">
-            {typeof item.jevScore === 'number' && `Jev 판정 ${item.jevScore.toFixed(2)} · `}
+            {typeof item.jevScore === 'number' && `AI 판정 ${item.jevScore.toFixed(2)} · `}
             유사도 {item.sim.toFixed(2)}
           </p>
         ) : (
           <span />
         )}
-        <PickButton picked={picked} onToggle={onTogglePick} />
+        {onTogglePick && <PickButton picked={picked} onToggle={onTogglePick} />}
       </div>
     </div>
   )

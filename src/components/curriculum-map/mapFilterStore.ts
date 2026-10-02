@@ -22,7 +22,17 @@ export const DEFAULT_FILTERS: MapFilters = {
   // 1.2 배율을 넘으면 나머지도 가림 검사를 거쳐 나타난다.
   alwaysLabels: false,
   physics: true,
+  // 기본은 성좌 배치 — 위치가 문서 속성(교과·영역·학년군)으로 정해지면서 허브·가지 모양이다.
+  layout: 'constellation',
+  // 2026-10-01 사용자 피드백 "바탕이 검정색이어서 보기 힘들다" → 기본 밝게
+  canvasTheme: 'light',
 }
+
+const LAYOUT_MODES = ['constellation', 'grid', 'similarity'] as const
+/** 저장 형식 버전. 1 = layout 이 'grid'|'similarity' 뿐이던 때(그때의 'grid' 는 기본값이었다). */
+const LAYOUT_VERSION = 2
+/** 캔버스 색 저장 버전. 1 = 어두운 바탕이 기본이던 때 — 그때 저장된 'dark' 는 고른 값이 아니라 기본값이다. */
+const THEME_VERSION = 2
 
 function readStoredFilters(): MapFilters {
   if (typeof window === 'undefined') return DEFAULT_FILTERS
@@ -46,6 +56,15 @@ function readStoredFilters(): MapFilters {
       alwaysLabels: obj.alwaysLabels === true,
       // 저장값이 없으면 움직임은 기본 켜짐
       physics: obj.physics === undefined ? true : obj.physics === true,
+      // 예전 저장의 'grid' 는 사용자가 고른 값이 아니라 당시 기본값이라 새 기본(성좌)으로 옮긴다
+      layout: (obj as { layoutVersion?: unknown }).layoutVersion === LAYOUT_VERSION
+        && LAYOUT_MODES.includes(obj.layout as (typeof LAYOUT_MODES)[number])
+        ? obj.layout as MapFilters['layout']
+        : obj.layout === 'similarity' ? 'similarity' : 'constellation',
+      // 예전(어두운 기본) 저장의 'dark' 는 새 기본(밝게)으로 옮기고, 새 형식에서 고른 'dark' 만 따른다
+      canvasTheme: (obj as { themeVersion?: unknown }).themeVersion === THEME_VERSION && obj.canvasTheme === 'dark'
+        ? 'dark'
+        : 'light',
     }
   } catch {
     return DEFAULT_FILTERS
@@ -55,7 +74,7 @@ function readStoredFilters(): MapFilters {
 function writeStoredFilters(filters: MapFilters): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(FILTERS_KEY, JSON.stringify(filters))
+    window.localStorage.setItem(FILTERS_KEY, JSON.stringify({ ...filters, layoutVersion: LAYOUT_VERSION, themeVersion: THEME_VERSION }))
   } catch {
     // 저장 실패는 조용히 무시 (사생활 보호 모드 등)
   }
