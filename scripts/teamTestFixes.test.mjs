@@ -1167,6 +1167,101 @@ test('31a: 평가 계획 밖 섹션(수준 기준 표·문장)의 코드도 평�
   assert.equal(result.evaluationHasNoCodes, false)
 })
 
+// ─── TASK-032: 공유 워크숍 닫기·재오픈과 헤더 말풍선 층위 ─────────
+function problemSituationOpenHarness() {
+  const source = fs.readFileSync(new URL('../src/components/chat/useProblemSituationOpen.ts', import.meta.url), 'utf8')
+  const sourceTree = ts.createSourceFile('useProblemSituationOpen.ts', source, ts.ScriptTarget.Latest, true)
+  const states = []
+  let cursor = 0
+  let changed = false
+  let props
+  let result
+  const hook = loadChatFunction('useProblemSituationOpen', {
+    useState(initial) {
+      const index = cursor++
+      if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial
+      return [states[index], update => {
+        const next = typeof update === 'function' ? update(states[index]) : update
+        if (!Object.is(next, states[index])) { states[index] = next; changed = true }
+      }]
+    },
+  }, sourceTree)
+  function render(nextProps = props) {
+    props = nextProps
+    for (let i = 0; i < 5; i++) {
+      cursor = 0; changed = false
+      result = hook(props)
+      if (!changed) return result[0]
+    }
+    assert.fail('공유 워크숍 상태가 5번 렌더 후에도 안정되지 않음')
+  }
+  return { render, setOpen(open) { result[1](open); return render() } }
+}
+
+test('032a: 방장 공유 열기·닫기·재오픈을 팀원이 따라가고 로컬 닫기는 일반 업데이트로 취소되지 않는다', () => {
+  const h = problemSituationOpenHarness()
+  const member = { projectId: 'herdr', userUid: 'member1', isHost: false, sharedOpen: false, currentActivity: 'Ds-1-2' }
+  assert.equal(h.render(member), false)
+  assert.equal(h.render({ ...member, sharedOpen: true }), true)
+  assert.equal(h.setOpen(false), false)
+  assert.equal(h.render({ ...member, sharedOpen: true }), false)
+  assert.equal(h.render(member), false)
+  assert.equal(h.render({ ...member, sharedOpen: true }), true)
+  // 팀원이 닫지 않고 보는 중에도 방장 X / 저장으로 false가 오면 닫힌다.
+  assert.equal(h.render(member), false)
+  assert.equal(h.setOpen(true), true)
+  assert.equal(h.render(member), true)
+  assert.equal(h.render({ ...member, sharedOpen: true }), true)
+  assert.equal(h.render(member), false)
+  assert.match(chat, /useProblemSituationOpen\(\{[\s\S]*?sharedOpen: project\.problemSituationOpen/)
+  assert.match(chat, /onClose=\{\(\) => \{\s*setShowProblemSituationDesigner\(false\)\s*if \(isHost\) \{[\s\S]*?setProblemSituationOpen\(proj\.id, false\)/)
+})
+
+test('032b: 방장 직접 제어·첫 진입·활동 전환 중 열린 워크숍 유지도 보존한다', () => {
+  const host = problemSituationOpenHarness()
+  const props = { projectId: 'herdr', userUid: 'host', isHost: true, sharedOpen: false, currentActivity: 'Ds-1-2' }
+  assert.equal(host.render(props), false)
+  assert.equal(host.setOpen(true), true)
+  assert.equal(host.render({ ...props, sharedOpen: true }), true)
+  assert.equal(host.setOpen(false), false)
+  assert.equal(host.render(props), false)
+  const member = problemSituationOpenHarness()
+  assert.equal(member.render({ ...props, userUid: undefined, isHost: false, sharedOpen: true }), false)
+  assert.equal(member.render({ ...props, userUid: 'member', isHost: false, sharedOpen: true }), true)
+  assert.equal(member.render({ ...props, userUid: 'member', isHost: false, sharedOpen: true, currentActivity: 'Ds-1-3' }), true)
+  assert.equal(member.render({ ...props, userUid: 'member', isHost: false, sharedOpen: false, currentActivity: 'Ds-1-3' }), false)
+  const otherActivity = problemSituationOpenHarness()
+  assert.equal(otherActivity.render({ ...props, isHost: false, sharedOpen: true, currentActivity: 'T-1-1' }), false)
+})
+
+test('032c: 헤더 코치 말풍선은 독립된 20번 층 안에 있고 보고서·이동·상세 모달보다 아래다', () => {
+  const { CoeditButton } = loadArtifactTsx('../src/components/chat/ChatPanel.tsx', {
+    MD3Button: ({ children }) => React.createElement('button', null, children),
+    MD3_ICON: { sm: 16 }, PencilSimple: () => null,
+  }, ['CoeditButton'])
+  const { ChatPanelHeader } = loadArtifactTsx('../src/components/chat/ChatPanelHeader.tsx', {
+    ACTIVITY_META, cn: (...values) => values.filter(Boolean).join(' '),
+    ChatFontScaleControl: () => null, Shield: () => null, Star: () => null,
+  }, ['ChatPanelHeader'])
+  const html = renderToStaticMarkup(React.createElement(ChatPanelHeader, { activity: 'Ds-1-2' },
+    React.createElement(CoeditButton, { label: '공동 편집', title: '공동 편집', showHint: true, onClick() {} })))
+  assert.match(html, /^<div class="relative isolate z-20 /)
+  assert.match(html, /팀원과 함께 공동 편집할 수 있어요/)
+  for (const file of ['modals/StageAnalysisModal', 'modals/StageReportsModal', 'modals/StageMoveModal', 'modals/CumulativeReportModal', 'artifacts/ArtifactPanel', 'artifacts/CoeditWorkspaceModal']) {
+    const source = fs.readFileSync(new URL(`../src/components/${file}.tsx`, import.meta.url), 'utf8')
+    const overlay = source.match(/fixed inset-0 z-(?:\[(\d+)\]|(\d+))/)
+    assert.ok(overlay, file)
+    assert.ok(Number(overlay[1] ?? overlay[2]) > 20, `${file}: 헤더 안내보다 높은 모달 층`)
+  }
+})
+
+test('032d: 개인 Ds-1 Step 2의 문장부호는 바꾸지 않는다:로 끝난다', () => {
+  const project = { title: 't', schoolLevel: '초등', targetGradeGroup: '초3-4', targetSubjects: [], mode: 'solo', currentCycle: 1 }
+  const solo = buildSystemPrompt('Ds', 'Ds-1-1', project, '개인+AI')
+  assert.match(solo, /열 구성\(확인 지점 \/ 평가 요소 \/ 평가 방법 \/ 평가 시점 \/ 평가 주체\)은 바꾸지 않는다:/)
+  assert.doesNotMatch(solo, /바꾸지 않는다\.:/)
+})
+
 test('31b: 평가 산출물에 코드가 하나도 없으면 빈칸이 아니라 코드 미표기로 구분한다(herdr Ds-1-1 v2 형태)', () => {
   const herdrDs11 = { '평가 계획': '| 확인 지점 | 평가 요소 | 평가 방법 | 평가 시점 | 평가 주체 |\n|---|---|---|---|---|\n| 1-2학년군 결과물 | 더운 곳과 그늘이 필요한 곳을 표시 | 관찰 | 발표 때 | 교사 |\n| 모둠 참여 과정 | 역할 수행 | 관찰 | 협의 중 | 교사 |' }
   const ds13 = { '학습 활동': '| 순서 | 흐름 단계 | 활동명 | 활동 설명 | 핵심/부가 | 담당 교과 | 누적 차시 | 차시 운영 |\n|---|---|---|---|---|---|---|---|\n| 1 | 문제 이해 | 더위와 그늘 문제 발견하기 | 스티커 (근거: [2바02-01] A) | 핵심 | 통합 | 1차시 | 1 |' }
@@ -1210,4 +1305,61 @@ test('32: Ds-1 팀·개인 프롬프트가 평가 요소마다 "(근거: [코드
   const result = task031.buildAlignment(['[2국03-02]'], saved, null)
   assert.deepEqual(result.rows[0].evaluations, [{ label: '더운 곳과 그늘이 필요한 곳을 표시하고 이유를 한 문장으로 표현함', levels: ['B'] }])
   assert.equal(result.evaluationHasNoCodes, false)
+})
+
+// ─── TASK-033: 문제상황 워크숍 생성 맥락에 T단계 산출물·Ds-2 최근 대화 추가 ─────────
+const task033 = await import('../src/lib/problem-situation/workshopContext.ts')
+const task033gen = await import('../src/lib/problem-situation/generation.ts')
+
+test('33a: T단계 산출물은 비전·원칙 위주로 직렬화되고 역할·규칙·일정은 짧게 잘린다', () => {
+  const long = '가'.repeat(1000)
+  const text = task033.buildTeamPreparationContext({
+    'T-1-1': { content: { '팀 비전': '아이들이 생활 속 문제를 스스로 해결하는 수업', _meta: 'x' } },
+    'T-1-2': { content: '1. 학생 질문에서 출발하려면 질문 시간을 먼저 둔다' },
+    'T-2-1': { content: long },
+    'T-2-3': { content: [{ 날짜: '10/20', 할일: '수업 실행' }] },
+  })
+  assert.match(text, /\[팀 비전 \(T-1\)\]\n[\s\S]*생활 속 문제/)
+  assert.match(text, /\[설계 원칙 \(T-2\)\]\n1\. 학생 질문/)
+  assert.match(text, /\[일정 \(T-5\)\]\n날짜 \| 할일\n10\/20 \| 수업 실행/)
+  assert.doesNotMatch(text, /_meta|협력 규칙/)
+  const roles = text.split('[역할 분담 (T-3)]\n')[1].split('\n\n')[0]
+  assert.ok(roles.length <= 251 && roles.endsWith('…'))
+  assert.ok(text.length <= task033.TEAM_PREPARATION_LIMIT + 1)
+  assert.equal(task033.buildTeamPreparationContext(undefined), '')
+  assert.equal(task033.buildTeamPreparationContext({}), '')
+})
+
+test('33b: Ds-2 대화는 신호 태그 제거·화자 표시·활동 필터, 상한 초과 시 오래된 것부터 버린다', () => {
+  const messages = [
+    { role: 'user', content: '오래된 이야기', activityCode: 'Ds-1-2', displayName: '홍성용' },
+    { role: 'assistant', content: '좋아요 [ARTIFACT_UPDATE: 문제상황=| a | b |\n| c | d |] 정리했어요\n[ACTIVITY_ADVANCE: Ds-1-3]', activityCode: 'Ds-1-2' },
+    { role: 'user', content: '학교 화단 그늘 지도를 만들자', activityCode: 'Ds-1-2', displayName: '캔바1' },
+    { role: 'user', content: '다른 활동 대화', activityCode: 'Ds-1-1', displayName: '캔바1' },
+    { role: 'system', content: '시스템', activityCode: 'Ds-1-2' },
+  ]
+  const all = task033.buildRecentConversationContext(messages)
+  assert.equal(all, '홍성용: 오래된 이야기\n\nAI: 좋아요  정리했어요\n\n캔바1: 학교 화단 그늘 지도를 만들자')
+  assert.doesNotMatch(all, /ARTIFACT_UPDATE|ACTIVITY_ADVANCE|다른 활동|시스템/)
+  const recent = task033.buildRecentConversationContext(messages, 'Ds-1-2', 30)
+  assert.equal(recent, '캔바1: 학교 화단 그늘 지도를 만들자')
+  const tail = task033.buildRecentConversationContext([{ role: 'user', content: '나'.repeat(100), activityCode: 'Ds-1-2' }], 'Ds-1-2', 20)
+  assert.equal(tail.length, 20)
+  assert.ok(tail.startsWith('…'))
+  assert.equal(task033.buildRecentConversationContext([]), '')
+})
+
+test('33c: 생성 프롬프트에 팀 준비·최근 대화·우선순위 한 줄이 들어가고, 없으면 블록이 생기지 않는다', () => {
+  const base = { projectTitle: 'p', targetGradeGroup: '1-2', targetSubjects: ['과학'], nodeContext: '' }
+  const withCtx = task033gen.buildOutlinePrompts({ ...base, teamPreparation: '[팀 비전 (T-1)]\n생활 속 문제', recentConversation: '캔바1: 그늘 지도' }).user
+  assert.match(withCtx, /=== T단계 팀 준비 \(비전·원칙·역할·규칙·일정\) ===\n\[팀 비전 \(T-1\)\]/)
+  assert.match(withCtx, /=== Ds-2 문제상황 대화의 최근 내용 \(오래된 것은 생략\) ===\n캔바1: 그늘 지도/)
+  assert.match(withCtx, /충돌하면 확정 산출물을 우선하되, 대화에 나온 구체적 아이디어\(소재·장면·학생 활동\)는 시나리오 장면에 반영/)
+  const without = task033gen.buildOutlinePrompts(base).user
+  assert.doesNotMatch(without, /T단계 팀 준비|Ds-2 문제상황 대화|우선순위:/)
+  const route = fs.readFileSync(new URL('../src/app/api/problem-situation/generate/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /recentConversation\.slice\(-CONVERSATION_CONTEXT_LIMIT\)/)
+  const designer = fs.readFileSync(new URL('../src/components/problem-situation/ProblemSituationDesigner.tsx', import.meta.url), 'utf8')
+  assert.match(designer, /setTeamPreparation\(buildTeamPreparationContext\(d\?\.artifacts\)\)/)
+  assert.match(designer, /recentConversation: buildRecentConversationContext\(useProjectStore\.getState\(\)\.messages\)/)
 })

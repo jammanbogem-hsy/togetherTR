@@ -85,6 +85,10 @@ export interface ProblemSituationContext {
   evaluationPlan?: string
   learningObjective?: string
   learnerProfile?: string
+  /** T단계 팀 준비 산출물(비전·원칙 위주) 요약 */
+  teamPreparation?: string
+  /** Ds-2(내부 Ds-1-2) 대화의 최근 내용 — 신호 태그 제거·화자 표시·글자 수 상한 적용 */
+  recentConversation?: string
 }
 
 export const CANDIDATE_COUNT = 3
@@ -176,7 +180,15 @@ ${ctx.learningObjective ?? '(없음)'}
 ${ctx.learnerProfile ?? '(없음)'}
 
 === Ds-1-1 평가 계획 ===
-${ctx.evaluationPlan ?? '(아직 수립되지 않음)'}`
+${ctx.evaluationPlan ?? '(아직 수립되지 않음)'}${ctx.teamPreparation ? `
+
+=== T단계 팀 준비 (비전·원칙·역할·규칙·일정) ===
+${ctx.teamPreparation}` : ''}${ctx.recentConversation ? `
+
+=== Ds-2 문제상황 대화의 최근 내용 (오래된 것은 생략) ===
+${ctx.recentConversation}
+
+⚠️ 우선순위: 대화의 합의가 위 확정 산출물과 충돌하면 확정 산출물을 우선하되, 대화에 나온 구체적 아이디어(소재·장면·학생 활동)는 시나리오 장면에 반영하세요. 팀 비전·원칙은 문제상황의 방향과 맞추세요.` : ''}`
 }
 
 export function buildOutlinePrompts(ctx: ProblemSituationContext): { system: string; user: string } {

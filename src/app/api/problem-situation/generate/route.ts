@@ -3,6 +3,7 @@ import { resolveClaudeModel, isClaude5Family } from '@/lib/llm/anthropic'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { recoverTruncatedJson } from '@/lib/llm/recoverJson'
 import { validateProblemStandards } from '@/lib/problem-situation/validateStandards'
+import { CONVERSATION_CONTEXT_LIMIT, TEAM_PREPARATION_LIMIT } from '@/lib/problem-situation/workshopContext'
 import {
   DETAIL_MAX_TOKENS,
   OUTLINE_MAX_TOKENS,
@@ -47,6 +48,8 @@ export async function POST(request: Request) {
       evaluationPlan,
       learningObjective,
       learnerProfile,
+      teamPreparation,
+      recentConversation,
       projectTitle,
       targetGradeGroup,
       teamGradeBands,
@@ -57,6 +60,8 @@ export async function POST(request: Request) {
       evaluationPlan?: string
       learningObjective?: string
       learnerProfile?: string
+      teamPreparation?: string
+      recentConversation?: string
       projectTitle: string
       targetGradeGroup: string
       teamGradeBands?: string[]
@@ -82,6 +87,9 @@ export async function POST(request: Request) {
       evaluationPlan,
       learningObjective,
       learnerProfile,
+      // 60초 제한 보호: 클라이언트가 상한을 넘겨 보내도 서버에서 한 번 더 자른다(대화는 최근 쪽을 남긴다).
+      teamPreparation: typeof teamPreparation === 'string' ? teamPreparation.slice(0, TEAM_PREPARATION_LIMIT + 1) : undefined,
+      recentConversation: typeof recentConversation === 'string' ? recentConversation.slice(-CONVERSATION_CONTEXT_LIMIT) : undefined,
     }
 
     if (resolved.phase === 'outline') {

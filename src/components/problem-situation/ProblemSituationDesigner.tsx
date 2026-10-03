@@ -7,6 +7,8 @@ import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { parsePsReady, cleanPsReady } from '@/lib/problem-situation/readySignal'
 import { extractFallbackStandards, type FallbackStandard } from '@/lib/problem-situation/standardsFallback'
 import { isEmptyScenarioDetail, usableGraphData } from '@/lib/problem-situation/designerState'
+import { buildRecentConversationContext, buildTeamPreparationContext } from '@/lib/problem-situation/workshopContext'
+import { useProjectStore } from '@/store/project'
 import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass, FileTextIcon as FileText, SidebarSimpleIcon as SidebarSimple, CaretRightIcon as CaretRight, CircleNotchIcon as CircleNotch, PencilRulerIcon as PencilRuler } from '@phosphor-icons/react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -706,12 +708,15 @@ export default function ProblemSituationDesigner({
   const [localGraphData, setLocalGraphData] = useState<Props['graphSavedData']>(graphSavedData ?? null)
   // 지식 그래프 없이 분석시트로 진행한 팀을 위한 성취기준 대체 목록 원천 (같은 구독에서 읽음)
   const [standardSources, setStandardSources] = useState<{ analysisRows?: unknown; sheetRows?: unknown }>({})
+  // 생성 맥락 보강: T단계 팀 준비 산출물(같은 구독에서 읽음)과 Ds-2 대화의 최근 내용
+  const [teamPreparation, setTeamPreparation] = useState('')
   useEffect(() => {
     // onSnapshot: 컴포넌트가 열려 있는 동안 Firestore 변경을 실시간으로 반영
     const unsub = onSnapshot(doc(db, 'projects', projectId), (snap) => {
       if (snap.exists()) {
         const d = snap.data()
         setStandardSources({ analysisRows: d?.artifacts?.['A-2-1']?.content?.rows, sheetRows: d?.curriculumSheet })
+        setTeamPreparation(buildTeamPreparationContext(d?.artifacts))
         // 그래프가 비워지면 이전 그래프를 남기지 않고 null로 바꿔 대체 성취기준 목록이 보이게 한다.
         setLocalGraphData(usableGraphData(d?.graphSavedData))
       }
@@ -747,7 +752,10 @@ export default function ProblemSituationDesigner({
     targetGradeGroup,
     teamGradeBands,
     targetSubjects,
-  }), [localGraphData, achievementStandardsAnalysis, evaluationPlan, learningObjective, learnerProfile, projectTitle, targetGradeGroup, teamGradeBands, targetSubjects])
+    teamPreparation: teamPreparation || undefined,
+    // 생성 시점의 대화를 담는다(요청마다 최신 상태를 읽어 의존성 변화로 콜백이 매번 바뀌지 않게 한다).
+    recentConversation: buildRecentConversationContext(useProjectStore.getState().messages) || undefined,
+  }), [localGraphData, achievementStandardsAnalysis, evaluationPlan, learningObjective, learnerProfile, projectTitle, targetGradeGroup, teamGradeBands, targetSubjects, teamPreparation])
 
   // 후보 하나의 상세를 두 조각(scenario / plan)으로 동시에 요청해 결과에 병합한다.
   // 조각이 도착하는 대로 화면에 채우고, 둘 다 성공해야 'done'. gen이 바뀌었으면(재생성) 늦은 응답은 버린다.
