@@ -8,6 +8,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import { readOncePerCurriculumContext } from './readCache'
 import type { ActivityCode } from '@/types'
 import { loadGraph } from './graphReader'
 import { getPrefixedElementaryLists } from './elementaryContentLists'
@@ -91,6 +92,10 @@ function findContentSystemDir(): string | null {
 }
 
 export function loadContentSystems(): ContentSystemRecord[] {
+  return readOncePerCurriculumContext('content-systems', readContentSystems)
+}
+
+function readContentSystems(): ContentSystemRecord[] {
   if (CACHE_ENABLED && contentSystemCache) return contentSystemCache
 
   const dir = findContentSystemDir()
@@ -138,6 +143,10 @@ export function loadContentSystems(): ContentSystemRecord[] {
 }
 
 export function loadElementaryContentSystems(): ContentSystemRecord[] {
+  return readOncePerCurriculumContext('elementary-content-systems', readElementaryContentSystems)
+}
+
+function readElementaryContentSystems(): ContentSystemRecord[] {
   if (CACHE_ENABLED && elementaryContentSystemCache) return elementaryContentSystemCache
 
   const rawRecords = loadContentSystems()

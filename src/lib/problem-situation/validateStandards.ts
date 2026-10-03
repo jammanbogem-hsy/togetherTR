@@ -11,9 +11,18 @@ export function validateProblemStandards(
   if (!allowed.size || !detail.standardsAlignment) return detail
   return {
     ...detail,
-    standardsAlignment: detail.standardsAlignment.filter(alignment => {
-      const code = Array.from(alignment.standardId.matchAll(STANDARD_CODE), match => match[1])[0]
-      return !!code && allowed.has(code)
+    standardsAlignment: detail.standardsAlignment.flatMap(alignment => {
+      const codes = Array.from(alignment.standardId.matchAll(STANDARD_CODE), match => match[1])
+      if (!codes.some(code => allowed.has(code))) return []
+      if (codes.every(code => allowed.has(code))) return [alignment]
+      const standardId = alignment.standardId
+        .replace(STANDARD_CODE, (match, code: string) => allowed.has(code) ? match : '')
+        .replace(/\[\s*\]/g, '')
+        .replace(/\[\s*[·,;/|]+\s*/g, '[')
+        .replace(/^[\s·,;/|]+|[\s·,;/|]+$/g, '')
+        .replace(/([·,;/|])\s*(?:[·,;/|]\s*)+/g, '$1')
+        .replace(/[·,;/|]\s*(?=\]|$)/g, '')
+      return [{ ...alignment, standardId }]
     }),
   }
 }

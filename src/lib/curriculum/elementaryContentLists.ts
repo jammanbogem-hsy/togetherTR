@@ -15,6 +15,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import { readOncePerCurriculumContext } from './readCache'
 
 export const ELEMENTARY_BANDS = ['1-2학년군', '3-4학년군', '5-6학년군'] as const
 export type ElementaryBand = (typeof ELEMENTARY_BANDS)[number]
@@ -136,6 +137,10 @@ function asItemList(value: unknown): string[] {
 }
 
 export function loadElementaryContentEntries(): ElementaryContentEntry[] {
+  return readOncePerCurriculumContext('elementary-content-entries', readElementaryContentEntries)
+}
+
+function readElementaryContentEntries(): ElementaryContentEntry[] {
   if (CACHE_ENABLED && entriesCache) return entriesCache
 
   const dir = findContentSystemDir()

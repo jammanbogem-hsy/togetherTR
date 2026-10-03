@@ -6,6 +6,7 @@
 import fs from 'fs'
 import path from 'path'
 import OpenAI from 'openai'
+import { readOncePerCurriculumContext } from './readCache'
 import { applyElementaryContentLists } from './elementaryContentLists'
 import { dedupeCoreIdeaSentences } from '@/lib/curriculum/coreIdeaDedupe'
 
@@ -124,6 +125,10 @@ function isElementaryLevel(schoolLevel?: string, gradeBand?: string): boolean {
 }
 
 export function loadGraph(): KnowledgeGraph | null {
+  return readOncePerCurriculumContext('knowledge-graph', readGraph)
+}
+
+function readGraph(): KnowledgeGraph | null {
   // [2026-05-14] dev 환경에선 매번 reload (JSON 수정 즉시 반영). prod는 TTL 캐시 유지.
   const cacheActive = process.env.NODE_ENV !== 'development' && _cache && Date.now() - _cacheAt < TTL
   if (cacheActive) return _cache

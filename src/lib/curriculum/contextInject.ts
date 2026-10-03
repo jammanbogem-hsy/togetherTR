@@ -23,6 +23,7 @@ import {
   type CurriculumStandard,
 } from './graphReader'
 import { searchJsonStandards } from './curriculumJsonReader'
+import { withCurriculumReadCache } from './readCache'
 import { isUsableCoreIdea } from './curriculumFilters'
 import { filterItemsByGradeBandStrict } from './sheetGradeBands'
 import { filterGraphToGradeBand } from './graphGradeBands'
@@ -761,7 +762,11 @@ function buildMultiBandCurriculumContext(
  *
  * @returns 주입할 컨텍스트 문자열 (없으면 빈 문자열)
  */
-export function buildCurriculumContext(
+export function buildCurriculumContext(...args: Parameters<typeof buildCurriculumContextUncached>): string {
+  return withCurriculumReadCache(() => buildCurriculumContextUncached(...args))
+}
+
+function buildCurriculumContextUncached(
   activityCode: ActivityCode,
   messages: Array<{ role: string; content: string }>,
   gradeGroup: string,
