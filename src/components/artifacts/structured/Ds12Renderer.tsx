@@ -94,7 +94,8 @@ function normalize(content: AnyRec): Normalized {
   // 데이터 출처가 문자열 형태(fallback)면 realData로 흡수
   if (out.selected.realData.length === 0) {
     const ds = S(content['데이터 출처'])
-    if (ds) out.selected.realData = ds.split(/[\n,]/).map(s => ({ label: s.trim() })).filter(r => r.label)
+    // 줄바꿈과 워크숍 저장 구분자(' / ')로만 나눈다 — 쉼표로 나누면 한 문장이 여러 항목으로 쪼개진다.
+    if (ds) out.selected.realData = ds.split(/\n|\s+\/\s+/).map(s => ({ label: s.trim() })).filter(r => r.label)
   }
 
   out.drivingQuestion = S(content['핵심 질문'] || content['핵심질문'] || content['drivingQuestion'])
