@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { resolveClaudeModel, isClaude5Family } from '@/lib/llm/anthropic'
 import type { GraphSavedData } from '@/lib/knowledge-graph/domain'
 import { recoverTruncatedJson } from '@/lib/llm/recoverJson'
+import { validateProblemStandards } from '@/lib/problem-situation/validateStandards'
 import {
   DETAIL_MAX_TOKENS,
   OUTLINE_MAX_TOKENS,
@@ -100,7 +101,11 @@ export async function POST(request: Request) {
     if (!detail) {
       return Response.json({ error: 'AI 응답이 잘려 후보 상세를 읽지 못했습니다. 이 후보만 다시 생성해 주세요.' }, { status: 500 })
     }
-    return Response.json({ index: resolved.candidateIndex, part: resolved.part, detail })
+    return Response.json({
+      index: resolved.candidateIndex,
+      part: resolved.part,
+      detail: validateProblemStandards(detail, achievementStandardsAnalysis),
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return Response.json({ error: msg }, { status: 500 })

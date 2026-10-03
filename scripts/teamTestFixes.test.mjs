@@ -11,6 +11,8 @@ import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, buildSystemPrompt } from '../src/lib/prompts/system.ts'
 import { buildOutlinePrompts, buildDetailPrompts, parseOutline } from '../src/lib/problem-situation/generation.ts'
 import { parsePsReady, cleanPsReady } from '../src/lib/problem-situation/readySignal.ts'
+import { serializeArtifactForPrompt } from '../src/lib/artifacts/serializeArtifactForPrompt.ts'
+import { validateProblemStandards } from '../src/lib/problem-situation/validateStandards.ts'
 import { ACTIVITY_META, displayActivityCode } from '../src/types/index.ts'
 import { applyArtifactSignalBatch, artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
 import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction } from '../src/lib/artifacts/schemas.ts'
@@ -25,13 +27,82 @@ function loadChatFunction(name, bindings, sourceTree = tree) {
   }
   visit(sourceTree)
   assert.ok(found, name)
-  const source = ts.transpileModule(`exports.fn = ${found.getText(sourceTree)}`, {
+  const source = ts.transpileModule(`exports.fn = ${found.getText(sourceTree).replace(/^export\s+/, '')}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText
   const context = { exports: {}, ...bindings }
   vm.runInNewContext(source, context)
   return context.exports.fn
 }
+
+test('25: A-2-1 표 행은 학년군·교과·성취기준 원문과 세 차원을 빠짐없이 펼친다', () => {
+  const content = {
+    _schema: 'A-2-1',
+    rows: [
+      { subject: '3-4학년군 사회', standard: '[4사08-02] 지역사회의 문제 해결에 참여한다.', coreIdea: '주민 참여', knowledgeUnderstanding: '지역 문제', processFunction: '주민 인터뷰', valueAttitude: '시민 참여' },
+      { gradeBand: '5-6학년군', subject: '사회', standard: '[6사02-01] 계절별 기후를 탐구한다.', knowledgeUnderstanding: '계절별 기후', processFunction: '자료 분석', valueAttitude: '대응 실천' },
+    ],
+    commonElements: '자료로 근거를 찾는다.\n주민의 필요를 살핀다.',
+  }
+  const original = structuredClone(content)
+  const text = serializeArtifactForPrompt(content)
+  assert.doesNotMatch(text, /\[object Object\]|_schema/)
+  assert.match(text, /학년군 \| 교과 \| 핵심 아이디어 \| 성취기준 코드\+원문 \| 지식·이해 \| 과정·기능 \| 가치·태도/)
+  assert.match(text, /3-4학년군 사회 \| 주민 참여 \| \[4사08-02\] 지역사회의 문제 해결에 참여한다\. \| 지역 문제 \| 주민 인터뷰 \| 시민 참여/)
+  assert.match(text, /5-6학년군 \| 사회 \|  \| \[6사02-01\] 계절별 기후를 탐구한다\./)
+  assert.ok(text.includes(content.commonElements))
+  assert.deepEqual(content, original)
+})
+
+test('25: 다른 산출물의 객체 표·중첩 객체도 읽을 수 있고 문자열·빈 입력은 그대로다', () => {
+  const text = serializeArtifactForPrompt({
+    subjectGoals: [{ subject: '사회', goal: '그늘 위치를 제안한다.', evidence: { tool: '지도', sources: ['사진', '인터뷰'] } }, { subject: '국어', goal: '주장 글을 쓴다.' }],
+    profile: { constraints: { devices: '태블릿 2인 1대' }, knowledge: ['지도 읽기', '생활 경험'] },
+  })
+  assert.doesNotMatch(text, /\[object Object\]/)
+  assert.match(text, /subject \| goal \| evidence/)
+  for (const value of ['사회', '그늘 위치를 제안한다.', '지도', '사진', '인터뷰', '국어', '주장 글을 쓴다.', 'devices: 태블릿 2인 1대', '지도 읽기']) assert.ok(text.includes(value))
+  assert.equal(serializeArtifactForPrompt('  원문\n두 번째 줄  '), '  원문\n두 번째 줄  ')
+  assert.equal(serializeArtifactForPrompt(null), '')
+  assert.equal(serializeArtifactForPrompt(undefined), '')
+  assert.equal(serializeArtifactForPrompt([]), '')
+  assert.equal(serializeArtifactForPrompt({ count: 2, supported: true }), 'count: 2\nsupported: true')
+})
+
+test('25: 생성된 성취기준 연결은 A-2-1에 있는 코드만 유지하며 본문·출처는 보존한다', () => {
+  const analysis = serializeArtifactForPrompt({ rows: [{ subject: '3-4학년군 사회', standard: '[4사08-02] 지역 문제 해결' }, { subject: '5-6학년군 사회', standard: '[6사02-01] 기후변화' }] })
+  const valid = { standardId: '4사08-02', subject: '사회', isCenter: true, connection: '주민에게 제안한다.' }
+  const validBracketed = { ...valid, standardId: '[6사02-01]', isCenter: false }
+  const outside = { ...valid, standardId: '4사03-01', connection: '문화 다양성' }
+  const detail = { fullScenario: '동네 그늘막을 제안한다.', standardsAlignment: [valid, outside, validBracketed], realData: [{ label: '공개 지도' }] }
+  const checked = validateProblemStandards(detail, analysis)
+  assert.deepEqual(checked.standardsAlignment, [valid, validBracketed])
+  assert.equal(checked.fullScenario, detail.fullScenario)
+  assert.deepEqual(checked.realData, detail.realData)
+  assert.equal(detail.standardsAlignment.length, 3)
+  assert.deepEqual(validateProblemStandards({ ...detail, standardsAlignment: [outside] }, analysis).standardsAlignment, [])
+  for (const empty of [undefined, '', 'rows: [object Object]']) assert.equal(validateProblemStandards(detail, empty), detail)
+  const plan = { learningContent: '지역 문제', artifacts: '그늘 지도', alignmentCheck: '평가와 연결' }
+  assert.equal(validateProblemStandards(plan, analysis), plan)
+})
+
+test('25: generate 상세 응답은 클라이언트로 돌려주기 전에 성취기준을 검증한다', async () => {
+  const route = fs.readFileSync(new URL('../src/app/api/problem-situation/generate/route.ts', import.meta.url), 'utf8')
+  const routeTree = ts.createSourceFile('route.ts', route, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const detail = { fullScenario: '주민의 그늘 필요를 조사한다.', standardsAlignment: ['4사08-02', '4사03-01'].map(standardId => ({ standardId, subject: '사회', isCenter: false, connection: '조사' })) }
+  const post = loadChatFunction('POST', {
+    Response, resolveGeneratePhase: () => ({ phase: 'detail', candidateIndex: 1, part: 'scenario' }),
+    buildNodeContext: () => '', buildDetailPrompts: () => ({ system: '', user: '' }),
+    complete: async () => '', DETAIL_MAX_TOKENS: 1,
+    parseCandidateDetail: () => detail, recoverTruncatedJson: () => null, validateProblemStandards,
+  }, routeTree)
+  const response = await post({ json: async () => ({ projectTitle: '기후위기', targetGradeGroup: '3-4', targetSubjects: ['사회'], achievementStandardsAnalysis: '[4사08-02] 지역 문제 해결' }) })
+  assert.equal(response.status, 200)
+  const body = await response.json()
+  assert.equal(body.index, 1)
+  assert.equal(body.part, 'scenario')
+  assert.deepEqual(body.detail.standardsAlignment.map(item => item.standardId), ['4사08-02'])
+})
 
 for (const [text, expected] of [
   ['사회 3-4는 지역 문제·주민 참여로 바꿔서 분석표 만들어 주세요', false],

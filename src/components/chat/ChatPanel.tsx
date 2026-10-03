@@ -8,6 +8,7 @@ import { hasDeferredDecision, deferredResponse, discussionContributions } from '
 import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
+import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
 import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch, CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
@@ -2153,7 +2154,7 @@ function ChatPanelContent() {
         learnerProfileSummary: (() => {
           const a23 = proj.artifacts?.['A-2-3']
           if (!a23 || !Object.keys((a23.content as Record<string, unknown>) ?? {}).length) return undefined
-          return Object.entries(a23.content as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`).join('\n')
+          return serializeArtifactForPrompt(a23.content)
         })(),
         teamMembers: teamMembersList,
         // 현재 활동 상태 (active_return이면 AI가 확정 산출물도 수정 가능)
@@ -3092,10 +3093,7 @@ ${discussionSummary}
     const asText = (activityCode: string): string => {
       const content = proj.artifacts?.[activityCode]?.content as Record<string, unknown> | undefined
       if (!content) return ''
-      return Object.entries(content)
-        .filter(([k]) => k !== '_schema')
-        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
-        .join('\n')
+      return serializeArtifactForPrompt(content)
     }
     const pick = (specs: Array<[string, string]>) => specs
       .map(([activityCode, label]) => ({ label, text: asText(activityCode) }))
@@ -4365,23 +4363,19 @@ ${discussionSummary}
       {showProblemSituationDesigner && typeof document !== 'undefined' && (() => {
         const evalArtifact = proj.artifacts?.['Ds-1-1']
         const evaluationPlan = evalArtifact
-          ? Object.entries(evalArtifact.content as Record<string, unknown>)
-              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          ? serializeArtifactForPrompt(evalArtifact.content)
           : undefined
         const a21Artifact = proj.artifacts?.['A-2-1']
         const achievementStandardsAnalysis = a21Artifact
-          ? Object.entries(a21Artifact.content as Record<string, unknown>)
-              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          ? serializeArtifactForPrompt(a21Artifact.content)
           : undefined
         const a22Artifact = proj.artifacts?.['A-2-2']
         const learningObjective = a22Artifact
-          ? Object.entries(a22Artifact.content as Record<string, unknown>)
-              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          ? serializeArtifactForPrompt(a22Artifact.content)
           : undefined
         const a23Artifact = proj.artifacts?.['A-2-3']
         const learnerProfile = a23Artifact
-          ? Object.entries(a23Artifact.content as Record<string, unknown>)
-              .map(([k, v]) => `${k}: ${v}`).join('\n')
+          ? serializeArtifactForPrompt(a23Artifact.content)
           : undefined
 
         return createPortal(
@@ -4871,7 +4865,7 @@ ${discussionSummary}
           learnerProfile={(() => {
             const a23 = proj.artifacts?.['A-2-3']?.content as Record<string, unknown> | undefined
             if (!a23) return undefined
-            return Object.entries(a23).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+            return serializeArtifactForPrompt(a23)
           })()}
           standardSources={designStandardSources(proj.artifacts, proj.curriculumSheet)}
           chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
@@ -4900,7 +4894,7 @@ ${discussionSummary}
           learnerProfile={(() => {
             const a23 = proj.artifacts?.['A-2-3']?.content as Record<string, unknown> | undefined
             if (!a23) return undefined
-            return Object.entries(a23).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+            return serializeArtifactForPrompt(a23)
           })()}
           evaluationPlan={(() => {
             const ds11 = proj.artifacts?.['Ds-1-1']?.content as { rubric?: Array<{ item?: string; method?: string; timing?: string }> } | undefined
@@ -4933,12 +4927,12 @@ ${discussionSummary}
           learnerProfile={(() => {
             const a23 = proj.artifacts?.['A-2-3']?.content as Record<string, unknown> | undefined
             if (!a23) return undefined
-            return Object.entries(a23).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+            return serializeArtifactForPrompt(a23)
           })()}
           learningActivities={(() => {
             const ds13 = proj.artifacts?.['Ds-1-3']?.content as Record<string, unknown> | undefined
             if (!ds13) return undefined
-            return Object.entries(ds13).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')
+            return serializeArtifactForPrompt(ds13)
           })()}
           evaluationPlan={(() => {
             const ds11 = proj.artifacts?.['Ds-1-1']?.content as { rubric?: Array<{ item?: string; method?: string; timing?: string }> } | undefined
