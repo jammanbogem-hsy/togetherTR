@@ -21,6 +21,7 @@ import { ArtifactSaveProposal } from './ArtifactSaveProposal'
 import { ActionCard as ActionCardComponent } from './ActionCard'
 import { useChatFontScale } from '@/components/accessibility/FontScaleControl'
 import { ChatPanelHeader } from '@/components/chat/ChatPanelHeader'
+import { useProblemSituationOpen } from './useProblemSituationOpen'
 import { StandardsFinderModal } from './StandardsFinderModal'
 import { CoreIdeaFinderModal } from './CoreIdeaFinderModal'
 import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
@@ -1293,7 +1294,13 @@ function ChatPanelContent() {
   // HELP_CARD: 마지막 AI 응답에 대한 도움 메시지 (messageId → helpMessage)
   const [helpCardMap, setHelpCardMap] = useState<Record<string, string>>({})
   const [showGraphPanel, setShowGraphPanel] = useState(false)
-  const [showProblemSituationDesigner, setShowProblemSituationDesigner] = useState(false)
+  const [showProblemSituationDesigner, setShowProblemSituationDesigner] = useProblemSituationOpen({
+    projectId: project.id,
+    userUid: userProfile?.uid,
+    isHost: project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid,
+    sharedOpen: project.problemSituationOpen,
+    currentActivity,
+  })
   // 지식 그래프에 추가된 성취기준 (채팅 언급 + 수동 추가)
   const [pinnedStandards, setPinnedStandards] = useState<GraphPinnedStandard[]>([])
   const [checkedGraphStandardIds, setCheckedGraphStandardIds] = useState<string[]>([])
@@ -1330,17 +1337,6 @@ function ChatPanelContent() {
   // 그래프가 열린 동안 keyword를 고정 — 채팅/산출물 업데이트에 의한 재fetch 방지
   const [stableGraphKeyword, setStableGraphKeyword] = useState('')
   const stableGraphKeywordRef = useRef('')
-
-  // ── 팀원: 방장이 문제상황 디자이너를 열면 자동으로 오픈 ──────────────────
-  useEffect(() => {
-    if (!project || !userProfile) return
-    const amHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
-    if (amHost) return
-    if (project.problemSituationOpen && currentActivity === 'Ds-1-2') {
-      setShowProblemSituationDesigner(true)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.problemSituationOpen])
 
   // ── 팀원: 방장이 그래프를 열면 자동으로 오픈 ─────────────────────────────
   useEffect(() => {
