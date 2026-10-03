@@ -1454,3 +1454,35 @@ test('034c: 화면용 렌더와 PDF용 렌더를 분리하고 MD·PDF·HWPX 다�
   assert.match(saved, /new Blob\(\[selectedReport\.content\]/)
   assert.match(saved, /generateHwpx\(displayContent,/)
 })
+
+// ─── TASK-036: 학습자 프로필 가드레일 요약 ─────────
+const stageBarSource = fs.readFileSync(new URL('../src/components/stage/StageBar.tsx', import.meta.url), 'utf8')
+const stageBarTree = ts.createSourceFile('StageBar.tsx', stageBarSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const summarizeA23 = loadChatFunction('summarizeA23', { serializeArtifactForPrompt }, stageBarTree)
+
+test('036a: 구조화 A-2-3 요약은 객체 행·중첩 객체를 읽을 수 있게 직렬화하고 내부 키를 숨긴다', () => {
+  const content = {
+    _schema: 'A-2-3', _meta: { version: 2 },
+    commonProfile: [{ item: '선수지식', content: '사진과 지도를 비교한다', _internal: '비공개' }],
+    teacherNotes: [{ teacherName: '사회 담당', note: '첫 인터뷰 질문 카드 준비' }],
+    환경: { 기기: '태블릿 모둠당 1대', _debug: '비공개' },
+  }
+  const before = structuredClone(content)
+  const summary = summarizeA23(content)
+  assert.match(summary, /선수지식 \| 사진과 지도를 비교한다/)
+  assert.match(summary, /사회 담당 \| 첫 인터뷰 질문 카드 준비/)
+  assert.match(summary, /기기: 태블릿 모둠당 1대/)
+  assert.doesNotMatch(summary, /\[object Object\]|_schema|_meta|_internal|_debug|비공개/)
+  assert.deepEqual(content, before)
+})
+
+test('036b: 평문 요약·빈 산출물 처리를 보존하고 최대 4개 항목·항목별 200자 상한을 적용한다', () => {
+  assert.equal(summarizeA23({ _schema: 'A-2-3', 선수지식: '지도 읽기', 오개념: '그늘은 모두 같다' }), '· 선수지식: 지도 읽기\n· 오개념: 그늘은 모두 같다')
+  for (const content of [undefined, {}, { _schema: 'A-2-3' }, { 빈칸: ' ', 행: [], 객체: {}, 값: null }]) assert.equal(summarizeA23(content), null)
+  const summary = summarizeA23({ _schema: 'A-2-3', 긴항목: '가'.repeat(500), 둘째: '둘', 셋째: '셋', 넷째: '넷', 다섯째: '제외' })
+  const items = summary.split('\n')
+  assert.equal(items.length, 4)
+  assert.equal(items[0].length, 200)
+  assert.ok(items[0].endsWith('…'))
+  assert.doesNotMatch(summary, /다섯째|_schema/)
+})

@@ -6,6 +6,7 @@ import { STAGES, ACTIVITY_META, type StageCode, type StageStatus, type ActivityC
 import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
 import { cn } from '@/lib/utils'
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
+import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
 import { UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy, Check, Shield, ArrowsClockwise, type Icon } from '@phosphor-icons/react'
 
 const STAGE_MORPH_DELAY: Record<StageCode, string> = {
@@ -285,22 +286,16 @@ function StageConnector({ active }: { active: boolean }) {
 // A-2-3 산출물에서 학습자 프로필 요약을 추출
 function summarizeA23(content: Record<string, unknown> | undefined): string | null {
   if (!content) return null
-  const entries = Object.entries(content).filter(([, v]) => {
-    if (v == null) return false
-    if (typeof v === 'string') return v.trim().length > 0
-    if (Array.isArray(v)) return v.length > 0
-    return true
-  })
+  const entries = Object.entries(content)
+    .filter(([key]) => !key.startsWith('_'))
+    .map(([key, value]) => ({ key, value: typeof value === 'string' ? value : serializeArtifactForPrompt(value) }))
+    .filter(({ value }) => value.trim().length > 0)
   if (entries.length === 0) return null
   return entries
     .slice(0, 4)
-    .map(([k, v]) => {
-      const value = Array.isArray(v)
-        ? v.join(', ')
-        : typeof v === 'string'
-          ? v
-          : JSON.stringify(v)
-      return `· ${k}: ${value}`
+    .map(({ key, value }) => {
+      const item = `· ${key}: ${value}`
+      return item.length > 200 ? `${item.slice(0, 199)}…` : item
     })
     .join('\n')
 }
