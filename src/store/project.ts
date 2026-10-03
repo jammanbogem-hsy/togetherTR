@@ -48,7 +48,10 @@ interface ProjectStore {
   replaceMessage: (id: string, content: string, fields?: Partial<Omit<Message, 'id' | 'content'>>) => void
   setMessages: (msgs: Message[]) => void
   messagesLoaded: boolean          // Firestore 첫 응답 여부
-  setMessagesLoaded: (v: boolean) => void
+  /** 첫 스냅샷 없이 5초 대비 타이머로 켜진 '로드 완료' — 환영 메시지 생성 판단에서 제외한다(#33) */
+  messagesLoadedByFallback: boolean
+  /** byFallback=true 는 대비 타이머 경로. 실제 스냅샷·오류 응답은 기본값(false)으로 플래그를 해제한다 */
+  setMessagesLoaded: (v: boolean, byFallback?: boolean) => void
   streamingText: string
   setStreamingText: (text: string) => void
   appendStreamingText: (chunk: string) => void
@@ -132,6 +135,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       teamDiscussionStartIdx: 0,
       messages: [],
       messagesLoaded: false,
+      messagesLoadedByFallback: false,
     }
   }),
 
@@ -154,7 +158,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     messages: Array.from(new Map(msgs.map(m => [m.id, m])).values()),
   }),
   messagesLoaded: false,
-  setMessagesLoaded: (v) => set({ messagesLoaded: v }),
+  messagesLoadedByFallback: false,
+  setMessagesLoaded: (v, byFallback = false) => set({ messagesLoaded: v, messagesLoadedByFallback: v && byFallback }),
   streamingText: '',
   setStreamingText: (text) => set({ streamingText: text }),
   appendStreamingText: (chunk) =>
@@ -200,6 +205,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     viewingActivity: 'T-1-1',
     messages: [],
     messagesLoaded: false,
+    messagesLoadedByFallback: false,
     streamingText: '',
     currentArtifact: null,
     showCycleModal: false,

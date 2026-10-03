@@ -538,7 +538,7 @@ test('7: 주제 선정 기준 산출물이 없을 때만 A-2 환영 문구를 �
     let shown
     const context = {
       exports: {}, project, proj: project, currentActivity: 'A-1-2', messagesLoaded: true, messages: [],
-      userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage,
+      userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage, messagesLoadedByFallback: false,
       showWelcomeMessage: text => { shown = text },
     }
     vm.runInNewContext(source, context)
@@ -925,8 +925,50 @@ test('30: 대화나 환영 메시지가 있는 활동에 다시 들어오면 환
   assert.equal(task024.shouldCreateWelcomeMessage({ ...base, started: false, messages: [] }), false)
   const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
   // 비어 있는 레거시 경로 스냅샷이 먼저 와도 '빈 대화 로드 완료'로 내보내지 않는다.
-  assert.match(projects, /if \(!ready\.activity \|\| !ready\.legacy\) return/)
+  // TASK-025: 레거시만 먼저 온 빈 목록은 막되(#30) 늦는 레거시를 기다리지는 않는다(#33).
+  assert.match(projects, /if \(!canEmitMessageSnapshot\(ready\)\) return/)
   assert.match(projects, /if \(existing\.exists\(\)\) return false/)
   const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.match(chatSource, /saveMessageIfAbsent\(proj\.id, currentActivity, \{/)
+})
+
+// ─── TASK-025: #33 되돌아가기 직후 기존 대화가 늦게 보임 ─────────
+const { canEmitMessageSnapshot } = await import('../src/lib/chat/messageSubscription.ts')
+
+test('33: 활동 경로 첫 스냅샷이 오면 레거시를 기다리지 않고 내보내고, 레거시만 온 빈 상태는 내보내지 않는다', () => {
+  assert.equal(canEmitMessageSnapshot({ activity: false, legacy: false }), false)
+  // #30: 비어 있는 레거시 경로가 먼저 오면 '빈 대화 로드 완료'로 내보내지 않는다.
+  assert.equal(canEmitMessageSnapshot({ activity: false, legacy: true }), false)
+  // #33: 레거시 응답이 늦어도 활동 경로의 기존 대화는 바로 보인다.
+  assert.equal(canEmitMessageSnapshot({ activity: true, legacy: false }), true)
+  assert.equal(canEmitMessageSnapshot({ activity: true, legacy: true }), true)
+  const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  const watch = projects.slice(projects.indexOf('export function watchMessages('))
+  assert.doesNotMatch(watch.slice(0, 2500), /!ready\.legacy/)
+  // 활동 경로 오류도 ready 로 표시해 로드가 막히지 않는다.
+  assert.match(watch, /ready\[source\] = true/)
+})
+
+// ─── TASK-025b: 대비 타이머(5초)로 켜진 로드 완료에서는 환영 메시지를 만들지 않는다 ─────────
+test('33b: 대비 타이머 로드 완료는 환영을 만들지 않고, 실제 스냅샷이 오면 기존 판단으로 돌아간다', async () => {
+  const base = { started: true, messagesLoaded: true, isHost: true, hasWelcomeText: true, welcomeId: 'welcome-1-T-2-3', cycle: 1, messages: [] }
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, messagesLoadedByFallback: true }), false)
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, messagesLoadedByFallback: false }), true)
+  assert.equal(task024.shouldCreateWelcomeMessage(base), true)
+  // 스토어: 대비 타이머만 플래그를 켜고, 실제 스냅샷·오류 응답(기본 인자)은 해제한다. 활동 전환·초기화도 해제.
+  const { useProjectStore } = await import('../src/store/project.ts')
+  const store = useProjectStore.getState()
+  store.setMessagesLoaded(true, true)
+  assert.equal(useProjectStore.getState().messagesLoadedByFallback, true)
+  useProjectStore.getState().setMessagesLoaded(true)
+  assert.equal(useProjectStore.getState().messagesLoadedByFallback, false)
+  useProjectStore.getState().setMessagesLoaded(true, true)
+  useProjectStore.getState().setCurrentActivity('A-2-1')
+  assert.equal(useProjectStore.getState().messagesLoadedByFallback, false)
+  useProjectStore.getState().setMessagesLoaded(false, true)
+  assert.equal(useProjectStore.getState().messagesLoadedByFallback, false)
+  const page = fs.readFileSync(new URL('../src/app/(app)/projects/[id]/page.tsx', import.meta.url), 'utf8')
+  assert.match(page, /setMessagesLoaded\(true, true\)/)
+  // #26 전송 판정은 messagesLoaded 만 보므로 대비 타이머 뒤에도 지금처럼 전송 가능(입력 보존 경로 유지).
+  assert.equal(chatSendBlockReason({ hasProject: true, hasUser: true, messagesLoaded: true, currentActivity: 'T-2-3', projectActivity: 'T-2-3' }), null)
 })

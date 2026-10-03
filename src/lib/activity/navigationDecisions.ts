@@ -23,13 +23,15 @@ export function resolveStageMoveTargetActivity(input: {
 export function shouldCreateWelcomeMessage(input: {
   started: boolean
   messagesLoaded: boolean
+  /** 첫 스냅샷 없이 대비 타이머로 켜진 로드 완료면 대화 유무를 알 수 없으므로 만들지 않는다(#33) */
+  messagesLoadedByFallback?: boolean
   isHost: boolean
   hasWelcomeText: boolean
   welcomeId: string
   cycle: number
   messages: ReadonlyArray<{ id: string; role?: string; cycleNumber?: number }>
 }): boolean {
-  if (!input.started || !input.messagesLoaded || !input.isHost || !input.hasWelcomeText) return false
+  if (!input.started || !input.messagesLoaded || input.messagesLoadedByFallback || !input.isHost || !input.hasWelcomeText) return false
   const cycleMessages = input.messages.filter(message => (message.cycleNumber ?? 1) === input.cycle)
   if (input.messages.some(message => message.id === input.welcomeId)) return false
   return !cycleMessages.some(message => message.role === 'user' || message.role === 'assistant')

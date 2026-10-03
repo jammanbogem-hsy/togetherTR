@@ -1188,7 +1188,7 @@ function InteractiveChatPanel() {
 function ChatPanelContent() {
   const chatFontScale = useChatFontScale()
   const {
-    project: projectState, messages, streamingText, messagesLoaded,
+    project: projectState, messages, streamingText, messagesLoaded, messagesLoadedByFallback,
     currentActivity, setCurrentActivity, appendStreamingText, clearStreamingText, addMessage, replaceMessage,
     discussionMode, setDiscussionMode,
     pendingTeamDiscussion, setPendingTeamDiscussion,
@@ -2497,6 +2497,7 @@ function ChatPanelContent() {
     if (!shouldCreateWelcomeMessage({
       started: !!project?.started,
       messagesLoaded,
+      messagesLoadedByFallback,
       isHost: amHost,
       hasWelcomeText: !!welcome,
       welcomeId,
@@ -2505,7 +2506,7 @@ function ChatPanelContent() {
     })) return
     showWelcomeMessage(welcome)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentActivity, project?.started, messagesLoaded, messages])
+  }, [currentActivity, project?.started, messagesLoaded, messagesLoadedByFallback, messages])
 
   // ─── 산출물 저장 수락 ────────────────────────────────
   function handleAcceptArtifactSave() {

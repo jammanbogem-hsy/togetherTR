@@ -7,6 +7,7 @@ import { auth, db } from './config'
 import type { ArtifactConfirmationEntry, Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow, TeamVisionWorkspace, TeamVisionWorkspaceBlock, TeamVisionWorkspaceColumn, TeamVisionWorkspaceRow, IntegratedGoalWorkspace, IntegratedGoalWorkspaceBlock, IntegratedGoalWorkspaceColumn, IntegratedGoalWorkspaceRow, IntegratedGoalMethod } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import { computePendingConfirmations, rediscussMessage, staleRediscussUids } from '@/lib/collab/artifactConfirmations'
+import { canEmitMessageSnapshot } from '@/lib/chat/messageSubscription'
 import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
@@ -3402,11 +3403,11 @@ export function watchMessages(
 
   let activityMessages: Message[] = []
   let legacyMessages: Message[] = []
-  // 두 경로의 첫 스냅샷이 모두 와야 내보낸다. 보통 비어 있는 레거시 경로가 먼저 오면
-  // 빈 목록이 '로드 완료'로 전달돼 환영 메시지가 다시 만들어지는 경쟁(#30)을 막는다.
+  // 활동 경로 첫 스냅샷을 받은 뒤부터 내보내고 레거시는 도착하는 대로 합친다.
+  // 레거시만 먼저 온 빈 목록은 내보내지 않고(#30), 늦는 레거시를 기다리느라 대화를 숨기지도 않는다(#33).
   const ready = { activity: false, legacy: false }
   const emit = () => {
-    if (!ready.activity || !ready.legacy) return
+    if (!canEmitMessageSnapshot(ready)) return
     callback(mergeMessagesForCycle([activityMessages, legacyMessages], currentCycle))
   }
   const handleError = (source: 'activity' | 'legacy') => (error: Error) => {

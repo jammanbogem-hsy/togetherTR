@@ -697,7 +697,8 @@ export default function ProjectPage() {
     const loadingFallback = window.setTimeout(() => {
       if (!didReceiveFirstSnapshot) {
         console.warn('watchMessages timed out before first snapshot:', { projectId, currentActivity })
-        setMessagesLoaded(true)
+        // 화면이 멈추지 않게 로드 완료로 두되, 대비 타이머 경로임을 표시해 환영 메시지는 만들지 않는다(#33).
+        setMessagesLoaded(true, true)
       }
     }, 5000)
     const unsubMessages = watchMessages(
