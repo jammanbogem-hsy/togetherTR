@@ -519,7 +519,9 @@ test('13: 방장 또는 생성자가 멤버에 있으면 권한 넘겨받기를 
   assert.equal(hasHost({ memberUids: ['member'] }), false)
 })
 
-test('7: 주제 선정 기준 산출물이 없을 때만 A-2 환영 문구를 자연스럽게 바꾼다', () => {
+test('7: 주제 선정 기준 산출물이 없을 때만 A-2 환영 문구를 자연스럽게 바꾼다', async () => {
+  // TASK-024: 환영 effect 가 판정 함수를 쓰므로 실행 환경에 함께 넣는다.
+  const { shouldCreateWelcomeMessage } = await import('../src/lib/activity/navigationDecisions.ts')
   let welcomeEffect
   function visit(node) {
     if (ts.isCallExpression(node) && node.expression.getText(tree) === 'useEffect'
@@ -536,7 +538,7 @@ test('7: 주제 선정 기준 산출물이 없을 때만 A-2 환영 문구를 �
     let shown
     const context = {
       exports: {}, project, proj: project, currentActivity: 'A-1-2', messagesLoaded: true, messages: [],
-      userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME,
+      userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage,
       showWelcomeMessage: text => { shown = text },
     }
     vm.runInNewContext(source, context)
@@ -889,4 +891,42 @@ test('31: 띄어쓰기·존댓말 저장 요청은 재개하고 명시적인 저
     { role: 'user', content: '저장해 주세요' },
     { role: 'user', content: '저장하지 않을게요' },
   ]), true)
+})
+
+// ─── TASK-024: #29 단계를 넘는 되돌아가기 대상 · #30 환영 메시지 재생성 방지 ─────────
+const task024 = await import('../src/lib/activity/navigationDecisions.ts')
+
+test('29: 단계를 넘는 되돌아가기는 요청된 활동으로, 새 주기·대상 없음·다른 단계는 단계 첫 활동으로 간다', () => {
+  const base = { toStage: 'T', firstActivity: 'T-1-1', isStartingNewCycle: false }
+  assert.equal(task024.resolveStageMoveTargetActivity({ ...base, returnActivity: 'T-2-3', returnActivityStage: 'T' }), 'T-2-3')
+  assert.equal(task024.resolveStageMoveTargetActivity({ ...base, returnActivity: 'T-2-3', returnActivityStage: 'T', isStartingNewCycle: true }), 'T-1-1')
+  assert.equal(task024.resolveStageMoveTargetActivity({ ...base, returnActivity: null }), 'T-1-1')
+  assert.equal(task024.resolveStageMoveTargetActivity({ ...base, returnActivity: 'A-2-1', returnActivityStage: 'A' }), 'T-1-1')
+  const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(chatSource, /setPendingStageMove\(targetStage, code\)/)
+  const modal = fs.readFileSync(new URL('../src/components/modals/StageMoveModal.tsx', import.meta.url), 'utf8')
+  assert.match(modal, /returnActivity: pendingReturnActivity/)
+  assert.match(modal, /if \(isActivityReturn\) await withTimeout\(setActivityStatus\(project\.id, firstActivity, 'active_return'\)/)
+  const store = fs.readFileSync(new URL('../src/store/project.ts', import.meta.url), 'utf8')
+  // 다른 경로(단계 바·분석 창 등)로 창을 열면 이전 되돌아가기 대상이 남지 않는다.
+  assert.match(store, /const nextReturn = stage \? returnActivity : null/)
+  assert.match(store, /setPendingStageMove: \(stage, returnActivity = null\)/)
+})
+
+test('30: 대화나 환영 메시지가 있는 활동에 다시 들어오면 환영 메시지를 만들지 않는다', () => {
+  const base = { started: true, messagesLoaded: true, isHost: true, hasWelcomeText: true, welcomeId: 'welcome-1-T-2-3', cycle: 1 }
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, messages: [] }), true)
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, messages: [{ id: 'u1', role: 'user', cycleNumber: 1 }] }), false)
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, messages: [{ id: 'welcome-1-T-2-3', role: 'assistant', cycleNumber: 1 }] }), false)
+  // 이전 주기 대화만 있으면 새 주기 첫 진입이므로 환영 메시지를 보낸다.
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, cycle: 2, welcomeId: 'welcome-2-T-2-3', messages: [{ id: 'old', role: 'user', cycleNumber: 1 }] }), true)
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, isHost: false, messages: [] }), false)
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, messagesLoaded: false, messages: [] }), false)
+  assert.equal(task024.shouldCreateWelcomeMessage({ ...base, started: false, messages: [] }), false)
+  const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  // 비어 있는 레거시 경로 스냅샷이 먼저 와도 '빈 대화 로드 완료'로 내보내지 않는다.
+  assert.match(projects, /if \(!ready\.activity \|\| !ready\.legacy\) return/)
+  assert.match(projects, /if \(existing\.exists\(\)\) return false/)
+  const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(chatSource, /saveMessageIfAbsent\(proj\.id, currentActivity, \{/)
 })

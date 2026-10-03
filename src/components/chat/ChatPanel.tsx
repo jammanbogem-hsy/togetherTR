@@ -9,7 +9,7 @@ import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
-import { saveMessage, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
+import { saveMessage, saveMessageIfAbsent, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch, CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
@@ -87,6 +87,7 @@ import { applyArtifactSignalBatch, artifactContentEquals } from '@/lib/chat/arti
 import { isStaleActivityResponse } from '@/lib/chat/responseContext'
 import { chatSendBlockReason } from '@/lib/chat/sendReadiness'
 import { sanitizeAssistantText } from '@/lib/chat/sanitizeAssistantText'
+import { shouldCreateWelcomeMessage } from '@/lib/activity/navigationDecisions'
 import { validateRequiredSections } from '@/lib/activity/completion'
 
 const KnowledgeGraphViewer = dynamic(
@@ -2304,7 +2305,8 @@ function ChatPanelContent() {
     const code = targetCode as ActivityCode
     const targetStage = ACTIVITY_META[code].stage
     if (targetStage !== activityMeta.stage) {
-      setPendingStageMove(targetStage)
+      // 단계를 넘는 되돌아가기도 요청된 활동으로 도착하도록 대상 활동을 함께 넘긴다(#29).
+      setPendingStageMove(targetStage, code)
       return
     }
     try {
@@ -2465,8 +2467,8 @@ function ChatPanelContent() {
     }
     addMessage(msg)
     setIsIdle(true)  // 환영 후 즉시 대기 상태
-    // Firestore에도 동일 ID로 저장 → 중복 방지, 콜백 재진입 시 동일 문서 반환
-    saveMessage(proj.id, currentActivity, {
+    // Firestore에는 같은 ID 문서가 없을 때만 저장 — 이미 있으면 작성 시각을 덮어써 대화 끝으로 옮기지 않는다(#30).
+    saveMessageIfAbsent(proj.id, currentActivity, {
       role: 'assistant', content: welcomeText,
       activityCode: currentActivity, activityType: '제시', agentType: 'orchestrator',
       cycleNumber: proj.currentCycle ?? 1,
@@ -2488,16 +2490,19 @@ function ChatPanelContent() {
         .replace('팀이 정한 기준에 따라 검토', '팀 비전과 학생 삶과의 연결을 기준으로 검토')
         .replace('지금까지 정한 기준으로 보면', '팀 비전과 학생 삶과의 연결을 기준으로 보면')
     }
-    // 이미 AI 메시지가 있으면 전송 안 함
-    const hasAIMessage = messages.some(m => m.role === 'assistant')
-    if (hasAIMessage) return
-    // 방장만 환영 메시지 저장 (팀원은 Firestore로 받음)
-    const amHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
-    if (!amHost) return
-    // 로컬에 이미 같은 ID의 메시지가 있으면 중복 방지
+    // 방장만, 이 활동(현재 주기)에 환영 메시지나 대화가 하나도 없을 때만 만든다(#30 재진입 때 다시 붙지 않게).
     // (introSentRef 대신 실제 messages 상태를 사용해 stale 방지)
+    const amHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
     const welcomeId = `welcome-${proj.currentCycle ?? 1}-${currentActivity}`
-    if (messages.some(m => m.id === welcomeId)) return
+    if (!shouldCreateWelcomeMessage({
+      started: !!project?.started,
+      messagesLoaded,
+      isHost: amHost,
+      hasWelcomeText: !!welcome,
+      welcomeId,
+      cycle: proj.currentCycle ?? 1,
+      messages,
+    })) return
     showWelcomeMessage(welcome)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentActivity, project?.started, messagesLoaded, messages])

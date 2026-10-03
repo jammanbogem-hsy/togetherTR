@@ -3370,6 +3370,19 @@ export async function saveMessage(
   return ref.id
 }
 
+/** 고정 ID 메시지(환영 등)를 아직 없을 때만 저장한다. 이미 있으면 작성 시각을 덮어쓰지 않는다(#30). */
+export async function saveMessageIfAbsent(
+  projectId: string,
+  activityCode: ActivityCode,
+  data: Omit<Message, 'id' | 'createdAt'>,
+  id: string,
+): Promise<boolean> {
+  const existing = await getDoc(doc(db, `projects/${projectId}/conversations/${activityCode}/messages`, id))
+  if (existing.exists()) return false
+  await saveMessage(projectId, activityCode, data, id)
+  return true
+}
+
 export function watchMessages(
   projectId: string,
   activityCode: ActivityCode,
@@ -3389,18 +3402,25 @@ export function watchMessages(
 
   let activityMessages: Message[] = []
   let legacyMessages: Message[] = []
-  const emit = () => callback(
-    mergeMessagesForCycle([activityMessages, legacyMessages], currentCycle),
-  )
+  // 두 경로의 첫 스냅샷이 모두 와야 내보낸다. 보통 비어 있는 레거시 경로가 먼저 오면
+  // 빈 목록이 '로드 완료'로 전달돼 환영 메시지가 다시 만들어지는 경쟁(#30)을 막는다.
+  const ready = { activity: false, legacy: false }
+  const emit = () => {
+    if (!ready.activity || !ready.legacy) return
+    callback(mergeMessagesForCycle([activityMessages, legacyMessages], currentCycle))
+  }
   const handleError = (source: 'activity' | 'legacy') => (error: Error) => {
     console.error(`watchMessages ${source} path failed:`, error)
+    ready[source] = true
     onError?.(error)
+    emit()
   }
 
   const unsubscribeActivity = onSnapshot(
     activityQuery,
     (snap) => {
       activityMessages = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message)
+      ready.activity = true
       emit()
     },
     handleError('activity'),
@@ -3411,6 +3431,7 @@ export function watchMessages(
       legacyMessages = snap.docs
         .map(d => ({ id: d.id, ...d.data() }) as Message)
         .filter(message => message.activityCode === activityCode)
+      ready.legacy = true
       emit()
     },
     handleError('legacy'),

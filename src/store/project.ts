@@ -64,7 +64,9 @@ interface ProjectStore {
 
   // 단계 이동 모달
   pendingStageMove: StageCode | null
-  setPendingStageMove: (stage: StageCode | null) => void
+  /** AI 되돌아가기로 연 단계 이동 창의 도착 활동(#29). 다른 경로로 창을 열면 null */
+  pendingReturnActivity: ActivityCode | null
+  setPendingStageMove: (stage: StageCode | null, returnActivity?: ActivityCode | null) => void
 
   // 팀 자유 토의 모드
   discussionMode: 'ai_facilitated' | 'team_discussion'
@@ -166,12 +168,14 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setShowCycleModal: (show) => set({ showCycleModal: show }),
 
   pendingStageMove: null,
-  setPendingStageMove: (stage) => set((state) => {
+  pendingReturnActivity: null,
+  setPendingStageMove: (stage, returnActivity = null) => set((state) => {
     if (stage && state.project?.currentStage === stage) {
-      return state.pendingStageMove ? { pendingStageMove: null } : {}
+      return state.pendingStageMove ? { pendingStageMove: null, pendingReturnActivity: null } : {}
     }
-    if (state.pendingStageMove === stage) return {}
-    return { pendingStageMove: stage }
+    const nextReturn = stage ? returnActivity : null
+    if (state.pendingStageMove === stage && state.pendingReturnActivity === nextReturn) return {}
+    return { pendingStageMove: stage, pendingReturnActivity: nextReturn }
   }),
 
   discussionMode: 'ai_facilitated',
@@ -200,6 +204,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     currentArtifact: null,
     showCycleModal: false,
     pendingStageMove: null,
+    pendingReturnActivity: null,
     discussionMode: 'ai_facilitated',
     pendingTeamDiscussion: null,
     teamDiscussionStartIdx: 0,

@@ -8,7 +8,9 @@ import {
   advanceActivity,
   logStageTransition,
   ensureProjectMemberUid,
+  setActivityStatus,
 } from '@/lib/firebase/projects'
+import { resolveStageMoveTargetActivity } from '@/lib/activity/navigationDecisions'
 import { auth } from '@/lib/firebase/config'
 import { cn } from '@/lib/utils'
 import { ArrowRight, X, Warning, ChartBar } from '@phosphor-icons/react'
@@ -53,6 +55,7 @@ export function StageMoveModal() {
   const {
     project,
     pendingStageMove,
+    pendingReturnActivity,
     setPendingStageMove,
     activityStatus,
     setCurrentActivity,
@@ -184,9 +187,18 @@ export function StageMoveModal() {
     if (!targetStage) return
 
     // solo는 대상 단계의 첫 "표시" 활동으로 진입한다 (예: A 단계는 숨김인 A-1-1 대신 A-1-2).
-    const firstActivity = isSolo
+    const stageFirstActivity = isSolo
       ? (targetStage.activities.find(a => !SOLO_HIDDEN_ACTIVITIES.includes(a)) ?? targetStage.activities[0])
       : targetStage.activities[0]
+    // AI 되돌아가기(예: E→T-5)로 연 창이면 단계 첫 활동이 아니라 요청된 활동으로 간다(#29).
+    const firstActivity = resolveStageMoveTargetActivity({
+      toStage,
+      firstActivity: stageFirstActivity,
+      returnActivity: pendingReturnActivity,
+      returnActivityStage: pendingReturnActivity ? ACTIVITY_META[pendingReturnActivity]?.stage : null,
+      isStartingNewCycle,
+    }) as typeof stageFirstActivity
+    const isActivityReturn = !!pendingReturnActivity && firstActivity === pendingReturnActivity
     const direction: import('@/types').StageTransition['direction'] =
       resolveStageTransitionDirection(fromStage, toStage, isStartingNewCycle)
     const completedCycle = completedCycleNumberForTransition(project)
@@ -243,6 +255,8 @@ export function StageMoveModal() {
       if (direction !== 'forward') {
         // 이전 단계로 이동: returnToActivity + currentStage 업데이트
         await withTimeout(returnToActivity(project.id, firstActivity, toStage), 'returnToActivity')
+        // 같은 단계 되돌아가기(handleActivityReturn)와 같게 '다시 진행 중'으로 표시한다.
+        if (isActivityReturn) await withTimeout(setActivityStatus(project.id, firstActivity, 'active_return'), 'setActivityStatus')
       } else {
         // 다음 단계로 이동: 현재 스테이지 activities + 다음 스테이지 activities 합쳐서 advance
         const currentStageInfo = STAGES.find(s => s.code === fromStage)!
