@@ -3489,6 +3489,8 @@ ${discussionSummary}
   function isA21SheetArtifactRequest(text: string): boolean {
     if (currentActivity !== 'A-2-1') return false
     const compact = text.replace(/\s+/g, '')
+    // 이동 요청은 저장된 시트의 재작성·재저장 요청이 아니다.
+    if (/(이동|넘어가|다음활동|다음단계|다음으로)/.test(compact)) return false
     // 선택 버튼의 응답은 AI가 제안한 내용을 이어서 처리해야 한다.
     if (/^[A-Z]안을선택/.test(compact)) return false
     // 수정·교체 요청은 시트 그대로 저장하지 않고 AI가 변경 지시를 처리하게 한다.
@@ -3498,9 +3500,9 @@ ${discussionSummary}
     // (예: /이전 단계 브리핑 → "지금까지 완료된 모든 활동의 확정 산출물을 브리핑해주세요")
     const isBriefingIntent = /(브리핑|요약|조회|보여|알려|확인|되돌아|돌아보)/.test(compact)
     if (isBriefingIntent) return false
-    const mentionsArtifact = /(산출물|분석표|보고서|저장|작성|제작|정리)/.test(compact)
-    const asksToCreate = /(제작|작성|만들|생성|정리|저장|해줘|해주세요|부탁|완성)/.test(compact)
-    return mentionsArtifact && asksToCreate
+    const mentionsSheet = /(시트|분석표)/.test(compact)
+    const asksToCreate = /(만들어|저장해|산출물로|작성해|제작해|생성해|정리해|완성해)/.test(compact)
+    return mentionsSheet && asksToCreate
   }
 
   function addAssistantNotice(content: string) {

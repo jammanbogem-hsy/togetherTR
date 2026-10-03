@@ -53,6 +53,17 @@ test('16: 순수한 시트 기반 분석표 생성 요청은 로컬 처리를 �
   assert.equal(isRequest('분석시트 그대로 분석표 만들어 주세요'), true)
 })
 
+for (const [text, expected] of [
+  ['저장은 됐고요, 이제 A-4 활동으로 이동해 주세요', false],
+  ['다음으로 넘어가 주세요', false],
+  ['분석시트로 산출물 만들어 주세요', true],
+]) {
+  test(`17: 이동 의도와 명시적인 시트 산출물 요청을 구분한다 (${expected}): ${text}`, () => {
+    const isRequest = loadChatFunction('isA21SheetArtifactRequest', { currentActivity: 'A-2-1' })
+    assert.equal(isRequest(text), expected)
+  })
+}
+
 const rows = Array.from({ length: 10 }, (_, i) => ({
   id: `row-${i}`, subject: i === 0 ? '국어' : '사회', isCenter: i === 0,
   gradeBand: i % 2 ? '3-4학년군' : '5-6학년군',
