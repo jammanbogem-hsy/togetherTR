@@ -3,6 +3,7 @@
 import { Children, cloneElement, isValidElement, type CSSProperties, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
+import { cleanReportMarkdown } from '@/lib/markdown/reportDisplay'
 import { stripLeadingEmoji } from '@/components/ui/ReportSectionIcon'
 import { REPORT_SECTIONS, findReportSection } from '@/lib/report/reportSections'
 import { STAGES, displayActivityCode, type Project, type StageCode } from '@/types'
@@ -85,21 +86,20 @@ function remarkReportCards({ stage, project }: { stage?: StageCode; project?: Pr
             const code = STAGES.find(item => item.code === stage)?.activities.find(code => new RegExp(`(?:^|\\s|\\()${displayActivityCode(code)}(?=$|[\\s:.)])`).test(title))
             const artifact = code ? project?.artifacts?.[code] : undefined
             const status = artifact?.status === 'confirmed' ? 'confirmed' : artifact ? 'draft' : 'missing'
-            activity = { type: 'reportActivity', data: { hName: 'article', hProperties: { className: 'report-activity' } }, children: [node] }
-            if (code && project) activity.children!.push({ type: 'reportStatus', data: { hName: 'span', hProperties: { className: 'report-status', 'data-status': status } }, children: [{ type: 'text', value: status === 'confirmed' ? '확정' : status === 'draft' ? '작성 중' : '산출물 없음' }] })
+            const heading: ReportNode = { type: 'reportActivityHeading', data: { hName: 'div', hProperties: { className: 'report-activity-heading' } }, children: [node] }
+            activity = { type: 'reportActivity', data: { hName: 'article', hProperties: { className: 'report-activity' } }, children: [heading] }
+            if (code && project) heading.children!.push({ type: 'reportStatus', data: { hName: 'span', hProperties: { className: 'report-status', 'data-status': status } }, children: [{ type: 'text', value: status === 'confirmed' ? '확정' : status === 'draft' ? '작성 중' : '산출물 없음' }] })
             activityNodes.push(activity)
           } else if (activity) activity.children!.push(node)
           else intro.push(node)
         }
         if (activityNodes.length) cardBody.children = [...intro, { type: 'reportActivities', data: { hName: 'div', hProperties: { className: 'report-activities' } }, children: activityNodes }]
       }
-      const hasTable = (node: ReportNode): boolean => node.type === 'table' || !!node.children?.some(hasTable)
-      if (kind === 'activities' || kind === 'appendix' || hasTable(card)) card.data!.hProperties!['data-report-wide'] = 'true'
     }
-    // 부록은 대시보드 그리드 밖에 둬 인쇄 때 새 페이지로 확실히 분리한다.
+    // 모든 섹션을 전체 폭으로 이어 붙이고 부록은 인쇄 때 새 페이지로 분리한다.
     const mainCards = cards.filter(card => card.data?.hProperties?.['data-report-kind'] !== 'appendix')
     const appendices = cards.filter(card => card.data?.hProperties?.['data-report-kind'] === 'appendix')
-    tree.children = [...grouped.filter(node => node.type !== 'reportCard'), ...(mainCards.length ? [{ type: 'reportGrid', data: { hName: 'div', hProperties: { className: 'report-grid' } }, children: mainCards }] : []), ...appendices]
+    tree.children = [...grouped.filter(node => node.type !== 'reportCard'), ...mainCards, ...appendices]
     function visit(node: ReportNode) {
       if (node.type === 'reportCard' && node.data?.hProperties?.['data-report-kind'] === 'next') {
         const numberSteps = (child: ReportNode) => {
@@ -185,27 +185,26 @@ export function ReportHero({ stage, project, generatedAt, generating = false, co
   const updatedAt = project?.updatedAt?.toMillis?.()
   const StageIcon = STAGE_ICONS[stage]
   const colors = reportStageColors(STAGE_COLOR[stage].hex)
-  const { summary, keywords } = reportSummary(content)
+  const { summary } = reportSummary(cleanReportMarkdown(content))
   const saved = activities.filter(code => !!project?.artifacts?.[code]).length
   const versions = activities.reduce((total, code) => total + (project?.artifacts?.[code]?.version ?? 0), 0)
   const kpis = [
-    { label: '활동 수', value: activities.length, unit: '개', tone: 'primary', Icon: ListChecks },
-    { label: '확정 활동', value: confirmed, unit: '개', tone: 'green', Icon: CheckCircle },
-    { label: '저장 산출물', value: saved, unit: '개', tone: 'secondary', Icon: Database },
-    { label: '누적 저장 버전', value: versions, unit: '회', tone: 'amber', Icon: ArrowsClockwise },
+    { label: '활동', value: activities.length, unit: '개', Icon: ListChecks },
+    { label: '확정', value: confirmed, unit: '개', Icon: CheckCircle },
+    { label: '산출물', value: saved, unit: '개', Icon: Database },
+    { label: '저장 버전', value: versions, unit: '회', Icon: ArrowsClockwise },
   ]
   return <div className="report-hero" data-report-hero>
     <style>{REPORT_DASHBOARD_CSS}</style>
-    <div className="report-hero-banner" style={{ backgroundImage: `linear-gradient(120deg, ${colors.band}, ${colors.deep} 68%, #0B57D0)` }}>
+    <div className="report-hero-banner" style={{ backgroundColor: colors.container, color: colors.band }}>
       <div className="report-hero-title">
-        <div className="report-stage-icon"><StageIcon size={28} weight="duotone" aria-hidden="true" /></div>
+        <div className="report-stage-icon"><StageIcon size={24} weight="duotone" aria-hidden="true" /></div>
         <div><p className="report-eyebrow">{stage} · 단계 분석 보고서</p><h3>{STAGE_NAMES[stage]} 단계</h3><p className="report-project-name">{project?.title ?? '프로젝트'}</p></div>
       </div>
       {summary && <p className="report-hero-summary">{summary}</p>}
-      {keywords.length > 0 && <div className="report-keywords" aria-label="핵심 키워드">{keywords.map((keyword, i) => <span className="report-chip" key={i}>{keyword}</span>)}</div>}
       <div className="report-dates"><span><CalendarBlank size={14} aria-hidden="true" /> {generating ? '보고서 생성 중' : `생성일 · ${reportDate(generatedAt)}`}</span>{updatedAt && <span><Clock size={14} aria-hidden="true" /> 마지막 갱신 · {reportDate(updatedAt)}</span>}</div>
     </div>
-    <dl className="report-kpis">{kpis.map(({ label, value, unit, tone, Icon }) => <div className={`report-kpi report-${tone}`} key={label}><dt><Icon size={16} aria-hidden="true" />{label}</dt><dd>{value}<small>{unit}</small></dd></div>)}</dl>
+    <dl className="report-metrics">{kpis.map(({ label, value, unit, Icon }) => <div className="report-metric" key={label}><dt>{label}</dt><dd><Icon size={14} aria-hidden="true" />{value}<small>{unit}</small></dd></div>)}</dl>
   </div>
 }
 
@@ -245,14 +244,14 @@ export function ReportMarkdown({ content, stage, project }: { content: string; s
         const kind = String(node?.properties?.['data-report-kind'] ?? node?.properties?.dataReportKind ?? 'general')
         if (kind === 'appendix') {
           const [heading, ...body] = Children.toArray(children)
-          return <section data-report-section data-report-kind="appendix" className="report-card report-appendix">
+          return <section data-report-section data-report-kind="appendix" className="report-section report-appendix">
             <details data-report-appendix>
               <summary className="report-appendix-toggle">{heading}<span className="report-appendix-action"><span className="report-appendix-expand">펼치기</span><span className="report-appendix-collapse">접기</span><ArrowRight size={16} aria-hidden="true" /></span></summary>
               {body}
             </details>
           </section>
         }
-        return <section data-report-section data-report-kind={kind} data-report-wide={node?.properties?.['data-report-wide'] ?? node?.properties?.dataReportWide ? 'true' : undefined} className="report-card">{children}</section>
+        return <section data-report-section data-report-kind={kind} className="report-section">{children}</section>
       },
       h1: ({ children }) => <h1>{children}</h1>,
       h2: ({ children }) => {
@@ -260,7 +259,7 @@ export function ReportMarkdown({ content, stage, project }: { content: string; s
         const SectionIcon = sectionIcon(raw)
         return <h2><span className="report-section-icon"><SectionIcon size={22} weight="duotone" aria-hidden="true" /></span><span>{stripLeadingEmoji(raw) || children}</span></h2>
       },
-      h3: ({ children }) => <h3><span className="report-chip"><ListChecks size={16} aria-hidden="true" /><span>{stripLeadingEmoji(reportHeadingText(children)) || children}</span></span></h3>,
+      h3: ({ children }) => <h3>{stripLeadingEmoji(reportHeadingText(children)) || children}</h3>,
       h4: ({ children }) => <h4>{stripLeadingEmoji(reportHeadingText(children)) || children}</h4>,
       p: ({ children }) => <p>{children}</p>,
       strong: ({ children }) => <strong>{children}</strong>,
@@ -268,9 +267,9 @@ export function ReportMarkdown({ content, stage, project }: { content: string; s
       ol: ({ children }) => <ol>{children}</ol>,
       li: ({ children, node }) => {
         const number = node?.properties?.['data-report-number'] ?? node?.properties?.dataReportNumber
-        return <li><span className="report-list-mark" aria-hidden="true">{number ? String(number) : <CheckCircle size={16} weight="fill" />}</span><div className="report-list-content">{children}</div></li>
+        return <li><span className="report-list-mark" aria-hidden="true">{number ? String(number) : '•'}</span><div className="report-list-content">{children}</div></li>
       },
-      blockquote: ({ children }) => <aside role="note" aria-label="인사이트와 권고" className="report-callout"><Lightbulb size={24} weight="duotone" aria-hidden="true" /><div><div className="report-callout-label">인사이트 · 권고</div>{children}</div></aside>,
+      blockquote: ({ children }) => <aside role="note" aria-label="인사이트와 권고" className="report-callout"><Lightbulb size={18} aria-hidden="true" /><div>{children}</div></aside>,
       table: ({ children, node }) => {
         const printCards = String(node?.properties?.['data-report-print-cards'] ?? node?.properties?.dataReportPrintCards) === 'true'
         const minCh = Number(node?.properties?.['data-report-min-ch'] ?? node?.properties?.dataReportMinCh)
@@ -286,6 +285,6 @@ export function ReportMarkdown({ content, stage, project }: { content: string; s
         const short = String(properties['data-report-short'] ?? properties.dataReportShort) === 'true'
         return <td data-short-cell={short ? 'true' : undefined} data-long-cell={short ? undefined : 'true'} data-label={properties['data-report-label'] ?? properties.dataReportLabel} style={{ ...style, ...(minCh ? { minWidth: `${minCh}ch` } : {}) }}>{reportCellContent(children)}</td>
       },
-    }}>{content}</ReactMarkdown>
+    }}>{cleanReportMarkdown(content)}</ReactMarkdown>
   </div>
 }

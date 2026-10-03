@@ -6,6 +6,7 @@ import { STAGES, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { ReportHero, ReportMarkdown } from './ReportMarkdown'
 import { printReport } from './printReport'
+import { cleanReportMarkdown } from '@/lib/markdown/reportDisplay'
 import { X, FileText, ArrowLeft, DownloadSimple, FilePdf } from '@phosphor-icons/react'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 
@@ -56,7 +57,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
 
   function downloadMd() {
     if (!selectedStage || !selectedReport) return
-    const blob = new Blob([selectedReport.content], { type: 'text/markdown;charset=utf-8' })
+    const blob = new Blob([cleanReportMarkdown(selectedReport.content)], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

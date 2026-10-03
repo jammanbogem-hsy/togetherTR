@@ -6,6 +6,7 @@ import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { ReportHero, ReportMarkdown } from './ReportMarkdown'
 import { printReport } from './printReport'
+import { cleanReportMarkdown } from '@/lib/markdown/reportDisplay'
 import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar, ArrowRight } from '@phosphor-icons/react'
 import { setAnalysisReport, saveStageReport } from '@/lib/firebase/projects'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
@@ -316,7 +317,7 @@ export function StageAnalysisModal({
   }, [project?.analysisReport, isHost, stage])
 
   function downloadMd() {
-    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+    const blob = new Blob([cleanReportMarkdown(markdown)], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
