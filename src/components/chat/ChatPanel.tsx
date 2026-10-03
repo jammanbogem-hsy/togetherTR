@@ -85,6 +85,8 @@ import {
 } from '@/lib/chat/signals'
 import { applyArtifactSignalBatch, artifactContentEquals } from '@/lib/chat/artifactSignalBatch'
 import { isStaleActivityResponse } from '@/lib/chat/responseContext'
+import { chatSendBlockReason } from '@/lib/chat/sendReadiness'
+import { sanitizeAssistantText } from '@/lib/chat/sanitizeAssistantText'
 import { validateRequiredSections } from '@/lib/activity/completion'
 
 const KnowledgeGraphViewer = dynamic(
@@ -2089,7 +2091,11 @@ function ChatPanelContent() {
     const decisionDeferred = hasDeferredDecision(msgs)
     if (decisionDeferred) onChunk = () => {} // Validate deferred responses before displaying gates.
     const commitResponse = onDone
-    onDone = (text) => commitResponse(decisionDeferred ? deferredResponse(text) : text)
+    // 완료 시점에 한 번 정리해 화면 메시지와 Firestore 저장이 같은 본문이 되게 한다(#27 끝 깨진 외국 문자 제거).
+    onDone = (text) => {
+      const cleaned = sanitizeAssistantText(text)
+      return commitResponse(decisionDeferred ? deferredResponse(cleaned) : cleaned)
+    }
     if (decisionDeferred) msgs = [...msgs, { role: 'user', content: '현재 결정은 보류 중입니다. 같은 선택지나 저장 확인을 다시 제시하지 말고 자유 대화를 이어가세요. 산출물 저장·확정·활동 이동 신호를 출력하지 마세요. 교사가 명시적으로 결정 또는 저장을 요청하기 전까지 유지하세요.' }]
     // 스마트 "청크 간 공백" 타임아웃 — 60초 동안 새 청크가 오지 않으면 abort.
     // 정상적으로 길게 생성되는 응답(여러 분)은 청크 도착마다 타이머 리셋 → 끊기지 않음.
@@ -2780,6 +2786,14 @@ ${discussionSummary}
   }
 
   const isTeamMode = discussionMode === 'team_discussion'
+  // 페이지 이동 직후 준비 전에는 전송만 막고 입력은 지킨다(#26).
+  const sendBlockReason = chatSendBlockReason({
+    hasProject: !!projectState,
+    hasUser: !!userProfile,
+    messagesLoaded,
+    currentActivity,
+    projectActivity: projectState?.currentActivity,
+  })
   const isHost = project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid
 
   const [gradeProposalBusy, setGradeProposalBusy] = useState<string | null>(null)
@@ -3840,6 +3854,8 @@ ${discussionSummary}
   // ─── 메시지 전송 ──────────────────────────────────────
   async function handleSend() {
     if (!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice) || !project) return
+    // 준비 전에는 보내지 않고 입력을 그대로 둔다 — 조용히 버리지 않는다(#26).
+    if (sendBlockReason) return
 
     // 답장 시: 인용 대상의 첫 문장만 간결하게 삽입
     const replyPrefix = replyTo
@@ -5911,7 +5927,9 @@ ${discussionSummary}
                   }
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder={isTeamMode
+                placeholder={sendBlockReason
+                  ? `${sendBlockReason}… 입력은 해 두고 준비되면 보낼 수 있어요`
+                  : isTeamMode
                   ? '팀원에게 의견을 전달하세요...'
                   : isWaitingForChoice
                     ? isHost ? '안을 고르거나, 원하는 내용을 직접 입력해도 됩니다...' : '방장에게 의견을 남겨 주세요...'
@@ -5925,6 +5943,11 @@ ${discussionSummary}
                 )}
                 style={{ background: 'transparent' }}
               />
+              {sendBlockReason && input.trim() && (
+                <span role="status" className="absolute -top-5 right-2 z-[3] rounded-full bg-[#FEF7E0] px-2 py-0.5 text-[10px] font-semibold text-[#B06000]">
+                  {sendBlockReason}… 준비되면 보낼 수 있어요
+                </span>
+              )}
               {/* 하이라이트 오버레이 — textarea 위, 노트 토큰만 pointer-events 활성 */}
               {input.includes('@노트#') && (
                 <div
@@ -5958,7 +5981,8 @@ ${discussionSummary}
           {/* 전송 버튼 — morph-shape 일렁임 */}
           <button
             onClick={handleSend}
-            disabled={!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice)}
+            disabled={!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice) || !!sendBlockReason}
+            title={sendBlockReason ?? undefined}
             className={cn(
               'chat-motion-decorative w-12 h-[70px] text-white flex items-center justify-center flex-shrink-0',
               'disabled:opacity-40 disabled:cursor-not-allowed',

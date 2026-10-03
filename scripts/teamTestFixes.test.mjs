@@ -677,3 +677,47 @@ test('017-b: 재시도로 부분 답을 대체할 때 기존 createdAt 을 유�
   const store = fs.readFileSync(new URL('../src/store/project.ts', import.meta.url), 'utf8')
   assert.match(store, /messages: state\.messages\.map\(m => m\.id === id \? \{ \.\.\.m, \.\.\.fields, content \} : m\)/)
 })
+
+// ─── TASK-019: #26 전송 준비 판정 · #27 응답 끝 깨진 외국 문자 제거 ─────────
+const { chatSendBlockReason } = await import('../src/lib/chat/sendReadiness.ts')
+const { sanitizeAssistantText } = await import('../src/lib/chat/sanitizeAssistantText.ts')
+
+test('26: 준비 전(프로필·프로젝트·메시지 구독·활동 동기화)에는 전송을 막고, 준비되면 허용한다', () => {
+  const ready = { hasProject: true, hasUser: true, messagesLoaded: true, currentActivity: 'DI-2-1', projectActivity: 'DI-2-1' }
+  assert.equal(chatSendBlockReason(ready), null)
+  assert.ok(chatSendBlockReason({ ...ready, hasProject: false }))
+  assert.ok(chatSendBlockReason({ ...ready, hasUser: false }))
+  assert.ok(chatSendBlockReason({ ...ready, messagesLoaded: false }))
+  // 새로고침 직후 스토어 기본값(T-1-1)이 프로젝트 현재 활동과 다르면 다른 활동 경로에 저장될 수 있어 막는다.
+  assert.match(chatSendBlockReason({ ...ready, currentActivity: 'T-1-1' }), /이동하는 중/)
+  assert.equal(chatSendBlockReason({ ...ready, projectActivity: undefined }), null)
+  const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  const send = chatSource.slice(chatSource.indexOf('async function handleSend()'))
+  // 준비 판정은 입력을 비우기(setInput('')) 전에 있어야 입력한 글이 사라지지 않는다.
+  assert.ok(send.indexOf('if (sendBlockReason) return') > 0)
+  assert.ok(send.indexOf('if (sendBlockReason) return') < send.indexOf("setInput('')"))
+  assert.match(chatSource, /disabled=\{!input\.trim\(\) \|\| \(isLoading && !isTeamMode && !isWaitingForChoice\) \|\| !!sendBlockReason\}/)
+})
+
+test('27: 응답 끝에 붙은 깨진 외국 문자 꼬리만 지운다', () => {
+  assert.equal(sanitizeAssistantText('이렇게 정리했습니다.ેણ'), '이렇게 정리했습니다.')
+  assert.equal(sanitizeAssistantText('추가하거나 수정할 내용이 있으면 말씀해 주세요.азаара'), '추가하거나 수정할 내용이 있으면 말씀해 주세요.')
+  assert.equal(sanitizeAssistantText('다음 활동을 안내해 주세요 ેણ\n'), '다음 활동을 안내해 주세요')
+  assert.equal(sanitizeAssistantText('확인해 주세요.\nазаара'), '확인해 주세요.')
+  assert.equal(sanitizeAssistantText('표로 정리했어요 🙂азаара'), '표로 정리했어요 🙂')
+})
+
+test('27: 정상 본문·외국어 인용·한자 병기·끝 신호는 그대로 둔다', () => {
+  const keep = [
+    '학생들이 "Think globally, act locally."라고 말했어요.',
+    '학교(學校) 주변 그늘을 조사합니다.',
+    '러시아어 인사는 Привет мир',
+    '본문 중간의 азаара 같은 글자는 끝이 아니므로 그대로 둡니다.',
+    '저장했습니다.\n[ACTIVITY_ADVANCE: DI-2-1]',
+    '긴 외국어 꼬리는 인용일 수 있어 둡니다 Здравствуйте',
+    '',
+  ]
+  for (const text of keep) assert.equal(sanitizeAssistantText(text), text, text)
+  const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(chatSource, /const cleaned = sanitizeAssistantText\(text\)\n\s+return commitResponse\(decisionDeferred \? deferredResponse\(cleaned\) : cleaned\)/)
+})
