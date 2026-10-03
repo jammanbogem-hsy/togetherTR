@@ -3489,6 +3489,9 @@ ${discussionSummary}
   function isA21SheetArtifactRequest(text: string): boolean {
     if (currentActivity !== 'A-2-1') return false
     const compact = text.replace(/\s+/g, '')
+    // 수정·교체 요청은 시트 그대로 저장하지 않고 AI가 변경 지시를 처리하게 한다.
+    const isEditIntent = /(바꾸|바꿔|바꾼|대신|고쳐|고친|수정|변경|교체|추가|빼|뺀|제외|삭제|넣어|넣은)/.test(compact)
+    if (isEditIntent) return false
     // 브리핑·요약·조회 의도는 정보 요청이지 산출물 작성 요청이 아님
     // (예: /이전 단계 브리핑 → "지금까지 완료된 모든 활동의 확정 산출물을 브리핑해주세요")
     const isBriefingIntent = /(브리핑|요약|조회|보여|알려|확인|되돌아|돌아보)/.test(compact)

@@ -31,6 +31,18 @@ function loadChatFunction(name, bindings) {
   return context.exports.fn
 }
 
+for (const [text, expected] of [
+  ['사회 3-4는 지역 문제·주민 참여로 바꿔서 분석표 만들어 주세요', false],
+  ['태양계 대신 기후변화 성취기준을 추가하고 시트로 산출물 저장해 주세요', false],
+  ['분석시트 그대로 분석표 만들어 주세요', true],
+  ['시트로 산출물 저장해 주세요', true],
+]) {
+  test(`14: 시트 산출물 요청의 로컬 처리 판정 (${expected}): ${text}`, () => {
+    const isRequest = loadChatFunction('isA21SheetArtifactRequest', { currentActivity: 'A-2-1' })
+    assert.equal(isRequest(text), expected)
+  })
+}
+
 const rows = Array.from({ length: 10 }, (_, i) => ({
   id: `row-${i}`, subject: i === 0 ? '국어' : '사회', isCenter: i === 0,
   gradeBand: i % 2 ? '3-4학년군' : '5-6학년군',
