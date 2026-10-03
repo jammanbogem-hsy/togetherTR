@@ -4,6 +4,8 @@ import { generationParams, logLlmUsage, resolveOpenAIModel, chatEffort } from '@
 import { judgeProgress } from '@/lib/chat/progressJudge'
 import { buildCurriculumContext } from '@/lib/curriculum/contextInject'
 import { buildAchievementLevelContext, collectDesignStandardCodes } from '@/lib/curriculum/achievementLevels'
+import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
+import { buildAllowedEvidenceCodesContext } from '@/lib/chat/evidenceCodeGate'
 import { buildA21DirectAnswer } from '@/lib/curriculum/a21DirectAnswer'
 import { buildProjectMaterialContext, searchProjectMaterials } from '@/lib/rag/search'
 import type { StageCode, ActivityCode, ActorType, Project } from '@/types'
@@ -90,6 +92,11 @@ export async function POST(request: Request) {
       activityCode,
       collectDesignStandardCodes(confirmedArtifacts, project.curriculumSheet),
     )
+    // Ds-1-1·Ds-1-3: 근거 표기에 쓸 수 있는 코드를 명시한다(#39 지어낸 코드·#41 수준 글자 누락). 저장 관문과 같은 목록.
+    const allowedEvidenceContext = buildAllowedEvidenceCodesContext(
+      activityCode,
+      extractStandardCodes(designStandardSources(confirmedArtifacts, project.curriculumSheet).join('\n')),
+    )
     let materialContext = ''
     if (projectId) {
       try {
@@ -158,7 +165,7 @@ ${sections.join('\n\n')}
 `
     })()
 
-    const systemPrompt = baseSystemPrompt + curriculumContext + achievementLevelContext + materialContext + keyNotesContext
+    const systemPrompt = baseSystemPrompt + curriculumContext + achievementLevelContext + allowedEvidenceContext + materialContext + keyNotesContext
 
     // SSE 스트리밍
     const encoder = new TextEncoder()

@@ -20,6 +20,7 @@ import { withCurriculumReadCache, readOncePerCurriculumContext } from '../src/li
 import { buildCurriculumContext, buildReplacementStandardsContext } from '../src/lib/curriculum/contextInject.ts'
 import { ACTIVITY_META, STAGES, displayActivityCode } from '../src/types/index.ts'
 import { applyArtifactSignalBatch, artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
+import { findDroppedTableRows, userAskedToDeleteRows } from '../src/lib/chat/tableRowGuard.ts'
 import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction } from '../src/lib/artifacts/schemas.ts'
 
 const chat = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
@@ -231,7 +232,8 @@ test('15b: 부분 답 재시도는 같은 ID의 Firestore 문서와 로컬 메�
     discardResponseAfterActivityChange: async () => false,
     parseTeamGradeBandsSignal: () => null, parseDiscussionSignal: () => null, parseActivityAdvance: () => null,
     parseActivityReturn: () => null, parseArtifactConfirm: text => ({ codes: [], cleanText: text }),
-    parseArtifactUpdates: text => ({ updates: [], cleanText: text }), parseHelpCard: text => ({ cleanText: text }),
+    parseArtifactUpdates: text => ({ updates: [], cleanText: text }), gateArtifactUpdates: (updates, confirmCodes) => ({ updates, confirmCodes, notices: [] }), appendSaveGateNotice: text => text,
+    parseHelpCard: text => ({ cleanText: text }),
     parseOptions: () => null, parseActionCard: () => null, Timestamp: { now: () => 1 },
     generateMessageId: () => { throw new Error('재시도에 새 ID를 만들면 안 된다') },
     addMessage: message => additions.push(message), replaceMessage: (...args) => replacements.push(args),
@@ -1485,4 +1487,150 @@ test('036b: 평문 요약·빈 산출물 처리를 보존하고 최대 4개 항�
   assert.equal(items[0].length, 200)
   assert.ok(items[0].endsWith('…'))
   assert.doesNotMatch(summary, /다섯째|_schema/)
+})
+
+// ─── TASK-037 / #40: 평가 표 행 누락 · 명시적 삭제 요청 ─────────
+const evaluationRowKeys = [
+  '1-2학년군 결과물', '3-4학년군 결과물', '5-6학년군 결과물',
+  '1-2학년군 발표 말하기', '3-4학년군 발표 말하기', '5-6학년군 발표 말하기',
+  '모둠 참여 과정', '개인 성찰',
+]
+const evaluationTable = rows => '| 확인 지점 | 평가 요소 | 평가 방법 | 평가 시점 | 평가 주체 |\n| --- | --- | --- | --- | --- |\n'
+  + rows.map(key => `| ${key} | 자료에 근거해 설명한다 | 관찰 | 발표 때 | 교사 |`).join('\n')
+
+test('037a: 기존 8행에서 학년군별 발표 말하기 3행이 사라진 5행 수정안을 잡는다', () => {
+  const nextKeys = evaluationRowKeys.filter(key => !key.includes('발표 말하기'))
+  assert.deepEqual(findDroppedTableRows(evaluationTable(evaluationRowKeys), evaluationTable(nextKeys)), [
+    '1-2학년군 발표 말하기', '3-4학년군 발표 말하기', '5-6학년군 발표 말하기',
+  ])
+})
+
+test('037b: 행 순서·강조·공백·평가 내용 변경은 삭제로 보지 않고, 표 아닌 입력은 무시한다', () => {
+  const previous = evaluationTable(evaluationRowKeys)
+  assert.deepEqual(findDroppedTableRows(previous, evaluationTable([...evaluationRowKeys].reverse())), [])
+  assert.deepEqual(findDroppedTableRows(previous, evaluationTable(evaluationRowKeys.map(key => `**${key.replaceAll(' ', '  ')}**`)).replaceAll('자료에 근거해 설명한다', '[4사08-02] A 수준을 확인한다')), [])
+  assert.deepEqual(findDroppedTableRows('| 지점 | 내용 |\n|---|---|\n| *발표 말하기* | 확인 |', '| 지점 | 내용 |\n|---|---|\n| __발표 말하기__ | 확인 |'), [])
+  for (const [before, after] of [['', previous], ['평문', previous], [previous, '평문'], [previous, '| 지점 | 내용 |\n| 데이터 | 값 |']]) assert.deepEqual(findDroppedTableRows(before, after), [])
+  assert.deepEqual(findDroppedTableRows('```md\n' + previous + '\n```', evaluationTable([])), [])
+  assert.deepEqual(findDroppedTableRows(previous, evaluationTable([])), evaluationRowKeys)
+  assert.deepEqual(findDroppedTableRows('| 지점 | 내용 |\n|---|---|\n| **발표**\\|말하기 | 확인 |', '| 지점 | 내용 |\n|---|---|'), ['발표|말하기'])
+})
+
+test('037c: 줄·행·항목·확인 지점 삭제/병합 요청만 참이고 코드·단어 삭제와 부정 요청은 거짓이다', () => {
+  for (const text of ['발표 말하기 행은 빼 주세요', '중복 항목 삭제 부탁해요', '마지막 줄을 지워 주세요', '이 행은 없애 주세요', '확인 지점을 줄여 주세요', '두 행을 합쳐 주세요', '발표 말하기 항목을 통합해 주세요']) {
+    assert.equal(userAskedToDeleteRows([text]), true, text)
+  }
+  for (const text of ['[4사08-02]는 빼 주세요', '성취기준 코드만 삭제해 주세요', '문구를 줄여 주세요', '확인 지점의 코드만 빼 주세요', '행은 그대로 두고 단어만 지워 주세요', '발표 말하기 행은 삭제하지 말아 주세요', '평가 계획 표는 그대로 두고 코드만 붙여 다시 저장해 주세요', '다음 활동으로 가요']) {
+    assert.equal(userAskedToDeleteRows([text]), false, text)
+  }
+  assert.equal(userAskedToDeleteRows([]), false)
+  assert.equal(userAskedToDeleteRows(['코드만 붙여 주세요', '중복 항목은 삭제해 주세요']), true)
+})
+
+test('037d: Ds-1-3 차시·활동 삭제와 병합은 허용하지만 코드만 빼는 요청은 제외한다', () => {
+  for (const text of ['4차시랑 5차시 합쳐 주세요', '3차시 빼 주세요', '이 활동은 빼 주세요']) {
+    assert.equal(userAskedToDeleteRows([text]), true, text)
+  }
+  for (const text of ['[2수04-02]는 빼 주세요', '3차시의 [2수04-02]는 빼 주세요', '이 활동의 코드만 삭제해 주세요', '이 활동은 삭제하지 말아 주세요']) {
+    assert.equal(userAskedToDeleteRows([text]), false, text)
+  }
+})
+
+// ─── TASK-038: 근거 코드 허용 목록 주입·저장 관문 (#39 지어낸 코드, #41 수준 글자) ─────────
+const task038 = await import('../src/lib/chat/evidenceCodeGate.ts')
+
+test('38a: (근거: …) 묶음 안의 허용 목록 밖 코드만 수준 글자와 함께 지우고, 비면 확인 필요로 바꾼다', () => {
+  const allowed = new Set(['[2국03-02]', '[4사08-02]'])
+  const text = '| 결과물 | 그늘 지도에 [2수04-02] 를 활용함 (근거: [2국03-02] B, [2수04-02] A) |\n| 측정 | 길이 재기 (근거: [2수04-02] A) |\n| 과정 | 역할 수행 (근거: 과정 평가) |'
+  const result = task038.stripDisallowedEvidenceCodes(text, allowed)
+  assert.deepEqual(result.removed, ['[2수04-02]'])
+  assert.match(result.text, /그늘 지도에 \[2수04-02\] 를 활용함 \(근거: \[2국03-02\] B\)/) // 묶음 밖은 그대로
+  assert.match(result.text, /길이 재기 \(근거: 확인 필요\)/)
+  assert.match(result.text, /역할 수행 \(근거: 과정 평가\)/)
+  const clean = task038.stripDisallowedEvidenceCodes('(근거: [2국03-02] A·B, [4사08-02] A)', allowed)
+  assert.equal(clean.text, '(근거: [2국03-02] A·B, [4사08-02] A)')
+  assert.deepEqual(clean.removed, [])
+})
+
+test('38b: 관문은 Ds-1-1 평가 계획·Ds-1-3 학습 활동만 거르고, 허용 목록이 비면 아무것도 지우지 않는다', () => {
+  const updates = [
+    { activityCode: 'Ds-1-1', sections: { '평가 계획': '| a | b (근거: [9과01-01] A) |', '메모': '(근거: [9과01-01] A)' } },
+    { sections: { '학습 활동': '| 1 | 조사 (근거: [9과01-01] A, [2국03-02] B) |' } },
+    { activityCode: 'Ds-1-2', sections: { '선정 문제 상황': '(근거: [9과01-01] A)' } },
+  ]
+  const gate = task038.gateEvidenceCodes(updates, 'Ds-1-3', ['[2국03-02]'])
+  assert.equal(gate.updates[0].sections['평가 계획'], '| a | b (근거: 확인 필요) |')
+  assert.equal(gate.updates[0].sections['메모'], '(근거: [9과01-01] A)')
+  assert.equal(gate.updates[1].sections['학습 활동'], '| 1 | 조사 (근거: [2국03-02] B) |')
+  assert.equal(gate.updates[2], updates[2])
+  assert.deepEqual(gate.removed, ['[9과01-01]'])
+  assert.equal(task038.evidenceGateNotice(gate.removed), '분석표에 없는 코드 [9과01-01]는 저장에서 뺐습니다.')
+  assert.equal(task038.evidenceGateNotice([]), '')
+  assert.equal(task038.appendSaveGateNotice('본문  ', ['', '안내']), '본문\n\n안내')
+  assert.equal(task038.appendSaveGateNotice('본문', ['']), '본문')
+  const none = task038.gateEvidenceCodes(updates, 'Ds-1-3', [])
+  assert.deepEqual(none.removed, [])
+  assert.equal(none.updates[0].sections['평가 계획'], updates[0].sections['평가 계획'])
+})
+
+test('38c: Ds-1-1·Ds-1-3 프롬프트에 허용 근거 코드 목록과 수준 글자 필수 줄이 붙고, 저장 두 경로가 관문을 거친다', () => {
+  const ctx = task038.buildAllowedEvidenceCodesContext('Ds-1-1', ['[2국03-02]', '[4사08-02]'])
+  assert.match(ctx, /허용 근거 코드 목록[\s\S]*\[2국03-02\] \[4사08-02\]/)
+  assert.match(ctx, /목록 밖 코드는 저장 단계에서 자동으로 지워진다/)
+  assert.match(ctx, /수준 글자\(A·B·C\)를 반드시 붙인다/)
+  assert.ok(task038.buildAllowedEvidenceCodesContext('Ds-1-3', ['[2국03-02]']))
+  assert.equal(task038.buildAllowedEvidenceCodesContext('Ds-1-2', ['[2국03-02]']), '')
+  assert.equal(task038.buildAllowedEvidenceCodesContext('Ds-1-1', []), '')
+  const route = fs.readFileSync(new URL('../src/app/api/chat/stream/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /achievementLevelContext \+ allowedEvidenceContext \+ materialContext/)
+  const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /gateArtifactUpdates\(rawUpd, rawCCodes, text\)/)
+  assert.match(panel, /gateArtifactUpdates\(rawUpdates, rawConfirmCodes2, userMessage\)/)
+  assert.match(panel, /processArtifactSignals\(upd, cCodes, finalText\)/)
+  assert.match(panel, /processArtifactSignals\(updates, confirmCodes2, displayText\)/)
+})
+
+const task038gate = await import('../src/lib/chat/artifactSaveGate.ts')
+const task038prev = '| 확인 지점 | 평가 요소 | 평가 방법 | 평가 시점 | 평가 주체 |\n|---|---|---|---|---|\n| 1-2학년군 결과물 | a (근거: [2국03-02] B) | 관찰 | 발표 | 교사 |\n| 3-4학년군 결과물 | b (근거: [4사08-02] A) | 관찰 | 발표 | 교사 |\n| 5-6학년군 결과물 | c (근거: [6국03-02] A) | 관찰 | 발표 | 교사 |\n| 모둠 참여 과정 | d (근거: 과정 평가) | 관찰 | 협의 | 교사 |'
+const task038next = '| 확인 지점 | 평가 요소 | 평가 방법 | 평가 시점 | 평가 주체 |\n|---|---|---|---|---|\n| 1-2학년군 결과물 | a2 (근거: [2국03-02] B, [2수04-02] A) | 관찰 | 발표 | 교사 |'
+
+test('38d: 이전 표의 행이 빠지고 삭제 요청이 없으면 그 섹션 저장과 확정을 함께 보류하고 안내한다', () => {
+  const input = {
+    updates: [{ sections: { '평가 계획': task038next, '메모': '그대로 저장' } }, { activityCode: 'Ds-1-2', sections: { '선정 문제 상황': 'x' } }],
+    confirmCodes: ['', 'Ds-1-2'],
+    currentActivity: 'Ds-1-1',
+    allowedCodes: ['[2국03-02]', '[4사08-02]', '[6국03-02]'],
+    previousSection: (code, key) => code === 'Ds-1-1' && key === '평가 계획' ? task038prev : '',
+    recentUserTexts: ['표는 그대로 두고 근거 코드만 고쳐 주세요'],
+  }
+  const held = task038gate.gateArtifactSave(input)
+  assert.deepEqual(held.updates, [{ sections: { '메모': '그대로 저장' } }, { activityCode: 'Ds-1-2', sections: { '선정 문제 상황': 'x' } }])
+  assert.deepEqual(held.confirmCodes, ['Ds-1-2'])
+  assert.deepEqual(held.notices, [
+    '분석표에 없는 코드 [2수04-02]는 저장에서 뺐습니다.',
+    `이전 표의 '3-4학년군 결과물', '5-6학년군 결과물' 등 3줄이 빠져 저장하지 않았습니다. 일부러 지운 거라면 "그 줄은 지우고 저장"이라고 말씀해 주세요.`,
+  ])
+  // 사용자가 줄 삭제를 요청하면 저장한다(근거 코드 정리는 그대로 적용).
+  const allowed = task038gate.gateArtifactSave({ ...input, recentUserTexts: ['그 줄은 지우고 저장'] })
+  assert.equal(allowed.updates[0].sections['평가 계획'], task038next.replace(', [2수04-02] A', ''))
+  assert.deepEqual(allowed.confirmCodes, ['', 'Ds-1-2'])
+  assert.deepEqual(allowed.notices, ['분석표에 없는 코드 [2수04-02]는 저장에서 뺐습니다.'])
+  // 처음 저장(이전 표 없음)은 보류하지 않는다.
+  const first = task038gate.gateArtifactSave({ ...input, previousSection: () => '' })
+  assert.ok(first.updates[0].sections['평가 계획'])
+})
+
+test('38e: 구조화 저장본도 첫 열로 비교하고, 다른 활동은 행이 빠져도 그대로 저장한다', () => {
+  assert.equal(task038gate.previousSectionText({ rubric: [{ checkpoint: '결과물' }, { checkpoint: '과정' }] }, 'Ds-1-1', '평가 계획'), '| 첫 열 |\n|---|\n| 결과물 |\n| 과정 |')
+  assert.equal(task038gate.previousSectionText({ activities: [{ order: '1' }, { order: '2' }] }, 'Ds-1-3', '학습 활동'), '| 첫 열 |\n|---|\n| 1 |\n| 2 |')
+  assert.equal(task038gate.previousSectionText({ '학습 활동': '| a |' }, 'Ds-1-3', '학습 활동'), '| a |')
+  assert.equal(task038gate.previousSectionText(undefined, 'Ds-1-1', '평가 계획'), '')
+  const other = task038gate.gateArtifactSave({
+    updates: [{ sections: { '학습활동-도구 매칭': task038next } }],
+    confirmCodes: [''], currentActivity: 'Ds-2-1', allowedCodes: ['[2국03-02]'],
+    previousSection: () => task038prev, recentUserTexts: [],
+  })
+  assert.equal(other.updates[0].sections['학습활동-도구 매칭'], task038next)
+  assert.deepEqual(other.confirmCodes, [''])
+  assert.deepEqual(other.notices, [])
 })

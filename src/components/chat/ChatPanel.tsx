@@ -65,7 +65,9 @@ import { addKeyNote } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import { defaultGradeMode, effectiveRowGradeBand, resolveSheetGradeBand, toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
 import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
-import { designStandardSources } from '@/lib/curriculum/standardCodes'
+import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
+import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
+import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
@@ -1632,6 +1634,33 @@ function ChatPanelContent() {
     if (targetActivity === currentActivity && local) {
       setCurrentArtifact({ ...local, status: 'confirmed', confirmedContent: content })
     }
+  }
+
+  // 저장 관문(#39·#40): Ds-1-1 평가 계획·Ds-1-3 학습 활동만 대상.
+  //  - '(근거: …)'에서 A-2-1 분석표·분석시트 밖 코드를 뺀다.
+  //  - 이전 표의 행이 빠졌는데 사용자가 지우라고 하지 않았으면 그 섹션 저장·확정을 보류한다.
+  // 두 응답 경로(일반 채팅·선택 후 응답)가 메시지 저장 전에 같이 부른다. 다른 활동·섹션은 그대로 통과.
+  function gateArtifactUpdates(
+    updates: Array<{ activityCode?: string; sections: Record<string, string> }>,
+    confirmCodes: string[],
+    userText: string,
+  ) {
+    const latest = useProjectStore.getState()
+    const artifacts = proj.artifacts
+    return gateArtifactSave({
+      updates,
+      confirmCodes,
+      currentActivity,
+      allowedCodes: extractStandardCodes(designStandardSources(artifacts, proj.curriculumSheet).join('\n')),
+      previousSection: (activityCode, key) => {
+        const draft = latest.currentArtifact?.activityCode === activityCode ? latest.currentArtifact.aiDraft : null
+        return previousSectionText(draft ?? artifacts?.[activityCode as ActivityCode]?.content, activityCode, key)
+      },
+      recentUserTexts: [
+        ...messages.filter(m => m.role === 'user' && m.activityCode === currentActivity).slice(-2).map(m => m.content),
+        userText,
+      ],
+    })
   }
 
   async function processArtifactSignals(
@@ -3753,8 +3782,9 @@ ${discussionSummary}
           t1 = advance ? advance.cleanText : t1
           const ret = parseActivityReturn(t1)
           const t2 = ret ? ret.cleanText : t1
-          const { codes: cCodes, cleanText: t2c } = parseArtifactConfirm(t2)
-          const { updates: upd, cleanText: t2d } = parseArtifactUpdates(t2c)
+          const { codes: rawCCodes, cleanText: t2c } = parseArtifactConfirm(t2)
+          const { updates: rawUpd, cleanText: t2d } = parseArtifactUpdates(t2c)
+          const { updates: upd, confirmCodes: cCodes, notices: saveNotices } = gateArtifactUpdates(rawUpd, rawCCodes, text)
           const { cleanText: t2e, helpMessage: hm } = parseHelpCard(t2d)
           // Phase 1-b: ACTION_CARD 파싱 (§12-4 상호배제 규칙)
           const optionsPresentD = !!parseOptions(t2e)
@@ -3773,7 +3803,7 @@ ${discussionSummary}
           } else {
             parsedActionCardD = parseActionCard(t2e)
           }
-          const finalText = parsedActionCardD ? parsedActionCardD.cleanText : t2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
+          const finalText = appendSaveGateNotice(parsedActionCardD ? parsedActionCardD.cleanText : t2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd(), saveNotices)
           if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
           const replacingResponse = !!responseMessageId
           const newMsgId = responseMessageId ?? generateMessageId(proj.id, currentActivity)
@@ -3953,8 +3983,9 @@ ${discussionSummary}
           text1 = advance ? advance.cleanText : text1
           const ret = parseActivityReturn(text1)
           const text2 = ret ? ret.cleanText : text1
-          const { codes: confirmCodes2, cleanText: text2c } = parseArtifactConfirm(text2)
-          const { updates, cleanText: text2d } = parseArtifactUpdates(text2c)
+          const { codes: rawConfirmCodes2, cleanText: text2c } = parseArtifactConfirm(text2)
+          const { updates: rawUpdates, cleanText: text2d } = parseArtifactUpdates(text2c)
+          const { updates, confirmCodes: confirmCodes2, notices: saveNotices2 } = gateArtifactUpdates(rawUpdates, rawConfirmCodes2, userMessage)
           const { cleanText: text2e, helpMessage } = parseHelpCard(text2d)
           // ─ Phase 1-b: ACTION_CARD 파싱 (상호배제 규칙 §12-4 준수) ─
           // 상위 체인에서 발견된 다른 신호(ADVANCE/RETURN/DISCUSSION_READY/HELP_CARD/A안·B안)가 있으면 ACTION_CARD 무시.
@@ -3979,7 +4010,7 @@ ${discussionSummary}
             parsedActionCard = parseActionCard(text2e)
           }
           const cleanText = parsedActionCard ? parsedActionCard.cleanText : text2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
-          const displayText = cleanText
+          const displayText = appendSaveGateNotice(cleanText, saveNotices2)
           // interval 정리 + Firestore 스트리밍 상태 삭제
           if (streamingFlushRef.current) {
             clearInterval(streamingFlushRef.current)
