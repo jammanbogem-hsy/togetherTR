@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, type ReactNode, type CSSPrope
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
+import { parsePsReady, cleanPsReady } from '@/lib/problem-situation/readySignal'
 import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass, FileTextIcon as FileText, SidebarSimpleIcon as SidebarSimple, CaretRightIcon as CaretRight, CircleNotchIcon as CircleNotch, PencilRulerIcon as PencilRuler } from '@phosphor-icons/react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -105,6 +106,7 @@ interface Props {
   projectId: string
   projectTitle: string
   targetGradeGroup: string
+  teamGradeBands?: string[]
   targetSubjects: string[]
   graphSavedData?: GraphSavedData | null
   achievementStandardsAnalysis?: string  // A-2-1 산출물 텍스트 (성취기준 분석 결과)
@@ -116,23 +118,6 @@ interface Props {
   onSave: (data: ProblemSituationData) => Promise<void>
   onClose: () => void
 }
-
-// ─── PS_READY 신호 파싱 ───────────────────────────────
-function parsePsReady(text: string): ProblemSituationData | null {
-  const match = /\[PS_READY:\s*([^\]]+)\]/.exec(text)
-  if (!match) return null
-  const raw = match[1]
-  const get = (key: string) => {
-    const m = new RegExp(`${key}=([^|\\]]+)`).exec(raw)
-    return m ? m[1].trim() : ''
-  }
-  return {
-    scenario: { title: get('제목'), row1: get('행1'), row2: get('행2'), row3: get('행3') },
-    drivingQuestion: get('핵심질문'),
-    essentialQuestions: [get('탐구1'), get('탐구2'), get('탐구3')].filter(Boolean),
-  }
-}
-function cleanPsReady(text: string) { return text.replace(/\[PS_READY:[^\]]+\]/g, '').trim() }
 
 // 후보 상세 (recommended 또는 candidate.fullScenario 채워진 경우)
 type ScenarioDetail = {
@@ -634,6 +619,7 @@ export default function ProblemSituationDesigner({
   projectId,
   projectTitle,
   targetGradeGroup,
+  teamGradeBands,
   targetSubjects,
   graphSavedData,
   achievementStandardsAnalysis,
@@ -701,8 +687,9 @@ export default function ProblemSituationDesigner({
     learnerProfile,
     projectTitle,
     targetGradeGroup,
+    teamGradeBands,
     targetSubjects,
-  }), [localGraphData, achievementStandardsAnalysis, evaluationPlan, learningObjective, learnerProfile, projectTitle, targetGradeGroup, targetSubjects])
+  }), [localGraphData, achievementStandardsAnalysis, evaluationPlan, learningObjective, learnerProfile, projectTitle, targetGradeGroup, teamGradeBands, targetSubjects])
 
   // 후보 하나의 상세를 두 조각(scenario / plan)으로 동시에 요청해 결과에 병합한다.
   // 조각이 도착하는 대로 화면에 채우고, 둘 다 성공해야 'done'. gen이 바뀌었으면(재생성) 늦은 응답은 버린다.
@@ -1098,7 +1085,7 @@ export default function ProblemSituationDesigner({
                   <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={{
                     p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
                     strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                  }}>{chatStreamingText}</ReactMarkdown>
+                  }}>{cleanPsReady(chatStreamingText)}</ReactMarkdown>
                 </div>
               </div>
             )}

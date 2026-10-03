@@ -78,6 +78,7 @@ export const DETAIL_PARTS: readonly DetailPart[] = ['scenario', 'plan']
 export interface ProblemSituationContext {
   projectTitle: string
   targetGradeGroup: string
+  teamGradeBands?: string[]
   targetSubjects: string[]
   nodeContext: string
   achievementStandardsAnalysis?: string
@@ -154,8 +155,12 @@ const PERSONA = `당신은 초·중등 교과 융합 PBL 수업설계 전문가�
 반드시 아래 JSON 형식으로만 응답하세요. JSON 이외의 텍스트는 절대 포함하지 마세요.`
 
 function contextBlock(ctx: ProblemSituationContext): string {
+  const teamGradeBands = ctx.teamGradeBands ?? []
+  const teamGradeContext = teamGradeBands.length >= 2
+    ? `\n팀 학년군: ${teamGradeBands.join(', ')} — 여러 학년군 협력 수업. 공통 문제상황 안에서 학년군별 학생 역할·과제·산출물 장면을 나누고, 성취기준 연결은 A-2-1 분석에 있는 성취기준에서 각 학년군을 고르게 포함한다. A-2-1 에 없는 성취기준을 새로 만들지 않는다.`
+    : ''
   return `프로젝트 제목: ${ctx.projectTitle}
-학년군: ${ctx.targetGradeGroup}
+학년군: ${ctx.targetGradeGroup}${teamGradeContext}
 교과: ${ctx.targetSubjects.join(', ')}
 
 === A-2-1 교과 융합 성취기준 분석 (팀이 도출한 분석 결과) ===

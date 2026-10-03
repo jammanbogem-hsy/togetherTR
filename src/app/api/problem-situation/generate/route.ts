@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       learnerProfile,
       projectTitle,
       targetGradeGroup,
+      teamGradeBands,
       targetSubjects,
     } = body as {
       graphSavedData?: GraphSavedData | null
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
       learnerProfile?: string
       projectTitle: string
       targetGradeGroup: string
+      teamGradeBands?: string[]
       targetSubjects: string[]
     }
 
@@ -68,6 +70,7 @@ export async function POST(request: Request) {
     const ctx: ProblemSituationContext = {
       projectTitle,
       targetGradeGroup,
+      teamGradeBands: Array.isArray(teamGradeBands) ? teamGradeBands : undefined,
       targetSubjects: Array.isArray(targetSubjects) ? targetSubjects : [],
       nodeContext: buildNodeContext(
         graphSavedData?.centerNode ?? null,

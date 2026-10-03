@@ -4345,6 +4345,7 @@ ${discussionSummary}
             projectId={proj.id}
             projectTitle={proj.title}
             targetGradeGroup={proj.targetGradeGroup}
+            teamGradeBands={proj.teamGradeBands}
             targetSubjects={proj.targetSubjects}
             graphSavedData={proj.graphSavedData as never}
             achievementStandardsAnalysis={achievementStandardsAnalysis}

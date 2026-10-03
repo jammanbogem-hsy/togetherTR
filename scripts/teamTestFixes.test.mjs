@@ -9,6 +9,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
 import { buildSystemPrompt } from '../src/lib/prompts/system.ts'
+import { buildOutlinePrompts, buildDetailPrompts, parseOutline } from '../src/lib/problem-situation/generation.ts'
+import { parsePsReady, cleanPsReady } from '../src/lib/problem-situation/readySignal.ts'
 import { ACTIVITY_META, displayActivityCode } from '../src/types/index.ts'
 import { artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
 import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction } from '../src/lib/artifacts/schemas.ts'
@@ -63,6 +65,61 @@ for (const [text, expected] of [
     assert.equal(isRequest(text), expected)
   })
 }
+
+const problemContext = {
+  projectTitle: '동네 폭염과 그늘', targetGradeGroup: '1-2학년군', targetSubjects: ['사회', '국어'],
+  nodeContext: '(성취기준 데이터 없음)',
+  achievementStandardsAnalysis: '1-2학년군 [2바02-01], 3-4학년군 [4사08-02], 5-6학년군 [6사02-01]',
+}
+const problemOutline = parseOutline(JSON.stringify({
+  drivingQuestion: '우리 동네에서 누가 더위에 힘들까?',
+  candidates: [{ title: '그늘 지도', scenario: '필요한 그늘을 제안한다.', dataSources: '동네 지도' }],
+  recommended: { index: 0 },
+}))
+
+test('22: 여러 학년군 워크숍은 개요·상세 모두 학년군별 역할과 분석 기반 성취기준 연결을 지시한다', () => {
+  const ctx = { ...problemContext, teamGradeBands: ['1-2', '3-4', '5-6'] }
+  const prompts = [buildOutlinePrompts(ctx), ...['scenario', 'plan'].map(part => buildDetailPrompts(ctx, problemOutline, 0, part))]
+  for (const { user } of prompts) {
+    assert.match(user, /팀 학년군: 1-2, 3-4, 5-6 — 여러 학년군 협력 수업/)
+    assert.match(user, /공통 문제상황 안에서 학년군별 학생 역할·과제·산출물 장면을 나누고/)
+    assert.match(user, /A-2-1 분석에 있는 성취기준에서 각 학년군을 고르게 포함한다/)
+    assert.match(user, /A-2-1 에 없는 성취기준을 새로 만들지 않는다/)
+    assert.ok(user.includes(problemContext.achievementStandardsAnalysis))
+  }
+})
+
+test('22: 한 학년군 워크숍은 여러 학년군 지시 없이 기존 프롬프트와 같다', () => {
+  const ctx = { ...problemContext, teamGradeBands: ['1-2'] }
+  assert.deepEqual(buildOutlinePrompts(ctx), buildOutlinePrompts(problemContext))
+  for (const part of ['scenario', 'plan']) {
+    assert.deepEqual(buildDetailPrompts(ctx, problemOutline, 0, part), buildDetailPrompts(problemContext, problemOutline, 0, part))
+  }
+  assert.doesNotMatch(buildOutlinePrompts(ctx).user, /팀 학년군:|여러 학년군 협력 수업|학년군별 학생 역할/)
+})
+
+test('23·24: 성취기준 코드 뒤 분리된 저장 표시도 행 내용과 탐구 질문을 온전히 읽고 숨긴다', () => {
+  const body = '그늘막 위치를 제안하며 [4사08-02]·[6사02-01]을 적용한다.'
+  const text = `${body}\n[PS_READY: 제목=그늘 지도|행1=동네 폭염을 조사한다.|행2=주민의 필요를 비교한다.|행3=사진·지도 자료로 그늘막 위치를 제안하며 [4사08-02]·[6사02-01]을 적용한다.][핵심질문=누구에게 그늘이 필요할까?][탐구1=누가 이 길을 이용할까?][탐구2=그늘이 어디에 있을까?][탐구3=어디를 먼저 바꿀까?]`
+  const parsed = parsePsReady(text)
+  assert.equal(parsed.scenario.row3, `사진·지도 자료로 ${body}`)
+  assert.equal(parsed.drivingQuestion, '누구에게 그늘이 필요할까?')
+  assert.deepEqual(parsed.essentialQuestions, ['누가 이 길을 이용할까?', '그늘이 어디에 있을까?', '어디를 먼저 바꿀까?'])
+  assert.equal(cleanPsReady(text), body)
+})
+
+test('23·24: 기존 한 묶음 저장 형식도 일반 대괄호·구분자를 보존하고 저장 표시만 제거한다', () => {
+  const body = '[4사08-02]·[6사02-01]을 적용한다. [참고=동네 지도]'
+  const signal = '[PS_READY: 제목=그늘 지도|행1=폭염을 살핀다.|행2=[4사08-02]·[6사02-01]을 적용한다.|행3=사진 | 지도 자료를 주민에게 설명한다.|핵심질문=어디에 그늘이 필요할까?|탐구1=누가 더 힘들까?|탐구2=어떤 자료가 필요할까?|탐구3=어떤 제안이 좋을까?]'
+  const parsed = parsePsReady(`${body}\n${signal}\n완료했습니다.`)
+  assert.equal(parsed.scenario.row2, '[4사08-02]·[6사02-01]을 적용한다.')
+  assert.equal(parsed.scenario.row3, '사진 | 지도 자료를 주민에게 설명한다.')
+  assert.equal(parsed.drivingQuestion, '어디에 그늘이 필요할까?')
+  assert.equal(parsed.essentialQuestions.length, 3)
+  assert.equal(cleanPsReady(`${body}\n${signal}\n완료했습니다.`), `${body}\n\n완료했습니다.`)
+  assert.equal(parsePsReady(body), null)
+  assert.equal(cleanPsReady(`${body}\n[PS_READY: 제목=그늘 [4사08-02]`), body)
+})
 
 const rows = Array.from({ length: 10 }, (_, i) => ({
   id: `row-${i}`, subject: i === 0 ? '국어' : '사회', isCenter: i === 0,
