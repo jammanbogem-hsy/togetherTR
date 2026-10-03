@@ -10,7 +10,7 @@ import { buildAlignment, type AlignmentLink } from '@/lib/curriculum/alignment'
 import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
 import { useAchievementLevels } from '@/lib/curriculum/useAchievementLevels'
 import { displayActivityCode, type CurriculumSheetRow } from '@/types'
-import { AchievementLevelList, LevelBadge } from './AchievementLevelDisclosure'
+import { AchievementLevelList } from './AchievementLevelDisclosure'
 
 type ArtifactMap = Record<string, { content?: Record<string, unknown> | null } | undefined>
 
@@ -27,7 +27,6 @@ function LinkList({ links, emptyText, artifactReady, noCodes = false }: { links:
     <ul className="space-y-1">
       {links.map((link, i) => (
         <li key={i} className="flex items-start gap-1.5 text-[12px] leading-relaxed text-[#3C4043]">
-          <span className="flex shrink-0 gap-0.5 pt-px">{link.levels.map(l => <LevelBadge key={l} level={l} />)}</span>
           <span>{link.label}</span>
         </li>
       ))}
@@ -61,9 +60,7 @@ export function AlignmentMatrixCard({ artifacts, curriculumSheet }: {
   const gaps = alignment.rows.filter(r =>
     (checksActivities && r.activities.length === 0) || (checksEvaluations && r.evaluations.length === 0),
   ).length
-  const noALevel = alignment.hasActivityArtifact
-    ? alignment.rows.filter(r => r.activities.length > 0 && !r.activities.some(a => a.levels.includes('A'))).length
-    : 0
+  // 수준 글자(A·B·C) 배지·범례·A 수준 안내는 보이지 않는다(TASK-046b). 예전 데이터의 글자는 저장본에 그대로 둔다.
 
   return (
     <section className="rounded-2xl border border-[#DADCE0] bg-white overflow-hidden [word-break:keep-all]">
@@ -84,7 +81,7 @@ export function AlignmentMatrixCard({ artifacts, curriculumSheet }: {
       {open && (
         <div>
           <p className="border-b border-[#F1F3F4] px-4 py-1.5 text-[11px] text-[#5F6368]" data-testid="alignment-legend">
-            A·B·C = 이 활동·평가가 겨냥하는 성취수준(A가 가장 높음) · N차시 = {displayActivityCode('Ds-1-3')} 학습 활동의 누적 차시
+            N차시 = {displayActivityCode('Ds-1-3')} 학습 활동의 누적 차시
           </p>
           {error && <p className="px-4 py-2 text-[12px] text-[#C5221F]">{error}</p>}
           <div className="overflow-x-auto">
@@ -135,12 +132,7 @@ export function AlignmentMatrixCard({ artifacts, curriculumSheet }: {
                 {displayActivityCode('Ds-1-1')} 평가 계획에 성취기준 코드가 적혀 있지 않아 평가 연결을 판단할 수 없어요. 평가 요소마다 근거 성취기준 코드(예: [2국03-02])를 적으면 연결됩니다.
               </p>
             )}
-            {noALevel > 0 && (
-              <p className="font-semibold text-[#B06000]">
-                활동은 있지만 A 수준을 겨냥한 활동이 없는 성취기준 {noALevel}개 — 학생이 A 수준 행동을 해 볼 기회가 있는지 확인해 보세요.
-              </p>
-            )}
-            <p>연결은 산출물에 적힌 성취기준 코드로만 판단합니다. 코드 옆 A·B·C 표시는 그 활동·평가가 겨냥하는 수준입니다. 빈칸이 있으면 채팅에서 &ldquo;정렬 점검 빈칸을 채워 줘&rdquo;처럼 요청해 보세요.</p>
+            <p>연결은 산출물에 적힌 성취기준 코드로만 판단합니다. 빈칸이 있으면 채팅에서 &ldquo;정렬 점검 빈칸을 채워 줘&rdquo;처럼 요청해 보세요.</p>
           </div>
         </div>
       )}

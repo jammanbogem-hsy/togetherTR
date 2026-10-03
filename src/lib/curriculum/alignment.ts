@@ -147,6 +147,11 @@ function linksFor(code: string, sources: LinkSource[]): AlignmentLink[] {
  * 성취기준 코드별로 그 코드를 근거로 적은 평가 요소(Ds-1-1)와 학습 활동(Ds-1-3)을 모은다.
  * @MX:NOTE [AUTO] 연결은 코드 표기로만 — 빈칸이 곧 점검 결과다
  */
+/** 활동·평가 연결 중 수준 글자(A·B·C)가 하나라도 적힌 것이 있는지 — 없으면 배지·범례·A 수준 안내를 숨긴다(TASK-046). */
+export function hasLevelBadges(result: Pick<AlignmentResult, 'rows'>): boolean {
+  return result.rows.some(row => [...row.activities, ...row.evaluations].some(link => link.levels.length > 0))
+}
+
 export function buildAlignment(
   codes: readonly string[],
   ds11Content: unknown,

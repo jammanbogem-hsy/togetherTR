@@ -92,7 +92,7 @@ export async function POST(request: Request) {
       activityCode,
       collectDesignStandardCodes(confirmedArtifacts, project.curriculumSheet),
     )
-    // Ds-1-1·Ds-1-3: 근거 표기에 쓸 수 있는 코드를 명시한다(#39 지어낸 코드·#41 수준 글자 누락). 저장 관문과 같은 목록.
+    // Ds-1-1·Ds-1-3: 근거 표기에 쓸 수 있는 코드를 명시한다(#39 지어낸 코드 — 수준 글자 A·B·C는 쓰지 않음, TASK-046). 저장 관문과 같은 목록.
     const allowedEvidenceContext = buildAllowedEvidenceCodesContext(
       activityCode,
       extractStandardCodes(designStandardSources(confirmedArtifacts, project.curriculumSheet).join('\n')),
