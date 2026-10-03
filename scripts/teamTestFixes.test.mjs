@@ -43,6 +43,16 @@ for (const [text, expected] of [
   })
 }
 
+test('16: AI 저장 확인 선택 문구는 로컬 시트 저장 요청이 아니다', () => {
+  const isRequest = loadChatFunction('isA21SheetArtifactRequest', { currentActivity: 'A-2-1' })
+  assert.equal(isRequest('A안을 선택하겠습니다. "이 분석표를 현재 내용으로 산출물에 저장하겠습니다"'), false)
+})
+
+test('16: 순수한 시트 기반 분석표 생성 요청은 로컬 처리를 유지한다', () => {
+  const isRequest = loadChatFunction('isA21SheetArtifactRequest', { currentActivity: 'A-2-1' })
+  assert.equal(isRequest('분석시트 그대로 분석표 만들어 주세요'), true)
+})
+
 const rows = Array.from({ length: 10 }, (_, i) => ({
   id: `row-${i}`, subject: i === 0 ? '국어' : '사회', isCenter: i === 0,
   gradeBand: i % 2 ? '3-4학년군' : '5-6학년군',

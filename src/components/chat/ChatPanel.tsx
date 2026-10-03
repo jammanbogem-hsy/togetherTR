@@ -3489,6 +3489,8 @@ ${discussionSummary}
   function isA21SheetArtifactRequest(text: string): boolean {
     if (currentActivity !== 'A-2-1') return false
     const compact = text.replace(/\s+/g, '')
+    // 선택 버튼의 응답은 AI가 제안한 내용을 이어서 처리해야 한다.
+    if (/^[A-Z]안을선택/.test(compact)) return false
     // 수정·교체 요청은 시트 그대로 저장하지 않고 AI가 변경 지시를 처리하게 한다.
     const isEditIntent = /(바꾸|바꿔|바꾼|대신|고쳐|고친|수정|변경|교체|추가|빼|뺀|제외|삭제|넣어|넣은)/.test(compact)
     if (isEditIntent) return false
