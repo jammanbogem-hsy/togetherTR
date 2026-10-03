@@ -176,7 +176,8 @@ test('15b: 부분 답 재시도는 같은 ID의 Firestore 문서와 로컬 메�
   })
   await send(original.content, true)
   assert.equal(additions.length, 0)
-  assert.deepEqual(replacements, [['partial-answer', '완성된 답변']])
+  // TASK-017: 세 번째 인자로 새 응답 필드(actionCard 등)를 함께 넘긴다.
+  assert.deepEqual(replacements.map(args => args.slice(0, 2)), [['partial-answer', '완성된 답변']])
   assert.equal(writes.length, 1)
   assert.equal(writes[0][0], 'test')
   assert.equal(writes[0][1], 'A-2-1')
@@ -618,4 +619,61 @@ test('016b: 비워진 그래프는 null 로 바뀌어 대체 성취기준 목록
 
 test('016c: 좁은 화면 미디어쿼리는 정확히 900px 미만(소수 폭 포함)이다', () => {
   assert.equal(TASK016_NARROW_QUERY, 'not all and (min-width: 900px)')
+})
+
+// ─── TASK-017: 대체 후보 범위·순위·상한·트리거, 재시도 대체 시각 유지 ─────────
+const task017Ctx = await import('../src/lib/curriculum/contextInject.ts')
+const task017Rows = [
+  { gradeBand: '3-4학년군', subject: '사회', coreIdea: '우리 사회는 다양한 사회문제를 경험하고 시민의 역할이 중요하다.', standard: '[4사03-01] 최근 사회 변화의 양상과 특징을 파악한다.' },
+  { gradeBand: '3-4학년군', subject: '과학', coreIdea: '지구의 기후시스템은 인간 활동 등의 영향을 받는다.', standard: '[4과13-02] 태양계 구성원을 알고 조사할 수 있다.' },
+  { gradeBand: '5-6학년군', subject: '사회', coreIdea: '기후 환경은 지역의 생활양식에 중요하게 작용한다.', standard: '[6사02-01] 우리나라의 계절별 기후 특징을 탐구한다.' },
+]
+const task017Bands = ['1-2', '3-4', '5-6']
+const task017Msg = text => [{ role: 'assistant', content: '분석을 시작합니다.' }, { role: 'user', content: `[잠만보잠만보]: ${text}` }]
+const task017Codes = block => [...block.matchAll(/\[(\d[가-힣]{1,3}\d{2}-\d{2})\]/g)].map(m => m[1])
+
+test('017-d1: 요청에 학년군·교과가 있으면 그 범위로만 대체 후보를 만든다', () => {
+  const block = task017Ctx.buildReplacementStandardsContext(task017Msg('사회 3-4는 지역 문제·주민 참여 성취기준으로 바꿔 주세요'), '5-6', task017Bands, { sheetRows: task017Rows })
+  assert.match(block, /### 3-4학년군/)
+  assert.doesNotMatch(block, /### 1-2학년군|### 5-6학년군/)
+  const codes = task017Codes(block)
+  assert.ok(codes.length > 0 && codes.length <= 5)
+  assert.equal(codes[0], '4사08-02')
+  assert.ok(codes.every(code => code.startsWith('4사')), codes.join(','))
+})
+
+test('017-d2: "X 대신"의 X는 검색에서 빠지고, 교과·학년 언급이 없으면 시트 교과 안에서만 찾는다', () => {
+  const sci = task017Ctx.buildReplacementStandardsContext(task017Msg('과학 4학년은 태양계 대신 기후변화 쪽으로 교체해 주세요'), '5-6', task017Bands, { sheetRows: task017Rows })
+  const sciCodes = task017Codes(sci)
+  assert.ok(sciCodes.includes('4과16-01') && sciCodes.includes('4과16-03'), sciCodes.join(','))
+  assert.ok(sciCodes.every(code => code.startsWith('4과')))
+  assert.doesNotMatch(sci, /태양계 구성원/)
+  const open = task017Ctx.buildReplacementStandardsContext(task017Msg('폭염 대응이랑 더 맞는 성취기준으로 바꿔 주세요'), '5-6', task017Bands, { sheetRows: task017Rows })
+  assert.ok(task017Codes(open).every(code => /^\d(사|과)/.test(code)), task017Codes(open).join(','))
+  assert.doesNotMatch(open, /\[\d수|\[\d실|\[\d도/)
+})
+
+test('017-d3: 교체 의도(바꿔·대신·교체·대체)에만 붙고 "추가"·"수정"만으로는 붙지 않는다', () => {
+  for (const text of ['사회 3-4에 지역 문제 성취기준도 추가해 주세요', '사회 3-4 행을 수정해 주세요', '이 성취기준 넣어 주세요']) {
+    assert.equal(task017Ctx.buildReplacementStandardsContext(task017Msg(text), '5-6', task017Bands, { sheetRows: task017Rows }), '', text)
+  }
+  assert.equal(task017Ctx.buildReplacementStandardsContext([{ role: 'user', content: '[시스템 리마인더] 현재 활동: A-3. 바꿔 주세요' }], '5-6', task017Bands), '')
+})
+
+test('017-d4: 대체 블록을 포함해도 여러 학년군 컨텍스트 전체가 24,000자를 넘지 않는다', () => {
+  const full = task017Ctx.buildCurriculumContext('A-2-1', task017Msg('사회 3-4는 지역 문제·주민 참여 성취기준으로 바꿔 주세요'), '5-6', {}, null, [], task017Bands, task017Rows)
+  assert.match(full, /## 대체 후보 성취기준/)
+  assert.ok(full.length <= 24_000, String(full.length))
+  assert.equal((full.match(/\[9[가-힣]/g) ?? []).length, 0)
+})
+
+test('017-b: 재시도로 부분 답을 대체할 때 기존 createdAt 을 유지하고 로컬에도 새 응답 필드를 반영한다', () => {
+  const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  assert.match(projects, /createdAt: createdAt \?\? serverTimestamp\(\)/)
+  const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(chatSource, /const replacedCreatedAt = replacingResponse \? messages\.find\(m => m\.id === newMsgId\)\?\.createdAt : undefined/)
+  assert.match(chatSource, /\}, newMsgId, replacedCreatedAt\)/)
+  assert.match(chatSource, /replaceMessage\(newMsgId, finalText, \{[\s\S]{0,200}actionCard: parsedActionCardD\?\.card/)
+  const store = fs.readFileSync(new URL('../src/store/project.ts', import.meta.url), 'utf8')
+  assert.match(store, /messages: state\.messages\.map\(m => m\.id === id \? \{ \.\.\.m, \.\.\.fields, content \} : m\)/)
 })

@@ -3278,11 +3278,12 @@ export async function saveMessage(
   projectId: string,
   activityCode: ActivityCode,
   data: Omit<Message, 'id' | 'createdAt'>,
-  id?: string  // 미리 생성한 ID를 넘기면 setDoc, 없으면 addDoc
+  id?: string,  // 미리 생성한 ID를 넘기면 setDoc, 없으면 addDoc
+  createdAt?: Message['createdAt'],  // 같은 문서를 덮어쓸 때 기존 시각을 유지해 대화 위치를 지킨다
 ): Promise<string> {
   // Firestore는 undefined 값을 허용하지 않으므로 제거
   const clean = Object.fromEntries(
-    Object.entries({ ...data, createdAt: serverTimestamp() })
+    Object.entries({ ...data, createdAt: createdAt ?? serverTimestamp() })
       .filter(([, v]) => v !== undefined)
   )
   if (id) {

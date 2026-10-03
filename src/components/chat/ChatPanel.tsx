@@ -3761,7 +3761,13 @@ ${discussionSummary}
           const replacingResponse = !!responseMessageId
           const newMsgId = responseMessageId ?? generateMessageId(proj.id, currentActivity)
           responseMessageId = newMsgId
-          if (replacingResponse) replaceMessage(newMsgId, finalText)
+          // 재시도로 끊긴 부분 답을 대체할 때는 원래 작성 시각을 유지해 대화 위치가 바뀌지 않게 한다.
+          const replacedCreatedAt = replacingResponse ? messages.find(m => m.id === newMsgId)?.createdAt : undefined
+          if (replacingResponse) replaceMessage(newMsgId, finalText, {
+            activityType: '생성', agentType: 'orchestrator',
+            actionCard: parsedActionCardD?.card,
+            actionCardState: parsedActionCardD ? 'pending' as const : undefined,
+          })
           else addMessage({ id: newMsgId, role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now(),
             ...(parsedActionCardD ? { actionCard: parsedActionCardD.card, actionCardState: 'pending' as const } : {}),
           })
@@ -3772,7 +3778,7 @@ ${discussionSummary}
             role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
             cycleNumber: proj.currentCycle ?? 1,
             ...(parsedActionCardD ? { actionCard: parsedActionCardD.card, actionCardState: 'pending' as const } : {}),
-          }, newMsgId)
+          }, newMsgId, replacedCreatedAt)
             .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
             .catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })

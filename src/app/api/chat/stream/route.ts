@@ -83,6 +83,7 @@ export async function POST(request: Request) {
       graphSavedData,
       project.targetSubjects,
       project.teamGradeBands,
+      project.curriculumSheet,
     )
     // A-2-2 / Ds 단계: 확정된 성취기준의 공식 성취수준(A·B·C) 원문 주입 — 코드로만 매칭
     const achievementLevelContext = buildAchievementLevelContext(

@@ -44,7 +44,8 @@ interface ProjectStore {
   // 메시지
   messages: Message[]
   addMessage: (msg: Message) => void
-  replaceMessage: (id: string, content: string) => void
+  /** fields를 주면 새 응답의 필드(actionCard 등)도 함께 바꾼다. undefined 값은 기존 필드를 지운다. */
+  replaceMessage: (id: string, content: string, fields?: Partial<Omit<Message, 'id' | 'content'>>) => void
   setMessages: (msgs: Message[]) => void
   messagesLoaded: boolean          // Firestore 첫 응답 여부
   setMessagesLoaded: (v: boolean) => void
@@ -144,8 +145,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       ? state
       : { messages: [...state.messages, msg] }
   ),
-  replaceMessage: (id, content) => set((state) => ({
-    messages: state.messages.map(m => m.id === id ? { ...m, content } : m),
+  replaceMessage: (id, content, fields) => set((state) => ({
+    messages: state.messages.map(m => m.id === id ? { ...m, ...fields, content } : m),
   })),
   setMessages: (msgs) => set({
     messages: Array.from(new Map(msgs.map(m => [m.id, m])).values()),

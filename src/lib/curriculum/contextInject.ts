@@ -578,34 +578,115 @@ function searchMergedStandards(keywords: string[], gradeGroup: string, topK: num
 /** 여러 학년군 컨텍스트 총 길이 상한 — 학년군 수만큼 늘어나므로 프롬프트 폭주를 막는다. */
 const MULTI_BAND_CONTEXT_LIMIT = 24_000
 
-/** 시트에 없는 성취기준 대체 요청을 위한 최근 교사 발언 기반 후보. 초등 학년군마다 최대 5개. */
+/** 대체 후보 순위에 쓰는 분석시트 행 (교과·학년군 범위와 핵심아이디어 키워드). */
+export interface ReplacementSheetRow {
+  gradeBand?: string
+  subject?: string
+  coreIdea?: string
+  standard?: string
+}
+
+// 교체 의도 — '추가'·'넣어'·'수정'만으로는 대체 후보를 붙이지 않는다.
+const REPLACEMENT_INTENT = /바꿔|바꾸|바꿀|대신|교체|대체/
+// 초등 교과명 → 성취기준 코드의 교과 글자 ([4사08-02] → '사')
+const SUBJECT_CODE_CHARS: Array<[RegExp, string]> = [
+  [/국어/, '국'], [/수학/, '수'], [/사회/, '사'], [/과학/, '과'], [/도덕/, '도'], [/실과/, '실'],
+  [/음악/, '음'], [/미술/, '미'], [/체육/, '체'], [/영어/, '영'],
+  [/바른\s*생활/, '바'], [/슬기로운\s*생활/, '슬'], [/즐거운\s*생활/, '즐'],
+]
+const REPLACEMENT_STOPWORDS = new Set([
+  '성취기준', '바꿔', '바꾸', '바꿀', '대신', '교체', '교체해', '대체', '주세요', '해주세요', '학년', '학년군',
+  '쪽으', '쪽', '기준', '으로', '주제', '내용', '관련', '해서', '좋겠어요',
+])
+
+function subjectCodeCharsIn(text: string): string[] {
+  return SUBJECT_CODE_CHARS.filter(([pattern]) => pattern.test(text)).map(([, char]) => char)
+}
+
+function standardSubjectChar(code: string): string {
+  return code.replace(/^\[/, '').match(/^\d{1,2}([가-힣])/)?.[1] ?? ''
+}
+
+/** 요청 문장 속 학년군(3-4, 3~4, 4학년 등)을 초등 학년군 라벨로 읽는다. */
+function requestedGradeBands(text: string): string[] {
+  const values: string[] = []
+  for (const match of text.matchAll(/([1-6])\s*[-~·]\s*([1-6])/g)) values.push(`${match[1]}-${match[2]}`)
+  for (const match of text.matchAll(/([1-6])\s*학년(?!군)/g)) {
+    const grade = Number(match[1])
+    const low = grade % 2 === 0 ? grade - 1 : grade
+    values.push(`${low}-${low + 1}`)
+  }
+  return normalizeTeamGradeBands(values)
+}
+
+/** 'X 대신'의 X는 버리려는 대상이라 검색 키워드에서 뺀다. */
+function replacedTerms(text: string): Set<string> {
+  return new Set([...text.matchAll(/([가-힣A-Za-z0-9]+)\s*대신/g)].flatMap(match => extractNounChunks(match[1])))
+}
+
+/**
+ * 시트에 없는 성취기준으로 바꿔 달라는 요청을 위한 대체 후보. 초등 학년군마다 최대 5개.
+ * - 요청에 학년군·교과가 있으면 그 범위로만, 없으면 팀 학년군과 분석시트(없으면 팀 교과) 교과 안에서만 찾는다.
+ * - 순위: 요청 키워드 일치(가중 2) + 분석시트 핵심아이디어·확정 주제 키워드 일치(가중 1). 요청 키워드가 하나도 맞지 않는 후보는 뺀다.
+ */
 export function buildReplacementStandardsContext(
   messages: Array<{ role: string; content: string }>,
   gradeGroup: string,
   teamGradeBands?: readonly (string | null | undefined)[] | null,
+  options: {
+    sheetRows?: readonly ReplacementSheetRow[] | null
+    confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>
+    targetSubjects?: readonly string[]
+  } = {},
 ): string {
   const recent = messages
     .filter(message => message.role === 'user' && !message.content.startsWith('[시스템 리마인더]'))
     .slice(-3)
     .map(message => ({ ...message, content: message.content.replace(/^\[[^\]]+\]:\s*/, '') }))
-  if (!recent.some(message => /바꿔|바꾸|대신|고쳐|수정|교체|추가|넣어/.test(message.content))) return ''
-  const bands = normalizeTeamGradeBands(teamGradeBands)
-  const allowedBands = bands.length ? bands : normalizeTeamGradeBands([gradeGroup])
-  if (!allowedBands.length) return ''
-  const keywords = extractKeywords(recent)
-  if (!keywords.length) return ''
-  const blocks = allowedBands.map(band => {
+  const request = [...recent].reverse().find(message => REPLACEMENT_INTENT.test(message.content))
+  if (!request) return ''
+
+  const teamBands = normalizeTeamGradeBands(teamGradeBands)
+  const baseBands = teamBands.length ? teamBands : normalizeTeamGradeBands([gradeGroup])
+  if (!baseBands.length) return ''
+  const askedBands = requestedGradeBands(request.content).filter(band => (baseBands as string[]).includes(band))
+  const bands: string[] = askedBands.length ? askedBands : baseBands
+
+  const sheetRows = options.sheetRows ?? []
+  const askedSubjects = subjectCodeCharsIn(request.content)
+  const scopeSubjects = askedSubjects.length
+    ? askedSubjects
+    : [...new Set([
+        ...sheetRows.flatMap(row => [standardSubjectChar(row.standard ?? ''), ...subjectCodeCharsIn(row.subject ?? '')]),
+        ...(options.targetSubjects ?? []).flatMap(subjectCodeCharsIn),
+      ].filter(Boolean))]
+
+  const dropped = replacedTerms(request.content)
+  const requestKeywords = extractNounChunks(request.content)
+    .filter(word => word.length >= 2 && !REPLACEMENT_STOPWORDS.has(word) && !dropped.has(word) && !subjectCodeCharsIn(word).length)
+  if (!requestKeywords.length) return ''
+  const contextKeywords = [...new Set([
+    ...sheetRows.flatMap(row => extractNounChunks(row.coreIdea ?? '')),
+    ...extractKeywords([], options.confirmedArtifacts),
+  ])].filter(word => word.length >= 2 && !requestKeywords.includes(word) && !dropped.has(word))
+
+  const blocks = bands.map(band => {
     const code = toGradeGroupCode(band)
-    const found = new Map<string, CurriculumStandard>()
-    for (const standard of searchMergedStandards(keywords, code, 10)) {
+    const scored = new Map<string, { standard: CurriculumStandard; score: number }>()
+    for (const standard of searchMergedStandards([...requestKeywords, ...contextKeywords], code, 40)) {
       if (standard.grade_band !== code) continue
+      if (scopeSubjects.length && !scopeSubjects.includes(standardSubjectChar(standard.code))) continue
+      const text = `${standard.text} ${standard.area ?? ''} ${(standard.keywords ?? []).join(' ')}`
+      const requestHits = requestKeywords.filter(word => text.includes(word)).length
+      if (requestHits === 0) continue
+      const score = requestHits * 2 + contextKeywords.filter(word => text.includes(word)).length
       const key = standard.code.replace(/^\[|\]$/g, '')
-      if (!found.has(key)) found.set(key, standard)
+      if ((scored.get(key)?.score ?? -1) < score) scored.set(key, { standard, score })
     }
-    const candidates = [...found.values()].slice(0, 5)
-    return `### ${band}\n${candidates.map(standard => `${standard.code} — ${standard.text}`).join('\n') || '(대체 후보 없음 — 확인 필요)'}`
+    const candidates = [...scored.values()].sort((a, b) => b.score - a.score).slice(0, 5)
+    return `### ${band}\n${candidates.map(({ standard }) => `${standard.code} — ${standard.text}`).join('\n') || '(대체 후보 없음 — 확인 필요)'}`
   })
-  return `\n\n## 대체 후보 성취기준 (최근 사용자 요청 기반, 학년군별 최대 5개)\n${blocks.join('\n\n')}\n▶ 대체 요청 시 해당 학년군의 이 후보에서만 고르고, 후보가 없으면 확인 필요로 안내한다. 성취기준 코드·원문을 지어내지 않는다.`
+  return `\n\n## 대체 후보 성취기준 (최근 교체 요청 기반, 학년군별 최대 5개)\n${blocks.join('\n\n')}\n▶ 대체 요청 시 해당 학년군의 이 후보에서만 고르고, 후보가 없으면 확인 필요로 안내한다. 성취기준 코드·원문을 지어내지 않는다.`
 }
 
 /**
@@ -623,6 +704,7 @@ function buildMultiBandCurriculumContext(
   confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown> }>,
   graphSavedData?: GraphSavedData | null,
   targetSubjects: string[] = [],
+  limit = MULTI_BAND_CONTEXT_LIMIT,
 ): string {
   const keywords = extractKeywords(messages, confirmedArtifacts)
   // 학년군 수만큼 블록이 생기므로 학년군별 검색 폭은 좁힌다(단일 학년군 경로는 그대로).
@@ -669,7 +751,7 @@ function buildMultiBandCurriculumContext(
 ⚠️ 블록이 비어 있는 학년군은 "데이터 없음"으로 안내하고 성취기준을 지어내지 말 것.`
 
   // Allocate space per band so a long low-grade block cannot cut off the high-grade team.
-  const blockLimit = Math.floor((MULTI_BAND_CONTEXT_LIMIT - header.length - 600) / blocks.length)
+  const blockLimit = Math.floor((limit - header.length - 600) / blocks.length)
   return dedupeCoreIdeaLines(`\n\n---\n${header}\n\n${blocks.map(block => capContextLength(block, blockLimit)).join('\n\n')}`)
 }
 
@@ -687,11 +769,16 @@ export function buildCurriculumContext(
   graphSavedData?: GraphSavedData | null,
   targetSubjects: string[] = [],
   teamGradeBands?: readonly (string | null | undefined)[] | null,
+  curriculumSheet?: readonly ReplacementSheetRow[] | null,
 ): string {
   // 활성화된 활동인지 확인
   if (!ONTOLOGY_ENABLED_ACTIVITIES.includes(activityCode)) return ''
   const replacementContext = activityCode === 'A-2-1'
-    ? buildReplacementStandardsContext(messages, gradeGroup, teamGradeBands)
+    ? buildReplacementStandardsContext(messages, gradeGroup, teamGradeBands, {
+        sheetRows: curriculumSheet,
+        confirmedArtifacts,
+        targetSubjects,
+      })
     : ''
 
   // 여러 학년군 팀: 학년군마다 컨텍스트를 따로 만든다(한 학년군 팀은 아래 기존 경로 그대로).
@@ -704,6 +791,8 @@ export function buildCurriculumContext(
       confirmedArtifacts,
       graphSavedData,
       targetSubjects,
+      // 대체 후보 블록까지 포함해 전체가 상한을 넘지 않도록 그만큼 줄여 배분한다.
+      MULTI_BAND_CONTEXT_LIMIT - replacementContext.length,
     ) + replacementContext
   }
   if (teamBands.length === 1) gradeGroup = toGradeGroupCode(teamBands[0])
