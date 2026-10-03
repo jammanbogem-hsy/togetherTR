@@ -1,373 +1,160 @@
 'use client'
 
-/**
- * 프로젝트 온톨로지 SVG 그래프.
- *
- * 레이아웃: 5단계 가로 컬럼(T·A·Ds·DI·E) × 활동 세로 슬롯.
- * 노드: 원 + 활동 코드 + 라벨.  채워짐(완료)·테두리(미진행)·halo pulse(현재).
- * 엣지: 순차(얇은 회색) / 단계 전환(진회색) / 가드레일(보라 점선) /
- *        백워드(주황 점선) / 주기 순환(금색 하단 곡선).
- * 인터랙션: onNodeClick 콜백 (있을 때만 cursor pointer).
- */
-
-import { useMemo, useState } from 'react'
-import { STAGES } from '@/types'
-import { STAGE_COLOR, STAGE_LABELS } from '@/lib/ui/stageColors'
+import { useId, useMemo, useRef, useState } from 'react'
+import { ArrowsClockwise, CheckCircle, Graph as GraphIcon } from '@phosphor-icons/react'
+import { STAGES, displayActivityCode, type ActivityCode } from '@/types'
+import { STAGE_LABELS } from '@/lib/ui/stageColors'
+import { EDGE_STYLE, type OntologyGraph, type OntologyNode } from '@/lib/ontology/projectOntology'
 import {
-  ONTOLOGY_LAYOUT,
-  EDGE_STYLE,
-  type OntologyNode,
-  type OntologyEdge,
-  type OntologyGraph,
-} from '@/lib/ontology/projectOntology'
+  GRAPH_LAYOUT as L, ontologyEdgePath, presentOntology, stagePalette, visibleOntologyEdges, wrapActivityLabel,
+} from '@/lib/ontology/graphPresentation'
 
-const L = ONTOLOGY_LAYOUT
-
-function edgePath(e: OntologyEdge, src: OntologyNode, dst: OntologyNode): string {
-  const R = L.NODE_RADIUS
-  if (e.kind === 'concept') {
-    // 개념 연결 — 두 노드 중심을 잇는 부드러운 곡선 (stage 차이 크면 더 휘게)
-    const dx = dst.x - src.x
-    const dy = dst.y - src.y
-    const mx = (src.x + dst.x) / 2
-    const my = (src.y + dst.y) / 2
-    // 직교 오프셋 (절대값 기준)
-    const bulge = Math.max(18, Math.min(Math.sqrt(dx * dx + dy * dy) * 0.12, 60))
-    return `M ${src.x} ${src.y} Q ${mx + bulge * 0.3} ${my - bulge}, ${dst.x} ${dst.y}`
-  }
-  if (e.kind === 'sequential') {
-    // 같은 컬럼 상하 직선 (노드 경계에서 노드 경계까지)
-    return `M ${src.x} ${src.y + R} L ${dst.x} ${dst.y - R}`
-  }
-  if (e.kind === 'stage') {
-    // 단계 전환 — 헤더 라인 수준에서 bezier 곡선 (노드 y 차이 보정)
-    const midX = (src.x + dst.x) / 2
-    const topY = Math.min(src.y, dst.y) - 48
-    return `M ${src.x + R * 0.9} ${src.y - R * 0.3}
-            C ${midX} ${topY}, ${midX} ${topY}, ${dst.x - R * 0.9} ${dst.y - R * 0.3}`
-  }
-  if (e.kind === 'guardrail') {
-    // A-2-3 → 각 Ds 활동: 우측으로 나가서 수평 좌측으로 들어감 (위쪽 우회)
-    const topY = Math.min(src.y, dst.y) - 42
-    return `M ${src.x + R} ${src.y}
-            C ${src.x + L.COL_WIDTH * 0.5} ${topY}, ${dst.x - L.COL_WIDTH * 0.5} ${topY},
-              ${dst.x - R} ${dst.y}`
-  }
-  if (e.kind === 'backward') {
-    // Ds-1-1 → 이후 Ds 활동: 컬럼 내부이나 직선이 아닌 우측 호로 구분
-    const offset = 42
-    return `M ${src.x + R * 0.3} ${src.y + R * 0.3}
-            C ${src.x + offset} ${src.y + offset}, ${dst.x + offset} ${dst.y - offset},
-              ${dst.x + R * 0.3} ${dst.y - R * 0.3}`
-  }
-  if (e.kind === 'cycle') {
-    // E-2-1 → T-1-1: 하단 대형 곡선으로 프로젝트 전체를 감싸는 순환
-    const arcY = Math.max(src.y, dst.y) + 68
-    return `M ${src.x} ${src.y + R}
-            C ${src.x} ${arcY}, ${dst.x} ${arcY}, ${dst.x} ${dst.y + R}`
-  }
-  return ''
-}
-
+/** 크게 읽는 활동 카드 + 단계 사이 여백을 따라 흐르는 연결선. */
 export function ProjectOntologyGraph({
-  graph,
-  onNodeClick,
-  publicMode = false,
-  className,
+  graph, onNodeClick, publicMode = false, selectedId, className,
 }: {
   graph: OntologyGraph
   onNodeClick?: (n: OntologyNode) => void
   publicMode?: boolean
+  selectedId?: ActivityCode | null
   className?: string
 }) {
-  const [hoverId, setHoverId] = useState<string | null>(null)
-
-  const nodeMap = useMemo(() => {
-    const m = new Map<string, OntologyNode>()
-    for (const n of graph.nodes) m.set(n.id, n)
-    return m
-  }, [graph.nodes])
-
-  // hover 시 연결된 엣지·노드를 강조하기 위한 세트
-  const highlightedEdges = useMemo(() => {
-    if (!hoverId) return new Set<string>()
-    const s = new Set<string>()
-    for (const e of graph.edges) {
-      if (e.source === hoverId || e.target === hoverId) s.add(`${e.source}->${e.target}`)
+  const markerId = useId().replace(/:/g, '')
+  const [hoverId, setHoverId] = useState<ActivityCode | null>(null)
+  const [localSelection, setLocalSelection] = useState<ActivityCode | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const refs = useRef(new Map<ActivityCode, SVGGElement>())
+  const view = useMemo(() => presentOntology(graph), [graph])
+  const nodes = useMemo(() => new Map(view.nodes.map(node => [node.id, node])), [view.nodes])
+  const selection = selectedId === undefined ? localSelection : selectedId
+  const focusedId = hoverId ?? selection
+  const related = new Set<ActivityCode>()
+  if (focusedId) {
+    related.add(focusedId)
+    for (const edge of graph.edges) {
+      if (edge.source === focusedId) related.add(edge.target)
+      if (edge.target === focusedId) related.add(edge.source)
     }
-    return s
-  }, [hoverId, graph.edges])
+  }
+  const edges = visibleOntologyEdges(graph.edges, focusedId, showAll)
+  const selected = focusedId ? nodes.get(focusedId) : null
+  const edgeColor = (kind: string, color: string) => kind === 'sequential' ? EDGE_STYLE.stage.color : kind === 'cycle' ? stagePalette('DI').text : color
 
-  const highlightedNodes = useMemo(() => {
-    if (!hoverId) return new Set<string>()
-    const s = new Set<string>([hoverId])
-    for (const e of graph.edges) {
-      if (e.source === hoverId) s.add(e.target)
-      if (e.target === hoverId) s.add(e.source)
-    }
-    return s
-  }, [hoverId, graph.edges])
+  function choose(node: OntologyNode) {
+    setLocalSelection(node.id)
+    // 좌표를 제외한 원래 노드 데이터를 전달한다.
+    onNodeClick?.(graph.nodes.find(original => original.id === node.id) ?? node)
+  }
 
   return (
-    <svg
-      viewBox={`0 0 ${graph.width} ${graph.height}`}
-      className={className}
-      style={{ maxWidth: '100%', height: 'auto' }}
-      role="img"
-      aria-label="프로젝트 온톨로지 그래프"
-    >
-      {/* 마커: 화살표 */}
-      <defs>
-        {Object.entries(EDGE_STYLE).map(([kind, s]) => (
-          <marker
-            key={kind}
-            id={`arrow-${kind}`}
-            viewBox="0 0 10 10"
-            refX={8}
-            refY={5}
-            markerWidth={6}
-            markerHeight={6}
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill={s.color} />
-          </marker>
-        ))}
-      </defs>
-
-      {/* 단계 헤더 */}
-      {STAGES.map((s, idx) => {
-        const c = STAGE_COLOR[s.code]
-        const xCenter = L.COL_START + idx * L.COL_WIDTH
-        return (
-          <g key={s.code}>
-            <rect
-              x={xCenter - 56}
-              y={L.HEADER_Y - 14}
-              width={112}
-              height={32}
-              rx={16}
-              fill={c.hex}
-            />
-            <text
-              x={xCenter}
-              y={L.HEADER_Y + 6}
-              textAnchor="middle"
-              fill="white"
-              fontWeight={800}
-              fontSize={13}
-              style={{ letterSpacing: '-0.02em' }}
-            >
-              {STAGE_LABELS[s.code]}
-            </text>
-          </g>
-        )
-      })}
-
-      {/* 엣지 (노드보다 아래). concept 엣지는 특히 낮은 z로 두어 주요 엣지 가리지 않게 */}
-      {/* 1) 먼저 concept 엣지 (뒤에 깔림) */}
-      {graph.edges.filter(e => e.kind === 'concept').map((e, i) => {
-        const src = nodeMap.get(e.source)
-        const dst = nodeMap.get(e.target)
-        if (!src || !dst) return null
-        const style = EDGE_STYLE[e.kind]
-        const isHl = highlightedEdges.has(`${e.source}->${e.target}`)
-        const baseOpacity = 0.35
-        const boost = (e.strength ?? 2) * 0.3  // 공유 키워드 많을수록 진하게
-        return (
-          <path
-            key={`concept-${e.source}-${e.target}-${i}`}
-            d={edgePath(e, src, dst)}
-            stroke={style.color}
-            strokeWidth={isHl ? style.width + 1.5 : style.width + Math.min(boost, 1.5)}
-            strokeDasharray="3 3"
-            fill="none"
-            opacity={hoverId ? (isHl ? 0.95 : 0.08) : baseOpacity}
-            style={{ transition: 'opacity 180ms, stroke-width 180ms' }}
-          >
-            <title>{`공유 키워드: ${e.sharedKeywords?.join(', ') ?? ''}`}</title>
-          </path>
-        )
-      })}
-      {/* 2) 기존 절차·가드레일·백워드·순환 엣지 (위에 덮기) */}
-      {graph.edges.filter(e => e.kind !== 'concept').map((e, i) => {
-        const src = nodeMap.get(e.source)
-        const dst = nodeMap.get(e.target)
-        if (!src || !dst) return null
-        const style = EDGE_STYLE[e.kind]
-        const isHl = highlightedEdges.has(`${e.source}->${e.target}`)
-        const baseOpacity = e.kind === 'sequential' ? 0.5 : 0.75
-        return (
-          <path
-            key={`${e.source}-${e.target}-${i}`}
-            d={edgePath(e, src, dst)}
-            stroke={style.color}
-            strokeWidth={isHl ? style.width + 1 : style.width}
-            strokeDasharray={style.dashed ? '5 4' : undefined}
-            fill="none"
-            opacity={hoverId ? (isHl ? 1 : 0.15) : baseOpacity}
-            markerEnd={e.kind !== 'sequential' ? `url(#arrow-${e.kind})` : undefined}
-            style={{ transition: 'opacity 180ms, stroke-width 180ms' }}
-          />
-        )
-      })}
-
-      {/* 노드 */}
-      {graph.nodes.map(n => {
-        const c = STAGE_COLOR[n.stage]
-        const filled = n.isDone || n.hasArtifact || (publicMode && n.hasStageReport)
-        const dimmed = hoverId !== null && !highlightedNodes.has(n.id)
-        const opacity = dimmed ? 0.25 : 1
-        return (
-          <g
-            key={n.id}
-            transform={`translate(${n.x}, ${n.y})`}
-            style={{
-              cursor: onNodeClick ? 'pointer' : 'default',
-              transition: 'opacity 180ms',
-              opacity,
-            }}
-            onMouseEnter={() => setHoverId(n.id)}
-            onMouseLeave={() => setHoverId(h => h === n.id ? null : h)}
-            onClick={() => onNodeClick?.(n)}
-          >
-            {/* 현재 활성 노드 halo pulse (SVG SMIL — CSS로 scale 어려워 animate 사용) */}
-            {n.isCurrent && (
-              <>
-                <circle r={L.NODE_RADIUS + 4} fill="none" stroke={c.hex} strokeWidth={2}>
-                  <animate
-                    attributeName="r"
-                    values={`${L.NODE_RADIUS + 2};${L.NODE_RADIUS + 10};${L.NODE_RADIUS + 2}`}
-                    dur="1.8s"
-                    repeatCount="indefinite"
-                  />
-                  <animate
-                    attributeName="opacity"
-                    values="0.15;0.65;0.15"
-                    dur="1.8s"
-                    repeatCount="indefinite"
-                  />
-                </circle>
-              </>
-            )}
-            {/* 본체 원 */}
-            <circle
-              r={L.NODE_RADIUS}
-              fill={filled ? c.hex : 'white'}
-              stroke={c.hex}
-              strokeWidth={3}
-            />
-            {/* 활동 코드 */}
-            <text
-              textAnchor="middle"
-              y={4}
-              fill={filled ? 'white' : c.hex}
-              fontSize={10}
-              fontWeight={800}
-              style={{ pointerEvents: 'none' }}
-            >
-              {n.id}
-            </text>
-            {/* 뱃지: 가드레일 소스(A-2-3) / 백워드 시작(Ds-1-1) */}
-            {n.isGuardrailSource && (
-              <g transform={`translate(${L.NODE_RADIUS * 0.75}, ${-L.NODE_RADIUS * 0.75})`}>
-                <circle r={7} fill="#7B1FA2" />
-                <text textAnchor="middle" y={3} fill="white" fontSize={8} fontWeight={800} style={{ pointerEvents: 'none' }}>G</text>
+    <div className={`min-w-0 ${className ?? ''}`}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm leading-relaxed text-[#5F6368]" aria-live="polite">
+          {selected ? `${displayActivityCode(selected.id)} · ${selected.label}의 연결을 보고 있습니다.` : '활동을 선택하면 연결된 개념과 설계 기준을 확인할 수 있습니다.'}
+        </p>
+        <button type="button" aria-pressed={showAll} onClick={() => setShowAll(value => !value)}
+          className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[#E8F0FE] px-4 text-sm font-semibold text-[#1558D6] hover:bg-[#D2E3FC] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]">
+          <GraphIcon size={18} aria-hidden="true" />{showAll ? '기본 흐름 보기' : '모든 연결 보기'}
+        </button>
+      </div>
+      <div className="overflow-x-auto rounded-2xl bg-white" tabIndex={0} role="region" aria-label="수업설계 구조도, 좁은 화면에서는 가로로 탐색하세요">
+        <svg viewBox={`0 0 ${view.width} ${view.height}`} width={view.width} height={view.height}
+          style={{ width: '100%', minWidth: view.width, height: 'auto', display: 'block', fontFamily: "'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif" }}
+          aria-label="5단계 활동과 교육적 연결" role="group">
+          <defs>
+            {Object.entries(EDGE_STYLE).map(([kind, style]) => (
+              <marker key={kind} id={`${markerId}-${kind}`} viewBox="0 0 10 10" refX={9} refY={5} markerWidth={5} markerHeight={5} orient="auto">
+                <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke={edgeColor(kind, style.color)} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+              </marker>
+            ))}
+          </defs>
+          <rect width={view.width} height={view.height} fill="white" aria-hidden="true" />
+          {STAGES.map((stage, index) => {
+            const palette = stagePalette(stage.code)
+            const x = L.firstColumn + index * L.column
+            return (
+              <g key={stage.code} aria-hidden="true">
+                <rect x={x - L.cardWidth / 2 - 10} y={100} width={L.cardWidth + 20} height={view.height - 168} rx={24} fill={palette.surface} fillOpacity={0.48} />
+                <rect x={x - L.cardWidth / 2} y={L.headerY} width={L.cardWidth} height={L.headerHeight} rx={20} fill={palette.surface} />
+                <circle cx={x - 86} cy={54} r={16} fill={palette.text} />
+                <text x={x - 86} y={59} textAnchor="middle" fontSize={14} fontWeight={700} fill="white">{index + 1}</text>
+                <text x={x - 60} y={51} fontSize={18} fontWeight={750} fill={palette.text}>{STAGE_LABELS[stage.code]}</text>
+                <text x={x - 60} y={70} fontSize={12} fill="#5F6368">{stage.activities.length}개 활동</text>
               </g>
-            )}
-            {n.isBackwardFirst && (
-              <g transform={`translate(${L.NODE_RADIUS * 0.75}, ${-L.NODE_RADIUS * 0.75})`}>
-                <circle r={7} fill="#E65100" />
-                <text textAnchor="middle" y={3} fill="white" fontSize={8} fontWeight={800} style={{ pointerEvents: 'none' }}>B</text>
-              </g>
-            )}
-            {/* 라벨 (노드 아래) */}
-            <text
-              textAnchor="middle"
-              y={L.NODE_RADIUS + 14}
-              fill="#3C4043"
-              fontSize={10}
-              fontWeight={n.isCurrent ? 700 : 500}
-              style={{ pointerEvents: 'none' }}
-            >
-              {truncate(n.label, 9)}
-            </text>
-            {/* 핵심 개념 개수 배지 — 숫자만 간결히. 자세한 해시태그는 드로어에서 확인. */}
-            {n.keywords && n.keywords.length > 0 && (
-              <g transform={`translate(0, ${L.NODE_RADIUS + 28})`}>
-                <text
-                  textAnchor="middle"
-                  y={0}
-                  fill="#5F6368"
-                  fontSize={9}
-                  fontWeight={600}
-                  style={{ pointerEvents: 'none' }}
-                >
-                  # {n.keywords.length} 핵심어
+            )
+          })}
+          {edges.map((edge, index) => {
+            const source = nodes.get(edge.source), target = nodes.get(edge.target)
+            if (!source || !target) return null
+            const style = EDGE_STYLE[edge.kind]
+            const highlighted = focusedId === edge.source || focusedId === edge.target
+            return (
+              <path key={`${edge.kind}-${edge.source}-${edge.target}-${index}`}
+                data-edge-kind={edge.kind} data-source={edge.source} data-target={edge.target}
+                d={ontologyEdgePath(edge, source, target, view.height)} fill="none"
+                stroke={edgeColor(edge.kind, style.color)} strokeWidth={highlighted ? 2.5 : edge.kind === 'stage' ? 1.8 : 1.5}
+                strokeDasharray={style.dashed ? '5 6' : undefined} strokeLinecap="round" strokeLinejoin="round"
+                opacity={focusedId ? highlighted ? 0.95 : 0.18 : 0.8}
+                markerEnd={`url(#${markerId}-${edge.kind})`}>
+                <title>{`${displayActivityCode(edge.source)} → ${displayActivityCode(edge.target)} · ${edge.kind === 'concept' ? `공유 개념: ${edge.sharedKeywords?.join(', ') ?? ''}` : style.label.replace(/A-2-3/g, 'A-5').replace(/Ds-1-1/g, 'Ds-1')}`}</title>
+              </path>
+            )
+          })}
+          <text x={view.width / 2} y={view.height - 10} textAnchor="middle" fontSize={13} fill="#5F6368">성찰을 다음 수업설계로 연결</text>
+          {view.nodes.map(node => {
+            const palette = stagePalette(node.stage)
+            const chosen = selection === node.id
+            const active = !publicMode && node.isCurrent
+            const filled = node.isDone || node.hasArtifact || (publicMode && node.hasStageReport)
+            const status = active ? '현재 활동' : node.isDone ? '완료' : node.hasArtifact ? '산출물 저장' : publicMode && node.hasStageReport ? '보고서 있음' : '미진행'
+            const labelLines = wrapActivityLabel(node.label)
+            return (
+              <g key={node.id} ref={element => { if (element) refs.current.set(node.id, element); else refs.current.delete(node.id) }}
+                transform={`translate(${node.x - L.cardWidth / 2}, ${node.y - L.cardHeight / 2})`}
+                tabIndex={0} role="button" aria-pressed={chosen} aria-current={active ? 'step' : undefined}
+                aria-label={`${displayActivityCode(node.id)} ${node.label}, ${status}, 연결과 상세 보기`}
+                style={{ cursor: 'pointer' }}
+                className="outline-none"
+                onMouseEnter={() => setHoverId(node.id)} onMouseLeave={() => setHoverId(null)}
+                onFocus={() => setHoverId(node.id)} onBlur={() => setHoverId(null)}
+                onClick={() => choose(node)} onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(node); return }
+                  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+                  const slot = node.slot + (event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0)
+                  if (!step && slot === node.slot) return
+                  event.preventDefault()
+                  const candidates = view.nodes.filter(candidate => candidate.stageIdx === node.stageIdx + step)
+                  const next = step ? candidates.reduce<OntologyNode | undefined>((best, candidate) => !best || Math.abs(candidate.slot - slot) < Math.abs(best.slot - slot) ? candidate : best, undefined) : candidates.find(candidate => candidate.slot === slot)
+                  if (next) { refs.current.get(next.id)?.focus(); refs.current.get(next.id)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
+                }}>
+                {(chosen || active || hoverId === node.id) && <rect x={-4} y={-4} width={L.cardWidth + 8} height={L.cardHeight + 8} rx={20} fill="none" stroke={palette.accent} strokeWidth={2} />}
+                <rect width={L.cardWidth} height={L.cardHeight} rx={16} fill="white" stroke={filled || related.has(node.id) ? palette.border : '#DADCE0'} />
+                <rect x={16} y={13} width={54} height={23} rx={8} fill={palette.surface} />
+                <text x={43} y={29} textAnchor="middle" fontSize={13} fontWeight={750} fill={palette.text}>{displayActivityCode(node.id)}</text>
+                {active && <text x={L.cardWidth - 16} y={29} textAnchor="end" fontSize={12} fontWeight={700} fill={palette.text}>진행 중</text>}
+                {labelLines.map((line, index) => <text key={index} x={16} y={54 + index * 19} fontSize={15} fontWeight={650} fill="#202124">{line}</text>)}
+                <circle cx={20} cy={90} r={3} fill={filled || active ? palette.accent : '#9AA0A6'} />
+                <text x={29} y={94} fontSize={12} fill="#5F6368">{status}</text>
+                <text x={L.cardWidth - 16} y={94} textAnchor="end" fontSize={12} fill={palette.text}>
+                  {node.isGuardrailSource ? '학습자 기준' : node.isBackwardFirst ? '평가 출발점' : node.keywords?.length ? `핵심어 ${node.keywords.length}` : ''}
                 </text>
+                <title>{`${displayActivityCode(node.id)} · ${node.label}${node.keywords?.length ? `\n${node.keywords.join(' · ')}` : ''}`}</title>
               </g>
-            )}
-            {/* 호버 시 전체 라벨 + 키워드 툴팁 — <title> 활용 */}
-            <title>{`${n.id} · ${n.label}${n.isDone ? ' (완료)' : n.hasArtifact ? ' (진행 중)' : ''}${n.keywords && n.keywords.length > 0 ? `\n#${n.keywords.slice(0, 5).join(' #')}` : ''}`}</title>
-          </g>
-        )
-      })}
-    </svg>
+            )
+          })}
+        </svg>
+      </div>
+    </div>
   )
 }
 
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s
-  return s.slice(0, max) + '…'
-}
-
-// 범례 컴포넌트 — 그래프 외부에 배치해 해석 가이드
 export function OntologyLegend({ publicMode = false }: { publicMode?: boolean }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-[11px] text-[#5F6368]">
-      <div className="flex items-center gap-2">
-        <span className="inline-block w-4 h-4 rounded-full bg-[#1A73E8]" />
-        <span>완료된 활동</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="inline-block w-4 h-4 rounded-full bg-white border-[2px] border-[#1A73E8]" />
-        <span>미진행 활동</span>
-      </div>
-      {!publicMode && (
-        <div className="flex items-center gap-2">
-          <span className="relative inline-block w-4 h-4 rounded-full bg-[#1A73E8]">
-            <span className="absolute inset-[-3px] rounded-full border-2 border-[#1A73E8] opacity-50 animate-ping" />
-          </span>
-          <span>현재 활동</span>
-        </div>
-      )}
-      <div className="flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#7B1FA2] text-white text-[8px] font-extrabold">G</span>
-        <span>가드레일 소스 (A-2-3)</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#E65100] text-white text-[8px] font-extrabold">B</span>
-        <span>백워드 시작 (Ds-1-1)</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <svg width={24} height={8}><line x1={0} y1={4} x2={24} y2={4} stroke="#5F6368" strokeWidth={2.5} /></svg>
-        <span>단계 전환</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <svg width={24} height={8}><line x1={0} y1={4} x2={24} y2={4} stroke="#7B1FA2" strokeWidth={1.5} strokeDasharray="4 3" /></svg>
-        <span>가드레일</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <svg width={24} height={8}><line x1={0} y1={4} x2={24} y2={4} stroke="#E65100" strokeWidth={1.5} strokeDasharray="4 3" /></svg>
-        <span>백워드</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <svg width={24} height={8}><line x1={0} y1={4} x2={24} y2={4} stroke="#F9AB00" strokeWidth={2.5} /></svg>
-        <span>주기 순환</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <svg width={24} height={8}><line x1={0} y1={4} x2={24} y2={4} stroke="#00897B" strokeWidth={1.5} strokeDasharray="3 3" /></svg>
-        <span>공유 키워드 (실내용 기반)</span>
-      </div>
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-[#5F6368]">
+      <span className="inline-flex items-center gap-2"><CheckCircle size={18} className="text-[#1558D6]" aria-hidden="true" />{publicMode ? '활동·단계 보고서 상태' : '카드 아래에서 활동 상태 확인'}</span>
+      <span className="inline-flex items-center gap-2"><svg width={26} height={10} aria-hidden="true"><path d="M 1 5 H 24" stroke="#5F6368" strokeWidth={2} /></svg>활동 진행 흐름</span>
+      <span className="inline-flex items-center gap-2"><svg width={26} height={10} aria-hidden="true"><path d="M 1 5 H 24" stroke="#7B1FA2" strokeWidth={2} strokeDasharray="4 4" /></svg>선택한 활동의 참조·공유 개념</span>
+      <span className="inline-flex items-center gap-2"><ArrowsClockwise size={18} className="text-[#BF360C]" aria-hidden="true" />다음 설계 주기</span>
     </div>
   )
 }

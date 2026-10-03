@@ -1,20 +1,21 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Graph as GraphIcon } from '@phosphor-icons/react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import type { Project, ActivityCode } from '@/types'
-import { ACTIVITY_META } from '@/types'
+import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { buildProjectOntology, computeInheritance, type OntologyNode, type NodeInheritance } from '@/lib/ontology/projectOntology'
 import { ProjectOntologyGraph, OntologyLegend } from './ProjectOntologyGraph'
 import { STAGE_COLOR, STAGE_LABELS } from '@/lib/ui/stageColors'
+import { stagePalette } from '@/lib/ontology/graphPresentation'
 
 /**
  * 프로젝트 온톨로지 모달.
  * - 프로젝트 구조 전체를 그래프로 한눈에
- * - 노드 클릭 시 하단에 해당 활동 정보 패널
+ * - 선택 전에는 전체 구조, 선택하면 활동 상세 패널
  * - 공개 링크 페이지에서도 인라인(모달 아님) 렌더로 재사용 가능
  */
 
@@ -38,6 +39,27 @@ export function ProjectOntologyModal({
 
   const inheritanceMap = useMemo(() => computeInheritance(graph.nodes), [graph.nodes])
 
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const handleClose = useEffectEvent(onClose)
+  useEffect(() => {
+    if (!open) return
+    const previousFocus = document.activeElement as HTMLElement | null
+    closeRef.current?.focus()
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') { event.preventDefault(); handleClose(); return }
+      if (event.key !== 'Tab') return
+      const targets = Array.from(dialogRef.current?.querySelectorAll<HTMLElement | SVGElement>(
+        'button:not([disabled]), a[href], [tabindex="0"]',
+      ) ?? []).filter(element => element.getClientRects().length > 0)
+      const first = targets[0], last = targets[targets.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => { document.removeEventListener('keydown', handleKey); previousFocus?.focus() }
+  }, [open])
+
   const [selectedId, setSelectedId] = useState<ActivityCode | null>(null)
   const [prevOpen, setPrevOpen] = useState(open)
   if (prevOpen !== open) {
@@ -56,71 +78,39 @@ export function ProjectOntologyModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[230] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div
-        className="relative bg-white rounded-2xl shadow-2xl w-[96vw] max-w-[1400px] max-h-[94vh] flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* 헤더 */}
-        <div className="bg-gradient-to-br from-[#E8F0FE] to-white px-5 py-4 flex items-center gap-3 border-b border-[#DADCE0] flex-shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-[#1A73E8] flex items-center justify-center flex-shrink-0">
-            <GraphIcon size={20} weight="fill" className="text-white" />
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="project-ontology-title"
+        className="relative flex max-h-[94dvh] w-full max-w-[1840px] flex-col overflow-hidden rounded-[28px] bg-[#F8F9FA] shadow-2xl"
+        onClick={event => event.stopPropagation()}>
+        <header className="flex flex-shrink-0 items-center gap-4 border-b border-[#D2E3FC] bg-[#E8F0FE] px-4 py-5 sm:px-6">
+          <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-[#1558D6] text-white">
+            <GraphIcon size={26} weight="regular" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-[#1558D6]">프로젝트 온톨로지 · 수업설계 연결 지도</p>
+            <h2 id="project-ontology-title" className="break-words text-xl font-bold text-[#202124] sm:text-2xl">{project.title}</h2>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-bold text-[#1A73E8] uppercase tracking-widest">프로젝트 온톨로지</p>
-            <h3 className="text-[15px] font-bold text-[#202124] truncate">{project.title}</h3>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="닫기"
-            className="p-1.5 rounded-full hover:bg-white text-[#5F6368] transition-colors flex-shrink-0"
-          >
-            <X size={18} />
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="구조도 닫기"
+            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-[#3C4043] hover:bg-[#D2E3FC] focus-visible:outline-2 focus-visible:outline-[#1558D6]">
+            <X size={24} />
           </button>
-        </div>
-
-        {/* 도움말 */}
-        <div className="px-5 pt-3 pb-2 text-[11px] text-[#5F6368] border-b border-[#F1F3F4]">
-          <span className="font-bold text-[#3C4043]">T-CID 모형 구조도</span> — 5단계(팀준비→분석→설계→개발·실행→평가) 활동이 교육적 관계(가드레일·백워드·순환)로 연결된 모습입니다. 노드에 마우스를 올리면 관련 활동이 강조되고, 클릭하면 해당 활동 정보가 아래에 표시됩니다.
-        </div>
-
-        {/* 본문 — 좌: 그래프 / 우: 노드 상세 (2-pane) */}
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          {/* 좌측: 그래프 */}
-          <div className="flex-1 min-w-0 overflow-auto bg-gradient-to-b from-white to-[#F8F9FA] px-4 py-4">
-            <ProjectOntologyGraph graph={graph} onNodeClick={handleNodeClick} className="mx-auto" />
-            {/* 그래프 아래 범례 (항상 노출) */}
-            <div className="mt-4 rounded-xl border border-[#E8EAED] bg-white px-4 py-3">
-              <OntologyLegend />
-            </div>
+        </header>
+        <p className="flex-shrink-0 px-4 py-4 text-sm leading-relaxed text-[#5F6368] sm:px-6">
+          팀준비부터 평가까지, 활동이 어떻게 이어지는지 살펴보세요. 활동을 선택하면 공유 개념·설계 기준과 산출물 원문이 표시됩니다.
+        </p>
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto 2xl:flex-row">
+          <div className="min-w-0 flex-1 px-4 pb-5 sm:px-6">
+            <ProjectOntologyGraph graph={graph} selectedId={selectedId} onNodeClick={handleNodeClick} />
+            <div className="mt-4 border-t border-[#DADCE0] pt-4"><OntologyLegend /></div>
           </div>
-          {/* 우측: 노드 상세 — 선택 전엔 안내 메시지, 선택 시 드로어 */}
-          <aside className="w-[440px] flex-shrink-0 border-l border-[#E8EAED] bg-[#FAFBFC] overflow-y-auto">
-            {selected ? (
-              <div className="p-4">
-                <ActivityDetailDrawer
-                  node={selected}
-                  inheritance={inheritanceMap.get(selected.id) ?? { incoming: [], unique: [], outgoing: [] }}
-                  artifactTitle={selectedArtifact?.title}
-                  allNodes={graph.nodes}
-                  onOpen={() => { onOpenActivity?.(selected.id); onClose() }}
-                  onClear={() => setSelectedId(null)}
-                  onJumpTo={(code) => setSelectedId(code)}
-                />
-              </div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center px-6 py-10 text-[#9AA0A6]">
-                <div className="w-14 h-14 rounded-2xl bg-[#F3E5F5] flex items-center justify-center mb-3">
-                  <GraphIcon size={28} weight="regular" className="text-[#7B1FA2]" />
-                </div>
-                <p className="text-[13px] font-semibold text-[#5F6368] mb-1">노드를 클릭해보세요</p>
-                <p className="text-[11px] leading-relaxed">
-                  왼쪽 그래프에서 활동 노드를 클릭하면<br />
-                  해당 산출물의 핵심 개념 · 계승 흐름 · 원문을<br />
-                  이곳에서 바로 확인할 수 있습니다.
-                </p>
-              </div>
-            )}
-          </aside>
+          {selected && (
+            <aside aria-label="선택한 활동 상세" className="w-full flex-shrink-0 border-t border-[#DADCE0] bg-white p-4 sm:p-6 2xl:sticky 2xl:top-0 2xl:max-h-[75dvh] 2xl:w-[380px] 2xl:overflow-y-auto 2xl:border-l 2xl:border-t-0">
+              <ActivityDetailDrawer node={selected}
+                inheritance={inheritanceMap.get(selected.id) ?? { incoming: [], unique: [], outgoing: [] }}
+                artifactTitle={selectedArtifact?.title} allNodes={graph.nodes}
+                onOpen={() => { onOpenActivity?.(selected.id); onClose() }}
+                onClear={() => setSelectedId(null)} onJumpTo={setSelectedId} />
+            </aside>
+          )}
         </div>
       </div>
     </div>,
@@ -165,39 +155,39 @@ function normalizeInlinePipeList(text: string): string {
 }
 
 const sectionMarkdownComponents: Components = {
-  p: ({ children }) => <p className="text-[12px] text-[#3C4043] leading-relaxed my-1">{children}</p>,
+  p: ({ children }) => <p className="text-[14px] text-[#3C4043] leading-relaxed my-1">{children}</p>,
   strong: ({ children }) => <strong className="font-bold text-[#202124]">{children}</strong>,
   em: ({ children }) => <em className="italic text-[#5F6368]">{children}</em>,
   ul: ({ children }) => <ul className="space-y-0.5 my-1 pl-0">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal ml-5 my-1 space-y-0.5 text-[12px] text-[#3C4043]">{children}</ol>,
+  ol: ({ children }) => <ol className="list-decimal ml-5 my-1 space-y-0.5 text-[14px] text-[#3C4043]">{children}</ol>,
   li: ({ children }) => (
-    <li className="flex items-start gap-1.5 text-[12px] text-[#3C4043] leading-relaxed">
+    <li className="flex items-start gap-1.5 text-[14px] text-[#3C4043] leading-relaxed">
       <span className="mt-1.5 w-1 h-1 rounded-full bg-[#1A73E8] flex-shrink-0" />
       <span className="flex-1 min-w-0">{children}</span>
     </li>
   ),
   table: ({ children }) => (
-    <div className="my-2 rounded-lg border border-[#E8EAED] overflow-hidden">
-      <table className="w-full border-collapse text-[11px]" style={{ tableLayout: 'auto' }}>{children}</table>
+    <div className="my-2 rounded-lg border border-[#E8EAED] overflow-x-auto">
+      <table className="w-full border-collapse text-[13px]" style={{ tableLayout: 'auto' }}>{children}</table>
     </div>
   ),
   thead: ({ children }) => <thead className="bg-[#F8F9FA]">{children}</thead>,
   th: ({ children }) => (
-    <th className="px-2 py-1.5 text-left font-bold text-[10px] text-[#5F6368] uppercase tracking-wider align-top" style={{ wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
+    <th className="px-2 py-1.5 text-left font-bold text-[12px] text-[#5F6368] uppercase tracking-wider align-top whitespace-nowrap" style={{ wordBreak: 'keep-all' }}>
       {children}
     </th>
   ),
   tr: ({ children }) => <tr className="border-t border-[#F1F3F4]">{children}</tr>,
   td: ({ children }) => (
-    <td className="px-2 py-1.5 text-[11px] text-[#3C4043] leading-snug align-top" style={{ wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
+    <td className="px-2 py-1.5 text-[13px] text-[#3C4043] leading-snug align-top" style={{ wordBreak: 'keep-all' }}>
       {children}
     </td>
   ),
   code: ({ children }) => (
-    <code className="px-1 py-0.5 bg-[#F1F3F4] border border-[#DADCE0] rounded text-[11px] text-[#202124]">{children}</code>
+    <code className="px-1 py-0.5 bg-[#F1F3F4] border border-[#DADCE0] rounded text-[13px] text-[#202124]">{children}</code>
   ),
   blockquote: ({ children }) => (
-    <blockquote className="my-1.5 px-2 py-1 bg-[#F8F9FA] border-l-2 border-[#DADCE0] rounded-r text-[11px] text-[#5F6368]">
+    <blockquote className="my-1.5 px-2 py-1 bg-[#F8F9FA] border-l-2 border-[#DADCE0] rounded-r text-[13px] text-[#5F6368]">
       {children}
     </blockquote>
   ),
@@ -215,13 +205,13 @@ function ConceptTag({
 }) {
   const color = stage ? STAGE_COLOR[stage] : STAGE_COLOR.T
   const sizeClass = size === 'sm'
-    ? 'text-[10px] px-1.5 py-0.5'
-    : 'text-[11px] px-2 py-0.5'
+    ? 'text-[12px] px-1.5 py-0.5'
+    : 'text-[13px] px-2 py-0.5'
   return (
     <span
       className={`inline-flex items-center rounded-full font-semibold ${sizeClass}`}
       style={{
-        color: color.hex,
+        color: stagePalette(stage ?? 'T').text,
         backgroundColor: color.hex + '1A',     // 10% opacity
         border: `1px solid ${color.hex}33`,    // 20%
       }}
@@ -243,7 +233,6 @@ function ActivityDetailDrawer({
   onJumpTo: (code: ActivityCode) => void
 }) {
   const meta = ACTIVITY_META[node.id]
-  const color = STAGE_COLOR[meta.stage]
   const statusLabel = node.isDone
     ? '완료'
     : node.hasArtifact
@@ -270,24 +259,24 @@ function ActivityDetailDrawer({
   return (
     <div className="space-y-3">
       {/* 상단: 활동 정체성 */}
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <span
           className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-[13px] font-extrabold flex-shrink-0"
-          style={{ backgroundColor: color.hex }}
+          style={{ backgroundColor: stagePalette(node.stage).text }}
         >
-          {node.id}
+          {displayActivityCode(node.id)}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: color.hex }}>
+          <p className="text-[13px] font-bold uppercase tracking-widest" style={{ color: stagePalette(node.stage).text }}>
             {STAGE_LABELS[meta.stage]} 단계 · {statusLabel}
           </p>
-          <p className="text-[15px] font-bold text-[#202124] truncate">{meta.label}</p>
-          <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-[#5F6368]">
+          <p className="text-[16px] font-bold text-[#202124] leading-relaxed">{meta.label}</p>
+          <div className="mt-1 flex flex-wrap gap-1.5 text-[13px] text-[#5F6368]">
             {meta.isGuardrailSource && (
               <span className="px-2 py-0.5 rounded-full bg-[#F3E5F5] text-[#7B1FA2] font-semibold">가드레일 소스</span>
             )}
             {meta.isBackwardDesignFirst && (
-              <span className="px-2 py-0.5 rounded-full bg-[#FFF3E0] text-[#E65100] font-semibold">백워드 시작</span>
+              <span className="px-2 py-0.5 rounded-full bg-[#FFF3E0] text-[#BF360C] font-semibold">백워드 시작</span>
             )}
             {artifactTitle && (
               <span className="px-2 py-0.5 rounded-full bg-[#E8F0FE] text-[#1A73E8] font-semibold truncate max-w-[240px]">
@@ -296,11 +285,11 @@ function ActivityDetailDrawer({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex w-full items-center justify-between gap-2">
           <button
             type="button"
             onClick={onOpen}
-            className="px-3 py-1.5 text-[12px] font-semibold rounded-full bg-[#1A73E8] text-white hover:bg-[#1557B0] transition-colors whitespace-nowrap"
+            className="min-h-11 px-4 py-2 text-[14px] font-semibold rounded-full bg-[#1A73E8] text-white hover:bg-[#1557B0] transition-colors whitespace-nowrap"
           >
             이 활동으로 이동
           </button>
@@ -308,9 +297,9 @@ function ActivityDetailDrawer({
             type="button"
             onClick={onClear}
             aria-label="선택 해제"
-            className="p-1.5 rounded-full text-[#5F6368] hover:bg-[#E8EAED] transition-colors"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-[#5F6368] hover:bg-[#E8EAED] transition-colors"
           >
-            <X size={14} />
+            <X size={20} />
           </button>
         </div>
       </div>
@@ -323,17 +312,17 @@ function ActivityDetailDrawer({
         node.structured.classHourPlan.length > 0
       ) && (
         <div className="rounded-xl border-2 border-[#E1BEE7] bg-gradient-to-br from-[#F3E5F5] to-white px-3 py-2.5 space-y-2">
-          <p className="text-[10px] font-bold text-[#7B1FA2] uppercase tracking-widest">
+          <p className="text-[12px] font-bold text-[#7B1FA2] uppercase tracking-widest">
             📚 구조화된 교육 정보
           </p>
           {node.structured.standardCodes.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-[#5F6368] mb-1">성취기준 코드 ({node.structured.standardCodes.length})</p>
+              <p className="text-[12px] font-bold text-[#5F6368] mb-1">성취기준 코드 ({node.structured.standardCodes.length})</p>
               <div className="flex flex-wrap gap-1">
                 {node.structured.standardCodes.map(code => (
                   <span
                     key={code}
-                    className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-mono font-bold bg-white border border-[#CE93D8] text-[#6A1B9A]"
+                    className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[13px] font-mono font-bold bg-white border border-[#CE93D8] text-[#6A1B9A]"
                   >
                     [{code}]
                   </span>
@@ -343,10 +332,10 @@ function ActivityDetailDrawer({
           )}
           {node.structured.coreIdeas.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-[#5F6368] mb-1">핵심아이디어 ({node.structured.coreIdeas.length})</p>
+              <p className="text-[12px] font-bold text-[#5F6368] mb-1">핵심아이디어 ({node.structured.coreIdeas.length})</p>
               <ul className="space-y-1">
                 {node.structured.coreIdeas.map((idea, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-[11px] text-[#3C4043] leading-relaxed">
+                  <li key={i} className="flex items-start gap-1.5 text-[13px] text-[#3C4043] leading-relaxed">
                     <span className="text-[#F9AB00] flex-shrink-0 mt-0.5">★</span>
                     <span>{idea}</span>
                   </li>
@@ -356,12 +345,12 @@ function ActivityDetailDrawer({
           )}
           {node.structured.classHourPlan.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-[#5F6368] mb-1">차시 구성 ({node.structured.classHourPlan.length})</p>
+              <p className="text-[12px] font-bold text-[#5F6368] mb-1">차시 구성 ({node.structured.classHourPlan.length})</p>
               <div className="flex flex-wrap gap-1">
                 {node.structured.classHourPlan.map((item, i) => (
                   <span
                     key={i}
-                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-white border border-[#CE93D8] text-[#6A1B9A] max-w-[280px] truncate"
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[13px] bg-white border border-[#CE93D8] text-[#6A1B9A] max-w-[280px] truncate"
                     title={item}
                   >
                     🕐 {item}
@@ -376,7 +365,7 @@ function ActivityDetailDrawer({
       {/* 핵심 개념 (전체) */}
       {node.keywords && node.keywords.length > 0 ? (
         <div className="rounded-xl border border-[#E8EAED] bg-white px-3 py-2.5">
-          <p className="text-[10px] font-bold text-[#9AA0A6] uppercase tracking-widest mb-1.5">
+          <p className="text-[12px] font-bold text-[#5F6368] uppercase tracking-widest mb-1.5">
             🏷 이 산출물의 핵심 개념
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -392,7 +381,7 @@ function ActivityDetailDrawer({
       {/* 이전에서 계승된 개념 */}
       {incomingByActivity.size > 0 && (
         <div className="rounded-xl border border-[#E8EAED] bg-white overflow-hidden">
-          <p className="px-3 py-1.5 text-[10px] font-bold text-[#9AA0A6] uppercase tracking-widest bg-[#F8F9FA] border-b border-[#F1F3F4]">
+          <p className="min-h-11 px-4 py-2 text-[14px] font-bold text-[#5F6368] uppercase tracking-widest bg-[#F8F9FA] border-b border-[#F1F3F4]">
             ↘ 이전 활동에서 계승된 개념
           </p>
           <div className="divide-y divide-[#F1F3F4]">
@@ -407,13 +396,13 @@ function ActivityDetailDrawer({
                   className="w-full flex items-start gap-3 px-3 py-2 hover:bg-[#F8F9FA] transition-colors text-left"
                 >
                   <span
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[10px] font-extrabold flex-shrink-0"
-                    style={{ backgroundColor: STAGE_COLOR[src.stage].hex }}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[12px] font-extrabold flex-shrink-0"
+                    style={{ backgroundColor: stagePalette(src.stage).text }}
                   >
-                    {src.id}
+                    {displayActivityCode(src.id)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-bold text-[#202124] truncate">{src.label}에서</p>
+                    <p className="text-[12px] font-bold text-[#202124] leading-relaxed">{src.label}에서</p>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {kws.map(kw => <ConceptTag key={kw} kw={kw} stage={src.stage} size="sm" />)}
                     </div>
@@ -428,7 +417,7 @@ function ActivityDetailDrawer({
       {/* 이후로 이어지는 개념 */}
       {outgoingByActivity.size > 0 && (
         <div className="rounded-xl border border-[#E8EAED] bg-white overflow-hidden">
-          <p className="px-3 py-1.5 text-[10px] font-bold text-[#9AA0A6] uppercase tracking-widest bg-[#F8F9FA] border-b border-[#F1F3F4]">
+          <p className="min-h-11 px-4 py-2 text-[14px] font-bold text-[#5F6368] uppercase tracking-widest bg-[#F8F9FA] border-b border-[#F1F3F4]">
             ↗ 이후 활동으로 이어지는 개념
           </p>
           <div className="divide-y divide-[#F1F3F4]">
@@ -443,13 +432,13 @@ function ActivityDetailDrawer({
                   className="w-full flex items-start gap-3 px-3 py-2 hover:bg-[#F8F9FA] transition-colors text-left"
                 >
                   <span
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[10px] font-extrabold flex-shrink-0"
-                    style={{ backgroundColor: STAGE_COLOR[dst.stage].hex }}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[12px] font-extrabold flex-shrink-0"
+                    style={{ backgroundColor: stagePalette(dst.stage).text }}
                   >
-                    {dst.id}
+                    {displayActivityCode(dst.id)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-bold text-[#202124] truncate">{dst.label}에서 다시 등장</p>
+                    <p className="text-[12px] font-bold text-[#202124] leading-relaxed">{dst.label}에서 다시 등장</p>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {kws.map(kw => <ConceptTag key={kw} kw={kw} stage={dst.stage} size="sm" />)}
                     </div>
@@ -464,13 +453,13 @@ function ActivityDetailDrawer({
       {/* 원문 — 항상 펼쳐서 바로 확인 가능. 마크다운(테이블/볼드/리스트)을 실제 시각으로 렌더. */}
       {node.sections && node.sections.length > 0 && (
         <div className="rounded-xl border border-[#E8EAED] bg-white overflow-hidden">
-          <p className="px-3 py-2 text-[11px] font-bold text-[#5F6368] bg-[#F8F9FA] border-b border-[#F1F3F4]">
+          <p className="px-3 py-2 text-[13px] font-bold text-[#5F6368] bg-[#F8F9FA] border-b border-[#F1F3F4]">
             📄 산출물 원문 ({node.sections.length}개 섹션)
           </p>
           <div className="divide-y divide-[#F1F3F4]">
             {node.sections.map(sec => (
               <div key={sec.key} className="px-3 py-2">
-                <p className="text-[11px] font-bold mb-1" style={{ color: color.hex }}>{sec.key}</p>
+                <p className="text-[13px] font-bold mb-1" style={{ color: stagePalette(node.stage).text }}>{sec.key}</p>
                 <div className="text-[#3C4043]">
                   <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={sectionMarkdownComponents}>
                     {normalizeInlinePipeList(sec.value)}
@@ -505,7 +494,7 @@ export function PublicOntologySection({
           <GraphIcon size={22} weight="fill" />
         </span>
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A73E8]">프로젝트 구조</p>
+          <p className="text-[13px] font-bold uppercase tracking-widest text-[#1A73E8]">프로젝트 구조</p>
           <h2 className="text-[20px] font-extrabold text-[#202124] leading-tight">온톨로지 그래프</h2>
         </div>
       </header>
