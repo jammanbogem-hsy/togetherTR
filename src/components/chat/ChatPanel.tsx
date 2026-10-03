@@ -29,6 +29,7 @@ import { TeamVisionWorkspaceModal } from '@/components/artifacts/TeamVisionWorks
 import { LessonDesignDirectionWorkspaceModal } from '@/components/artifacts/LessonDesignDirectionWorkspaceModal'
 import { EvaluationPlanWorkspaceModal } from '@/components/artifacts/EvaluationPlanWorkspaceModal'
 import { ProblemSituationWorkspaceModal } from '@/components/artifacts/ProblemSituationWorkspaceModal'
+import { WorkshopErrorBoundary } from '@/components/problem-situation/WorkshopErrorBoundary'
 import { SupportToolWorkspaceModal } from '@/components/artifacts/SupportToolWorkspaceModal'
 import { IntegratedGoalWorkspaceModal } from '@/components/artifacts/IntegratedGoalWorkspaceModal'
 import { CoeditWorkspaceModal, type CoeditSuggestContext } from '@/components/artifacts/CoeditWorkspaceModal'
@@ -4422,6 +4423,16 @@ ${discussionSummary}
           : undefined
 
         return createPortal(
+          <WorkshopErrorBoundary
+            onClose={() => {
+              setShowProblemSituationDesigner(false)
+              if (isHost) {
+                import('@/lib/firebase/projects').then(m =>
+                  m.setProblemSituationOpen(proj.id, false).catch(console.error)
+                )
+              }
+            }}
+          >
           <ProblemSituationDesigner
             projectId={proj.id}
             projectTitle={proj.title}
@@ -4538,7 +4549,8 @@ ${discussionSummary}
                 )
               }
             }}
-          />,
+          />
+          </WorkshopErrorBoundary>,
           document.body,
         )
       })()}

@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { reasoningEffortFor } from '@/lib/llm/openai'
+import { isReasoningModel, reasoningEffortFor } from '@/lib/llm/openai'
 import {
   isDemoValidationError,
   parseDemoTurnInput,
@@ -70,7 +70,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const client = new OpenAI({ apiKey, maxRetries: 0 })
     const model = process.env.OPENAI_DEMO_MODEL || process.env.OPENAI_CHAT_MODEL || 'gpt-4o'
-    const isGpt5 = model.startsWith('gpt-5')
+    const isGpt5 = isReasoningModel(model)
     const isArtifactTurn = input.phase === 'orchestrator-synthesis' || input.phase === 'orchestrator-revision'
     const isReviewTurn = input.phase === 'teacher-review'
     const isIntroTurn = input.phase === 'orchestrator-intro'
