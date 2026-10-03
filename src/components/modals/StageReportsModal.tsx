@@ -6,8 +6,9 @@ import { STAGES, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { ReportHero, ReportMarkdown } from './ReportMarkdown'
 import { printReport } from './printReport'
+import { downloadReportPdf } from './downloadReportPdf'
 import { cleanReportMarkdown } from '@/lib/markdown/reportDisplay'
-import { X, FileText, ArrowLeft, DownloadSimple, FilePdf } from '@phosphor-icons/react'
+import { X, FileText, ArrowLeft, DownloadSimple, FilePdf, SpinnerGap } from '@phosphor-icons/react'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 
 const STAGE_LABELS: Record<string, string> = {
@@ -17,6 +18,8 @@ const STAGE_LABELS: Record<string, string> = {
 export function StageReportsModal({ onClose }: { onClose: () => void }) {
   const { project } = useProjectStore()
   const [selectedStage, setSelectedStage] = useState<StageCode | null>(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [pdfError, setPdfError] = useState('')
   const contentRef = useRef<HTMLDivElement>(null)
 
   const stageReports = project?.stageReports ?? {}
@@ -66,9 +69,24 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
     URL.revokeObjectURL(url)
   }
 
-  function downloadPdf() {
+  function handlePrint() {
     if (!contentRef.current || !selectedStage) return
     printReport(contentRef.current, `${project?.title ?? ''} ${STAGE_LABELS[selectedStage]} 단계 보고서`)
+  }
+
+  async function downloadPdf() {
+    if (!contentRef.current || !selectedStage || pdfBusy) return
+    setPdfBusy(true)
+    setPdfError('')
+    try {
+      await downloadReportPdf(contentRef.current, project?.title ?? '프로젝트', STAGE_LABELS[selectedStage])
+    } catch (error) {
+      console.error('Report PDF download failed:', error)
+      setPdfError('PDF 다운로드에 실패했습니다. 인쇄 창에서 PDF로 저장하거나 인쇄 버튼을 이용해 주세요.')
+      handlePrint()
+    } finally {
+      setPdfBusy(false)
+    }
   }
 
   async function downloadHwpx() {
@@ -103,9 +121,11 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
           </div>
           {selectedStage && selectedReport && <div className="mt-4 flex flex-wrap gap-2">
             <MD3Button variant="outlined" onClick={downloadMd} icon={<FileText size={18} />}>MD</MD3Button>
-            <MD3Button variant="tonal" onClick={downloadPdf} icon={<FilePdf size={18} />}>PDF</MD3Button>
+            <MD3Button variant="filled" onClick={downloadPdf} disabled={pdfBusy} aria-busy={pdfBusy} icon={pdfBusy ? <SpinnerGap size={18} className="animate-spin" /> : <FilePdf size={18} />}>{pdfBusy ? '만드는 중…' : 'PDF 다운로드'}</MD3Button>
+            <MD3Button variant="tonal" onClick={handlePrint} disabled={pdfBusy} icon={<FilePdf size={18} />}>인쇄</MD3Button>
             <MD3Button variant="outlined" onClick={downloadHwpx} icon={<DownloadSimple size={18} />}>HWPX 베타</MD3Button>
           </div>}
+          {pdfError && <p role="alert" className="mt-3 text-[13px] text-[var(--md-sys-error)]">{pdfError}</p>}
         </header>
         {!selectedStage ? <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <p className="mb-4 text-[13px] text-[var(--md-sys-on-surface-variant)]">완료된 단계의 심층 분석 보고서입니다. 단계를 선택해 전체 내용을 확인하세요.</p>

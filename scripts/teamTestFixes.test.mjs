@@ -12,7 +12,9 @@ import * as phosphorIcons from '@phosphor-icons/react'
 import { STAGE_COLOR } from '../src/lib/ui/stageColors.ts'
 import { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, REPORT_ICON_TONES, reportStageColors } from '../src/components/modals/reportDashboardStyles.ts'
 import { cleanReportMarkdown } from '../src/lib/markdown/reportDisplay.ts'
-import { buildReportPrintDocument } from '../src/components/modals/printReport.ts'
+import { buildReportPrintDocument, cloneReportForPrint, REPORT_PRINT_WINDOW_CSS } from '../src/components/modals/printReport.ts'
+import { reportDom, staticReportDom, ReportDomElement } from './lib/reportDomFixture.mjs'
+import { layoutReportPdf, reportPdfFilename, REPORT_PDF_PAGE } from '../src/components/modals/reportPdfLayout.ts'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
@@ -1388,7 +1390,7 @@ const reportBindings = {
   '@/components/ui/ReportSectionIcon': reportIcons,
   '@/types': { STAGES, displayActivityCode },
   '@/lib/ui/stageColors': { STAGE_COLOR },
-  './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors },
+  './reportDashboardStyles': { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, reportStageColors },
   '@/lib/report/reportSections': { REPORT_SECTIONS, findReportSection },
   '@phosphor-icons/react': reportPhosphorIcons,
 }
@@ -1412,12 +1414,12 @@ test('034a: 보고서 MD3 데이터 표는 학년군·강조를 보존하고 고
   assert.doesNotMatch(html, /\*\*|<del>/)
 })
 
-function reportModalFixture(name, selected = false, isHost = true) {
+function reportModalFixture(name, selected = false, isHost = true, content, pdfBusy = false) {
   const callbacks = []
-  const markdown = '# 보고서\n\n| 학년군 | 내용 |\n| --- | --- |\n| 1-2학년군 | **‘일’**로 정하기 |'
+  const markdown = content ?? '# 보고서\n\n| 학년군 | 내용 |\n| --- | --- |\n| 1-2학년군 | **‘일’**로 정하기 |'
   const project = { id: 'herdr', title: '기후위기', currentStage: 'Ds', artifacts: {}, stageReports: { Ds: { content: markdown, savedAt: 1 } } }
   let cursor = 0
-  const states = name === 'StageAnalysisModal' ? [markdown, 'done', ''] : [selected ? 'Ds' : null]
+  const states = name === 'StageAnalysisModal' ? [markdown, 'done', '', pdfBusy, ''] : [selected ? 'Ds' : null, pdfBusy, '']
   const { MD3Button } = loadArtifactTsx('../src/components/ui/MD3Button.tsx', { react: React, '@/lib/utils': { cn: (...v) => v.filter(Boolean).join(' ') } })
   const bindings = {
     react: { ...React, useState: () => [states[cursor++], () => {}], useEffect() {}, useLayoutEffect() {} },
@@ -1430,6 +1432,7 @@ function reportModalFixture(name, selected = false, isHost = true) {
     '@/components/ui/MD3Button': { MD3Button: props => { callbacks.push(props); return React.createElement(MD3Button, props) } },
     './ReportMarkdown': { ReportMarkdown, ReportHero },
     './printReport': { printReport() {} },
+    './downloadReportPdf': { downloadReportPdf() {} },
     '@phosphor-icons/react': new Proxy({}, { get: () => () => null }),
     '@/lib/firebase/projects': { setAnalysisReport() {}, saveStageReport() {} },
     '@/lib/hwpx/generateHwpx': { generateHwpx() {} },
@@ -1874,8 +1877,8 @@ test('041d: 인쇄는 DOM 복사·닫기 후 글꼴 준비를 기다리고 차�
   let finishFonts
   const fonts = new Promise(resolve => { finishFonts = resolve })
   const win = { document: { querySelectorAll: () => [], fonts: { ready: fonts }, write: markup => calls.push(['write', markup]), close: () => calls.push(['document.close']) }, requestAnimationFrame: callback => callback(), print: () => calls.push(['print']), close: () => calls.push(['window.close']) }
-  const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors }, window: { open: () => win } })
-  module.printReport({ innerHTML: '<div class="report-dashboard"><svg></svg>현재 화면</div>' }, '인쇄')
+  const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, reportStageColors }, window: { open: () => win } })
+  module.printReport(staticReportDom('<div class="report-dashboard"><svg></svg>현재 화면</div>'), '인쇄')
   assert.equal(calls[0][0], 'write')
   assert.equal(calls[1][0], 'document.close')
   const loading = win.onload()
@@ -1886,8 +1889,8 @@ test('041d: 인쇄는 DOM 복사·닫기 후 글꼴 준비를 기다리고 차�
   assert.match(calls[0][1], /<svg><\/svg>현재 화면/)
   win.onafterprint()
   assert.deepEqual(calls[3], ['window.close'])
-  const blocked = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors }, window: { open: () => null } })
-  assert.doesNotThrow(() => blocked.printReport({ innerHTML: '현재 화면' }, '인쇄'))
+  const blocked = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, reportStageColors }, window: { open: () => null } })
+  assert.doesNotThrow(() => blocked.printReport(staticReportDom('현재 화면'), '인쇄'))
 })
 
 test('041e: 옅은 단계색·강점/아이디어 아이콘의 글자 대비는 4.5:1 이상이다', () => {
@@ -1923,8 +1926,8 @@ test('041g: PDF 부록도 펼쳐진 원문 그대로 새 페이지에서 인쇄�
   let written
   let printed = false
   const win = { document: { fonts: { ready: Promise.resolve() }, write: html => { written = html }, close() {} }, requestAnimationFrame: callback => callback(), print: () => { printed = true }, close() {} }
-  const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors }, window: { open: () => win } })
-  const source = { innerHTML: markup }
+  const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, reportStageColors }, window: { open: () => win } })
+  const source = staticReportDom(markup)
   module.printReport(source, '부록 포함 보고서')
   await win.onload()
   assert.equal(printed, true)
@@ -2270,4 +2273,183 @@ test('047c: 6열 이상과 폭이 큰 소수 열 표는 A4 카드형으로 표�
   assert.match(REPORT_PRINT_CSS, /\.report-table-wide table,\.report-table-wide tbody\{display:block;width:100%\}/)
   assert.match(REPORT_PRINT_CSS, /\.report-table-wide tbody tr\{[^}]*break-inside:avoid;page-break-inside:avoid/)
   assert.match(REPORT_PRINT_CSS, /\.report-table-wide td:before\{content:attr\(data-label\)/)
+})
+
+
+// ─── TASK-047b: 미리보기 창도 스크롤 없이 · 인쇄 DOM 정리 ─────────
+test('047d: 인쇄 창 전용 CSS는 media 밖에서 높이·스크롤·sticky를 풀고 넓은 표를 카드로 배치한다', () => {
+  assert.doesNotMatch(REPORT_PRINT_WINDOW_CSS, /@media/)
+  assert.match(REPORT_PRINT_WINDOW_CSS, /html,body,body \*\{max-height:none!important;overflow:visible!important/)
+  assert.match(REPORT_PRINT_WINDOW_CSS, /html,body,body \*\{position:static!important\}/)
+  assert.match(REPORT_PRINT_WINDOW_CSS, /\.report-table-scroll\{height:auto!important;max-height:none!important;overflow:visible!important\}/)
+  assert.match(REPORT_PRINT_WINDOW_CSS, /\.report-dashboard th[^}]*position:static!important/)
+  assert.match(REPORT_PRINT_WINDOW_CSS, /\.report-table-wide table,\.report-table-wide tbody\{display:block;width:100%\}/)
+  const html = buildReportPrintDocument('<div class="report-table-scroll">모든 행</div>', '인쇄')
+  assert.ok(html.includes(REPORT_PRINT_WINDOW_CSS))
+  assert.ok(html.indexOf(REPORT_PRINT_WINDOW_CSS) > html.indexOf(REPORT_DASHBOARD_CSS))
+})
+
+test('047e: DOM 정리는 중첩 details·토글을 제거하고 제목·접힌 원문·표·SVG를 보존하며 원래 DOM은 유지한다', () => {
+  const source = reportDom('div', {},
+    reportDom('section', { class: 'report-appendix', 'data-report-kind': 'appendix' },
+      reportDom('details', {},
+        reportDom('summary', { 'aria-expanded': 'false' }, reportDom('h2', {}, '부록: 산출물 원문'), reportDom('span', { class: 'report-appendix-action' }, '펼치기/접기')),
+        reportDom('button', { 'aria-expanded': 'false' }, '원문 펼치기'),
+        reportDom('span', { role: 'button', 'aria-label': '접기' }, '접기'),
+        reportDom('div', { class: 'report-body hidden md:hidden collapsed is-collapsed', hidden: '', 'aria-hidden': 'true', style: 'display:none!important;visibility:hidden;opacity:0;height:0px;max-height:0px;overflow:hidden' },
+          reportDom('div', { 'aria-expanded': 'false' }, reportDom('p', {}, '반드시 보존할 원문')),
+          reportDom('details', {}, reportDom('summary', {}, '추가 자료 ', reportDom('span', {}, '접기')), reportDom('p', { class: 'collapsed', style: 'display:none' }, '중첩된 기록')),
+          reportDom('div', { class: 'report-table-scroll', style: 'max-height:60vh!important;overflow:auto;height:200px' },
+            reportDom('table', {}, reportDom('thead', {}, reportDom('tr', {}, reportDom('th', { style: 'position:sticky;top:0' }, '성취기준'))), reportDom('tbody', {}, reportDom('tr', {}, reportDom('td', {}, '[4사08-02]'))))),
+          reportDom('svg', { viewBox: '0 0 24 24' }, reportDom('path', { d: 'M 0 0 L 1 1' }))))),
+    reportDom('p', { hidden: '', class: 'hidden' }, '부록 밖 숨김 상태는 유지'))
+  const original = source.html
+  const clean = cloneReportForPrint(source)
+  assert.notEqual(clean, source)
+  assert.equal(source.html, original)
+  assert.doesNotMatch(clean.innerHTML, /<details|<summary|<button|aria-expanded|펼치기|접기/)
+  assert.match(clean.innerHTML, /<h2[^>]*>부록: 산출물 원문<\/h2>/)
+  for (const value of ['반드시 보존할 원문', '중첩된 기록', '[4사08-02]', '<svg', '<path']) assert.ok(clean.innerHTML.includes(value))
+  const appendix = clean.querySelectorAll('.report-appendix')[0]
+  assert.doesNotMatch(appendix.html, /class="[^"]*(?:hidden|collapsed)|aria-hidden| hidden=/)
+  for (const element of [clean, ...clean.querySelectorAll('*')]) {
+    for (const property of ['overflow', 'overflow-x', 'overflow-y', 'max-height']) assert.equal(element.style.getPropertyValue(property), '')
+  }
+  assert.match(clean.innerHTML, /<p hidden="" class="hidden"[^>]*>부록 밖 숨김 상태는 유지/)
+})
+
+test('047f: 인쇄 호출은 정리된 복제본을 쓰고 생성·저장 모달은 화면에서도 부록을 항상 펼친다', async () => {
+  const source = reportDom('div', {}, reportDom('section', { class: 'report-appendix' }, reportDom('details', {}, reportDom('summary', {}, '부록 ', reportDom('button', {}, '펼치기')), reportDom('p', { class: 'hidden', hidden: '' }, '저장된 원문'))))
+  const original = source.html
+  let written, printed = false
+  const win = { document: { fonts: { ready: Promise.resolve() }, write: html => { written = html }, close() {} }, requestAnimationFrame: callback => callback(), print: () => { printed = true }, close() {} }
+  const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, reportStageColors }, window: { open: () => win } })
+  module.printReport(source, '설계 분석 보고서')
+  await win.onload()
+  assert.equal(printed, true)
+  assert.equal(source.html, original)
+  assert.doesNotMatch(written, /<details|<summary|<button|펼치기|class="hidden"/)
+  assert.match(written, /저장된 원문/)
+  const markdown = '## 강점\n기존 본문\n\n## 부록: 산출물 원문\n### 평가 설계 (Ds-1)\n\n| 구분 | 내용 |\n| --- | --- |\n| 평가 내용 | 두 경로에서 보존할 원문 |'
+  for (const [name, selected] of [['StageAnalysisModal', false], ['StageReportsModal', true]]) {
+    const { html } = reportModalFixture(name, selected, false, markdown)
+    assert.match(html, /data-report-kind="appendix" class="report-section report-appendix"/)
+    assert.doesNotMatch(html, /<details|<summary|펼치기|접기/)
+    assert.match(html, /두 경로에서 보존할 원문/)
+  }
+})
+
+
+// ─── TASK-048: 파일 다운로드·행 경계 페이지 분할·버튼 상태 ─────────
+const pdfTestPage = { widthMm: 100, heightMm: 100, marginMm: 0, captureWidthPx: 100, gapPx: 0 }
+
+test('048a: PDF 파일명은 프로젝트·단계·보고서를 포함하며 경로 문자와 빈 이름을 정리한다', () => {
+  assert.equal(reportPdfFilename('herdr', '설계'), 'herdr 설계 보고서.pdf')
+  assert.equal(reportPdfFilename('동네/그늘: 조사', '개발·실행'), '동네 그늘 조사 개발·실행 보고서.pdf')
+  assert.equal(reportPdfFilename('  ', ''), '프로젝트 단계 보고서.pdf')
+  assert.equal(reportPdfFilename('팀\n이름', '분석'), '팀 이름 분석 보고서.pdf')
+  assert.deepEqual(REPORT_PDF_PAGE, { widthMm: 210, heightMm: 297, marginMm: 12, captureWidthPx: 794, gapPx: 16 })
+})
+
+test('048b: 한 페이지에 들어가는 섹션은 나누지 않고 넘치면 다음 페이지·부록은 새 페이지로 보낸다', () => {
+  const blocks = [{ height: 40 }, { height: 70 }, { height: 20 }, { height: 10, startNewPage: true }]
+  const original = structuredClone(blocks)
+  const slices = layoutReportPdf(blocks, pdfTestPage)
+  assert.deepEqual(slices.map(slice => [slice.block, slice.page, slice.top, slice.height]), [[0,1,0,40], [1,2,0,70], [2,2,70,20], [3,3,0,10]])
+  assert.deepEqual(blocks, original)
+  assert.deepEqual(layoutReportPdf([{ height: 100 }, { height: 100 }], pdfTestPage).map(slice => slice.page), [1, 2])
+  assert.deepEqual(layoutReportPdf([], pdfTestPage), [])
+})
+
+test('048c: 큰 섹션은 행 경계로만 나누고 반복 머리글 높이를 포함하며 큰 단일 행은 축소해 보존한다', () => {
+  const slices = layoutReportPdf([{ height: 250, breakpoints: [30,80,130,180,230], headers: [{ start: 0, end: 30, tableEnd: 250 }] }], pdfTestPage)
+  assert.deepEqual(slices.map(slice => [slice.start, slice.height, slice.header]), [[0,80,undefined], [80,50,0], [130,50,0], [180,70,0]])
+  assert.ok(slices.every(slice => slice.scale === 1))
+  const large = layoutReportPdf([{ height: 180, breakpoints: [180] }], pdfTestPage)
+  assert.equal(large.length, 1)
+  assert.equal(large[0].height, 180)
+  assert.equal(large[0].scale, 100 / 180)
+  const defaultSlices = layoutReportPdf([{ height: 3400, breakpoints: [400,800,1200,1600,2000,2400,2800,3200] }])
+  const capacity = (297 - 24) * 794 / (210 - 24)
+  assert.ok(defaultSlices.every(slice => slice.top + slice.height * slice.scale <= capacity + .001))
+  assert.equal(defaultSlices.reduce((total, slice) => total + slice.height, 0), 3400)
+  assert.throws(() => layoutReportPdf([{ height: NaN }]), /높이/)
+  assert.throws(() => layoutReportPdf([], { marginMm: 200 }), /페이지/)
+})
+
+test('048d: 두 모달은 PDF 다운로드 주 버튼·인쇄·진행 상태를 제공하고 MD/HWPX를 유지한다', () => {
+  for (const [name, selected] of [['StageAnalysisModal', false], ['StageReportsModal', true]]) {
+    const { html, callbacks } = reportModalFixture(name, selected, false)
+    assert.match(html, /PDF 다운로드/)
+    assert.match(html, /인쇄/)
+    assert.ok(callbacks.some(button => button.variant === 'filled' && button.children === 'PDF 다운로드'))
+    assert.ok(callbacks.some(button => button.variant === 'tonal' && button.children === '인쇄'))
+    assert.ok(callbacks.some(button => button.children === 'HWPX 베타'))
+    const busy = reportModalFixture(name, selected, false, undefined, true)
+    assert.match(busy.html, /만드는 중…/)
+    assert.ok(busy.callbacks.some(button => button.children === '만드는 중…' && button.disabled && button['aria-busy']))
+    assert.ok(busy.callbacks.some(button => button.children === '인쇄' && button.disabled))
+  }
+})
+
+test('048e: 다운로드 실패는 오류를 알리고 인쇄로 대체하며 진행 상태를 해제한다', async () => {
+  for (const name of ['StageAnalysisModal', 'StageReportsModal']) {
+    const source = fs.readFileSync(new URL(`../src/components/modals/${name}.tsx`, import.meta.url), 'utf8')
+    const sourceTree = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const states = [], errors = []
+    let printed = 0
+    const download = loadChatFunction('downloadPdf', {
+      contentRef: { current: {} }, pdfBusy: false, project: { title: 'herdr' }, stage: 'Ds', selectedStage: 'Ds', STAGE_LABELS: { Ds: '설계' },
+      setPdfBusy: state => states.push(state), setPdfError: state => errors.push(state),
+      downloadReportPdf: async () => { throw new Error('캡처 실패') }, handlePrint: () => { printed++ }, console: { error() {} },
+    }, sourceTree)
+    await download()
+    assert.deepEqual(states, [true, false])
+    assert.equal(errors[0], '')
+    assert.match(errors[1], /실패.*인쇄/)
+    assert.equal(printed, 1)
+  }
+})
+
+test('048f: 라이브러리는 호출 때만 로드하고 페이지별 캡처·저장 후 임시 문서를 제거한다', async () => {
+  const calls = []
+  let captureError = false
+  const body = reportDom('body', {},
+    reportDom('div', { class: 'report-hero', 'data-height': '80' }, '요약'),
+    reportDom('section', { class: 'report-section', 'data-top': '96', 'data-height': '1800' },
+      reportDom('table', { 'data-top': '130', 'data-height': '1666' },
+        reportDom('thead', { 'data-top': '130', 'data-height': '30' }, reportDom('tr', { 'data-top': '130', 'data-height': '30' }, reportDom('th', {}, '열'))),
+        reportDom('tbody', {}, ...Array.from({ length: 8 }, (_, index) => reportDom('tr', { 'data-top': String(160 + index * 200), 'data-height': '200' }, reportDom('td', {}, `행${index + 1}`)))))))
+  const doc = { body, fonts: { ready: Promise.resolve() }, defaultView: { HTMLElement: ReportDomElement } }
+  body.document = doc
+  const frame = { style: {}, contentDocument: doc, setAttribute() {}, remove: () => calls.push(['remove']) }
+  class Pdf {
+    constructor(options) { calls.push(['pdf', options]) }
+    addPage() { calls.push(['page']) }
+    addImage(canvas, format, x, y, width, height) { calls.push(['image', format, x, y, width, height]) }
+    async save(filename) { calls.push(['save', filename]) }
+  }
+  const module = loadArtifactTsx('../src/components/modals/downloadReportPdf.ts', {
+    './printReport': { buildReportPrintDocument, cloneReportForPrint },
+    './reportPdfLayout': { layoutReportPdf, reportPdfFilename, REPORT_PDF_PAGE },
+    'html2canvas-pro': { __esModule: true, default: async (element, options) => { if (captureError) throw new Error('캡처 실패'); calls.push(['capture', element.tagName, options]); return { width: 1588, height: options.height * 2 } } },
+    jspdf: { jsPDF: Pdf }, setTimeout, clearTimeout,
+    document: { createElement: () => frame, body: { appendChild: () => frame.onload() } },
+  })
+  assert.deepEqual(calls, [])
+  await module.downloadReportPdf(staticReportDom('원문'), 'herdr', '설계')
+  assert.deepEqual(calls.at(-2), ['save', 'herdr 설계 보고서.pdf'])
+  assert.deepEqual(calls.at(-1), ['remove'])
+  assert.ok(calls.some(call => call[0] === 'page'))
+  assert.ok(calls.some(call => call[0] === 'capture' && call[1] === 'THEAD'))
+  for (const call of calls.filter(call => call[0] === 'capture')) assert.equal(call[2].scale, 2)
+  for (const call of calls.filter(call => call[0] === 'image')) assert.ok(call[3] + call[5] <= 285 + .001)
+  assert.match(frame.srcdoc, /html,body,body \*\{position:static!important\}/)
+  const source = fs.readFileSync(new URL('../src/components/modals/downloadReportPdf.ts', import.meta.url), 'utf8')
+  assert.match(source, /import\('html2canvas-pro'\)/)
+  assert.match(source, /import\('jspdf'\)/)
+  assert.doesNotMatch(source, /import (?!type)[^\n]* from ['"](?:jspdf|html2canvas-pro)['"]/)
+  captureError = true
+  await assert.rejects(module.downloadReportPdf(staticReportDom('원문'), 'herdr', '설계'), /캡처 실패/)
+  assert.deepEqual(calls.at(-1), ['remove'])
 })
