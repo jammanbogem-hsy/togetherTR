@@ -59,7 +59,6 @@ export function StageMoveModal() {
     setPendingStageMove,
     activityStatus,
     setCurrentActivity,
-    setMessages,
     userProfile,
   } = useProjectStore()
 
@@ -287,9 +286,11 @@ export function StageMoveModal() {
       return
     }
 
-    // 로컬 상태도 즉시 반영
+    // 로컬 상태도 즉시 반영. 메시지 목록은 비우지 않는다(#33): 위 await 동안 프로젝트 스냅샷이
+    // 먼저 새 활동을 알려 page.tsx 동기화·구독이 이미 대화를 받아 두었을 수 있고, 여기서 setMessages([])로
+    // 지우면 활동 코드가 같아 구독이 다시 돌지 않아 대화가 비어 보인다. 활동이 실제로 바뀌는 경우의 초기화는
+    // store.setCurrentActivity 가 이미 한다.
     setCurrentActivity(firstActivity)
-    setMessages([])
     setPendingStageMove(null)
     setEToTMoveChoice(null)
     submittingRef.current = false

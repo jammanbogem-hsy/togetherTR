@@ -972,3 +972,28 @@ test('33b: 대비 타이머 로드 완료는 환영을 만들지 않고, 실제 
   // #26 전송 판정은 messagesLoaded 만 보므로 대비 타이머 뒤에도 지금처럼 전송 가능(입력 보존 경로 유지).
   assert.equal(chatSendBlockReason({ hasProject: true, hasUser: true, messagesLoaded: true, currentActivity: 'T-2-3', projectActivity: 'T-2-3' }), null)
 })
+
+// ─── TASK-026: #33 단계 이동 창 경로에서 이미 받은 대화를 지우던 문제 ─────────
+test('33c: 단계 이동 창이 끝날 때 이미 동기화·구독으로 받은 새 활동 대화를 지우지 않는다', async () => {
+  const { useProjectStore } = await import('../src/store/project.ts')
+  const s = () => useProjectStore.getState()
+  const loaded = Array.from({ length: 17 }, (_, i) => ({ id: `m${i}`, role: i % 2 ? 'assistant' : 'user', content: `${i}`, activityCode: 'Ds-1-1', cycleNumber: 1 }))
+  // 출발 활동(T-2-3)에서 대화가 보이는 상태
+  s().setCurrentActivity('T-2-3'); s().setMessages([{ id: 'old', role: 'user', content: 'old', activityCode: 'T-2-3' }]); s().setMessagesLoaded(true)
+  // 창의 await(advanceActivity·logStageTransition) 동안: 프로젝트 스냅샷 → page.tsx 동기화 → 새 활동 구독 결과 도착
+  s().setCurrentActivity('Ds-1-1')
+  assert.equal(s().messagesLoaded, false)
+  s().setMessages(loaded); s().setMessagesLoaded(true)
+  // 창의 마무리(수정 후): 같은 활동으로 setCurrentActivity → 아무것도 바꾸지 않는다
+  s().setCurrentActivity('Ds-1-1')
+  assert.equal(s().messages.length, 17)
+  assert.equal(s().messagesLoaded, true)
+  // 수정 전 동작(setMessages([]))을 재현하면 목록이 비고, 활동 코드가 같아 구독이 다시 돌지 않아 그대로 남는다.
+  s().setMessages([])
+  assert.equal(s().messages.length, 0)
+  assert.equal(s().currentActivity, 'Ds-1-1')
+  const modal = fs.readFileSync(new URL('../src/components/modals/StageMoveModal.tsx', import.meta.url), 'utf8')
+  const finish = modal.slice(modal.indexOf('// 로컬 상태도 즉시 반영'))
+  assert.doesNotMatch(finish.slice(0, 600).replace(/\/\/.*$/gm, ''), /setMessages\(/)
+  assert.doesNotMatch(modal, /^\s*setMessages,\s*$/m)
+})
