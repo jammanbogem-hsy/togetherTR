@@ -1,5 +1,7 @@
 'use client'
 
+import { ArtifactMarkdown } from '../ArtifactMarkdown'
+
 // Ds-1-2 문제상황 산출물 렌더러 (자체 완결).
 // 저장 형태가 여러 가지라 content를 유연하게 정규화한다:
 //  (A) 워크숍 저장: { '문제상황 후보': [...], '선정 문제상황': {제목,문제상황,성취기준연결,데이터출처,교과별학습내용,산출물,AI점검}, '핵심 질문', '탐구 질문' }
@@ -183,18 +185,18 @@ function BlockDoc({ mw }: { mw: ManualWorkspace }) {
             if (!text.trim()) return null
             if (b.type === 'heading') return <h3 key={b.id} className="text-[17px] font-extrabold text-[#202124] pt-2">{text}</h3>
             if (b.type === 'subheading') return <h4 key={b.id} className="text-[13px] font-bold text-[#1967D2] uppercase tracking-wider pt-1">{text}</h4>
-            if (b.type === 'quote') return <blockquote key={b.id} className="border-l-4 border-[#AECBFA] bg-[#F8F9FA] pl-4 py-2 text-[13px] italic text-[#3C4043] leading-relaxed whitespace-pre-wrap [word-break:keep-all]">{text}</blockquote>
+            if (b.type === 'quote') return <blockquote key={b.id} className="border-l-4 border-[#AECBFA] bg-[#F8F9FA] pl-4 py-2 text-[13px] italic text-[#3C4043] leading-relaxed [word-break:keep-all]"><ArtifactMarkdown>{text}</ArtifactMarkdown></blockquote>
             if (b.type === 'checklist') return (
               <ul key={b.id} className="space-y-1.5">
                 {parseChecklistLines(text).map((it, i) => (
                   <li key={i} className="flex items-start gap-2 text-[13px] text-[#3C4043] leading-relaxed [word-break:keep-all]">
                     <span className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${it.checked ? 'bg-[#34A853] border-[#34A853] text-white' : 'border-[#9AA0A6]'}`}>{it.checked ? '✓' : ''}</span>
-                    <span>{it.text}</span>
+                    <ArtifactMarkdown>{it.text}</ArtifactMarkdown>
                   </li>
                 ))}
               </ul>
             )
-            return <p key={b.id} className="text-[13px] text-[#202124] leading-[1.8] whitespace-pre-wrap [word-break:keep-all]">{text}</p>
+            return <ArtifactMarkdown key={b.id} className="text-[13px] text-[#202124] [word-break:keep-all]">{text}</ArtifactMarkdown>
           })}
         </div>
       )}
@@ -227,9 +229,9 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
         {hasDetail ? (
           <div className="divide-y divide-[#F1F3F4]">
             {sel.fullScenario && (
-              <p className="px-4 py-3 text-[13px] text-[#202124] leading-[1.8] [word-break:keep-all] whitespace-pre-wrap">
+              <ArtifactMarkdown className="px-4 py-3 text-[13px] text-[#202124] [word-break:keep-all]">
                 {sel.fullScenario}
-              </p>
+              </ArtifactMarkdown>
             )}
 
             {sel.alignment.length > 0 && (
@@ -247,7 +249,7 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
                           ? 'text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-[#FFE082] text-[#B06000]'
                           : 'text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-[#E8EAED] text-[#5F6368]'}>{s.subject}</span>}
                       </div>
-                      <p className="text-[12px] text-[#3C4043] leading-relaxed [word-break:keep-all]">{s.connection}</p>
+                      <ArtifactMarkdown className="text-[12px] text-[#3C4043] [word-break:keep-all]">{s.connection}</ArtifactMarkdown>
                     </div>
                   ))}
                 </div>
@@ -257,7 +259,7 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
             {sel.alignment.length === 0 && sel.alignmentText && (
               <div className="px-4 py-3">
                 <div className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wide mb-2">성취기준 연결 (평가 기준)</div>
-                <p className="text-[12px] text-[#3C4043] leading-relaxed [word-break:keep-all] whitespace-pre-wrap">{sel.alignmentText}</p>
+                <ArtifactMarkdown className="text-[12px] text-[#3C4043] [word-break:keep-all]">{sel.alignmentText}</ArtifactMarkdown>
               </div>
             )}
 
@@ -268,13 +270,13 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
                   {sel.realData.map((dd, i) => (
                     <li key={i} className="flex gap-2 text-[12px] text-[#3C4043] leading-relaxed">
                       <span className="flex-shrink-0 text-[#1A73E8] font-bold">{i + 1})</span>
-                      <span className="flex-1">
-                        {dd.label}
+                      <div className="flex-1 min-w-0">
+                        <ArtifactMarkdown>{dd.label}</ArtifactMarkdown>
                         {dd.url && (
                           <a href={dd.url} target="_blank" rel="noopener noreferrer"
                             className="ml-1.5 inline-flex items-center gap-0.5 text-[11px] text-[#1A73E8] hover:underline font-medium">링크 ↗</a>
                         )}
-                      </span>
+                      </div>
                     </li>
                   ))}
                 </ol>
@@ -284,21 +286,21 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
             {sel.learningContent && (
               <div className="px-4 py-3">
                 <div className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wide mb-1.5">교과별 학습 내용</div>
-                <p className="text-[12px] text-[#3C4043] leading-relaxed [word-break:keep-all] whitespace-pre-wrap">{sel.learningContent}</p>
+                <ArtifactMarkdown className="text-[12px] text-[#3C4043] [word-break:keep-all]">{sel.learningContent}</ArtifactMarkdown>
               </div>
             )}
 
             {sel.artifacts && (
               <div className="px-4 py-3">
                 <div className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wide mb-1.5">산출물</div>
-                <p className="text-[12px] text-[#3C4043] leading-relaxed [word-break:keep-all] whitespace-pre-wrap">{sel.artifacts}</p>
+                <ArtifactMarkdown className="text-[12px] text-[#3C4043] [word-break:keep-all]">{sel.artifacts}</ArtifactMarkdown>
               </div>
             )}
 
             {sel.aiCheck && (
               <div className="px-4 py-3 bg-[#E8F0FE]">
                 <div className="text-[11px] font-bold text-[#1967D2] mb-1.5">AI 점검: 학습내용·산출물 반영 검토</div>
-                <p className="text-[12px] text-[#1967D2] leading-relaxed [word-break:keep-all] whitespace-pre-wrap">{sel.aiCheck}</p>
+                <ArtifactMarkdown className="text-[12px] text-[#1967D2] [word-break:keep-all]">{sel.aiCheck}</ArtifactMarkdown>
               </div>
             )}
           </div>
@@ -318,7 +320,7 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
           {d.drivingQuestion && (
             <div className="px-4 py-3 bg-[#F0FDF4] border-b border-[#F1F3F4]">
               <div className="text-[10px] font-bold text-[#059669] mb-1">탐구 질문 (Driving Question)</div>
-              <p className="text-[13px] font-semibold text-[#065F46] leading-relaxed [word-break:keep-all]">{d.drivingQuestion}</p>
+              <ArtifactMarkdown className="text-[13px] font-semibold text-[#065F46] [word-break:keep-all]">{d.drivingQuestion}</ArtifactMarkdown>
             </div>
           )}
           {d.essentialQuestions.length > 0 && (
@@ -328,7 +330,7 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
                 {d.essentialQuestions.map((q, i) => (
                   <li key={i} className="flex gap-2 text-[12px] text-[#3C4043] leading-relaxed">
                     <span className="flex-shrink-0 font-bold text-[#059669]">{i + 1}.</span>
-                    <span className="[word-break:keep-all]">{q}</span>
+                    <ArtifactMarkdown className="[word-break:keep-all]">{q}</ArtifactMarkdown>
                   </li>
                 ))}
               </ol>

@@ -9,13 +9,16 @@ import { useMemo, useState } from 'react'
 import { buildAlignment, type AlignmentLink } from '@/lib/curriculum/alignment'
 import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
 import { useAchievementLevels } from '@/lib/curriculum/useAchievementLevels'
-import type { CurriculumSheetRow } from '@/types'
+import { displayActivityCode, type CurriculumSheetRow } from '@/types'
 import { AchievementLevelList, LevelBadge } from './AchievementLevelDisclosure'
 
 type ArtifactMap = Record<string, { content?: Record<string, unknown> | null } | undefined>
 
-function LinkList({ links, emptyText, artifactReady }: { links: AlignmentLink[]; emptyText: string; artifactReady: boolean }) {
+function LinkList({ links, emptyText, artifactReady, noCodes = false }: { links: AlignmentLink[]; emptyText: string; artifactReady: boolean; noCodes?: boolean }) {
   if (links.length === 0) {
+    if (artifactReady && noCodes) {
+      return <span className="text-[12px] text-[#80868B]" title="산출물에 성취기준 코드가 적혀 있지 않아 연결을 판단할 수 없어요">코드 미표기</span>
+    }
     return artifactReady
       ? <span className="inline-block rounded-md bg-[#FCE8E6] px-2 py-0.5 text-[11px] font-bold text-[#C5221F]">{emptyText}</span>
       : <span className="text-[12px] text-[#9AA0A6]">아직 설계 전</span>
@@ -52,8 +55,11 @@ export function AlignmentMatrixCard({ artifacts, curriculumSheet }: {
 
   if (codes.length === 0) return null
 
+  // 코드가 아예 적히지 않은 산출물은 '빈칸'이 아니라 '코드 미표기'로 따로 안내한다.
+  const checksActivities = alignment.hasActivityArtifact && !alignment.activityHasNoCodes
+  const checksEvaluations = alignment.hasEvaluationArtifact && !alignment.evaluationHasNoCodes
   const gaps = alignment.rows.filter(r =>
-    (alignment.hasActivityArtifact && r.activities.length === 0) || (alignment.hasEvaluationArtifact && r.evaluations.length === 0),
+    (checksActivities && r.activities.length === 0) || (checksEvaluations && r.evaluations.length === 0),
   ).length
   const noALevel = alignment.hasActivityArtifact
     ? alignment.rows.filter(r => r.activities.length > 0 && !r.activities.some(a => a.levels.includes('A'))).length
@@ -77,14 +83,17 @@ export function AlignmentMatrixCard({ artifacts, curriculumSheet }: {
       </button>
       {open && (
         <div>
+          <p className="border-b border-[#F1F3F4] px-4 py-1.5 text-[11px] text-[#5F6368]" data-testid="alignment-legend">
+            A·B·C = 이 활동·평가가 겨냥하는 성취수준(A가 가장 높음) · N차시 = {displayActivityCode('Ds-1-3')} 학습 활동의 누적 차시
+          </p>
           {error && <p className="px-4 py-2 text-[12px] text-[#C5221F]">{error}</p>}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm border-collapse">
               <thead>
                 <tr className="bg-[#1A73E8] text-left text-xs font-bold text-white">
                   <th className="px-3 py-2 w-[26%]">성취기준 · 성취수준</th>
-                  <th className="px-3 py-2">학습 활동 (Ds-1-3)</th>
-                  <th className="px-3 py-2">평가 요소 (Ds-1-1)</th>
+                  <th className="px-3 py-2">학습 활동 ({displayActivityCode('Ds-1-3')})</th>
+                  <th className="px-3 py-2">평가 요소 ({displayActivityCode('Ds-1-1')})</th>
                 </tr>
               </thead>
               <tbody>
@@ -109,10 +118,10 @@ export function AlignmentMatrixCard({ artifacts, curriculumSheet }: {
                         {entry && expanded && <div className="mt-1.5"><AchievementLevelList entry={entry} /></div>}
                       </td>
                       <td className="px-3 py-2.5">
-                        <LinkList links={row.activities} emptyText="연결된 활동 없음" artifactReady={alignment.hasActivityArtifact} />
+                        <LinkList links={row.activities} emptyText="연결된 활동 없음" artifactReady={alignment.hasActivityArtifact} noCodes={alignment.activityHasNoCodes} />
                       </td>
                       <td className="px-3 py-2.5">
-                        <LinkList links={row.evaluations} emptyText="평가 요소 없음" artifactReady={alignment.hasEvaluationArtifact} />
+                        <LinkList links={row.evaluations} emptyText="평가 요소 없음" artifactReady={alignment.hasEvaluationArtifact} noCodes={alignment.evaluationHasNoCodes} />
                       </td>
                     </tr>
                   )
@@ -121,6 +130,11 @@ export function AlignmentMatrixCard({ artifacts, curriculumSheet }: {
             </table>
           </div>
           <div className="space-y-1 border-t border-[#E8EAED] bg-[#F8F9FA] px-4 py-2.5 text-[11px] leading-relaxed text-[#5F6368]">
+            {alignment.evaluationHasNoCodes && (
+              <p className="font-semibold text-[#B06000]">
+                {displayActivityCode('Ds-1-1')} 평가 계획에 성취기준 코드가 적혀 있지 않아 평가 연결을 판단할 수 없어요. 평가 요소마다 근거 성취기준 코드(예: [2국03-02])를 적으면 연결됩니다.
+              </p>
+            )}
             {noALevel > 0 && (
               <p className="font-semibold text-[#B06000]">
                 활동은 있지만 A 수준을 겨냥한 활동이 없는 성취기준 {noALevel}개 — 학생이 A 수준 행동을 해 볼 기회가 있는지 확인해 보세요.

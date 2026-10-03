@@ -15,9 +15,19 @@ const LEVEL_TONE: Record<'A' | 'B' | 'C', string> = {
   C: 'bg-[#FEF7E0] text-[#B06000]',
 }
 
+const LEVEL_MEANING: Record<'A' | 'B' | 'C', string> = {
+  A: '성취수준 A — 가장 높은 수준',
+  B: '성취수준 B — 중간 수준',
+  C: '성취수준 C — 기초 수준',
+}
+
 export function LevelBadge({ level }: { level: 'A' | 'B' | 'C' }) {
   return (
-    <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-[11px] font-bold ${LEVEL_TONE[level]}`}>
+    <span
+      title={LEVEL_MEANING[level]}
+      aria-label={LEVEL_MEANING[level]}
+      className={`inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-[11px] font-bold ${LEVEL_TONE[level]}`}
+    >
       {level}
     </span>
   )

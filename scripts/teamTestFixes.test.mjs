@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import ts from 'typescript'
 import React from 'react'
+import * as jsxRuntime from 'react/jsx-runtime'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
 import { unified } from 'unified'
@@ -1025,4 +1026,188 @@ test('34: CJK 굵게 플러그인을 적용해도 1~3개 범위 물결표는 보
   assert.deepEqual(paragraph.children.map(node => ({ type: node.type, text: node.value })), [
     { type: 'text', text: '1~3개' },
   ])
+})
+
+// ─── TASK-030: 산출물 본문 Markdown 표시와 팀원 확대 보기 ─────────
+function loadArtifactTsx(relativePath, bindings, functionNames) {
+  let source = fs.readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+  if (functionNames) {
+    const sourceTree = ts.createSourceFile(relativePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    source = functionNames.map(name => {
+      let found
+      function visit(node) {
+        if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node
+        ts.forEachChild(node, visit)
+      }
+      visit(sourceTree)
+      assert.ok(found, name)
+      return found.getText(sourceTree).replace(/^(?:export\s+)?function/, 'export function')
+    }).join('\n')
+  }
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+  }).outputText
+  const context = { exports: {}, ...bindings, require(name) {
+    if (name === 'react/jsx-runtime') return jsxRuntime
+    assert.ok(Object.hasOwn(bindings, name), name)
+    return bindings[name]
+  } }
+  vm.runInNewContext(compiled, context)
+  return context.exports
+}
+
+const { ArtifactMarkdown } = loadArtifactTsx('../src/components/artifacts/ArtifactMarkdown.tsx', {
+  'react-markdown': { __esModule: true, default: ReactMarkdown },
+  '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
+})
+const { Ds12Renderer } = loadArtifactTsx('../src/components/artifacts/structured/Ds12Renderer.tsx', {
+  '../ArtifactMarkdown': { ArtifactMarkdown },
+})
+
+test('030: Ds-2 패널·상세 모달은 저장 본문의 굵게·목록·표를 렌더하고 원문을 변경하지 않는다', () => {
+  const content = {
+    _schema: 'Ds-1-2',
+    문제상황: '**제목**: 우리 동네 그늘\n\n**행1 (실제성)**: 1~3개 장소\n\n- **‘일’**로 정하기\n- 인터뷰하기\n\n| 장소 | 이용자 |\n| --- | --- |\n| 학교 | **어린이** |',
+    '성취기준 연결': '**1-2학년군 국어 [2국03-02]**: 이유 쓰기',
+  }
+  const before = structuredClone(content)
+  const { ArtifactContent, ArtifactPreviewModal } = loadArtifactTsx('../src/components/artifacts/ArtifactPanel.tsx', {
+    StructuredArtifactRenderer: ({ content }) => React.createElement(Ds12Renderer, { data: content }),
+    useState: () => [false, () => {}], useEffect: () => {},
+    document: { body: {} }, createPortal: children => children,
+    STAGE_COLOR: { Ds: {} }, cn: (...values) => values.filter(Boolean).join(' '),
+    FileText: () => null, Copy: () => null, Check: () => null, X: () => null, StatusBadge: () => null,
+  }, ['ArtifactContent', 'ArtifactPreviewModal'])
+  for (const element of [
+    React.createElement(ArtifactContent, { content, activityCode: 'Ds-1-2' }),
+    React.createElement(ArtifactPreviewModal, { modal: { title: '문제 상황 설정', content, activityCode: 'Ds-1-2', stageCode: 'Ds' }, onClose() {} }),
+  ]) {
+    const html = renderToStaticMarkup(element)
+    assert.match(html, /<strong[^>]*>제목<\/strong>/)
+    assert.match(html, /<strong[^>]*>행1 \(실제성\)<\/strong>/)
+    assert.match(html, /<strong[^>]*>1-2학년군 국어 \[2국03-02\]<\/strong>/)
+    assert.match(html, /<strong[^>]*>‘일’<\/strong>로/)
+    assert.match(html, /<ul[^>]*>/)
+    assert.match(html, /<table[^>]*>/)
+    assert.match(html, /<strong[^>]*>어린이<\/strong>/)
+    assert.match(html, /1~3개 장소/)
+    assert.doesNotMatch(html, /\*\*|\| --- \|/)
+  }
+  assert.deepEqual(content, before)
+})
+
+test('030: Ds-2 공동편집 전용 표는 열·행을 보존하고 자유 본문만 Markdown으로 렌더한다', () => {
+  const content = { manualWorkspace: {
+    columns: [{ id: 'label' }, { id: 'value' }],
+    rows: [{ id: 'r1', cells: { label: '실제성', value: '학교 주변 조사' } }],
+    blocks: [
+      { id: 'p1', type: 'paragraph', content: '**우리 동네**\n\n1. 조사\n2. 제안' },
+      { id: 't1', type: 'table', table: { columns: [{ id: 'col', label: '자료' }], rows: [{ id: 'row', cells: { col: '지도' } }] } },
+    ],
+  } }
+  const original = structuredClone(content)
+  const html = renderToStaticMarkup(React.createElement(Ds12Renderer, { data: content }))
+  assert.equal((html.match(/<table\b/g) ?? []).length, 2)
+  for (const value of ['실제성', '학교 주변 조사', '자료', '지도']) assert.ok(html.includes(value))
+  assert.match(html, /<strong[^>]*>우리 동네<\/strong>/)
+  assert.match(html, /<ol[^>]*>/)
+  assert.deepEqual(content, original)
+})
+
+test('030: 팀원도 내용이 있는 Ds-2 확대 버튼으로 현재 버전의 읽기 전용 상세 모달을 연다', () => {
+  const source = fs.readFileSync(new URL('../src/components/artifacts/ArtifactPanel.tsx', import.meta.url), 'utf8')
+  const sourceTree = ts.createSourceFile('ArtifactPanel.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  let button
+  function visit(node) {
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(sourceTree) === 'button'
+      && node.openingElement.attributes.properties.some(prop => ts.isJsxAttribute(prop)
+        && prop.name.getText(sourceTree) === 'aria-label' && prop.initializer?.text === '산출물 전체 보기')) button = node
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceTree)
+  assert.ok(button)
+  assert.match(button.getText(sourceTree), /onClick=\{openCurrentArtifactPreview\}/)
+  assert.doesNotMatch(button.getText(sourceTree), /disabled|isHost/)
+  let guard = button.parent
+  while (ts.isParenthesizedExpression(guard)) guard = guard.parent
+  assert.ok(ts.isBinaryExpression(guard))
+  assert.equal(guard.left.getText(sourceTree), 'hasContent')
+  const content = { 문제상황: '**제목**: 우리 동네' }
+  let opened
+  const { openCurrentArtifactPreview } = loadArtifactTsx('../src/components/artifacts/ArtifactPanel.tsx', {
+    isHost: false, viewingActivity: 'Ds-1-2', displayContent: content,
+    displayArtifact: { title: '문제 상황 설정', currentVersion: 2 },
+    activityMeta: { label: '문제 상황 설정', stage: 'Ds' }, effectiveStatus: 'confirmed',
+    openArtifactPreview: modal => { opened = modal },
+  }, ['openCurrentArtifactPreview'])
+  openCurrentArtifactPreview()
+  assert.equal(opened.content, content)
+  assert.equal(opened.activityCode, 'Ds-1-2')
+  assert.equal(opened.subtitle, '문제 상황 설정 · 버전 2')
+  assert.equal(opened.status, 'confirmed')
+})
+
+// ─── TASK-031: 성취기준 정렬 점검 — 평가 근거 섹션 확장 · 코드 미표기 구분 · 범례·문서 번호 ─────────
+const task031 = await import('../src/lib/curriculum/alignment.ts')
+
+test('31a: 평가 계획 밖 섹션(수준 기준 표·문장)의 코드도 평가 근거로 잇고 라벨은 평가 항목명', () => {
+  const ds11 = {
+    '평가 계획': '| 확인 지점 | 평가 요소 | 평가 방법 |\n|---|---|---|\n| 1-2학년군 결과물 | 그림·스티커로 표시 | 관찰 |',
+    '수준 기준': '| 평가 항목 | 근거 성취기준 | 상 | 중 | 하 |\n|---|---|---|---|---|\n| 1-2학년군 발표 말하기 | 근거 성취기준: [2국03-02] A | 이유를 말함 | 일부 | 도움 |\n| 5-6학년군 주장 글 | [6국03-02] B | 출처 | 근거 | 일부 |',
+    '평가 메모': '- 3-4학년군 지도 발표: 근거 성취기준 [4사08-02] A\n일반 문장은 연결하지 않는다.',
+  }
+  const result = task031.buildAlignment(['[2국03-02]', '[6국03-02]', '[4사08-02]', '[4과16-01]'], ds11, null)
+  const byCode = Object.fromEntries(result.rows.map(r => [r.code, r.evaluations]))
+  assert.deepEqual(byCode['[2국03-02]'], [{ label: '1-2학년군 발표 말하기', levels: ['A'] }])
+  assert.deepEqual(byCode['[6국03-02]'], [{ label: '5-6학년군 주장 글', levels: ['B'] }])
+  assert.equal(byCode['[4사08-02]'].length, 1)
+  assert.match(byCode['[4사08-02]'][0].label, /^3-4학년군 지도 발표/)
+  assert.deepEqual(byCode['[4사08-02]'][0].levels, ['A'])
+  assert.deepEqual(byCode['[4과16-01]'], [])
+  assert.equal(result.evaluationHasNoCodes, false)
+})
+
+test('31b: 평가 산출물에 코드가 하나도 없으면 빈칸이 아니라 코드 미표기로 구분한다(herdr Ds-1-1 v2 형태)', () => {
+  const herdrDs11 = { '평가 계획': '| 확인 지점 | 평가 요소 | 평가 방법 | 평가 시점 | 평가 주체 |\n|---|---|---|---|---|\n| 1-2학년군 결과물 | 더운 곳과 그늘이 필요한 곳을 표시 | 관찰 | 발표 때 | 교사 |\n| 모둠 참여 과정 | 역할 수행 | 관찰 | 협의 중 | 교사 |' }
+  const ds13 = { '학습 활동': '| 순서 | 흐름 단계 | 활동명 | 활동 설명 | 핵심/부가 | 담당 교과 | 누적 차시 | 차시 운영 |\n|---|---|---|---|---|---|---|---|\n| 1 | 문제 이해 | 더위와 그늘 문제 발견하기 | 스티커 (근거: [2바02-01] A) | 핵심 | 통합 | 1차시 | 1 |' }
+  const result = task031.buildAlignment(['[2바02-01]', '[2국03-02]'], herdrDs11, ds13)
+  assert.equal(result.hasEvaluationArtifact, true)
+  assert.equal(result.evaluationHasNoCodes, true)
+  assert.equal(result.activityHasNoCodes, false)
+  assert.deepEqual(result.rows[0].activities, [{ label: '1차시 더위와 그늘 문제 발견하기', levels: ['A'] }])
+  const card = fs.readFileSync(new URL('../src/components/curriculum/AlignmentMatrixCard.tsx', import.meta.url), 'utf8')
+  assert.match(card, /const checksEvaluations = alignment\.hasEvaluationArtifact && !alignment\.evaluationHasNoCodes/)
+  assert.match(card, /코드 미표기/)
+})
+
+test('31c: 범례·배지 설명·열 머리글 문서 번호', () => {
+  const card = fs.readFileSync(new URL('../src/components/curriculum/AlignmentMatrixCard.tsx', import.meta.url), 'utf8')
+  assert.match(card, /A·B·C = 이 활동·평가가 겨냥하는 성취수준\(A가 가장 높음\) · N차시 = \{displayActivityCode\('Ds-1-3'\)\} 학습 활동의 누적 차시/)
+  assert.match(card, /학습 활동 \(\{displayActivityCode\('Ds-1-3'\)\}\)/)
+  assert.match(card, /평가 요소 \(\{displayActivityCode\('Ds-1-1'\)\}\)/)
+  assert.doesNotMatch(card, /\(Ds-1-3\)<\/th>|\(Ds-1-1\)<\/th>/)
+  assert.equal(displayActivityCode('Ds-1-3'), 'Ds-3')
+  assert.equal(displayActivityCode('Ds-1-1'), 'Ds-1')
+  const badge = fs.readFileSync(new URL('../src/components/curriculum/AchievementLevelDisclosure.tsx', import.meta.url), 'utf8')
+  assert.match(badge, /A: '성취수준 A — 가장 높은 수준'/)
+  assert.match(badge, /title=\{LEVEL_MEANING\[level\]\}\s+aria-label=\{LEVEL_MEANING\[level\]\}/)
+})
+
+// ─── TASK-032: Ds-1 프롬프트 — 평가 요소마다 근거 성취기준 코드 표기 ─────────
+test('32: Ds-1 팀·개인 프롬프트가 평가 요소마다 "(근거: [코드] 수준)"을 요구하고, 그 표기가 정렬 점검에 연결된다', () => {
+  const project = { title: 't', schoolLevel: '초등', targetGradeGroup: '초3-4', targetSubjects: [], mode: 'collaborative', isA23Completed: false, currentCycle: 1 }
+  const team = buildSystemPrompt('Ds', 'Ds-1-1', project, '팀+AI', undefined, null, '홍성용(팀장), 캔바1', {}, undefined)
+  const solo = buildSystemPrompt('Ds', 'Ds-1-1', { ...project, mode: 'solo' }, '개인+AI', undefined, null, undefined, {}, undefined)
+  for (const prompt of [team, solo]) {
+    assert.match(prompt, /근거 성취기준 표기\(필수\)/)
+    assert.match(prompt, /"\(근거: \[코드\] A\)" 형식으로 반드시 적는다/)
+    assert.match(prompt, /코드는 A-2-1\(또는 분석시트\)에 있는 것만 그대로 옮기고 새로 만들지 않는다/)
+  }
+  // 성취수준 블록 유무와 상관없이 요구한다(이전에는 블록이 있을 때만 병기 → herdr 산출물에 코드가 없었음).
+  assert.doesNotMatch(team, /성취수준" 블록이 주입되어 있으면 평가 요소는 그 A·B·C 원문의 행동을 확인하도록 쓰고 근거 코드를 병기한다/)
+  // 저장 예시 행을 정렬 점검이 그대로 읽는다.
+  const saved = { '평가 계획': '| 확인 지점 | 평가 요소 | 평가 방법 | 평가 시점 | 평가 주체 |\n|---|---|---|---|---|\n| 1-2학년군 결과물 | 더운 곳과 그늘이 필요한 곳을 표시하고 이유를 한 문장으로 표현함 (근거: [2국03-02] B) | 그림 지도·문장 확인 | 발표 때 | 교사 |\n| 모둠 참여 과정 | 역할을 수행함 (근거: 과정 평가) | 관찰 | 협의 중 | 교사 |' }
+  const result = task031.buildAlignment(['[2국03-02]'], saved, null)
+  assert.deepEqual(result.rows[0].evaluations, [{ label: '더운 곳과 그늘이 필요한 곳을 표시하고 이유를 한 문장으로 표현함', levels: ['B'] }])
+  assert.equal(result.evaluationHasNoCodes, false)
 })
