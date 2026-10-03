@@ -7,7 +7,7 @@ import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
-import { ReportMarkdown } from './ReportMarkdown'
+import { ReportHero, ReportMarkdown } from './ReportMarkdown'
 import { X, FileText, ArrowLeft, DownloadSimple, FilePdf } from '@phosphor-icons/react'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 
@@ -170,10 +170,8 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
             })}
           </div>
         </div> : <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container)] px-4 py-3 text-[13px] text-[var(--md-sys-on-surface-variant)] sm:px-6">
-            <span className="rounded-full bg-[var(--md-sys-primary-container)] px-3 py-1 font-medium text-[var(--md-sys-on-primary-container)]">{selectedStage}</span>
-            <span className="min-w-0">{STAGE_LABELS[selectedStage]}({selectedStage}) 단계 심층 분석 보고서</span>
-            <span className="text-[12px] sm:ml-auto">{formatDate(selectedReport!.savedAt)}</span>
+          <div className="px-4 pt-4 sm:px-6 sm:pt-6">
+            <ReportHero stage={selectedStage} project={project} generatedAt={selectedReport!.savedAt} />
           </div>
           {reportStale && <div className="mx-4 mt-4 rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-error-container)] p-4 text-[var(--md-sys-on-error-container)] sm:mx-6">
             <p className="text-[13px] font-medium">⚠ 이 보고서가 현재 분석시트와 일치하지 않습니다 — 보고서를 다시 생성해야 최신 교과·중심 교과가 반영됩니다.</p>

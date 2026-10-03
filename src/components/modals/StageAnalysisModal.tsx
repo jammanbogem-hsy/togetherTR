@@ -7,7 +7,7 @@ import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
-import { ReportMarkdown } from './ReportMarkdown'
+import { ReportHero, ReportMarkdown } from './ReportMarkdown'
 import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar, ArrowRight } from '@phosphor-icons/react'
 import { setAnalysisReport, saveStageReport } from '@/lib/firebase/projects'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
@@ -418,7 +418,8 @@ export function StageAnalysisModal({
         </header>
 
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
-          {status === 'loading' && <div className="flex h-full flex-col items-center justify-center gap-4 text-center text-[var(--md-sys-on-surface-variant)]">
+          <ReportHero stage={stage} project={project} generating={status === 'loading' || status === 'streaming'} generatedAt={project?.stageReports?.[stage]?.content === markdown ? project.stageReports[stage]?.savedAt : undefined} />
+          {status === 'loading' && <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 text-center text-[var(--md-sys-on-surface-variant)]">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]"><ChartBar size={28} weight="fill" /></div>
             <p className="text-[16px] font-medium">{isHost ? '산출물 분석 중...' : '보고서가 생성 중입니다'}</p>
             <p className="text-[13px]">{isHost ? 'T-CID 협력 수업설계 관점에서 분석합니다' : '방장이 분석을 완료하면 자동으로 표시됩니다'}</p>

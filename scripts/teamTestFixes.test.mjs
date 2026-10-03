@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
+import { REPORT_SECTIONS, findReportSection } from '../src/lib/report/reportSections.ts'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, buildSystemPrompt } from '../src/lib/prompts/system.ts'
 import { buildOutlinePrompts, buildDetailPrompts, parseOutline } from '../src/lib/problem-situation/generation.ts'
 import { parsePsReady, cleanPsReady } from '../src/lib/problem-situation/readySignal.ts'
@@ -1368,11 +1369,15 @@ test('33c: 생성 프롬프트에 팀 준비·최근 대화·우선순위 한 �
 
 // ─── TASK-034: 보고서 화면 MD3 표 · 모바일 모달 · 내보내기 보존 ─────────
 const reportIcons = loadArtifactTsx('../src/components/ui/ReportSectionIcon.tsx', {})
-const { ReportMarkdown } = loadArtifactTsx('../src/components/modals/ReportMarkdown.tsx', {
+const reportPhosphorIcons = new Proxy({}, { get: (_, name) => props => React.createElement('svg', { ...props, 'data-report-icon': String(name) }) })
+const { ReportMarkdown, ReportHero } = loadArtifactTsx('../src/components/modals/ReportMarkdown.tsx', {
   react: React,
   'react-markdown': { __esModule: true, default: ReactMarkdown },
   '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
   '@/components/ui/ReportSectionIcon': reportIcons,
+  '@/types': { STAGES },
+  '@/lib/report/reportSections': { REPORT_SECTIONS, findReportSection },
+  '@phosphor-icons/react': reportPhosphorIcons,
 })
 
 test('034a: 보고서 MD3 데이터 표는 학년군·강조를 보존하고 고정 머리글·첫 열 최소 폭·내부 스크롤을 제공한다', () => {
@@ -1408,7 +1413,7 @@ function reportModalFixture(name, selected = false, isHost = true) {
     '@/store/project': { useProjectStore: () => ({ project, userProfile: { uid: 'member' }, setPendingStageMove() {} }) },
     '@/types': { STAGES, ACTIVITY_META },
     '@/components/ui/MD3Button': { MD3Button: props => { callbacks.push(props); return React.createElement(MD3Button, props) } },
-    './ReportMarkdown': { ReportMarkdown },
+    './ReportMarkdown': { ReportMarkdown, ReportHero },
     '@phosphor-icons/react': new Proxy({}, { get: () => () => null }),
     '@/lib/firebase/projects': { setAnalysisReport() {}, saveStageReport() {} },
     '@/lib/hwpx/generateHwpx': { generateHwpx() {} },
@@ -1633,4 +1638,121 @@ test('38e: 구조화 저장본도 첫 열로 비교하고, 다른 활동은 행�
   assert.equal(other.updates[0].sections['학습활동-도구 매칭'], task038next)
   assert.deepEqual(other.confirmCodes, [''])
   assert.deepEqual(other.notices, [])
+})
+
+// ─── TASK-040: 보고서 히어로 · 섹션 카드 · 인사이트 · 숫자 열 ─────────
+test('040a: ##별 카드에 제목과 본문을 묶고, 코드 블록 제목은 제외하며 소제목·목록·권고를 구조화한다', () => {
+  const content = '# 보고서\n\n## 새 보고서 핵심 메모\n\n근거를 확인해 주세요.\n\n> 조사 결과를 다음 활동에 활용하세요.\n\n### Ds-3 학습활동\n\n- 지도 비교\n- 인터뷰\n\n3. 질문 만들기\n4. 기록하기\n\n## 새 활동 기록\n\n```md\n## 코드 블록 제목\n```\n\n| 학년군 | 활동 수 | 도달률 |\n| --- | --- | --- |\n| 1-2학년군 | 3 | 80% |\n| 3-4학년군 | 4 | 90% |'
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content }))
+  assert.equal((html.match(/<section data-report-section/g) ?? []).length, 2)
+  assert.match(html, /<section[^>]*>[\s\S]*<h2[^>]*>[\s\S]*새 보고서 핵심 메모[\s\S]*<div class="min-w-0 p-4 sm:p-5">[\s\S]*근거를 확인해 주세요/)
+  assert.match(html, /data-report-icon="Target"/)
+  assert.match(html, /data-report-icon="ListChecks"/)
+  assert.match(html, /<aside role="note" aria-label="인사이트와 권고"/)
+  assert.match(html, /인사이트 · 권고/)
+  assert.match(html, /<h3[^>]*><span class="[^"]*md-sys-secondary-container/)
+  assert.match(html, /data-report-icon="CheckCircle"/)
+  assert.match(html, /aria-hidden="true">3<\/span>/)
+  assert.match(html, /aria-hidden="true">4<\/span>/)
+  assert.match(html, /max-w-\[72ch\]/)
+  assert.match(html, /<th[^>]*style="text-align:right">활동 수<\/th>/)
+  assert.match(html, /<th[^>]*style="text-align:right">도달률<\/th>/)
+  assert.match(html, /<td[^>]*style="text-align:right"><span>80%<\/span><\/td>/)
+  assert.match(html, /<span class="whitespace-nowrap">1-2학년군<\/span>/)
+})
+
+test('040b: 히어로는 현재 단계 데이터로 활동·확정 수와 프로젝트·생성일·갱신일을 표시한다', () => {
+  const project = { title: '우리 동네 폭염과 그늘', updatedAt: { toMillis: () => 1700000000000 }, artifacts: { 'Ds-1-1': { status: 'confirmed' }, 'Ds-1-2': { status: 'draft' }, 'T-1-1': { status: 'confirmed' } } }
+  const html = renderToStaticMarkup(React.createElement(ReportHero, { stage: 'Ds', project, generatedAt: 1700000000000 }))
+  assert.match(html, /설계 단계/)
+  assert.match(html, /우리 동네 폭염과 그늘/)
+  assert.match(html, /data-report-icon="PencilRuler"/)
+  assert.match(html, /<dt>활동 수<\/dt><dd[^>]*>5개<\/dd>/)
+  assert.match(html, /<dt>확정 활동<\/dt><dd[^>]*>1개<\/dd>/)
+  assert.match(html, /생성일 ·/)
+  assert.match(html, /마지막 갱신/)
+  assert.match(html, /flex flex-wrap gap-2/)
+  const generating = renderToStaticMarkup(React.createElement(ReportHero, { stage: 'A', project: null, generating: true }))
+  assert.match(generating, /보고서 생성 중/)
+  assert.doesNotMatch(generating, /생성일 ·|마지막 갱신/)
+  for (const [name, selected] of [['StageAnalysisModal', false], ['StageReportsModal', true]]) {
+    assert.match(reportModalFixture(name, selected).html, /data-report-hero/)
+  }
+})
+
+test('040c: 공용 섹션 이름의 아이콘과 단계별 정렬 제목을 사용하고, 예전 제목은 키워드로 선택한다', () => {
+  for (const section of REPORT_SECTIONS) {
+    const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: `## **${section.title}**\n\n내용` }))
+    assert.ok(html.includes(`data-report-icon="${section.icon}"`), section.title)
+  }
+  for (const [title, icon] of [['팀 협력 구조 점검', 'UsersThree'], ['성찰·개선 연결', 'ArrowsClockwise'], ['옛 보고서 출처 목록', 'Database'], ['새 탐구 질문', 'Question'], ['추가 인사이트', 'Lightbulb']]) {
+    const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: `## ${title}\n\n내용` }))
+    assert.ok(html.includes(`data-report-icon="${icon}"`), title)
+  }
+})
+
+// ─── TASK-039: 단계 분석 보고서 — 구조화 형식·원문 자리표시·직렬화 ─────────
+const task039sections = await import('../src/lib/report/reportSections.ts')
+const task039ph = await import('../src/lib/report/artifactPlaceholders.ts')
+const task039prompt = await import('../src/lib/report/stageReportPrompt.ts')
+
+test('39a: 보고서 고정 섹션 상수와 단계별 정렬 섹션, 예전 머리글은 null', () => {
+  assert.deepEqual(task039sections.REPORT_SECTIONS.map(s => s.title), ['이 단계 핵심 요약', '한눈에 보기', '활동별 산출물 및 분석', '성취기준·평가 정렬', '강점', '보완점', '다음 단계 제안'])
+  assert.ok(task039sections.REPORT_SECTIONS.every(s => s.key && s.icon))
+  assert.equal(task039sections.reportSectionsFor('T')[3].title, '팀 협력 구조 점검')
+  assert.equal(task039sections.reportSectionsFor('Ds')[3].title, '성취기준·평가 정렬')
+  assert.equal(task039sections.REPORT_SECTIONS[3].title, '성취기준·평가 정렬') // 원본 상수는 바뀌지 않음
+  assert.equal(task039sections.findReportSection('🎯 이 단계 핵심 요약')?.key, 'summary')
+  assert.equal(task039sections.findReportSection('성찰·개선 연결')?.key, 'alignment')
+  assert.equal(task039sections.findReportSection('설계 강점 (산출물 근거 기반)'), null)
+})
+
+test('39b: 자리표시는 청크가 어디서 잘려도 원문으로 바뀌고, 모르는 코드·일반 중괄호는 그대로 둔다', () => {
+  const originals = { 'Ds-1-2': '원문 [4사08-02], 6학년은 끝까지' }
+  const whole = '앞\n{{ARTIFACT:Ds-1-2}}\n뒤 {중괄호} {{ARTIFACT:X-9-9}}'
+  const expected = '앞\n원문 [4사08-02], 6학년은 끝까지\n뒤 {중괄호} {{ARTIFACT:X-9-9}}'
+  for (let size = 1; size <= whole.length; size++) {
+    const ex = task039ph.createArtifactPlaceholderExpander(originals)
+    let out = ''
+    for (let i = 0; i < whole.length; i += size) out += ex.push(whole.slice(i, i + size))
+    out += ex.flush()
+    assert.equal(out, expected, `chunk ${size}`)
+  }
+  const unterminated = task039ph.createArtifactPlaceholderExpander(originals)
+  assert.equal(unterminated.push('끝 {{ARTI') + unterminated.flush(), '끝 {{ARTI')
+})
+
+test('39c: 산출물 원문은 JSON 원문 대신 표·문장으로, 프롬프트는 고정 머리글·자리표시·3문장 규칙을 쓴다', () => {
+  const artifacts = {
+    'Ds-1-1': { status: 'confirmed', content: { _schema: 'Ds-1-1', rubric: [{ checkpoint: '결과물', item: 'a\nb', method: '관찰|기록' }], manualWorkspace: { blocks: [1] } } },
+    'Ds-1-2': { content: { _schema: 'Ds-1-2', '선정 문제 상황': { 제목: '그늘', 데이터출처: [{ label: '관찰 사진' }] }, '핵심 질문': '왜?' } },
+  }
+  const originals = task039prompt.buildArtifactOriginals('Ds', artifacts)
+  assert.equal(originals['Ds-1-1'], '**rubric**\n\n| checkpoint | item | method |\n| --- | --- | --- |\n| 결과물 | a / b | 관찰\\|기록 |')
+  assert.doesNotMatch(originals['Ds-1-2'], /[{}"]|\[object Object\]/)
+  assert.match(originals['Ds-1-2'], /제목: 그늘/)
+  assert.match(originals['Ds-1-3'], /아직 작성되지 않았습니다/)
+  const overview = task039prompt.buildOverviewTable('Ds', artifacts)
+  assert.match(overview, /\| 평가 설계 \(Ds-1\) \| 확정 \| 1개 \|/)
+  assert.match(overview, /\(Ds-3\) \| 미작성 \| - \|/)
+  const prompt = task039prompt.buildAnalysisPrompt('Ds', { title: 'herdr', targetGradeGroup: '초1-6' }, artifacts)
+  for (const title of ['이 단계 핵심 요약', '한눈에 보기', '활동별 산출물 및 분석', '성취기준·평가 정렬', '강점', '보완점', '다음 단계 제안']) {
+    assert.match(prompt, new RegExp(`\\n## ${title}\\n`))
+  }
+  assert.match(prompt, /\n\{\{ARTIFACT:Ds-1-1\}\}\n/)
+  assert.match(prompt, /문단은 3문장 이하/)
+  assert.match(prompt, /'> ' 인용 블록/)
+  assert.doesNotMatch(prompt, /## 설계 단계 심층 분석|JSON\.stringify/)
+  const route = fs.readFileSync(new URL('../src/app/api/analyze/stage/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /sendText\(expander\.push\(/)
+  assert.doesNotMatch(route, /JSON\.stringify\(v/)
+})
+
+test('39d: A-2-1 표 구분선 칸 수가 머리글과 같고, Ds-2 데이터 출처 문자열을 쉼표로 쪼개지 않는다', () => {
+  const a21 = task039prompt.buildArtifactOriginals('A', { 'A-2-1': { content: { _schema: 'A-2-1', rows: [{ subject: '국어', coreIdea: 'x', knowledgeUnderstanding: 'k', processFunction: 'p' }] } } })['A-2-1']
+  const lines = a21.split('\n').filter(line => line.startsWith('|'))
+  assert.equal(lines[0].split('|').length, lines[1].split('|').length)
+  const renderer = fs.readFileSync(new URL('../src/components/artifacts/structured/Ds12Renderer.tsx', import.meta.url), 'utf8')
+  assert.match(renderer, /ds\.split\(\/\\n\|\\s\+\\\/\\s\+\/\)/)
+  assert.doesNotMatch(renderer, /ds\.split\(\/\[\\n,\]\/\)/)
 })
