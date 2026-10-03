@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
 import * as phosphorIcons from '@phosphor-icons/react'
 import { STAGE_COLOR } from '../src/lib/ui/stageColors.ts'
-import { REPORT_DASHBOARD_CSS, REPORT_ICON_TONES, reportStageColors } from '../src/components/modals/reportDashboardStyles.ts'
+import { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, REPORT_ICON_TONES, reportStageColors } from '../src/components/modals/reportDashboardStyles.ts'
 import { cleanReportMarkdown } from '../src/lib/markdown/reportDisplay.ts'
 import { buildReportPrintDocument } from '../src/components/modals/printReport.ts'
 import { unified } from 'unified'
@@ -1903,41 +1903,36 @@ test('041e: 옅은 단계색·강점/아이디어 아이콘의 글자 대비는 
   }
 })
 
-test('041f: 부록 원문만 기본 접힘으로 표시하고 본문 그리드 뒤에 원래 표·강조를 보존한다', () => {
+test('041f: 부록 원문은 항상 펼친 일반 섹션이며 본문 뒤에 원래 표·강조를 보존한다', () => {
   const content = '## 강점\n- 질문을 자기 말로 바꿨습니다.\n\n## 부록: 산출물 원문\n### 평가 설계 (Ds-1)\n\n| 기준 | 증거 |\n| --- | --- |\n| **자기 말 질문** | 3차시 [4사08-02] |'
   const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content }))
-  assert.equal((html.match(/<details data-report-appendix="true">/g) ?? []).length, 1)
-  assert.doesNotMatch(html, /<details[^>]*\sopen(?:=|\s|>)/)
-  assert.match(html, /<summary class="report-appendix-toggle">[\s\S]*부록: 산출물 원문[\s\S]*펼치기/)
-  assert.match(html, /<\/section>\s*<section data-report-section="true" data-report-kind="appendix"/)
+  assert.doesNotMatch(html, /<details|<summary|펼치기|접기|report-appendix-toggle/)
+  assert.match(html, /<\/section>\s*<section data-report-section="true" data-report-kind="appendix" class="report-section report-appendix"/)
   assert.match(html, /<strong><span>자기 말 질문<\/span><\/strong>/)
   assert.match(html, /<table\b/)
   assert.match(html, /\[4사08-02\]/)
   assert.match(html, /data-report-icon="Database"/)
-  assert.match(REPORT_DASHBOARD_CSS, /\.report-appendix-collapse\{display:none\}/)
+  assert.doesNotMatch(REPORT_DASHBOARD_CSS, /report-appendix-(?:toggle|collapse|expand|action)/)
   const legacy = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: '## 부록 안내\n\n예전 보고서의 일반 섹션' }))
   assert.doesNotMatch(legacy, /<details/)
   assert.match(legacy, /예전 보고서의 일반 섹션/)
 })
 
-test('041g: PDF 복사본의 부록은 자동으로 펼쳐 새 페이지에서 인쇄하고 원래 화면은 건드리지 않는다', async () => {
-  const screenAppendix = { open: false }
-  const printAppendix = { open: false }
+test('041g: PDF 부록도 펼쳐진 원문 그대로 새 페이지에서 인쇄하고 원래 화면은 건드리지 않는다', async () => {
   const markup = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: '## 다음 단계 제안\n1. 기록하기\n\n## 부록: 산출물 원문\n\n저장된 원문' }))
   let written
   let printed = false
-  const win = { document: { fonts: { ready: Promise.resolve() }, querySelectorAll: selector => { assert.equal(selector, 'details[data-report-appendix]'); return [printAppendix] }, write: html => { written = html }, close() {} }, requestAnimationFrame: callback => callback(), print: () => { assert.equal(printAppendix.open, true); printed = true }, close() {} }
+  const win = { document: { fonts: { ready: Promise.resolve() }, write: html => { written = html }, close() {} }, requestAnimationFrame: callback => callback(), print: () => { printed = true }, close() {} }
   const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors }, window: { open: () => win } })
-  const source = { innerHTML: markup, appendix: screenAppendix }
+  const source = { innerHTML: markup }
   module.printReport(source, '부록 포함 보고서')
   await win.onload()
   assert.equal(printed, true)
-  assert.equal(screenAppendix.open, false)
   assert.equal(source.innerHTML, markup)
   assert.equal(written.split('<body>')[1].split('</body>')[0], markup)
   assert.match(written, /저장된 원문/)
+  assert.doesNotMatch(written, /<details|<summary/)
   assert.match(written, /\.report-section\.report-appendix\{break-before:page;page-break-before:always;break-inside:auto/)
-  assert.match(written, /@media print\{[\s\S]*\.report-appendix-action\{display:none\}/)
 })
 
 // ─── TASK-043: 산출물 원문 정규화 — 라벨 문단·성취기준 줄을 표로, 여러 줄 문단은 목록으로 ─────────
@@ -2081,7 +2076,7 @@ test('041i: Ds-3 8열 표는 짧은 열의 실제 길이로 최소 폭을 정하
   assert.match(REPORT_DASHBOARD_CSS, /\.report-long-english\{word-break:normal;overflow-wrap:anywhere\}/)
   assert.match(REPORT_DASHBOARD_CSS, /th\{[^}]*white-space:nowrap/)
   assert.match(REPORT_DASHBOARD_CSS, /td\[data-short-cell="true"\]\{white-space:nowrap\}/)
-  assert.match(REPORT_DASHBOARD_CSS, /@media print\{\s*\.report-table-wide/)
+  assert.match(REPORT_PRINT_CSS, /\.report-table-wide\{border:0;background:transparent\}/)
   assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide thead\{display:none\}/)
   assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide tbody tr\{display:block;/)
   assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide td:before\{content:attr\(data-label\);display:inline-block;white-space:nowrap/)
@@ -2100,7 +2095,8 @@ test('041j: 부록 원문의 2열·4열 표도 열 폭·성취기준 칩·단어
   assert.match(html, /<td data-short-cell="true" data-label="교과" style="min-width:\d+ch">/)
   assert.match(html, /<span class="report-standard">\[4사08-02\]<\/span>/)
   assert.match(html, /<span class="whitespace-nowrap">3-4학년군<\/span>/)
-  assert.match(html, /<details data-report-appendix="true">/)
+  assert.match(html, /data-report-kind="appendix" class="report-section report-appendix"/)
+  assert.doesNotMatch(html, /<details|<summary/)
   const pdf = buildReportPrintDocument(html, '원문 부록')
   assert.ok(pdf.includes('주민 의견을 근거로 그늘막 위치를 제안한다.'))
   assert.ok(pdf.includes('.report-dashboard th{position:sticky;top:0;z-index:1;background:var(--report-stage-container,#E8F0FE);'))
@@ -2216,4 +2212,62 @@ test('045d: 두 모달의 MD 다운로드도 같은 표시 정리를 하고 HWPX
   const saved = fs.readFileSync(new URL('../src/components/modals/StageReportsModal.tsx', import.meta.url), 'utf8')
   assert.match(generated, /generateHwpx\(markdown,/)
   assert.match(saved, /generateHwpx\(displayContent,/)
+})
+
+
+// ─── TASK-047: PDF 스크롤 해제·전체 표·항상 펼친 부록 ─────────
+test('047a: 인쇄 CSS는 스크롤·최대 높이·고정 머리글을 해제하고 표의 페이지 분할을 허용한다', () => {
+  const rules = [...REPORT_PRINT_CSS.matchAll(/([^{}]+)\{([^{}]+)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), declarations: body.split(';').filter(Boolean).map(value => value.trim().split(/:(.*)/s).slice(0, 2)) }))
+  const declarations = rules.flatMap(rule => rule.declarations)
+  for (const [property, value] of declarations) {
+    if (/^overflow(?:-[xy])?$/.test(property)) assert.equal(value, 'visible!important')
+    if (property === 'max-height') assert.equal(value, 'none!important')
+    if (property === 'position') assert.equal(value, 'static!important')
+  }
+  const universal = rules.find(rule => rule.selector === 'html,body,body *')
+  assert.ok(universal)
+  assert.deepEqual(universal.declarations, [
+    ['max-height', 'none!important'], ['overflow', 'visible!important'],
+    ['overflow-x', 'visible!important'], ['overflow-y', 'visible!important'],
+  ])
+  assert.match(REPORT_PRINT_CSS, /height:auto!important;min-height:0!important;contain:none!important/)
+  assert.match(REPORT_PRINT_CSS, /\.report-section,\.report-body,\.report-activities,\.report-activity,\.report-table-scroll\{break-inside:auto;page-break-inside:auto\}/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard thead\{display:table-header-group\}/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard tr\{break-inside:avoid;page-break-inside:avoid\}/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard th,\.report-dashboard td\{min-width:0!important/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard pre\{white-space:pre-wrap;overflow-wrap:anywhere\}/)
+  // 화면 표의 세로/가로 스크롤은 그대로 두고 PDF에서만 해제한다.
+  assert.match(REPORT_DASHBOARD_CSS, /max-height:60vh;overflow:auto/)
+  assert.ok(REPORT_DASHBOARD_CSS.endsWith(REPORT_PRINT_CSS + '\n'))
+})
+
+test('047b: 긴 일반 표와 부록 표의 모든 행은 인쇄 문서에 보존되고 부록 접힘 마크업이 없다', () => {
+  const rows = Array.from({ length: 150 }, (_, index) => `| 행${String(index + 1).padStart(3, '0')} | 주민 인터뷰 기록 ${index + 1} |`).join('\n')
+  const content = `## 활동별 산출물 및 분석\n### Ds-3 학습활동\n\n| 구분 | 기록 |\n| --- | --- |\n${rows}\n\n## 부록: 산출물 원문\n\n| 구분 | 내용 |\n| --- | --- |\n| 마지막 원문 | 빠짐없이 인쇄되어야 하는 내용 |`
+  const markup = renderToStaticMarkup(React.createElement(ReportMarkdown, { content, stage: 'Ds' }))
+  const pdf = buildReportPrintDocument(markup, '전체 기록')
+  assert.equal(pdf.split('<body>')[1].split('</body>')[0], markup)
+  for (let index = 1; index <= 150; index++) assert.ok(pdf.includes(`행${String(index).padStart(3, '0')}`))
+  assert.equal((markup.match(/<tr>/g) ?? []).length, 153)
+  assert.match(pdf, /마지막 원문/)
+  assert.match(pdf, /빠짐없이 인쇄되어야 하는 내용/)
+  assert.doesNotMatch(markup, /<details|<summary|펼치기|접기|class="report-table-scroll report-table-wide"/)
+  assert.ok(pdf.includes(REPORT_PRINT_CSS))
+})
+
+test('047c: 6열 이상과 폭이 큰 소수 열 표는 A4 카드형으로 표시하며 모든 셀의 머리글·내용을 유지한다', () => {
+  const wide = '| 순서 | 흐름 단계 | 차시 | 핵심/부가 | 담당 교과 | 활동명 | 학생 수행 | 기록 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n' + Array.from({ length: 30 }, (_, index) => `| ${index + 1} | 조사 | 3차시 | 핵심 | 사회 | 활동${index + 1} | 주민에게 질문하기 | 증거${index + 1} |`).join('\n')
+  const longHeader = '| 첫째 항목의 자세한 내용과 연결된 근거 | 둘째 항목의 자세한 내용과 연결된 근거 | 셋째 항목의 자세한 내용과 연결된 근거 |\n| --- | --- | --- |\n| 첫 기록 | 둘째 기록 | 셋째 기록 |'
+  const markup = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: `## 활동\n${wide}\n\n## 부록: 산출물 원문\n${longHeader}` }))
+  const pdf = buildReportPrintDocument(markup, '넓은 표')
+  assert.equal((markup.match(/class="report-table-scroll report-table-wide"/g) ?? []).length, 2)
+  assert.equal((markup.match(/<td /g) ?? []).length, 243)
+  for (let index = 1; index <= 30; index++) {
+    assert.ok(pdf.includes(`활동${index}`))
+    assert.ok(pdf.includes(`증거${index}`))
+  }
+  for (const label of ['순서', '흐름 단계', '담당 교과', '학생 수행']) assert.ok(pdf.includes(`data-label="${label}"`))
+  assert.match(REPORT_PRINT_CSS, /\.report-table-wide table,\.report-table-wide tbody\{display:block;width:100%\}/)
+  assert.match(REPORT_PRINT_CSS, /\.report-table-wide tbody tr\{[^}]*break-inside:avoid;page-break-inside:avoid/)
+  assert.match(REPORT_PRINT_CSS, /\.report-table-wide td:before\{content:attr\(data-label\)/)
 })

@@ -242,16 +242,7 @@ export function ReportMarkdown({ content, stage, project }: { content: string; s
     <ReactMarkdown remarkPlugins={[...REMARK_PLUGINS, [remarkReportCards, { stage, project }]]} components={{
       section: ({ children, node }) => {
         const kind = String(node?.properties?.['data-report-kind'] ?? node?.properties?.dataReportKind ?? 'general')
-        if (kind === 'appendix') {
-          const [heading, ...body] = Children.toArray(children)
-          return <section data-report-section data-report-kind="appendix" className="report-section report-appendix">
-            <details data-report-appendix>
-              <summary className="report-appendix-toggle">{heading}<span className="report-appendix-action"><span className="report-appendix-expand">펼치기</span><span className="report-appendix-collapse">접기</span><ArrowRight size={16} aria-hidden="true" /></span></summary>
-              {body}
-            </details>
-          </section>
-        }
-        return <section data-report-section data-report-kind={kind} className="report-section">{children}</section>
+        return <section data-report-section data-report-kind={kind} className={`report-section${kind === 'appendix' ? ' report-appendix' : ''}`}>{children}</section>
       },
       h1: ({ children }) => <h1>{children}</h1>,
       h2: ({ children }) => {

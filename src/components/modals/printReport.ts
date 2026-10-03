@@ -16,8 +16,6 @@ export function printReport(content: HTMLElement, title: string): void {
   const win = window.open('', '_blank')
   if (!win) return
   win.onload = async () => {
-    // 인쇄 창의 복사본만 펼치므로 사용자가 보고 있던 접힘 상태는 유지된다.
-    win.document.querySelectorAll<HTMLDetailsElement>('details[data-report-appendix]').forEach(appendix => { appendix.open = true })
     // 로컬 글꼴의 레이아웃까지 준비한 뒤 SVG가 포함된 같은 화면을 인쇄한다.
     await win.document.fonts.ready
     win.requestAnimationFrame(() => win.requestAnimationFrame(() => {
