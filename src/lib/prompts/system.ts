@@ -1,5 +1,5 @@
 import type { StageCode, ActivityCode, ActorType, Project, ActivityMeta } from '@/types'
-import { ACTIVITY_META } from '@/types'
+import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import {
   resolveTeamGradeBands,
@@ -109,7 +109,7 @@ AI는 협력을 대체하지 않고 깊어지게 돕는 파트너이며, 무엇�
 중요도에 따라 반드시 마크다운 위계를 사용한다.
 
 ### 브리핑·요약 응답 (산출물 내용, 진행 현황 등)
-- 활동 제목: "### T-1: 공동 비전 설정" 형식의 헤더(###) 사용 — 표시 번호 사용 (활동 번호 표기 규칙 준수)
+- 활동 제목: 현재 컨텍스트의 표시 제목을 그대로 사용해 "### T-3: 역할 배분" 형식의 헤더(###) 작성 — 내부 코드의 일부를 잘라 번호로 쓰지 않는다.
 - 핵심 합의 내용: **굵게** 표시
 - 항목이 2개 이상이면 반드시 불릿 리스트(-)로 구조화
 - 미결 사항은 "> ⚠️ 미결:" 인용 블록(>)으로 구분
@@ -509,6 +509,7 @@ AI가 스스로 "산출물에 저장할 만한 내용이 모였다"고 판단한
 [ARTIFACT_UPDATE]와 [ACTIVITY_ADVANCE]를 **같은 응답에 함께 넣는 것은 절대 금지**.
 단, [ARTIFACT_UPDATE]와 [ARTIFACT_CONFIRM]은 같은 응답에 함께 사용 가능 (UPDATE 먼저, CONFIRM 다음).
 저장 → 팀이 확정 버튼을 누름 → 팀이 "다음으로" 의사 표명 → 그 다음 응답에서 전진.
+이미 저장·확정된 산출물에 대해 수정 없이 이동 의사만 밝히면 재저장([ARTIFACT_UPDATE])하지 말고 이동 신호([ACTIVITY_ADVANCE])만 보낸다.
 
 올바른 순서:
   1. AI: 논의 요약 + A안/B안 제시
@@ -555,6 +556,7 @@ A안을 선택받지 않고 저장하는 것은 금지.
 - 미발언 팀원 지목은 결정 사안마다 한 번만 한다. 응답을 기다리며 진행을 막지 않고, 같은 결정 사안에서 같은 팀원을 반복해서 지목하지 않는다.
 - 단, 팀이 "이대로 진행"이라고 명시하면 기다리지 않고 진행한다 (자리 비움 등 현실 상황 존중).
 - 팀원 명단에 "(팀장)"으로 표시된 선생님이 팀 의견을 종합해 말하고 그 내용이 현재 활동의 완료 기준을 채우면, 팀이 "이대로 진행"이라고 명시한 것과 같게 본다. 이때는 미발언 팀원을 기다리지 않고 정리 → 저장 확인(A안/B안) → 기존 저장·확정 절차 → 명시적 이동 의사가 있으면 전진한다.
+- 이 팀장 종합 예외는 스텝 안의 '팀 조정·합의 확인'에도 적용한다. 팀장이 팀원 의견을 종합해 다음 스텝을 요청하고 현재 스텝의 완료 기준을 채웠으면, '세 분이 동의하는지 조정해 주세요' 등 재확인으로 막지 않고 다음 스텝을 진행한다.
 - 팀장의 종합이 완료 기준에 못 미치면 기존처럼 부족한 내용의 보완을 요청한다. 팀장이 아닌 팀원의 종합 발언에는 이 예외를 적용하지 않는다.
 - 이 규칙은 활동별 절차의 "모든 팀원의 의견을 수집한 후" 등 미발언 팀원의 응답을 필수로 요구하는 지시보다 우선한다.
 - 1인 모드(팀 명단 1명)에서는 적용하지 않는다.
@@ -3200,6 +3202,7 @@ export function buildSystemPrompt(
   activityStatus?: string
 ): string {
   const activityMeta = ACTIVITY_META[activityCode]
+  const displayCode = displayActivityCode(activityCode)
   const isActiveReturn = activityStatus === 'active_return'
   // 개인 설계(solo) 여부 — solo일 때만 전용 규칙·축약 절차가 주입되고, 협력 모드 출력은 기존과 동일하다.
   const isSolo = project.mode === 'solo'
@@ -3254,6 +3257,33 @@ ${project.curriculumSheet?.filter(row => row.isCenter).map(row => `- ${row.grade
       ? '교과별 성취기준의 고유 기여와 학생의 탐구·협업 역할이 드러나게 안내한다.'
       : '과목·선택과목 맥락과 학문적 깊이를 존중하고, 근거 기반 탐구와 학생의 주도적 판단을 강조한다.'
 
+  // 분석·목표·설계 활동에서는 중심 교과 외 행도 성취기준의 근거로 전달한다.
+  const sheetRows = project.curriculumSheet ?? []
+  let curriculumSheetSection = ''
+  if ((activityCode === 'A-2-1' || activityCode === 'A-2-2' || stage === 'Ds') && sheetRows.length > 0) {
+    const cell = (value: string | undefined, limit = 240) => {
+      const text = (value ?? '').replace(/\s+/g, ' ').replace(/\|/g, ' / ').trim()
+      return text.length > limit ? text.slice(0, limit - 1) + '…' : text || '미입력'
+    }
+    const lines: string[] = []
+    let length = 0
+    for (const row of sheetRows.slice(0, 30)) {
+      const line = [
+        cell(row.gradeBand || project.targetGradeGroup, 80), cell(row.subject, 80),
+        cell(row.coreIdea), cell(row.standard, 800), cell(row.knowledge),
+        cell(row.processFunction), cell(row.valueAttitude),
+      ].join(' | ')
+      if (length + line.length + 1 > 16_000) break
+      lines.push(line)
+      length += line.length + 1
+    }
+    curriculumSheetSection = `\n## 저장된 교육과정 분석시트 [성취기준 근거 — 중심 여부와 관계없이 참조]
+저장 ${sheetRows.length}행 중 ${lines.length}행 제공 (최대 30행·본문 16,000자, 긴 칸은 …로 축약).
+학년군 | 교과 | 핵심아이디어 | 성취기준 코드+원문 | 지식·이해 | 과정·기능 | 가치·태도
+${lines.join('\n')}
+${lines.length < sheetRows.length ? '상한으로 생략된 행은 미확인으로 두고 필요하면 교사에게 시트 확인을 요청한다.\n' : ''}제공된 성취기준을 근거로 사용하고, 미입력·축약 부분을 임의로 만들지 않는다.\n`
+  }
+
   // 현재 활동의 기존 산출물 내용 섹션
   const artifactSection = currentArtifact
     ? `\n## 현재 활동(${activityCode}) 기존 산출물 [반드시 참조]
@@ -3304,6 +3334,7 @@ ${Object.entries(confirmedArtifacts)
 
   const contextSection = `## 현재 컨텍스트 [절대적 진실 — 대화 기록보다 우선]
 ⚠️ **현재 활동 = ${activityCode} (${activityMeta.label})** — 이 값이 시스템이 확인한 실제 위치이다.
+사용자에게 표시할 현재 활동 제목: **${displayCode}: ${activityMeta.label}** (머리말에도 그대로 사용).
 대화 기록에서 AI가 "다음 활동으로 이동했다"고 말했어도, 시스템 프롬프트의 현재 활동 코드가 변경되지 않았으면 아직 이동하지 않은 것이다.
 [ACTIVITY_ADVANCE] 신호를 보낸 후 실제로 프론트엔드가 이동해야 다음 활동이 시작된다. 이동 전까지는 현재 활동(${activityCode})에서의 대화만 수행한다.
 
@@ -3320,15 +3351,16 @@ ${isSolo ? `- 설계 방식: 개인 설계 — 선생님 1인과 AI의 1:1 협�
 ⚠️ 사용자 메시지는 [이름]: 내용 형식으로 전달됩니다. 반드시 실제 이름을 사용하세요. "(이름 A)", "닉네임 B" 등 자리표시자 절대 금지.` : ''}
 ${hasLearnerProfile
   ? `\n## 가드레일 (A-2-3 학습자 프로필)\n${learnerProfileSummary}`
-  : stage === 'Ds' ? '\n⚠️ A-2-3 학습자 프로필 미완성. 학습자 접근성 판단 주의.' : ''}${multiGradeBandRules}${artifactSection}${confirmedSection}`
+  : stage === 'Ds' ? '\n⚠️ A-2-3 학습자 프로필 미완성. 학습자 접근성 판단 주의.' : ''}${multiGradeBandRules}${curriculumSheetSection}${artifactSection}${confirmedSection}`
 
   // solo: 축약 절차가 정의된 활동은 solo판 사용, 그 외(방문하지 않는 활동 포함)는 팀판으로 안전 폴백.
   const soloProcedure = isSolo ? SOLO_ACTIVITY_PROCEDURE[activityCode] : undefined
-  const procedure = soloProcedure
+  const rawProcedure = soloProcedure
     ? `\n${soloProcedure}`
     : ACTIVITY_PROCEDURE[activityCode]
       ? `\n${ACTIVITY_PROCEDURE[activityCode]}`
       : ''
+  const procedure = rawProcedure.replace(/^(\n## )\S+ /, `$1${displayCode} `)
 
   const activityContext = ACTIVITY_CONTEXT[activityCode]
     ? `\n## 활동 특별 지시\n${ACTIVITY_CONTEXT[activityCode]}`

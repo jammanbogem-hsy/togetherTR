@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Graph as GraphIcon } from '@phosphor-icons/react'
 import ReactMarkdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import type { Project, ActivityCode } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import { buildProjectOntology, computeInheritance, type OntologyNode, type NodeInheritance } from '@/lib/ontology/projectOntology'
@@ -472,7 +472,7 @@ function ActivityDetailDrawer({
               <div key={sec.key} className="px-3 py-2">
                 <p className="text-[11px] font-bold mb-1" style={{ color: color.hex }}>{sec.key}</p>
                 <div className="text-[#3C4043]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={sectionMarkdownComponents}>
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={sectionMarkdownComponents}>
                     {normalizeInlinePipeList(sec.value)}
                   </ReactMarkdown>
                 </div>

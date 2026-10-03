@@ -1,7 +1,7 @@
 'use client'
 
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useState } from 'react'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 
@@ -318,7 +318,7 @@ ${html}
         {/* 마크다운 렌더링 */}
         <div className="bg-white rounded-2xl shadow-sm border border-[#E8EAED] px-10 py-10">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={REMARK_PLUGINS}
             components={{
               h1: ({ children }) => (
                 <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: '#202124', margin: '0 0 0.5rem', lineHeight: 1.2, letterSpacing: '-0.03em', paddingBottom: '1rem', borderBottom: '3px solid #E65100' }}>

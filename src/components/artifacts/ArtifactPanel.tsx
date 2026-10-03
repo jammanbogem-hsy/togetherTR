@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { isDemoObservationOnly } from '@/lib/demo/observer'
 import { ACTIVITY_META, STAGES, displayActivityCode, displaySectionLabel } from '@/types'
@@ -644,7 +644,7 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
             <div className="text-[11px] font-bold text-[#7C3AED] mb-2">AI 점검: 학습환경 적절성 검토</div>
             <div className="artifact-md text-sm text-[#3D2A73] leading-relaxed">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={REMARK_PLUGINS}
                 components={{
                   p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
                   strong: ({ children }) => <strong className="font-semibold text-[#5B34C7]">{children}</strong>,
@@ -656,7 +656,7 @@ function ArtifactSection({ sectionKey, value, onDelete, onOpenPreview, artifactT
           </div>
         ) : typeof value === 'string' ? (
           <div className="artifact-md text-sm text-[#202124] leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS}
               components={{
                 strong: ({ children }) => (
                   <span className="inline px-1 py-0.5 rounded text-[13px] font-semibold bg-[#E8F0FE] text-[#1A73E8] leading-snug box-decoration-clone">
@@ -1002,7 +1002,7 @@ function DsGuardrailCard({ a23Artifact }: { a23Artifact: { content: Record<strin
             <div key={k}>
               <p className="text-[11px] font-bold text-[#7B1FA2] mb-1">{k}</p>
               <div className="text-[11px] text-[#5F2F6B] leading-relaxed artifact-md">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}
+                <ReactMarkdown remarkPlugins={REMARK_PLUGINS}
                   components={{
                     p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
                     strong: ({ children }) => <strong className="font-semibold text-[#7B1FA2]">{children}</strong>,

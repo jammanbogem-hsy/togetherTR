@@ -70,7 +70,7 @@ import { GraphWorkspaceHeader } from '@/components/knowledge-graph/GraphWorkspac
 import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
 import { Avatar, AvatarChip } from '@/components/ui/Avatar'
 import ReactMarkdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import {
   ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, ArrowDown, Chat,
   Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler, PencilSimple,
@@ -82,7 +82,7 @@ import {
   parseArtifactConfirm,
   parseArtifactUpdates,
 } from '@/lib/chat/signals'
-import { applyArtifactSignalBatch } from '@/lib/chat/artifactSignalBatch'
+import { applyArtifactSignalBatch, artifactContentEquals } from '@/lib/chat/artifactSignalBatch'
 import { isStaleActivityResponse } from '@/lib/chat/responseContext'
 import { validateRequiredSections } from '@/lib/activity/completion'
 
@@ -571,7 +571,7 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
       <div>
         {guide.before && (
           <div className="mb-2">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={strongComp(dark)}>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={strongComp(dark)}>
               {guide.before}
             </ReactMarkdown>
           </div>
@@ -585,7 +585,7 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
                 i !== 0 && (dark ? 'border-t border-white/15' : 'border-t border-current/10'),
               )}
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={strongComp(dark)}>
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={strongComp(dark)}>
                 {line}
               </ReactMarkdown>
             </div>
@@ -593,7 +593,7 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
         </div>
         {guide.after && (
           <div className="mt-2">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={strongComp(dark)}>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={strongComp(dark)}>
               {guide.after}
             </ReactMarkdown>
           </div>
@@ -604,7 +604,7 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={REMARK_PLUGINS}
       components={{
         ...markdownHeadingComponents,
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
@@ -1452,9 +1452,6 @@ function ChatPanelContent() {
 
     // T-1-1: 구조화된 산출물로 변환 — AI 자유 형식 대신 스키마가 구조를 강제
     const targetAct = actCode ?? currentActivity
-    // AI 대화로 산출물이 입력됨을 감지한 경우에만 안내 말풍선 표시.
-    // 사용자가 /산출물·우클릭으로 직접 저장한 manual 경로는 'AI가 입력' 안내가 부정확하므로 제외.
-    if (origin === 'ai') flashCoeditHint(targetAct)
     if (targetAct === 'T-1-1') {
       const structured = buildT11Structured(sections, contextMsgs, soloT11Opts())
       sections = structured as unknown as Record<string, string>
@@ -1476,18 +1473,6 @@ function ChatPanelContent() {
       sections = buildA23Structured(sections, contextMsgs) as unknown as Record<string, string>
     }
 
-    // 협업 모드에서 팀원 → 방장에게 저장 제안으로 전달 (직접 저장 금지)
-    if (project?.mode === 'collaborative' && !isHost) {
-      await proposeArtifactToHost(
-        proj.id,
-        actCode ?? currentActivity,
-        sections,
-        userProfile?.uid ?? '',
-        userProfile?.displayName ?? '팀원'
-      )
-      return
-    }
-
     // actCode를 명시적으로 받아서 클로저 캡처 오류 방지
     const targetActivity = actCode ?? currentActivity
     const targetMeta = ACTIVITY_META[targetActivity]
@@ -1498,7 +1483,7 @@ function ChatPanelContent() {
 
     // confirmed 산출물도 사용자가 명시적으로 수정 요청(A안 선택)하면 AI가 [ARTIFACT_UPDATE] 신호를 보낼 수 있음
     // 가드 없음 — 시스템 프롬프트의 A안/B안 확인 규칙이 실질적인 보호 역할을 함
-    // 저장 시 status를 in_review로 리셋하므로 팀이 다시 확정해야 함
+    // 내용이 바뀐 저장만 status를 in_review로 리셋하므로 팀이 다시 확정해야 함
 
     const baseContent = existing?.aiDraft ?? firestoreContent
     // 구조화 산출물: 새 데이터의 빈 필드는 기존 값 유지, 채워진 필드만 업데이트
@@ -1517,6 +1502,27 @@ function ChatPanelContent() {
       merged = { ...sections }
     } else {
       merged = { ...baseContent, ...sections }
+    }
+    // 같은 내용의 재방출은 버전·확정 상태·Firestore를 그대로 둔다.
+    if ((existing || firestoreArtifact) && artifactContentEquals(
+      sanitizeArtifactSections(baseContent, { dropEmptied: false }),
+      sanitizeArtifactSections(merged, { dropEmptied: false }),
+    )) {
+      // 내용 업데이트와 별개의 명시적 확정 요청은 기존 확정 경로로 처리한다.
+      if (confirmAfter && (existing?.status ?? firestoreArtifact?.status) !== 'confirmed') {
+        await applyArtifactConfirm(targetActivity)
+      }
+      return
+    }
+    // AI가 실제 변경을 입력한 경우에만 안내하고, manual 저장은 제외한다.
+    if (origin === 'ai') flashCoeditHint(targetAct)
+    // 협업 모드에서 팀원 → 방장에게 저장 제안으로 전달 (직접 저장 금지)
+    if (project?.mode === 'collaborative' && !isHost) {
+      await proposeArtifactToHost(
+        proj.id, targetActivity, sections,
+        userProfile?.uid ?? '', userProfile?.displayName ?? '팀원',
+      )
+      return
     }
     const canConfirm = !confirmAfter
       || !targetMeta.requiredSections?.length
@@ -2044,7 +2050,7 @@ function ChatPanelContent() {
     const actMeta = ACTIVITY_META[currentActivity]
     const reminder = {
       role: 'user' as const,
-      content: `[시스템 리마인더] 현재 활동: ${currentActivity} (${actMeta?.label}). 이 활동에서의 대화를 수행 중이며, [ACTIVITY_ADVANCE] 신호 없이는 아직 이동하지 않은 상태입니다.`,
+      content: `[시스템 리마인더] 현재 활동: ${displayActivityCode(currentActivity)} (${actMeta?.label}), 내부 코드: ${currentActivity}. 사용자에게 보이는 머리말은 "${displayActivityCode(currentActivity)}: ${actMeta?.label}"로 씁니다. 이 활동에서의 대화를 수행 중이며, [ACTIVITY_ADVANCE] 신호 없이는 아직 이동하지 않은 상태입니다.`,
     }
     // 마지막 user 메시지 바로 앞에 삽입
     const lastUserIdx = mapped.map(m => m.role).lastIndexOf('user')
@@ -3557,7 +3563,7 @@ ${discussionSummary}
       setShowWorkspace(true)
       setShowGraphPanel(true)
       if (isHost) setGraphOpen(proj.id, true, undefined, 'sheet').catch(console.error)
-      addAssistantNotice('분석시트에 저장된 행이 아직 없습니다. 교육과정 분석에서 분석시트를 먼저 작성하면 그 표 형식 그대로 산출물로 만들 수 있습니다.')
+      addAssistantNotice('분석시트에 저장된 행이 아직 없습니다. 상단 \'교육과정 분석\' → 아래 \'AI 자동 채우기\' → 핵심아이디어 확인 후 \'성취기준 추천 및 분석표 생성\'으로 시트를 먼저 작성해 주세요.')
       return true
     }
 
@@ -3622,32 +3628,37 @@ ${discussionSummary}
   )
 
   // ─── 직접 메시지 전송 (HelpCard 등 버튼에서 호출) ──────
-  async function sendMessageDirectly(text: string) {
+  async function sendMessageDirectly(text: string, retryExistingMessage = false) {
     if (!text.trim() || isLoading || isAnalyzing || !project) return
     setIsIdle(false)
     setChatError(null)
-    const senderDisplayName = userProfile?.displayName
-    const directMessageId = generateMessageId(proj.id, currentActivity)
-    const tempUserMsg = {
-      id: directMessageId,
-      role: 'user' as const,
-      content: text,
-      activityCode: currentActivity,
-      activityType: undefined,
-      userId: userProfile?.uid,
-      displayName: senderDisplayName,
-      createdAt: Timestamp.now(),
-    }
-    addMessage(tempUserMsg)
-    saveMessage(proj.id, currentActivity, {
-      role: 'user', content: text,
-      activityCode: currentActivity,
-      userId: userProfile?.uid,
-      displayName: senderDisplayName,
-      cycleNumber: proj.currentCycle ?? 1,
-    }, directMessageId).catch(console.error)
+    // 재시도는 기존 대화의 발신자를 유지하고 AI 응답만 다시 요청한다.
+    let requestMessages = messages
+    if (!retryExistingMessage) {
+      const senderDisplayName = userProfile?.displayName
+      const directMessageId = generateMessageId(proj.id, currentActivity)
+      const tempUserMsg = {
+        id: directMessageId,
+        role: 'user' as const,
+        content: text,
+        activityCode: currentActivity,
+        activityType: undefined,
+        userId: userProfile?.uid,
+        displayName: senderDisplayName,
+        createdAt: Timestamp.now(),
+      }
+      addMessage(tempUserMsg)
+      saveMessage(proj.id, currentActivity, {
+        role: 'user', content: text,
+        activityCode: currentActivity,
+        userId: userProfile?.uid,
+        displayName: senderDisplayName,
+        cycleNumber: proj.currentCycle ?? 1,
+      }, directMessageId).catch(console.error)
+      requestMessages = [...messages, tempUserMsg]
 
-    if (handleA21SheetArtifactRequest(text)) return
+      if (handleA21SheetArtifactRequest(text)) return
+    }
 
     setIsLoading(true)
     clearStreamingText()
@@ -3660,7 +3671,7 @@ ${discussionSummary}
     }, 800)
     try {
       await streamFromAPI(
-        [...messages, tempUserMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
+        requestMessages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
         (chunk) => { appendStreamingText(chunk); streamingAccumRef.current += chunk },
         async (fullText) => {
           if (await discardResponseAfterActivityChange(currentActivity)) return
@@ -4110,7 +4121,7 @@ ${discussionSummary}
             const retryContent = lastMsg.content
             return (
               <MD3Button
-                onClick={() => sendMessageDirectly(retryContent)}
+                onClick={() => sendMessageDirectly(retryContent, true)}
                 title="AI 응답이 끊겼습니다. 다시 시도합니다"
                 variant="tonal"
                 tone="red"

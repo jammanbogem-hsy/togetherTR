@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import type { ActivityCode } from '@/types'
 import { X, FileText, SpinnerGap, ArrowsOut, ArrowsIn, DownloadSimple, FloppyDisk, Users, FilePdf, FileMd, CaretDown } from '@phosphor-icons/react'
@@ -535,7 +535,7 @@ ${html}
                 )}
 
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={REMARK_PLUGINS}
                   components={{
                     h1: ({ children }) => (
                       <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: '#202124', margin: '0 0 0.5rem', lineHeight: 1.2, letterSpacing: '-0.03em', paddingBottom: '1rem', borderBottom: '3px solid #E65100' }}>

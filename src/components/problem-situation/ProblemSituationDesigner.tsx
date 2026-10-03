@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass, FileTextIcon as FileText, SidebarSimpleIcon as SidebarSimple, CaretRightIcon as CaretRight, CircleNotchIcon as CircleNotch, PencilRulerIcon as PencilRuler } from '@phosphor-icons/react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -1083,7 +1083,7 @@ export default function ProblemSituationDesigner({
                 <div className={`max-w-[90%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
                   m.role === 'user' ? 'bg-[#1A73E8] text-white rounded-br-sm' : 'bg-[#F1F3F4] text-[#202124] rounded-bl-sm'
                 }`}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={{
                     p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
                     strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                     ul: ({ children }) => <ul className="pl-3 list-disc space-y-0.5">{children}</ul>,
@@ -1095,7 +1095,7 @@ export default function ProblemSituationDesigner({
             {chatStreamingText && (
               <div className="flex justify-start">
                 <div className="max-w-[90%] rounded-xl rounded-bl-sm px-3 py-2 text-xs leading-relaxed bg-[#F1F3F4] text-[#202124]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={{
                     p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
                     strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                   }}>{chatStreamingText}</ReactMarkdown>

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, PushPinSimple, Trash, ChatCircle } from '@phosphor-icons/react'
 import ReactMarkdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import type { KeyNote, ActivityCode } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
@@ -208,7 +208,7 @@ export function KeyNotesModal({
                       </span>
                     </div>
                     <div className="text-[#202124]">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={noteMarkdownComponents}>
+                      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={noteMarkdownComponents}>
                         {normalizeInlinePipeList(note.content)}
                       </ReactMarkdown>
                     </div>

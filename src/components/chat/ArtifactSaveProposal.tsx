@@ -1,7 +1,7 @@
 'use client'
 
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { CheckSquare, X } from '@phosphor-icons/react'
 
 interface Props {
@@ -43,7 +43,7 @@ export function ArtifactSaveProposal({ title, sections, onAccept, onDecline }: P
                             [&_table]:text-xs [&_table]:w-full [&_table]:border-collapse
                             [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:font-bold [&_th]:text-[#5F6368] [&_th]:border-b [&_th]:border-[#DADCE0]
                             [&_td]:px-2 [&_td]:py-1 [&_td]:text-[#202124] [&_td]:border-b [&_td]:border-[#F1F3F4]">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
                 {value}
               </ReactMarkdown>
             </div>

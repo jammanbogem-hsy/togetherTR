@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import type { PublicReport, StageCode } from '@/types'
 import { STAGES } from '@/types'
 import { STAGE_LABELS, STAGE_COLOR } from '@/lib/ui/stageColors'
@@ -121,7 +121,7 @@ function StageReportSection({ stage, content, savedAt }: {
         </span>
       </header>
       <article className="prose-none">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
           {normalized}
         </ReactMarkdown>
       </article>
@@ -148,7 +148,7 @@ function FinalReportSection({ content, savedAt }: { content: string; savedAt: nu
         </span>
       </header>
       <article className="prose-none">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
           {normalized}
         </ReactMarkdown>
       </article>

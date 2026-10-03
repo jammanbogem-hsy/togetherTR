@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, type StageCode } from '@/types'
 import { cn } from '@/lib/utils'
@@ -279,7 +279,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
                 HWPX는 기본형 내보내기만 지원합니다. 제목, 문단, 목록, 단순 표를 우선 보존하며 복잡한 스타일은 간소화됩니다.
               </p>
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={REMARK_PLUGINS}
                 components={{
                   td: ({ children }) => {
                     const baseStyle: React.CSSProperties = { padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6, wordBreak: 'keep-all', overflowWrap: 'anywhere' }

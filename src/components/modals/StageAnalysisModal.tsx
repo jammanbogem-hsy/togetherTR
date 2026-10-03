@@ -3,7 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { cn } from '@/lib/utils'
@@ -492,7 +492,7 @@ export function StageAnalysisModal({
           {(status === 'streaming' || status === 'done') && markdown && (
             <div className="max-w-none" ref={contentRef}>
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={REMARK_PLUGINS}
                 components={{
                   h1: ({ children }) => (
                     <h1 style={{ fontSize: '1.55rem', fontWeight: 900, color: '#202124', margin: '0 0 2rem', lineHeight: 1.2, letterSpacing: '-0.03em', paddingBottom: '0.9rem', borderBottom: '3px solid #1A73E8' }}>

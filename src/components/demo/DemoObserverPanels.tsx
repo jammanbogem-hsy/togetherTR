@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useProjectStore } from '@/store/project'
@@ -28,7 +28,7 @@ function DemoTurnDetails({ message }: { message: Message }) {
   const review = (message as SavedDemoMessage).demoTurnResponse?.review
   return details ? <details className="mt-3 border-t border-gray-200 pt-2 text-xs">
     <summary className="cursor-pointer font-semibold text-blue-700">이 시점의 초안·검토 원문{review?.blockers !== undefined && ` · 필수 수정 ${review.blockers.length}개`}{review?.suggestions !== undefined && ` · 후속 제안 ${review.suggestions.length}개`}</summary>
-    <div className="prose prose-sm mt-2 max-w-none overflow-x-auto break-words"><ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} skipHtml components={markdownComponents}>{details}</ReactMarkdown></div>
+    <div className="prose prose-sm mt-2 max-w-none overflow-x-auto break-words"><ReactMarkdown remarkPlugins={REMARK_PLUGINS} skipHtml components={markdownComponents}>{details}</ReactMarkdown></div>
   </details> : null
 }
 
@@ -76,7 +76,7 @@ export function DemoProjectToolbar() {
         <div className="mt-2 max-h-64 space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-3">
           <p>{config?.lesson.overview}</p>
           {config?.personas.map(persona => <p key={persona.id}><strong>{persona.displayName} · {persona.subject}</strong> — {persona.summary} · 우선순위: {persona.priority}</p>)}
-          {Object.entries(project.stageReports ?? {}).map(([stage, report]) => <details key={stage}><summary className="cursor-pointer font-semibold">{stage} 단계 보고서 · 시뮬레이션</summary><div className="prose prose-sm max-w-none overflow-x-auto"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={markdownComponents}>{report.content}</ReactMarkdown></div></details>)}
+          {Object.entries(project.stageReports ?? {}).map(([stage, report]) => <details key={stage}><summary className="cursor-pointer font-semibold">{stage} 단계 보고서 · 시뮬레이션</summary><div className="prose prose-sm max-w-none overflow-x-auto"><ReactMarkdown remarkPlugins={REMARK_PLUGINS} skipHtml components={markdownComponents}>{report.content}</ReactMarkdown></div></details>)}
         </div>
       </details>
     </header>
@@ -161,7 +161,7 @@ export function DemoArtifactPanel() {
         <div className="mb-2 flex items-start justify-between gap-2"><h3 className="text-sm font-bold">{key}</h3>
           {viewingActivity === 'DI-1-1' && <button type="button" className="shrink-0 text-xs text-blue-700 underline" onClick={() => downloadDemoMarkdown(`${label} ${key}`, `# ${key}\n\n> AI 교사 시뮬레이션 자료 · 실제 수업 전 검토 필요\n\n${demoSectionText(value)}`)}>자료 본문 내려받기</button>}
         </div>
-        <div className="prose prose-sm max-w-none overflow-x-auto break-words [&_table]:min-w-[480px] [&_td]:p-2 [&_th]:p-2"><ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} skipHtml components={markdownComponents}>{demoSectionText(value)}</ReactMarkdown></div>
+        <div className="prose prose-sm max-w-none overflow-x-auto break-words [&_table]:min-w-[480px] [&_td]:p-2 [&_th]:p-2"><ReactMarkdown remarkPlugins={REMARK_PLUGINS} skipHtml components={markdownComponents}>{demoSectionText(value)}</ReactMarkdown></div>
       </article>) : <p className="text-sm text-gray-500">총괄 AI의 초안 생성과 교사 AI 검토가 진행되면 여기에 산출물이 나타납니다.</p>}
     </div>
   </section>
