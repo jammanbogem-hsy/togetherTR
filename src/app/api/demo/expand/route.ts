@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { reasoningEffortFor } from '@/lib/llm/openai'
+import { isReasoningModel, reasoningEffortFor } from '@/lib/llm/openai'
 import {
   assertExpandedConfigMatchesSetup,
   isDemoValidationError,
@@ -71,7 +71,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const client = new OpenAI({ apiKey })
     const model = process.env.OPENAI_DEMO_MODEL || process.env.OPENAI_CHAT_MODEL || 'gpt-4o'
-    const isGpt5 = model.startsWith('gpt-5')
+    const isGpt5 = isReasoningModel(model)
     // Chat Completions는 기존 채팅 엔진에서 검증된 전송 경로다. strict schema는 그대로 유지한다.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await client.chat.completions.create({

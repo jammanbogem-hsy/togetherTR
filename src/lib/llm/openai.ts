@@ -25,14 +25,14 @@ export function resolveOpenAIModel(role: OpenAIRole): string {
   return process.env.OPENAI_DEMO_MODEL || chat
 }
 
-/** gpt-5 계열(및 o-시리즈): max_completion_tokens·reasoning_effort 를 쓰고 temperature 를 거부한다. */
+/** gpt-5·gpt-6 계열(및 o-시리즈): max_completion_tokens·reasoning_effort 를 쓰고 max_tokens·temperature 를 거부한다. */
 export function isReasoningModel(model: string): boolean {
-  return /^gpt-5/.test(model) || /^o\d/.test(model)
+  return /^gpt-[56]/.test(model) || /^o\d/.test(model)
 }
 
-/** gpt-5.6 계열(luna·terra·sol): 'minimal' 대신 'none' 이 최저 단계. */
+/** gpt-5.6·gpt-6 계열(luna·terra·sol·astra): 'minimal' 을 400 으로 거부하고 'none' 이 최저 단계 (2026-10-03 gpt-6-luna 실측). */
 export function isGpt56Family(model: string): boolean {
-  return /^gpt-5\.6/.test(model)
+  return /^gpt-(5\.6|6)/.test(model)
 }
 
 export function reasoningEffortFor(model: string, intent: EffortIntent): string | undefined {
