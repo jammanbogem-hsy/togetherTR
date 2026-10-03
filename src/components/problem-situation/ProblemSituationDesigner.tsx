@@ -206,7 +206,7 @@ function Block({
   const body = (
     <>
       {label && (
-        <div className="text-[12px] font-medium mb-1.5" style={{ color: labelColor }}>
+        <div className="text-[14px] font-medium mb-1.5" style={{ color: labelColor }}>
           {label}
         </div>
       )}
@@ -219,7 +219,7 @@ function Block({
         type="button"
         onClick={() => onZoom(label || '내용', body)}
         title="확대해서 보기"
-        className="absolute top-2 right-2 z-10 flex h-7 items-center gap-1 rounded-[var(--md-sys-radius-sm)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] px-2.5 text-[11px] font-medium text-[var(--md-sys-on-surface-variant)] opacity-0 transition-opacity group-hover/zoom:opacity-100 focus-visible:opacity-100 hover:bg-[var(--md-sys-surface-container-high)]"
+        className="absolute top-2 right-2 z-10 flex h-7 items-center gap-1 rounded-[var(--md-sys-radius-sm)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] px-2.5 text-[13px] font-medium text-[var(--md-sys-on-surface-variant)] opacity-0 transition-opacity group-hover/zoom:opacity-100 focus-visible:opacity-100 hover:bg-[var(--md-sys-surface-container-high)]"
       >
         <ArrowsOut size={11} weight="bold" /> 확대
       </button>
@@ -237,7 +237,7 @@ function NodeMap({ centerNode, selectedStandards, fallbackStandards = [] }: {
   if (!hasData && fallbackStandards.length > 0) return <FallbackStandardList standards={fallbackStandards} />
   if (!hasData) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-[var(--md-sys-outline)] text-xs text-center px-4 gap-2">
+      <div className="flex flex-col items-center justify-center h-full text-[var(--md-sys-outline)] text-[14px] text-center px-4 gap-2">
         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--md-sys-surface-container-high)] text-[var(--md-sys-on-surface-variant)]">
           <MagnifyingGlass size={22} weight="bold" />
         </span>
@@ -258,25 +258,25 @@ function NodeMap({ centerNode, selectedStandards, fallbackStandards = [] }: {
         <div className="rounded-xl border-2 p-3" style={{ borderColor: subjectColor(centerNode.subjectId), backgroundColor: subjectColor(centerNode.subjectId) + '18' }}>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: subjectColor(centerNode.subjectId) }} />
-            <span className="text-[11px] font-semibold" style={{ color: subjectColor(centerNode.subjectId) }}>중심 성취기준 · {subjectName(centerNode.subjectId)}</span>
+            <span className="text-[13px] font-semibold" style={{ color: subjectColor(centerNode.subjectId) }}>중심 성취기준 · {subjectName(centerNode.subjectId)}</span>
           </div>
-          <div className="text-xs font-bold text-[var(--md-sys-on-surface)] leading-snug">[{shortStdId(centerNode.id)}]</div>
-          <div className="text-xs text-[var(--md-sys-on-surface-variant)] leading-relaxed mt-0.5 line-clamp-3">{centerNode.text}</div>
+          <div className="text-[14px] font-bold text-[var(--md-sys-on-surface)] leading-snug">[{shortStdId(centerNode.id)}]</div>
+          <div className="text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed mt-0.5 line-clamp-3">{centerNode.text}</div>
         </div>
       )}
-      {centerNode && bySubject.size === 0 && <div className="text-[11px] text-[var(--md-sys-outline)] text-center py-2">연결된 성취기준 없음</div>}
+      {centerNode && bySubject.size === 0 && <div className="text-[13px] text-[var(--md-sys-outline)] text-center py-2">연결된 성취기준 없음</div>}
       {Array.from(bySubject.entries()).map(([subjId, nodes]) => (
         <div key={subjId} className="rounded-lg border p-2.5" style={{ borderColor: subjectColor(subjId) + '55', backgroundColor: subjectColor(subjId) + '0C' }}>
           <div className="flex items-center gap-1.5 mb-2">
             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: subjectColor(subjId) }} />
-            <span className="text-[11px] font-semibold" style={{ color: subjectColor(subjId) }}>{subjectName(subjId)}</span>
-            <span className="text-[11px] text-[var(--md-sys-outline)]">({nodes.length}개)</span>
+            <span className="text-[13px] font-semibold" style={{ color: subjectColor(subjId) }}>{subjectName(subjId)}</span>
+            <span className="text-[13px] text-[var(--md-sys-outline)]">({nodes.length}개)</span>
           </div>
           <div className="flex flex-col gap-1.5">
             {nodes.map(n => (
               <div key={n.id} className="bg-[var(--md-sys-surface-container-lowest)] rounded-md px-2 py-1.5 border border-[var(--md-sys-outline-variant)]">
-                <div className="text-[11px] font-semibold text-[var(--md-sys-on-surface-variant)]">[{shortStdId(n.id)}]</div>
-                <div className="text-[11px] text-[var(--md-sys-on-surface-variant)] leading-relaxed line-clamp-2 mt-0.5">{n.text}</div>
+                <div className="text-[13px] font-semibold text-[var(--md-sys-on-surface-variant)]">[{shortStdId(n.id)}]</div>
+                <div className="text-[13px] text-[var(--md-sys-on-surface-variant)] leading-relaxed line-clamp-2 mt-0.5">{n.text}</div>
               </div>
             ))}
           </div>
@@ -298,16 +298,16 @@ function FallbackStandardList({ standards }: { standards: FallbackStandard[] }) 
       {Array.from(byBand.entries()).map(([band, items]) => (
         <div key={band} className="rounded-lg border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-low)] p-2.5">
           <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-[11px] font-semibold text-[var(--md-sys-primary)]">{band}</span>
-            <span className="text-[11px] text-[var(--md-sys-outline)]">({items.length}개)</span>
+            <span className="text-[13px] font-semibold text-[var(--md-sys-primary)]">{band}</span>
+            <span className="text-[13px] text-[var(--md-sys-outline)]">({items.length}개)</span>
           </div>
           <div className="flex flex-col gap-1.5">
             {items.map(item => (
               <div key={item.code} className="bg-[var(--md-sys-surface-container-lowest)] rounded-md px-2 py-1.5 border border-[var(--md-sys-outline-variant)]">
-                <div className="text-[11px] font-semibold text-[var(--md-sys-on-surface-variant)]">
+                <div className="text-[13px] font-semibold text-[var(--md-sys-on-surface-variant)]">
                   [{item.code}]{item.subject && <span className="ml-1 font-normal text-[var(--md-sys-outline)]">{item.subject}</span>}
                 </div>
-                {item.text && <div className="text-[11px] text-[var(--md-sys-on-surface-variant)] leading-relaxed line-clamp-2 mt-0.5">{item.text}</div>}
+                {item.text && <div className="text-[13px] text-[var(--md-sys-on-surface-variant)] leading-relaxed line-clamp-2 mt-0.5">{item.text}</div>}
               </div>
             ))}
           </div>
@@ -358,8 +358,8 @@ function ResultView({
   if (candidates.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-2">
-        <p className="text-sm font-bold text-[var(--md-sys-on-surface-variant)]">생성된 문제 상황 후보가 없습니다.</p>
-        <p className="text-[12px] text-[var(--md-sys-outline)]">다시 생성하거나 공동 편집에서 직접 작성해 주세요.</p>
+        <p className="text-[16px] font-bold text-[var(--md-sys-on-surface-variant)]">생성된 문제 상황 후보가 없습니다.</p>
+        <p className="text-[14px] text-[var(--md-sys-outline)]">다시 생성하거나 공동 편집에서 직접 작성해 주세요.</p>
       </div>
     )
   }
@@ -370,10 +370,10 @@ function ResultView({
       {/* ① 문제 상황 후보 — 책갈피 탭 */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-[14px] font-medium text-[var(--md-sys-on-surface)]">문제 상황 후보</h3>
-          <span className="text-[12px] text-[var(--md-sys-on-surface-variant)]">{candidates.length}개 · 하나만 산출물로 선택</span>
+          <h3 className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">문제 상황 후보</h3>
+          <span className="text-[14px] text-[var(--md-sys-on-surface-variant)]">{candidates.length}개 · 하나만 산출물로 선택</span>
           {anyDetailLoading && (
-            <span className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-primary-container)] px-2.5 text-[12px] font-medium text-[var(--md-sys-on-primary-container)]">
+            <span className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-primary-container)] px-2.5 text-[14px] font-medium text-[var(--md-sys-on-primary-container)]">
               <SpinnerGap size={10} className="animate-spin" weight="bold" /> 후보 상세 생성 중 {detailDoneCount}/{candidates.length}
             </span>
           )}
@@ -388,7 +388,7 @@ function ResultView({
                 role="tab"
                 aria-selected={active}
                 onClick={() => setSelectedIndex(i)}
-                className={`flex h-12 flex-shrink-0 items-center gap-1.5 px-4 text-[13px] font-medium transition-colors -mb-px border-b-2 ${
+                className={`flex h-12 flex-shrink-0 items-center gap-1.5 px-4 text-[15px] font-medium transition-colors -mb-px border-b-2 ${
                   active
                     ? 'text-[var(--md-sys-primary)] border-[var(--md-sys-primary)]'
                     : 'text-[var(--md-sys-on-surface-variant)] border-transparent hover:bg-[var(--md-sys-surface-container-high)]'
@@ -399,9 +399,9 @@ function ResultView({
                 }`}>
                   {committed && <CheckCircle size={9} weight="fill" color="white" />}
                 </span>
-                <span className="leading-snug max-w-[150px] truncate">{c.title}</span>
+                <span className="leading-snug max-w-[240px] truncate">{c.title}</span>
                 {result.recommended?.index === i && !committed && (
-                  <span className="flex-shrink-0 rounded-[var(--md-sys-radius-xs)] bg-[var(--md-sys-primary-container)] px-1.5 py-px text-[11px] font-medium text-[var(--md-sys-on-primary-container)]">추천</span>
+                  <span className="flex-shrink-0 rounded-[var(--md-sys-radius-xs)] bg-[var(--md-sys-primary-container)] px-1.5 py-px text-[13px] font-medium text-[var(--md-sys-on-primary-container)]">추천</span>
                 )}
               </button>
             )
@@ -409,30 +409,30 @@ function ResultView({
         </div>
         {/* 선택 후보 요약 + 선택 CTA */}
         <div className="mt-3 rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container-low)] px-4 py-3">
-          <p className="text-[13px] text-[var(--md-sys-on-surface)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.scenario}</p>
+          <p className="text-[15px] text-[var(--md-sys-on-surface)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.scenario}</p>
           {selected?.dataSources && (
-            <p className="text-[11px] text-[var(--md-sys-on-surface-variant)] leading-relaxed mt-1.5">
+            <p className="text-[13px] text-[var(--md-sys-on-surface-variant)] leading-relaxed mt-1.5">
               <span className="font-bold text-[var(--md-sys-primary)]">데이터 출처</span> · {selected.dataSources}
             </p>
           )}
           <div className="mt-3 flex items-center gap-2">
             {isCommitted ? (
-              <span className="inline-flex h-8 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-3 text-[12px] font-medium text-[var(--md-sys-on-tertiary-container)]">
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-3 text-[14px] font-medium text-[var(--md-sys-on-tertiary-container)]">
                 <CheckCircle size={13} weight="fill" /> 이 후보가 산출물로 선택됨
               </span>
             ) : (
               <MD3Button
                 variant="filled"
                 tone="blue"
-                size="xs"
+                size="sm"
                 onClick={commitSelected}
                 disabled={detailPending}
-                icon={<CheckCircle size={MD3_ICON.xs} weight="fill" />}
+                icon={<CheckCircle size={MD3_ICON.sm} weight="fill" />}
               >
                 이 후보를 산출물로 선택
               </MD3Button>
             )}
-            <span className="text-[12px] text-[var(--md-sys-on-surface-variant)]">
+            <span className="text-[14px] text-[var(--md-sys-on-surface-variant)]">
               {detailPending ? '상세 생성이 끝나면 선택할 수 있습니다' : '산출물에는 선택한 1개 후보만 저장됩니다'}
             </span>
           </div>
@@ -442,17 +442,17 @@ function ResultView({
       {/* ② 선정 문제 상황 상세 (선택 후보 기준) */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-[14px] font-medium text-[var(--md-sys-on-surface)]">선정 문제 상황</h3>
-          <span className="text-[11px] text-[var(--md-sys-primary)] bg-[var(--md-sys-primary-container)] px-2 py-0.5 rounded-full font-medium">
+          <h3 className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">선정 문제 상황</h3>
+          <span className="text-[13px] text-[var(--md-sys-primary)] bg-[var(--md-sys-primary-container)] px-2 py-0.5 rounded-full font-medium">
             {selected?.title}
           </span>
           {isCommitted && (
-            <span className="text-[11px] text-white bg-[var(--md-sys-tertiary)] px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+            <span className="text-[13px] text-white bg-[var(--md-sys-tertiary)] px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
               <CheckCircle size={9} weight="fill" /> 선택됨
             </span>
           )}
           {isRecommended && !isCommitted && (
-            <span className="text-[11px] text-[var(--md-sys-primary)] bg-[var(--md-sys-surface-container-lowest)] border border-[var(--md-sys-outline-variant)] px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+            <span className="text-[13px] text-[var(--md-sys-primary)] bg-[var(--md-sys-surface-container-lowest)] border border-[var(--md-sys-outline-variant)] px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
               AI 추천
             </span>
           )}
@@ -463,52 +463,52 @@ function ResultView({
             {selectedStatus === 'loading' ? (
               <div className="px-4 py-3 bg-[var(--md-sys-primary-container)] border-b border-[var(--md-sys-outline-variant)] flex items-center gap-2">
                 <SpinnerGap size={14} className="animate-spin text-[var(--md-sys-primary)] flex-shrink-0" weight="bold" />
-                <p className="text-[12px] text-[var(--md-sys-primary)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                <p className="text-[14px] text-[var(--md-sys-primary)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                   이 후보의 상세(문제 상황 전문·성취기준 연결·실제 자료·산출물·AI 점검)를 생성하고 있습니다. 약 30초 정도 걸립니다.
                 </p>
               </div>
             ) : selectedStatus === 'error' || selectedStatus === 'empty' ? (
               <div className="px-4 py-3 bg-[var(--md-sys-error-container)] border-b border-[var(--md-sys-outline-variant)] flex items-center gap-2 flex-wrap">
-                <p className="text-[12px] text-[var(--md-sys-error)] leading-relaxed flex-1 min-w-0" style={{ wordBreak: 'keep-all' }}>
+                <p className="text-[14px] text-[var(--md-sys-error)] leading-relaxed flex-1 min-w-0" style={{ wordBreak: 'keep-all' }}>
                   {selectedStatus === 'empty'
                     ? '성취기준 연결을 불러오지 못했어요 — 다시 생성해 주세요.'
                     : '이 후보의 상세 생성에 실패했습니다. 다른 후보에는 영향이 없습니다.'}
                 </p>
-                <MD3Button variant="filled" tone="red" size="xs" onClick={() => onRetryDetail(selectedIndex)} icon={<ArrowClockwise size={MD3_ICON.xs} weight="bold" />}>
+                <MD3Button variant="filled" tone="red" size="sm" onClick={() => onRetryDetail(selectedIndex)} icon={<ArrowClockwise size={MD3_ICON.sm} weight="bold" />}>
                   이 후보 상세 다시 생성
                 </MD3Button>
               </div>
             ) : (
               <div className="px-4 py-3 bg-[#FEF7E0] border-b border-[var(--md-sys-outline-variant)]">
-                <p className="text-[12px] text-[#B06000] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                <p className="text-[14px] text-[#B06000] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                   이 후보는 요약만 생성되었습니다. &lsquo;재생성&rsquo;하면 모든 후보의 상세를 받을 수 있습니다.
                 </p>
               </div>
             )}
             <Block label="문제 상황 요약" onZoom={openZoom}>
-              <p className="text-[12px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.scenario}</p>
+              <p className="text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.scenario}</p>
             </Block>
             <Block label="데이터 출처" borderless onZoom={openZoom}>
-              <p className="text-[12px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.dataSources}</p>
+              <p className="text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{selected?.dataSources}</p>
             </Block>
           </div>
         ) : (
           <div className="overflow-hidden rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)]">
             <Block label="문제 상황 전문" onZoom={openZoom}>
-              <p className="text-[12px] text-[var(--md-sys-on-surface)] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>
+              <p className="text-[14px] text-[var(--md-sys-on-surface)] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>
                 {detail.fullScenario}
               </p>
             </Block>
 
             {selectedStatus === 'empty' && !(detail.standardsAlignment?.length > 0) && (
               <div className="px-4 py-3 bg-[var(--md-sys-error-container)] border-b border-[var(--md-sys-outline-variant)] flex items-center gap-2 flex-wrap">
-                <p className="text-[12px] text-[var(--md-sys-error)] leading-relaxed flex-1 min-w-0" style={{ wordBreak: 'keep-all' }}>
+                <p className="text-[14px] text-[var(--md-sys-error)] leading-relaxed flex-1 min-w-0" style={{ wordBreak: 'keep-all' }}>
                   성취기준 연결을 불러오지 못했어요 — 다시 생성해 주세요.
                 </p>
                 <button
                   type="button"
                   onClick={() => onRetryDetail(selectedIndex)}
-                  className="inline-flex items-center gap-1 text-[12px] font-bold text-white bg-[var(--md-sys-error)] hover:opacity-90 px-3 py-1 rounded-full transition-colors"
+                  className="inline-flex items-center gap-1 text-[14px] font-bold text-white bg-[var(--md-sys-error)] hover:opacity-90 px-3 py-1 rounded-full transition-colors"
                 >
                   <ArrowClockwise size={12} weight="bold" /> 다시 생성
                 </button>
@@ -524,16 +524,16 @@ function ResultView({
                       : 'bg-[var(--md-sys-surface-container-low)] border-[var(--md-sys-outline-variant)]'}`}>
                       <div className="flex items-center gap-1.5 mb-1">
                         {s.isCenter && (
-                          <span className="text-[10px] font-black bg-[var(--md-sys-primary)] text-white px-1.5 py-0.5 rounded-full">중심</span>
+                          <span className="text-[12px] font-black bg-[var(--md-sys-primary)] text-white px-1.5 py-0.5 rounded-full">중심</span>
                         )}
-                        <span className={`text-[12px] font-bold ${s.isCenter ? 'text-[var(--md-sys-primary)]' : 'text-[var(--md-sys-on-surface-variant)]'}`}>
+                        <span className={`text-[14px] font-bold ${s.isCenter ? 'text-[var(--md-sys-primary)]' : 'text-[var(--md-sys-on-surface-variant)]'}`}>
                           [{s.standardId}]
                         </span>
-                        <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${s.isCenter ? 'bg-[var(--md-sys-outline-variant)] text-[var(--md-sys-primary)]' : 'bg-[var(--md-sys-outline-variant)] text-[var(--md-sys-on-surface-variant)]'}`}>
+                        <span className={`text-[13px] px-1.5 py-0.5 rounded-full font-medium ${s.isCenter ? 'bg-[var(--md-sys-outline-variant)] text-[var(--md-sys-primary)]' : 'bg-[var(--md-sys-outline-variant)] text-[var(--md-sys-on-surface-variant)]'}`}>
                           {s.subject}
                         </span>
                       </div>
-                      <p className="text-[12px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{s.connection}</p>
+                      <p className="text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{s.connection}</p>
                     </div>
                   ))}
                 </div>
@@ -545,13 +545,13 @@ function ResultView({
                 {(detail.realData ?? []).map((d, i) => {
                   const item = typeof d === 'string' ? { label: d, url: undefined } : d
                   return (
-                    <li key={i} className="flex gap-2 text-[12px] text-[var(--md-sys-on-surface-variant)] leading-relaxed">
+                    <li key={i} className="flex gap-2 text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed">
                       <span className="flex-shrink-0 text-[var(--md-sys-primary)] font-bold">{i + 1})</span>
                       <span className="flex-1">
                         {item.label}
                         {item.url && (
                           <a href={item.url} target="_blank" rel="noopener noreferrer"
-                            className="ml-1.5 inline-flex items-center gap-0.5 text-[11px] text-[var(--md-sys-primary)] hover:underline font-medium">
+                            className="ml-1.5 inline-flex items-center gap-0.5 text-[13px] text-[var(--md-sys-primary)] hover:underline font-medium">
                             링크 ↗
                           </a>
                         )}
@@ -563,19 +563,19 @@ function ResultView({
             </Block>
 
             <Block label="교과별 학습 내용" onZoom={openZoom}>
-              <p className="text-[12px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+              <p className="text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                 {orPending(detail.learningContent)}
               </p>
             </Block>
 
             <Block label="산출물" onZoom={openZoom}>
-              <p className="text-[12px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+              <p className="text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                 {orPending(detail.artifacts)}
               </p>
             </Block>
 
             <Block label="AI 점검: 학습내용/산출물 반영 검토" labelColor="#1967D2" bg="bg-[var(--md-sys-primary-container)]" borderless onZoom={openZoom}>
-              <p className="text-[12px] text-[var(--md-sys-primary)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+              <p className="text-[14px] text-[var(--md-sys-primary)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                 {orPending(detail.alignmentCheck)}
               </p>
             </Block>
@@ -586,13 +586,13 @@ function ResultView({
       {/* ③ 탐구 질문 & 하위 탐구 질문 */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-[14px] font-medium text-[var(--md-sys-on-surface)]">탐구 질문 &amp; 하위 탐구 질문</h3>
+          <h3 className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">탐구 질문 &amp; 하위 탐구 질문</h3>
         </div>
         <div className="overflow-hidden rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)]">
           {hasQuestions ? (
             <>
               <Block label="탐구 질문 (Driving Question)" labelColor="var(--md-sys-on-tertiary-container)" bg="bg-[var(--md-sys-tertiary-container)]" onZoom={openZoom}>
-                <p className="text-[14px] font-medium text-[var(--md-sys-on-tertiary-container)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                <p className="text-[16px] font-medium text-[var(--md-sys-on-tertiary-container)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                   {result.drivingQuestion || '— (생성되지 않음, 재생성 권장)'}
                 </p>
               </Block>
@@ -600,21 +600,21 @@ function ResultView({
                 {essentials.length > 0 ? (
                   <ol className="space-y-1.5">
                     {essentials.map((q, i) => (
-                      <li key={i} className="flex gap-2 text-[12px] text-[var(--md-sys-on-surface-variant)] leading-relaxed">
+                      <li key={i} className="flex gap-2 text-[14px] text-[var(--md-sys-on-surface-variant)] leading-relaxed">
                         <span className="flex-shrink-0 font-medium text-[var(--md-sys-tertiary)]">{i + 1}.</span>
                         <span style={{ wordBreak: 'keep-all' }}>{q}</span>
                       </li>
                     ))}
                   </ol>
                 ) : (
-                  <p className="text-[12px] text-[var(--md-sys-outline)]">하위 탐구 질문이 생성되지 않았습니다. 상단 &lsquo;재생성&rsquo;을 눌러 다시 시도하세요.</p>
+                  <p className="text-[14px] text-[var(--md-sys-outline)]">하위 탐구 질문이 생성되지 않았습니다. 상단 &lsquo;재생성&rsquo;을 눌러 다시 시도하세요.</p>
                 )}
               </Block>
             </>
           ) : (
             <div className="px-4 py-6 flex flex-col items-center justify-center gap-2 text-center bg-[#FEF7E0]">
-              <p className="text-[12px] font-bold text-[#B06000]">탐구 질문·하위 탐구 질문이 생성되지 않았습니다</p>
-              <p className="text-[12px] text-[#B06000]/80 leading-relaxed">AI 응답이 잘렸을 수 있습니다. 상단 우측 &lsquo;재생성&rsquo; 버튼을 눌러 다시 생성하면 탐구 질문과 하위 탐구 질문이 함께 채워집니다.</p>
+              <p className="text-[14px] font-bold text-[#B06000]">탐구 질문·하위 탐구 질문이 생성되지 않았습니다</p>
+              <p className="text-[14px] text-[#B06000]/80 leading-relaxed">AI 응답이 잘렸을 수 있습니다. 상단 우측 &lsquo;재생성&rsquo; 버튼을 눌러 다시 생성하면 탐구 질문과 하위 탐구 질문이 함께 채워집니다.</p>
             </div>
           )}
         </div>
@@ -642,10 +642,10 @@ function ResultView({
             onClick={e => e.stopPropagation()}
           >
             <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3.5 border-b border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)]">
-              <span className="inline-flex h-8 items-center gap-1 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-primary-container)] px-3 text-[12px] font-medium text-[var(--md-sys-on-primary-container)]">
+              <span className="inline-flex h-8 items-center gap-1 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-primary-container)] px-3 text-[14px] font-medium text-[var(--md-sys-on-primary-container)]">
                 <ArrowsOut size={13} weight="bold" /> 확대 보기
               </span>
-              <span className="text-[16px] font-medium text-[var(--md-sys-on-surface)] truncate">{zoom.title}</span>
+              <span className="text-[18px] font-medium text-[var(--md-sys-on-surface)] truncate">{zoom.title}</span>
               <button
                 type="button"
                 onClick={() => setZoom(null)}
@@ -913,7 +913,7 @@ export default function ProblemSituationDesigner({
   return (
     <div className="m3-shell fixed inset-0 z-50 bg-[var(--md-sys-surface-container-low)] flex flex-col" style={{ fontFamily: 'inherit' }}>
       {/* M3 small top app bar */}
-      <header className="m3-top-app-bar flex h-16 flex-shrink-0 items-center gap-2 px-3 sm:px-4">
+      <header className="m3-top-app-bar flex h-[72px] flex-shrink-0 items-center gap-2 px-3 sm:px-4">
         <MD3Button
           variant="text"
           tone="neutral"
@@ -922,18 +922,18 @@ export default function ProblemSituationDesigner({
           title={showStandards ? '성취기준 사이드바 접기' : '성취기준 사이드바 펼치기'}
           icon={<SidebarSimple size={20} weight={showStandards ? 'fill' : 'regular'} />}
         />
-        <span className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] border border-[var(--md-sys-outline-variant)] px-3 text-[12px] font-medium text-[var(--md-sys-on-surface-variant)]">
+        <span className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] border border-[var(--md-sys-outline-variant)] px-3 text-[14px] font-medium text-[var(--md-sys-on-surface-variant)]">
           <FileText size={15} weight="bold" />
           Ds-2
         </span>
         <div className="min-w-0 pl-1">
-          <h1 className="truncate text-[18px] font-medium leading-6 text-[var(--md-sys-on-surface)]">문제상황 개발 워크숍</h1>
-          <p className="truncate text-[12px] text-[var(--md-sys-on-surface-variant)]">AI가 교과 융합 문제상황 후보를 설계합니다</p>
+          <h1 className="truncate text-[21px] font-medium leading-6 text-[var(--md-sys-on-surface)]">문제상황 개발 워크숍</h1>
+          <p className="truncate text-[14px] text-[var(--md-sys-on-surface-variant)]">AI가 교과 융합 문제상황 후보를 설계합니다</p>
         </div>
         <div className="flex-1" />
         <div className="flex flex-shrink-0 items-center gap-2">
           {currentData && (
-            <span className="hidden h-8 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-3 text-[12px] font-medium text-[var(--md-sys-on-tertiary-container)] sm:inline-flex">
+            <span className="hidden h-8 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-3 text-[14px] font-medium text-[var(--md-sys-on-tertiary-container)] sm:inline-flex">
               <CheckCircle size={14} weight="fill" /> 시나리오 확정됨
             </span>
           )}
@@ -957,11 +957,11 @@ export default function ProblemSituationDesigner({
 
         {/* ── 왼쪽: 노드 맵 (접기/펼치기) ── */}
         {showStandards ? (
-          <div className="w-72 flex-shrink-0 flex flex-col bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
+          <div className="w-80 flex-shrink-0 xl:w-[22rem] 2xl:w-[26rem] flex flex-col bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
             <div className="px-4 py-3 border-b border-[var(--md-sys-outline-variant)] flex-shrink-0 flex items-start gap-2">
               <div className="min-w-0 flex-1">
-                <h2 className="text-[14px] font-medium text-[var(--md-sys-on-surface)]">교과 융합 성취기준</h2>
-                <p className="text-[11px] text-[var(--md-sys-on-surface-variant)] mt-0.5">{hasGraphStandards || fallbackStandards.length === 0 ? 'A-3 지식 그래프에서 저장한 성취기준' : 'A-3 분석표·분석시트의 성취기준'}</p>
+                <h2 className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">교과 융합 성취기준</h2>
+                <p className="text-[13px] text-[var(--md-sys-on-surface-variant)] mt-0.5">{hasGraphStandards || fallbackStandards.length === 0 ? 'A-3 지식 그래프에서 저장한 성취기준' : 'A-3 분석표·분석시트의 성취기준'}</p>
               </div>
               <button
                 type="button"
@@ -986,7 +986,7 @@ export default function ProblemSituationDesigner({
             className="w-10 flex-shrink-0 flex flex-col items-center justify-center gap-2 bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] text-[var(--md-sys-on-surface-variant)] hover:bg-[var(--md-sys-surface-container-high)] hover:text-[var(--md-sys-primary)] transition-colors"
           >
             <CaretRight size={14} weight="bold" />
-            <span className="text-[10px] font-bold tracking-wide" style={{ writingMode: 'vertical-rl' }}>성취기준</span>
+            <span className="text-[12px] font-bold tracking-wide" style={{ writingMode: 'vertical-rl' }}>성취기준</span>
           </button>
         )}
 
@@ -994,16 +994,16 @@ export default function ProblemSituationDesigner({
         <div className="flex-1 min-w-0 flex flex-col bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--md-sys-outline-variant)] flex-shrink-0">
             <PencilRuler size={18} weight="fill" className="text-[var(--md-sys-primary)]" />
-            <h2 className="text-[14px] font-medium text-[var(--md-sys-on-surface)]">문제상황 설계 결과</h2>
+            <h2 className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">문제상황 설계 결과</h2>
             {isGenerating && (
-              <span className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-primary-container)] px-2.5 text-[12px] font-medium text-[var(--md-sys-on-primary-container)]">
+              <span className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-primary-container)] px-2.5 text-[14px] font-medium text-[var(--md-sys-on-primary-container)]">
                 <SpinnerGap size={13} className="animate-spin" /> 설계 중
               </span>
             )}
             {result && !isGenerating && (
-              <span className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-2.5 text-[12px] font-medium text-[var(--md-sys-on-tertiary-container)]"><CheckCircle size={13} weight="fill" /> 완료</span>
+              <span className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-2.5 text-[14px] font-medium text-[var(--md-sys-on-tertiary-container)]"><CheckCircle size={13} weight="fill" /> 완료</span>
             )}
-            {generateError && <span className="ml-auto inline-flex h-7 items-center rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-error-container)] px-2.5 text-[12px] font-medium text-[var(--md-sys-on-error-container)]">오류</span>}
+            {generateError && <span className="ml-auto inline-flex h-7 items-center rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-error-container)] px-2.5 text-[14px] font-medium text-[var(--md-sys-on-error-container)]">오류</span>}
           </div>
 
           <div className="flex-1 overflow-hidden">
@@ -1014,14 +1014,14 @@ export default function ProblemSituationDesigner({
                   <div className="w-12 h-12 rounded-full bg-[var(--md-sys-tertiary-container)] flex items-center justify-center mx-auto mb-3">
                     <CheckCircle size={24} weight="fill" className="text-[var(--md-sys-tertiary)]" />
                   </div>
-                  <p className="text-sm font-semibold text-[var(--md-sys-on-surface)]">이전에 저장된 설계 내용이 있습니다</p>
-                  <p className="text-xs text-[var(--md-sys-outline)] mt-1.5">기존 내용을 불러오거나 새로 생성할 수 있습니다</p>
+                  <p className="text-[16px] font-semibold text-[var(--md-sys-on-surface)]">이전에 저장된 설계 내용이 있습니다</p>
+                  <p className="text-[14px] text-[var(--md-sys-outline)] mt-1.5">기존 내용을 불러오거나 새로 생성할 수 있습니다</p>
                 </div>
                 <div className="w-full max-w-sm rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container)] px-4 py-3">
-                  <p className="text-[10px] font-bold text-[var(--md-sys-outline)] uppercase tracking-wide mb-1">이전 저장 제목</p>
-                  <p className="text-sm font-semibold text-[var(--md-sys-on-surface)]">{savedData!.scenario.title}</p>
+                  <p className="text-[12px] font-bold text-[var(--md-sys-outline)] uppercase tracking-wide mb-1">이전 저장 제목</p>
+                  <p className="text-[16px] font-semibold text-[var(--md-sys-on-surface)]">{savedData!.scenario.title}</p>
                   {savedData!.drivingQuestion && (
-                    <p className="text-[11px] text-[var(--md-sys-on-surface-variant)] mt-1.5 leading-relaxed">🎯 {savedData!.drivingQuestion}</p>
+                    <p className="text-[13px] text-[var(--md-sys-on-surface-variant)] mt-1.5 leading-relaxed">🎯 {savedData!.drivingQuestion}</p>
                   )}
                 </div>
                 <div className="flex w-full max-w-sm gap-3">
@@ -1062,8 +1062,8 @@ export default function ProblemSituationDesigner({
                     <PencilRuler size={22} weight="fill" className="absolute text-[var(--md-sys-primary)]" />
                   </div>
                   <div className="text-center">
-                    <p className="text-[15px] font-extrabold text-[var(--md-sys-primary)]">문제상황 설계 중…</p>
-                    <p className="text-[12px] text-[var(--md-sys-outline)] mt-1">후보 개요를 먼저 만든 뒤(약 20~30초) 후보별 상세를 이어서 채웁니다.</p>
+                    <p className="text-[17px] font-extrabold text-[var(--md-sys-primary)]">문제상황 설계 중…</p>
+                    <p className="text-[14px] text-[var(--md-sys-outline)] mt-1">후보 개요를 먼저 만든 뒤(약 20~30초) 후보별 상세를 이어서 채웁니다.</p>
                   </div>
                 </div>
                 <div className="w-full max-w-md rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container)] px-5 py-4 space-y-2.5">
@@ -1081,9 +1081,9 @@ export default function ProblemSituationDesigner({
                             ? <CheckCircle size={13} weight="fill" />
                             : active
                               ? <SpinnerGap size={12} className="animate-spin" weight="bold" />
-                              : <span className="text-[10px] font-bold">{i + 1}</span>}
+                              : <span className="text-[12px] font-bold">{i + 1}</span>}
                         </span>
-                        <span className={`text-[12px] leading-snug ${
+                        <span className={`text-[14px] leading-snug ${
                           done ? 'text-[var(--md-sys-on-surface-variant)]'
                           : active ? 'text-[var(--md-sys-primary)] font-bold'
                           : 'text-[var(--md-sys-outline)]'
@@ -1103,19 +1103,19 @@ export default function ProblemSituationDesigner({
                   <CheckCircle size={20} weight="fill" className="text-[var(--md-sys-tertiary)]" />
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-semibold text-[var(--md-sys-on-surface)]">{currentData.scenario.title}</p>
-                  <p className="text-xs text-[var(--md-sys-outline)] mt-1">기존 확정 내용이 로드되었습니다</p>
+                  <p className="text-[16px] font-semibold text-[var(--md-sys-on-surface)]">{currentData.scenario.title}</p>
+                  <p className="text-[14px] text-[var(--md-sys-outline)] mt-1">기존 확정 내용이 로드되었습니다</p>
                 </div>
-                <div className="w-full max-w-md rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container)] px-4 py-3 text-[13px] text-[var(--md-sys-on-surface-variant)] leading-relaxed">
+                <div className="w-full max-w-md rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container)] px-4 py-3 text-[15px] text-[var(--md-sys-on-surface-variant)] leading-relaxed">
                   {currentData.scenario.row1}
                 </div>
-                <p className="text-[11px] text-[var(--md-sys-on-surface-variant)]">수정이 필요하면 오른쪽 채팅에서 요청하거나, 상단 재생성 버튼으로 새로 설계하세요.</p>
+                <p className="text-[13px] text-[var(--md-sys-on-surface-variant)]">수정이 필요하면 오른쪽 채팅에서 요청하거나, 상단 재생성 버튼으로 새로 설계하세요.</p>
               </div>
             )}
             {generateError && !isGenerating && !showExistingChoice && (
               <div className="flex flex-col items-center justify-center h-full gap-2 px-8 text-center">
-                <p className="text-base font-medium text-[var(--md-sys-error)]">생성 실패</p>
-                <p className="text-sm text-[var(--md-sys-on-surface-variant)]">{generateError}</p>
+                <p className="text-[18px] font-medium text-[var(--md-sys-error)]">생성 실패</p>
+                <p className="text-[16px] text-[var(--md-sys-on-surface-variant)]">{generateError}</p>
                 <MD3Button variant="filled" tone="red" className="mt-2" icon={<ArrowClockwise size={MD3_ICON.sm} />} onClick={generate}>
                   다시 시도
                 </MD3Button>
@@ -1128,22 +1128,22 @@ export default function ProblemSituationDesigner({
         </div>
 
         {/* ── 오른쪽: 채팅 패널 ── */}
-        <div className="w-72 flex-shrink-0 flex flex-col bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
+        <div className="w-80 flex-shrink-0 xl:w-[22rem] 2xl:w-[26rem] flex flex-col bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
           <div className="px-4 py-3 border-b border-[var(--md-sys-outline-variant)] flex-shrink-0">
-            <h2 className="text-[14px] font-medium text-[var(--md-sys-on-surface)]">수정 채팅</h2>
-            <p className="text-[11px] text-[var(--md-sys-on-surface-variant)] mt-0.5">아이디어 수정·선택·확정</p>
+            <h2 className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">수정 채팅</h2>
+            <p className="text-[13px] text-[var(--md-sys-on-surface-variant)] mt-0.5">아이디어 수정·선택·확정</p>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
             {chatMessages.length === 0 && !chatStreamingText && (
-              <div className="text-[11px] text-[var(--md-sys-outline)] text-center mt-4 leading-relaxed px-2">
+              <div className="text-[13px] text-[var(--md-sys-outline)] text-center mt-4 leading-relaxed px-2">
                 결과를 보고 수정하고 싶은 내용을 입력하세요.<br /><br />
                 <span className="text-[var(--md-sys-primary)]">&quot;저장해줘&quot;</span>라고 하면 채팅 내용을 반영한 시나리오로 산출물에 확정됩니다.
               </div>
             )}
             {chatMessages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[90%] rounded-[var(--md-sys-radius-lg)] px-3 py-2 text-[13px] leading-relaxed ${
+                <div className={`max-w-[90%] rounded-[var(--md-sys-radius-lg)] px-3 py-2 text-[15px] leading-relaxed ${
                   m.role === 'user' ? 'bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)] rounded-br-[4px]' : 'bg-[var(--md-sys-surface-container-high)] text-[var(--md-sys-on-surface)] rounded-bl-[4px]'
                 }`}>
                   <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={{
@@ -1157,7 +1157,7 @@ export default function ProblemSituationDesigner({
             ))}
             {chatStreamingText && (
               <div className="flex justify-start">
-                <div className="max-w-[90%] rounded-[var(--md-sys-radius-lg)] rounded-bl-[4px] px-3 py-2 text-[13px] leading-relaxed bg-[var(--md-sys-surface-container-high)] text-[var(--md-sys-on-surface)]">
+                <div className="max-w-[90%] rounded-[var(--md-sys-radius-lg)] rounded-bl-[4px] px-3 py-2 text-[15px] leading-relaxed bg-[var(--md-sys-surface-container-high)] text-[var(--md-sys-on-surface)]">
                   <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={{
                     p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
                     strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
@@ -1177,7 +1177,7 @@ export default function ProblemSituationDesigner({
                 placeholder="수정 요청 또는 '저장해줘'"
                 rows={2}
                 aria-label="수정 요청 입력"
-                className="flex-1 bg-transparent resize-none py-1.5 text-[13px] text-[var(--md-sys-on-surface)] placeholder-[var(--md-sys-on-surface-variant)] outline-none leading-relaxed"
+                className="flex-1 bg-transparent resize-none py-1.5 text-[15px] text-[var(--md-sys-on-surface)] placeholder-[var(--md-sys-on-surface-variant)] outline-none leading-relaxed"
               />
               <MD3Button
                 variant="filled"
@@ -1199,14 +1199,14 @@ export default function ProblemSituationDesigner({
             {currentData ? (
               <button
                 onClick={() => setShowDataModal(true)}
-                className="flex h-8 items-center gap-1.5 truncate max-w-xs rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-3 text-[13px] font-medium text-[var(--md-sys-on-tertiary-container)] transition-opacity hover:opacity-90"
+                className="flex h-8 items-center gap-1.5 truncate max-w-xs rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-tertiary-container)] px-3 text-[15px] font-medium text-[var(--md-sys-on-tertiary-container)] transition-opacity hover:opacity-90"
                 title="확정 내용 전체 보기"
               >
                 <ArrowsOut size={13} />
                 <span className="truncate">&quot;{currentData.scenario.title}&quot; 확정됨 — 클릭해서 전체 보기</span>
               </button>
             ) : (
-              <p className="text-[13px] text-[var(--md-sys-on-surface-variant)]">결과에서 &quot;이 후보를 산출물로 선택&quot; 버튼을 클릭하거나 채팅에서 &quot;저장해줘&quot;라고 하세요.</p>
+              <p className="text-[15px] text-[var(--md-sys-on-surface-variant)]">결과에서 &quot;이 후보를 산출물로 선택&quot; 버튼을 클릭하거나 채팅에서 &quot;저장해줘&quot;라고 하세요.</p>
             )}
           </div>
           <MD3Button
@@ -1243,7 +1243,7 @@ export default function ProblemSituationDesigner({
               {/* 배경 패턴 */}
               <div className="relative">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-surface-container-lowest)] px-3 text-[12px] font-medium text-[var(--md-sys-on-tertiary-container)]">
+                  <span className="inline-flex h-7 items-center gap-1.5 rounded-[var(--md-sys-radius-sm)] bg-[var(--md-sys-surface-container-lowest)] px-3 text-[14px] font-medium text-[var(--md-sys-on-tertiary-container)]">
                     <CheckCircle size={11} weight="fill" />
                     확정된 문제상황 · Ds-2
                   </span>
@@ -1268,9 +1268,9 @@ export default function ProblemSituationDesigner({
                   <div className="w-6 h-6 rounded-full bg-[var(--md-sys-tertiary)] flex items-center justify-center flex-shrink-0">
                     <PencilRuler size={13} weight="fill" className="text-white" />
                   </div>
-                  <span className="text-[12px] font-medium text-[var(--md-sys-tertiary)]">탐구 질문 (Driving Question)</span>
+                  <span className="text-[14px] font-medium text-[var(--md-sys-tertiary)]">탐구 질문 (Driving Question)</span>
                 </div>
-                <p className="text-[16px] font-medium text-[var(--md-sys-on-surface)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
+                <p className="text-[18px] font-medium text-[var(--md-sys-on-surface)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>
                   {currentData.drivingQuestion}
                 </p>
               </div>
@@ -1283,10 +1283,10 @@ export default function ProblemSituationDesigner({
               <div className="bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
                 <div className="flex items-center gap-2.5 px-5 py-3 bg-[var(--md-sys-surface-container)]">
                   <BookOpen size={15} weight="fill" className="text-[var(--md-sys-tertiary)] flex-shrink-0" />
-                  <span className="text-[13px] font-medium text-[var(--md-sys-on-surface)]">문제 상황</span>
+                  <span className="text-[15px] font-medium text-[var(--md-sys-on-surface)]">문제 상황</span>
                 </div>
                 <div className="px-5 py-4">
-                  <p className="text-[13px] text-[var(--md-sys-on-surface)] leading-[1.9]" style={{ wordBreak: 'keep-all' }}>
+                  <p className="text-[15px] text-[var(--md-sys-on-surface)] leading-[1.9]" style={{ wordBreak: 'keep-all' }}>
                     {currentData.scenario.row1}
                   </p>
                 </div>
@@ -1296,14 +1296,14 @@ export default function ProblemSituationDesigner({
               <div className="bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
                 <div className="flex items-center gap-2.5 px-5 py-3 bg-[var(--md-sys-surface-container)]">
                   <Users size={15} weight="fill" className="text-[var(--md-sys-secondary)] flex-shrink-0" />
-                  <span className="text-[13px] font-medium text-[var(--md-sys-on-surface)]">교과별 학습 내용 및 산출물</span>
+                  <span className="text-[15px] font-medium text-[var(--md-sys-on-surface)]">교과별 학습 내용 및 산출물</span>
                 </div>
                 <div className="px-5 py-4 space-y-2">
                   {currentData.scenario.row2
                     .split(/\s*\/\s*(?=【|\[)|\n+/)
                     .map(s => s.trim()).filter(Boolean)
                     .map((item, i) => (
-                      <p key={i} className="text-[13px] text-[var(--md-sys-on-surface-variant)] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>
+                      <p key={i} className="text-[15px] text-[var(--md-sys-on-surface-variant)] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>
                         {item}
                       </p>
                     ))
@@ -1315,7 +1315,7 @@ export default function ProblemSituationDesigner({
               <div className="bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
                 <div className="flex items-center gap-2.5 px-5 py-3 bg-[var(--md-sys-surface-container)]">
                   <Database size={15} weight="fill" className="text-[var(--md-sys-primary)] flex-shrink-0" />
-                  <span className="text-[13px] font-medium text-[var(--md-sys-on-surface)]">데이터 출처</span>
+                  <span className="text-[15px] font-medium text-[var(--md-sys-on-surface)]">데이터 출처</span>
                 </div>
                 <ol className="divide-y divide-[var(--md-sys-surface-container-high)]">
                   {currentData.scenario.row3
@@ -1323,10 +1323,10 @@ export default function ProblemSituationDesigner({
                     .map(s => s.trim()).filter(Boolean)
                     .map((item, i) => (
                       <li key={i} className="flex items-start gap-3 px-5 py-3">
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[var(--md-sys-secondary-container)] flex items-center justify-center text-[11px] font-medium text-[var(--md-sys-on-secondary-container)] mt-0.5">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[var(--md-sys-secondary-container)] flex items-center justify-center text-[13px] font-medium text-[var(--md-sys-on-secondary-container)] mt-0.5">
                           {i + 1}
                         </span>
-                        <p className="text-[13px] text-[var(--md-sys-on-surface-variant)] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>{item}</p>
+                        <p className="text-[15px] text-[var(--md-sys-on-surface-variant)] leading-[1.8]" style={{ wordBreak: 'keep-all' }}>{item}</p>
                       </li>
                     ))
                   }
@@ -1337,15 +1337,15 @@ export default function ProblemSituationDesigner({
               <div className="bg-[var(--md-sys-surface-container-lowest)] rounded-[var(--md-sys-radius-lg)] overflow-hidden">
                 <div className="flex items-center gap-2.5 px-5 py-3 bg-[var(--md-sys-surface-container)]">
                   <MagnifyingGlass size={15} weight="fill" className="text-[var(--md-sys-primary)] flex-shrink-0" />
-                  <span className="text-[13px] font-medium text-[var(--md-sys-on-surface)]">하위 탐구 질문 (Essential Questions)</span>
+                  <span className="text-[15px] font-medium text-[var(--md-sys-on-surface)]">하위 탐구 질문 (Essential Questions)</span>
                 </div>
                 <ol className="divide-y divide-[var(--md-sys-surface-container-low)]">
                   {(currentData.essentialQuestions ?? []).map((q, i) => (
                     <li key={i} className="flex items-start gap-3 px-5 py-3.5">
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[var(--md-sys-secondary-container)] flex items-center justify-center text-[11px] font-medium text-[var(--md-sys-on-secondary-container)] mt-0.5">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[var(--md-sys-secondary-container)] flex items-center justify-center text-[13px] font-medium text-[var(--md-sys-on-secondary-container)] mt-0.5">
                         {i + 1}
                       </span>
-                      <span className="text-[13px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{q}</span>
+                      <span className="text-[15px] text-[var(--md-sys-on-surface-variant)] leading-relaxed" style={{ wordBreak: 'keep-all' }}>{q}</span>
                     </li>
                   ))}
                 </ol>
