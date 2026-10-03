@@ -24,6 +24,7 @@ import { CumulativeReportModal } from '@/components/modals/CumulativeReportModal
 // 스펙 §1-2 — 단계 컬러 단일 출처. 로컬 선언 제거하고 공통 모듈 참조.
 // 기존 corner 0.10 → 0.11 통일 (team-lead-2 결정, 시각 차이 미미).
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
+import { confirmationSummaryForActivity } from '@/lib/collab/artifactConfirmations'
 import { isEffectivelyDone, validateRequiredSections } from '@/lib/activity/completion'
 import { ExpandableWrapper } from './structured/ExpandableWrapper'
 import { T11Renderer } from './structured/T11Renderer'
@@ -108,7 +109,7 @@ function EmptyState({ activityLabel, sections, sectionVariant, stageLight, stage
   )
 }
 
-interface ArtifactPreviewModalState {
+export interface ArtifactPreviewModalState {
   title: string
   subtitle?: string
   content: Record<string, unknown>
@@ -200,7 +201,7 @@ function formatArtifactForCopy(title: string, content: Record<string, unknown>):
   return lines.join('\n').trim()
 }
 
-function ArtifactPreviewModal({
+export function ArtifactPreviewModal({
   modal,
   onClose,
 }: {
@@ -1052,6 +1053,9 @@ function InteractiveArtifactPanel() {
   const isHost = !observationOnly && (project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid)
   const stageColor = STAGE_COLOR[observationOnly ? activityMeta.stage : project?.currentStage ?? 'T']
 
+  // 부재 팀원 확인 상태(#28) — 확인 대기는 모두에게, 다시 논의 요청은 방장에게 표시
+  const confirmationSummary = confirmationSummaryForActivity(project?.artifactConfirmations, viewingActivity)
+
   // Firestore 산출물 (팀 전체 소스)
   const firestoreArtifact = project?.artifacts?.[viewingActivity]
   const sharedRevisionRequest =
@@ -1458,6 +1462,20 @@ function InteractiveArtifactPanel() {
           2행: 활동 라벨 + 단계 코드 + 액션들
           3행: 제목 + 버전 + 잠금 안내 */}
       <div className="flex-shrink-0">
+        {(confirmationSummary.pending.length > 0 || (isHost && confirmationSummary.rediscuss.length > 0)) && (
+          <div className="px-5 py-1.5 flex flex-wrap items-center gap-1.5 bg-[#FFF8E1] border-b border-[#FFE0B2]" data-testid="artifact-confirmation-badges">
+            {confirmationSummary.pending.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#B06000] bg-white/80 px-2 py-0.5 rounded-full">
+                <Clock size={11} weight="bold" /> {confirmationSummary.pending.join('·')} 확인 대기
+              </span>
+            )}
+            {isHost && confirmationSummary.rediscuss.map(item => (
+              <span key={item.displayName} title={item.reason} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#C5221F] bg-white/80 px-2 py-0.5 rounded-full max-w-full">
+                <Warning size={11} weight="bold" /> 다시 논의 요청 있음 · {item.displayName}{item.reason ? ` — ${item.reason}` : ''}
+              </span>
+            ))}
+          </div>
+        )}
         {/* 1행 — 상태 밴드 (스펙: 상단 full-width 밴드, stage.light 배경) */}
         <div className={cn(stageColor.light, 'px-5 py-2 flex items-center gap-2 border-b border-white/40')}>
           {displayArtifact

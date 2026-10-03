@@ -13,6 +13,7 @@ import { buildOutlinePrompts, buildDetailPrompts, parseOutline } from '../src/li
 import { parsePsReady, cleanPsReady } from '../src/lib/problem-situation/readySignal.ts'
 import { serializeArtifactForPrompt } from '../src/lib/artifacts/serializeArtifactForPrompt.ts'
 import { validateProblemStandards } from '../src/lib/problem-situation/validateStandards.ts'
+import { withCurriculumReadCache, readOncePerCurriculumContext } from '../src/lib/curriculum/readCache.ts'
 import { buildCurriculumContext, buildReplacementStandardsContext } from '../src/lib/curriculum/contextInject.ts'
 import { ACTIVITY_META, displayActivityCode } from '../src/types/index.ts'
 import { applyArtifactSignalBatch, artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
@@ -111,6 +112,67 @@ test('15a: 성취기준 코드 뒤 원문이 있어도 검증하고 남긴 값�
   const outside = { ...good, standardId: '2국03-03 글을 쓴다.' }
   const result = validateProblemStandards({ standardsAlignment: [good, bracketed, outside] }, '[2국03-02] 쓰기에 흥미를 가진다.')
   assert.deepEqual(result.standardsAlignment, [good, bracketed])
+})
+
+test('21a: 한 연결의 여러 코드 중 A-2-1 밖의 코드만 제거하며 원본은 보존한다', () => {
+  const alignment = { standardId: '4과16-01·4과16-03', subject: '과학', isCenter: true, connection: '자료를 비교한다.' }
+  const reverse = { ...alignment, standardId: '[4과16-03]·[4과16-01] 자료 비교' }
+  const grouped = { ...alignment, standardId: '[4과16-03·4과16-01·6과01-01]' }
+  const allOutside = { ...alignment, standardId: '4과16-03·6과01-01' }
+  const result = validateProblemStandards({ standardsAlignment: [alignment, reverse, grouped, allOutside] }, '[4과16-01] 자료를 살펴본다.')
+  assert.deepEqual(result.standardsAlignment, [
+    { ...alignment, standardId: '4과16-01' },
+    { ...reverse, standardId: '[4과16-01] 자료 비교' },
+    { ...grouped, standardId: '[4과16-01]' },
+  ])
+  assert.equal(alignment.standardId, '4과16-01·4과16-03')
+})
+
+test('21a: 여러 코드가 모두 허용되면 표기·원문을 그대로 유지한다', () => {
+  const alignment = { standardId: '[4과16-01]·[4과16-03] 자료 비교', subject: '과학', isCenter: false, connection: '관찰한다.' }
+  const result = validateProblemStandards({ standardsAlignment: [alignment] }, '4과16-01 / 4과16-03')
+  assert.equal(result.standardsAlignment[0], alignment)
+})
+
+test('21b: dev JSON 읽기는 한 동기 컨텍스트 안에서만 공유하고 다음 요청에는 새로 읽는다', () => {
+  const before = process.env.NODE_ENV
+  process.env.NODE_ENV = 'development'
+  try {
+    let reads = 0
+    const read = () => readOncePerCurriculumContext('sample', () => ({ version: ++reads }))
+    const first = withCurriculumReadCache(() => {
+      const value = read()
+      assert.equal(read(), value)
+      assert.equal(withCurriculumReadCache(read), value)
+      return value
+    })
+    const second = withCurriculumReadCache(read)
+    assert.equal(first.version, 1)
+    assert.equal(second.version, 2)
+    assert.notEqual(first, second)
+    assert.equal(read().version, 3)
+    assert.throws(() => withCurriculumReadCache(() => { read(); throw new Error('read failure') }), /read failure/)
+    assert.equal(withCurriculumReadCache(read).version, 5)
+  } finally {
+    if (before === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = before
+  }
+})
+
+test('21b: production에서는 기존 로더 캐시·읽기 경로를 그대로 실행한다', () => {
+  const before = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  try {
+    let reads = 0
+    withCurriculumReadCache(() => {
+      const read = () => readOncePerCurriculumContext('sample', () => ++reads)
+      assert.equal(read(), 1)
+      assert.equal(read(), 2)
+    })
+  } finally {
+    if (before === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = before
+  }
 })
 
 test('15c: 이동 전 수정·보완을 요청하면 동일 내용 응답이어도 이동 카드를 띄우지 않는다', () => {
@@ -720,4 +782,71 @@ test('27: 정상 본문·외국어 인용·한자 병기·끝 신호는 그대�
   for (const text of keep) assert.equal(sanitizeAssistantText(text), text, text)
   const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.match(chatSource, /const cleaned = sanitizeAssistantText\(text\)\n\s+return commitResponse\(decisionDeferred \? deferredResponse\(cleaned\) : cleaned\)/)
+})
+
+// ─── TASK-022: #28 팀장 종합 저장 후 부재 팀원 확인 ─────────
+const task022 = await import('../src/lib/collab/artifactConfirmations.ts')
+const task022Team = {
+  mode: 'collaborative', hostUid: 'host', createdBy: 'host', memberUids: ['host', 'jam', 'canva'],
+  memberInfo: { host: { displayName: '홍성용' }, jam: { displayName: '잠만보잠만보' }, canva: { displayName: '캔바1' } },
+}
+
+test('28a: 이 활동에서 말하지 않은 비방장 팀원만 확인 대기로 기록하고, solo·데모·1인 팀은 제외한다', () => {
+  const pending = task022.computePendingConfirmations({ ...task022Team, speakerUids: ['host', 'jam'], activityCode: 'T-2-1', version: 2, now: 100 })
+  assert.deepEqual(Object.keys(pending), ['canva'])
+  assert.deepEqual(pending.canva, { status: 'pending', version: 2, since: 100, displayName: '캔바1' })
+  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, speakerUids: ['host', 'jam', 'canva'], activityCode: 'T-2-1', version: 2, now: 100 }), {})
+  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, mode: 'solo', speakerUids: [], activityCode: 'T-2-1', version: 2, now: 100 }), {})
+  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, demoRun: true, speakerUids: [], activityCode: 'T-2-1', version: 2, now: 100 }), {})
+  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, memberUids: ['host'], speakerUids: [], activityCode: 'T-2-1', version: 2, now: 100 }), {})
+  // memberUids 가 없으면 memberInfo 키로 팀을 판단한다.
+  assert.deepEqual(Object.keys(task022.computePendingConfirmations({ ...task022Team, memberUids: undefined, speakerUids: ['host'], activityCode: 'T-2-1', version: 1, now: 1 })).sort(), ['canva', 'jam'])
+})
+
+test('28b: 같은 버전에 이미 응답(확인·다시 논의)했거나 대기 중이면 다시 묻지 않고, 내용이 바뀐 새 버전이면 다시 묻는다', () => {
+  const existing = { canva: { 'T-2-1': { status: 'confirmed', version: 2, since: 1, displayName: '캔바1', respondedAt: 5 } } }
+  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, speakerUids: ['host', 'jam'], activityCode: 'T-2-1', version: 2, now: 100, existing }), {})
+  const rediscuss = { canva: { 'T-2-1': { status: 'rediscuss', version: 2, since: 1, displayName: '캔바1', reason: '시트' } } }
+  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, speakerUids: ['host', 'jam'], activityCode: 'T-2-1', version: 2, now: 100, existing: rediscuss }), {})
+  assert.deepEqual(Object.keys(task022.computePendingConfirmations({ ...task022Team, speakerUids: ['host', 'jam'], activityCode: 'T-2-1', version: 3, now: 100, existing })), ['canva'])
+})
+
+test('28c: 표시 판정 — 본인 대기 목록(오래된 순)과 산출물 패널 배지 요약', () => {
+  const confirmations = {
+    canva: {
+      'A-2-1': { status: 'pending', version: 1, since: 20, displayName: '캔바1' },
+      'T-2-1': { status: 'pending', version: 2, since: 10, displayName: '캔바1' },
+      'T-2-2': { status: 'confirmed', version: 1, since: 5, displayName: '캔바1' },
+    },
+    jam: { 'T-2-1': { status: 'rediscuss', version: 2, since: 10, displayName: '잠만보잠만보', reason: '역할을 다시 나눠요' } },
+  }
+  assert.deepEqual(task022.pendingConfirmationsForUser(confirmations, 'canva').map(item => item.activityCode), ['T-2-1', 'A-2-1'])
+  assert.deepEqual(task022.pendingConfirmationsForUser(confirmations, 'jam'), [])
+  assert.deepEqual(task022.pendingConfirmationsForUser(confirmations, null), [])
+  assert.deepEqual(task022.confirmationSummaryForActivity(confirmations, 'T-2-1'), {
+    pending: ['캔바1'], rediscuss: [{ displayName: '잠만보잠만보', reason: '역할을 다시 나눠요' }],
+  })
+  assert.deepEqual(task022.confirmationSummaryForActivity(undefined, 'T-2-1'), { pending: [], rediscuss: [] })
+  assert.equal(task022.rediscussMessage('  역할을 다시 나눠요 '), '[다시 논의 요청] 역할을 다시 나눠요')
+})
+
+test('28d: 저장 직후 기록·본인 응답 경로와 규칙(자기 uid 항목만)이 연결돼 있다', () => {
+  const projectsSource = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  assert.match(projectsSource, /void recordArtifactConfirmations\(projectId, activityCode, data\.version, projectData\)/)
+  assert.match(projectsSource, /\[`artifactConfirmations\.\$\{uid\}\.\$\{activityCode\}`\]: stripUndefinedDeep\(next\)/)
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8')
+  assert.match(rules, /get\('artifactConfirmations', \{\}\)\.diff\(resource\.data\.get\('artifactConfirmations', \{\}\)\)\s*\.affectedKeys\(\)\.hasOnly\(\[request\.auth\.uid\]\)/)
+  const page = fs.readFileSync(new URL('../src/app/(app)/projects/[id]/page.tsx', import.meta.url), 'utf8')
+  assert.match(page, /<PendingConfirmationBanner \/>/)
+})
+
+test('28e: 새 버전이 저장되면 이전 버전의 다시 논의 요청만 정리 대상이다', () => {
+  const confirmations = {
+    jam: { 'T-2-1': { status: 'rediscuss', version: 2, since: 1, displayName: '잠만보잠만보', reason: 'x' } },
+    canva: { 'T-2-1': { status: 'rediscuss', version: 3, since: 1, displayName: '캔바1', reason: 'y' } },
+    other: { 'T-2-1': { status: 'confirmed', version: 2, since: 1, displayName: '다른' } },
+  }
+  assert.deepEqual(task022.staleRediscussUids(confirmations, 'T-2-1', 3), ['jam'])
+  assert.deepEqual(task022.staleRediscussUids(confirmations, 'A-2-1', 3), [])
+  assert.deepEqual(task022.staleRediscussUids(undefined, 'T-2-1', 3), [])
 })

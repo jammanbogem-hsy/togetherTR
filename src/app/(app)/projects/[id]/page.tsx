@@ -36,6 +36,7 @@ import { SpinnerGap, PlayCircle, Crown, Copy, Check, Users, Key, ArrowLeft, Pape
 import { Avatar } from '@/components/ui/Avatar'
 import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
+import { PendingConfirmationBanner } from '@/components/collab/PendingConfirmationBanner'
 
 function hasMemberHost(project: Project): boolean {
   const members = project.memberUids ?? Object.keys(project.memberInfo ?? {})
@@ -1215,6 +1216,7 @@ export default function ProjectPage() {
       </div>
 
       {!project.demoRun && pendingStageMove && <StageMoveModal />}
+      {!project.demoRun && project.mode !== 'solo' && <PendingConfirmationBanner />}
 
       {showReports && (
         <StageReportsModal onClose={() => setShowReports(false)} />

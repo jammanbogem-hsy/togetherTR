@@ -67,6 +67,10 @@ service cloud.firestore {
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['teamGradeBandProposals'])
           || request.resource.data.get('teamGradeBandProposals', {}).diff(resource.data.get('teamGradeBandProposals', {}))
                .affectedKeys().hasOnly([request.auth.uid]))
+        // 부재 팀원 확인(#28): 팀원은 artifactConfirmations 의 자기 uid 항목만 바꿀 수 있다(방장은 isHostOf 로 전체).
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['artifactConfirmations'])
+          || request.resource.data.get('artifactConfirmations', {}).diff(resource.data.get('artifactConfirmations', {}))
+               .affectedKeys().hasOnly([request.auth.uid]))
         && !request.resource.data.diff(resource.data).changedKeys().hasAny([
           'artifacts',
           'activityStatuses',

@@ -269,6 +269,17 @@ export type SchoolLevel = '초등학교' | '중학교' | '고등학교'
 export type GradeGroup = '초1-2' | '초3-4' | '초5-6' | '중1-3' | '고공통' | '고선택'
 export type ProjectMode = 'collaborative' | 'solo'
 
+/** 부재 팀원 확인 상태 — pending: 확인 대기, confirmed: 확인함, rediscuss: 다시 논의 요청 */
+export interface ArtifactConfirmationEntry {
+  status: 'pending' | 'confirmed' | 'rediscuss'
+  /** 확인을 요청한 산출물 버전 — 같은 버전이면 다시 묻지 않는다 */
+  version: number
+  since: number
+  displayName: string
+  reason?: string
+  respondedAt?: number
+}
+
 export interface Project {
   id: string
   title: string
@@ -409,6 +420,8 @@ export interface Project {
     requestedByName: string
     requestedAt: number
   }
+  // 팀장 종합으로 저장된 산출물의 부재 팀원 확인(#28). 팀원 uid가 첫 키라 규칙에서 '자기 항목만' 수정을 강제할 수 있다.
+  artifactConfirmations?: Record<string, Partial<Record<ActivityCode, ArtifactConfirmationEntry>>>
   // 지식 그래프 저장 데이터
   graphSavedData?: GraphSavedData
   // 문제상황 디자이너 오픈 상태 (팀원 자동 오픈)

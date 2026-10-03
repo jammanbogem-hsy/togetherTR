@@ -4,8 +4,9 @@ import {
   runTransaction, type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { auth, db } from './config'
-import type { Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow, TeamVisionWorkspace, TeamVisionWorkspaceBlock, TeamVisionWorkspaceColumn, TeamVisionWorkspaceRow, IntegratedGoalWorkspace, IntegratedGoalWorkspaceBlock, IntegratedGoalWorkspaceColumn, IntegratedGoalWorkspaceRow, IntegratedGoalMethod } from '@/types'
+import type { ArtifactConfirmationEntry, Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow, TeamVisionWorkspace, TeamVisionWorkspaceBlock, TeamVisionWorkspaceColumn, TeamVisionWorkspaceRow, IntegratedGoalWorkspace, IntegratedGoalWorkspaceBlock, IntegratedGoalWorkspaceColumn, IntegratedGoalWorkspaceRow, IntegratedGoalMethod } from '@/types'
 import { ACTIVITY_META } from '@/types'
+import { computePendingConfirmations, rediscussMessage, staleRediscussUids } from '@/lib/collab/artifactConfirmations'
 import type { GraphSavedData, GraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { normalizeGraphSavedData, normalizeGraphSelectionState } from '@/lib/knowledge-graph/domain'
 import { addJoinedProjectId, generateInviteCode } from '@/lib/inviteCode'
@@ -481,6 +482,78 @@ export async function setProjectArtifact(
   }
 
   await updateDoc(projectRef, updates)
+  // 팀장 종합으로 저장된 산출물은 이 활동에서 말하지 않은 팀원에게 확인을 요청한다(#28). 저장을 늦추지 않도록 기다리지 않는다.
+  if (projectData) {
+    void recordArtifactConfirmations(projectId, activityCode, data.version, projectData)
+      .catch(error => console.error('[artifactConfirmations] record failed:', error))
+  }
+}
+
+/** 이 활동 대화(현재 주기)에서 말하지 않은 팀원을 '확인 대기'로 기록한다. 방장 저장 직후 호출. */
+export async function recordArtifactConfirmations(
+  projectId: string,
+  activityCode: ActivityCode,
+  version: number,
+  project: Project,
+): Promise<void> {
+  if (project.mode === 'solo' || project.demoRun) return
+  const cycle = project.currentCycle ?? 1
+  const messagesSnap = await getDocs(collection(db, `projects/${projectId}/conversations/${activityCode}/messages`))
+  const speakerUids = messagesSnap.docs
+    .map(item => item.data() as Partial<Message>)
+    .filter(message => message.role === 'user' && message.userId && (message.cycleNumber ?? 1) === cycle)
+    .map(message => message.userId as string)
+  const pending = computePendingConfirmations({
+    mode: project.mode,
+    demoRun: !!project.demoRun,
+    hostUid: project.hostUid,
+    createdBy: project.createdBy,
+    memberUids: project.memberUids,
+    memberInfo: project.memberInfo,
+    speakerUids,
+    activityCode,
+    version,
+    now: Date.now(),
+    existing: project.artifactConfirmations,
+  })
+  const updates: Record<string, unknown> = Object.fromEntries(
+    Object.entries(pending).map(([uid, entry]) => [`artifactConfirmations.${uid}.${activityCode}`, entry]),
+  )
+  for (const uid of staleRediscussUids(project.artifactConfirmations, activityCode, version)) {
+    if (!(uid in pending)) updates[`artifactConfirmations.${uid}.${activityCode}`] = deleteField()
+  }
+  if (Object.keys(updates).length === 0) return
+  await updateDoc(doc(db, 'projects', projectId), updates)
+}
+
+/**
+ * 팀원 본인의 확인 응답. 확인했어요 → confirmed, 다시 논의 요청 → 그 활동 대화에 사유 메시지를 남기고 rediscuss.
+ * 규칙상 팀원은 artifactConfirmations 의 자기 uid 항목만 바꿀 수 있다.
+ */
+export async function respondArtifactConfirmation(
+  projectId: string,
+  activityCode: ActivityCode,
+  uid: string,
+  entry: ArtifactConfirmationEntry,
+  response: { type: 'confirmed' } | { type: 'rediscuss'; reason: string; cycleNumber?: number },
+): Promise<void> {
+  const respondedAt = Date.now()
+  if (response.type === 'rediscuss') {
+    await saveMessage(projectId, activityCode, {
+      role: 'user',
+      content: rediscussMessage(response.reason),
+      activityCode,
+      userId: uid,
+      displayName: entry.displayName,
+      cycleNumber: response.cycleNumber ?? 1,
+    })
+  }
+  const next: ArtifactConfirmationEntry = response.type === 'rediscuss'
+    ? { ...entry, status: 'rediscuss', reason: response.reason.trim(), respondedAt }
+    : { ...entry, status: 'confirmed', respondedAt }
+  await updateDoc(doc(db, 'projects', projectId), {
+    [`artifactConfirmations.${uid}.${activityCode}`]: stripUndefinedDeep(next),
+  })
 }
 
 // 산출물 삭제 — 호스트 전용. artifacts.{activityCode}를 통째로 제거하고
