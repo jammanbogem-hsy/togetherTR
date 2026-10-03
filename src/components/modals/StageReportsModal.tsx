@@ -1,13 +1,11 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
-import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { ReportHero, ReportMarkdown } from './ReportMarkdown'
+import { printReport } from './printReport'
 import { X, FileText, ArrowLeft, DownloadSimple, FilePdf } from '@phosphor-icons/react'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 
@@ -68,50 +66,8 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   }
 
   function downloadPdf() {
-    const contentEl = contentRef.current
-    if (!contentEl || !selectedStage) return
-    const win = window.open('', '_blank')
-    if (!win) return
-
-    const html = contentEl.innerHTML
-    win.document.write(`<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <title>${project?.title ?? ''} ${STAGE_LABELS[selectedStage]} 단계 보고서</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <style>
-    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    body {
-      font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
-      max-width: 740px;
-      margin: 0 auto;
-      padding: 36px 40px;
-      color: #202124;
-      background: white;
-      font-size: 14px;
-      line-height: 1.7;
-    }
-    @page { size: A4; margin: 18mm 15mm; }
-    @media print {
-      body { padding: 0; }
-    }
-  </style>
-</head>
-<body>
-  ${html}
-  <script>
-    window.onload = () => {
-      setTimeout(() => {
-        window.print()
-        window.onafterprint = () => window.close()
-      }, 600)
-    }
-  <\/script>
-</body>
-</html>`)
-    win.document.close()
+    if (!contentRef.current || !selectedStage) return
+    printReport(contentRef.current, `${project?.title ?? ''} ${STAGE_LABELS[selectedStage]} 단계 보고서`)
   }
 
   async function downloadHwpx() {
@@ -170,9 +126,6 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
             })}
           </div>
         </div> : <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="px-4 pt-4 sm:px-6 sm:pt-6">
-            <ReportHero stage={selectedStage} project={project} generatedAt={selectedReport!.savedAt} />
-          </div>
           {reportStale && <div className="mx-4 mt-4 rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-error-container)] p-4 text-[var(--md-sys-on-error-container)] sm:mx-6">
             <p className="text-[13px] font-medium">⚠ 이 보고서가 현재 분석시트와 일치하지 않습니다 — 보고서를 다시 생성해야 최신 교과·중심 교과가 반영됩니다.</p>
             <p className="mt-1 text-[12px]">
@@ -183,119 +136,10 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
           </div>}
           <div className="min-w-0 p-4 sm:p-6">
             <p className="mb-4 text-[12px] text-[var(--md-sys-on-surface-variant)]">HWPX는 기본형 내보내기만 지원합니다. 제목, 문단, 목록, 단순 표를 우선 보존하며 복잡한 스타일은 간소화됩니다.</p>
-            <ReportMarkdown content={displayContent} />
-          </div>
-          {/* 기존 PDF 출력 본문·스타일은 화면 개편과 분리해 보존한다. */}
-          <div className="hidden" aria-hidden="true" ref={contentRef}>
-              <p className="text-[11px] text-[#9AA0A6] font-medium mb-4">
-                HWPX는 기본형 내보내기만 지원합니다. 제목, 문단, 목록, 단순 표를 우선 보존하며 복잡한 스타일은 간소화됩니다.
-              </p>
-              <ReactMarkdown
-                remarkPlugins={REMARK_PLUGINS}
-                components={{
-                  td: ({ children }) => {
-                    const baseStyle: React.CSSProperties = { padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6, wordBreak: 'keep-all', overflowWrap: 'anywhere' }
-                    const text = typeof children === 'string' ? children : null
-                    if (text && (text.includes('【') && text.includes(' / 【') || text.includes('\u2028'))) {
-                      const parts = text.includes('\u2028') ? text.split('\u2028') : text.split(' / ')
-                      return (
-                        <td style={baseStyle}>
-                          {parts.map((part, i) => (
-                            <span key={i} style={{ display: 'block' }}>{part}</span>
-                          ))}
-                        </td>
-                      )
-                    }
-                    return <td style={baseStyle}>{children}</td>
-                  },
-                  h1: ({ children }) => (
-                    <h1 style={{ fontSize: '1.55rem', fontWeight: 900, color: '#202124', margin: '0 0 2rem', lineHeight: 1.2, letterSpacing: '-0.03em', paddingBottom: '0.9rem', borderBottom: '3px solid #1A73E8' }}>
-                      {children}
-                    </h1>
-                  ),
-                  h2: ({ children }) => {
-                    // 이모지 제목 → M3 tonal 컨테이너 + 벡터 아이콘
-                    const raw = childrenToText(children)
-                    const iconName = pickReportIcon(raw)
-                    return (
-                      <div style={{ marginTop: '2.4rem', marginBottom: '1rem' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.9rem', fontWeight: 600, color: '#0842A0', background: '#D3E3FD', borderRadius: '10px', padding: '0.45rem 0.9rem', letterSpacing: '0.01em' }}>
-                          {iconName && <ReportIcon name={iconName} size={18} />}
-                          {stripLeadingEmoji(raw) || children}
-                        </span>
-                      </div>
-                    )
-                  },
-                  h3: ({ children }) => {
-                    const raw = childrenToText(children)
-                    return (
-                      <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#202124', margin: '1.6rem 0 0.4rem', paddingLeft: '0.65rem', borderLeft: '3px solid #0B57D0', lineHeight: 1.4 }}>
-                        {stripLeadingEmoji(raw) || children}
-                      </h3>
-                    )
-                  },
-                  h4: ({ children }) => {
-                    const raw = childrenToText(children)
-                    const iconName = pickReportIcon(raw)
-                    return (
-                      <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.9rem', fontWeight: 600, color: '#5F6368', margin: '1.2rem 0 0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid #E9E9E7', lineHeight: 1.4 }}>
-                        {iconName && <ReportIcon name={iconName} size={16} fill={0} />}
-                        {stripLeadingEmoji(raw) || children}
-                      </h4>
-                    )
-                  },
-                  p: ({ children }) => (
-                    <p style={{ fontSize: '0.92rem', color: '#3C4043', lineHeight: 1.82, margin: '0.55rem 0' }}>
-                      {children}
-                    </p>
-                  ),
-                  strong: ({ children }) => (
-                    <strong style={{ fontWeight: 800, color: '#202124', background: 'rgba(26,115,232,0.08)', borderRadius: '3px', padding: '0 3px' }}>
-                      {children}
-                    </strong>
-                  ),
-                  blockquote: ({ children }) => (
-                    <div style={{ margin: '0.9rem 0', padding: '0.85rem 1.1rem', background: 'linear-gradient(135deg, #EAF2FF 0%, #F3E5F5 100%)', borderLeft: '4px solid #1A73E8', borderRadius: '0 12px 12px 0', fontSize: '0.9rem', color: '#1a2e5a', fontWeight: 600, lineHeight: 1.75 }}>
-                      {children}
-                    </div>
-                  ),
-                  ul: ({ children }) => (
-                    <ul style={{ listStyle: 'none', padding: 0, margin: '0.6rem 0' }}>{children}</ul>
-                  ),
-                  ol: ({ children }) => (
-                    <ol style={{ listStyle: 'none', padding: 0, margin: '0.6rem 0', counterReset: 'ol' }}>{children}</ol>
-                  ),
-                  li: ({ children }) => (
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', marginBottom: '0.5rem', fontSize: '0.91rem', color: '#3C4043', lineHeight: 1.75 }}>
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1A73E8', flexShrink: 0, marginTop: '0.52rem', display: 'inline-block' }} />
-                      <span>{children}</span>
-                    </li>
-                  ),
-                  table: ({ children }) => (
-                    <div style={{ margin: '1rem 0', borderRadius: '12px', border: '1.5px solid #DADCE0', overflow: 'hidden' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', tableLayout: 'auto' }}>{children}</table>
-                    </div>
-                  ),
-                  thead: ({ children }) => (
-                    <thead style={{ background: '#1A73E8', color: 'white' }}>{children}</thead>
-                  ),
-                  th: ({ children }) => (
-                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', wordBreak: 'keep-all', overflowWrap: 'anywhere', verticalAlign: 'top' }}>{children}</th>
-                  ),
-                  tr: ({ children }) => <tr>{children}</tr>,
-                  hr: () => (
-                    <hr style={{ border: 'none', borderTop: '1.5px solid #F1F3F4', margin: '1.8rem 0' }} />
-                  ),
-                  em: ({ children }) => (
-                    <em style={{ fontStyle: 'italic', color: '#5F6368', fontSize: '0.88rem' }}>{children}</em>
-                  ),
-                  code: ({ children }) => (
-                    <code style={{ background: '#F8F9FA', border: '1px solid #DADCE0', borderRadius: '4px', padding: '0.1rem 0.4rem', fontSize: '0.85rem', color: '#202124' }}>{children}</code>
-                  ),
-                }}
-              >
-                {displayContent}
-              </ReactMarkdown>
+            <div ref={contentRef}>
+              <ReportHero content={displayContent} stage={selectedStage} project={project} generatedAt={selectedReport!.savedAt} />
+              <ReportMarkdown content={displayContent} stage={selectedStage} project={project} />
+            </div>
           </div>
         </div>}
       </div>

@@ -1,11 +1,13 @@
 'use client'
 
-import { Children, cloneElement, isValidElement, type ReactNode } from 'react'
+import { Children, cloneElement, isValidElement, type CSSProperties, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { stripLeadingEmoji } from '@/components/ui/ReportSectionIcon'
 import { REPORT_SECTIONS, findReportSection } from '@/lib/report/reportSections'
-import { STAGES, type Project, type StageCode } from '@/types'
+import { STAGES, displayActivityCode, type Project, type StageCode } from '@/types'
+import { STAGE_COLOR } from '@/lib/ui/stageColors'
+import { REPORT_DASHBOARD_CSS, reportStageColors } from './reportDashboardStyles'
 import { Target, ListChecks, Exam, ThumbsUp, Wrench, ArrowRight, Lightbulb, Database, Question, CheckCircle, CalendarBlank, Clock, UsersThree, ChartLineUp, ChartBar, ArrowsClockwise, PencilRuler, RocketLaunch, Trophy, type Icon } from '@phosphor-icons/react'
 
 const SECTION_ICONS: Record<string, Icon> = { Target, ListChecks, Exam, ThumbsUp, Wrench, ArrowRight, Lightbulb, Database, Question, ChartBar, UsersThree, ArrowsClockwise }
@@ -46,20 +48,68 @@ function reportNodeText(node: ReportNode): string {
   return node.value ?? node.children?.map(reportNodeText).join('') ?? ''
 }
 
+function sectionKind(title: string): string {
+  const normalized = stripLeadingEmoji(title).replace(/^\d+[.)]\s*/, '').trim()
+  const known = findReportSection(normalized)
+  if (known) return known.key
+  for (const [pattern, key] of [[/강점/, 'strengths'], [/보완|개선/, 'improvements'], [/다음/, 'next'], [/정렬|성취기준/, 'alignment'], [/활동별/, 'activities']] as const) {
+    if (pattern.test(normalized)) return key
+  }
+  return 'general'
+}
+
 // Markdown AST에서만 묶으므로 코드 블록의 ## 문자열을 섹션으로 오인하지 않는다.
-function remarkReportCards() {
+function remarkReportCards({ stage, project }: { stage?: StageCode; project?: Project | null } = {}) {
   return (tree: ReportNode) => {
     const grouped: ReportNode[] = []
     let body: ReportNode | undefined
     for (const node of tree.children ?? []) {
       if (node.type === 'heading' && node.depth === 2) {
-        body = { type: 'reportBody', data: { hName: 'div', hProperties: { className: 'min-w-0 p-4 sm:p-5' } }, children: [] }
-        grouped.push({ type: 'reportCard', data: { hName: 'section' }, children: [node, body] })
+        const kind = sectionKind(reportNodeText(node))
+        body = { type: 'reportBody', data: { hName: 'div', hProperties: { className: 'report-body' } }, children: [] }
+        grouped.push({ type: 'reportCard', data: { hName: 'section', hProperties: { 'data-report-kind': kind } }, children: [node, body] })
       } else if (body) body.children!.push(node)
       else grouped.push(node)
     }
-    tree.children = grouped
+    const cards = grouped.filter(node => node.type === 'reportCard')
+    for (const card of cards) {
+      const cardBody = card.children![1]
+      const kind = card.data!.hProperties!['data-report-kind']
+      if (kind === 'activities') {
+        let activity: ReportNode | undefined
+        const activityNodes: ReportNode[] = []
+        const intro: ReportNode[] = []
+        for (const node of cardBody.children ?? []) {
+          if (node.type === 'heading' && node.depth === 3) {
+            const title = reportNodeText(node)
+            const code = STAGES.find(item => item.code === stage)?.activities.find(code => new RegExp(`(?:^|\\s|\\()${displayActivityCode(code)}(?=$|[\\s:.)])`).test(title))
+            const artifact = code ? project?.artifacts?.[code] : undefined
+            const status = artifact?.status === 'confirmed' ? 'confirmed' : artifact ? 'draft' : 'missing'
+            activity = { type: 'reportActivity', data: { hName: 'article', hProperties: { className: 'report-activity' } }, children: [node] }
+            if (code && project) activity.children!.push({ type: 'reportStatus', data: { hName: 'span', hProperties: { className: 'report-status', 'data-status': status } }, children: [{ type: 'text', value: status === 'confirmed' ? '확정' : status === 'draft' ? '작성 중' : '산출물 없음' }] })
+            activityNodes.push(activity)
+          } else if (activity) activity.children!.push(node)
+          else intro.push(node)
+        }
+        if (activityNodes.length) cardBody.children = [...intro, { type: 'reportActivities', data: { hName: 'div', hProperties: { className: 'report-activities' } }, children: activityNodes }]
+      }
+      const hasTable = (node: ReportNode): boolean => node.type === 'table' || !!node.children?.some(hasTable)
+      if (kind === 'activities' || kind === 'appendix' || hasTable(card)) card.data!.hProperties!['data-report-wide'] = 'true'
+    }
+    // 부록은 대시보드 그리드 밖에 둬 인쇄 때 새 페이지로 확실히 분리한다.
+    const mainCards = cards.filter(card => card.data?.hProperties?.['data-report-kind'] !== 'appendix')
+    const appendices = cards.filter(card => card.data?.hProperties?.['data-report-kind'] === 'appendix')
+    tree.children = [...grouped.filter(node => node.type !== 'reportCard'), ...(mainCards.length ? [{ type: 'reportGrid', data: { hName: 'div', hProperties: { className: 'report-grid' } }, children: mainCards }] : []), ...appendices]
     function visit(node: ReportNode) {
+      if (node.type === 'reportCard' && node.data?.hProperties?.['data-report-kind'] === 'next') {
+        const numberSteps = (child: ReportNode) => {
+          if (child.type === 'list') child.children?.forEach((item, i) => {
+            item.data = { ...item.data, hProperties: { ...item.data?.hProperties, 'data-report-number': (child.start ?? 1) + i } }
+          })
+          else child.children?.forEach(numberSteps)
+        }
+        node.children?.forEach(numberSteps)
+      }
       if (node.type === 'list' && node.ordered) {
         node.children?.forEach((item, i) => {
           item.data = { ...item.data, hProperties: { ...item.data?.hProperties, 'data-report-number': (node.start ?? 1) + i } }
@@ -67,7 +117,22 @@ function remarkReportCards() {
       }
       if (node.type === 'table' && node.children?.length) {
         const rows = node.children.slice(1)
-        node.align ??= node.children[0].children?.map(() => null) ?? []
+        const headers = node.children[0].children ?? []
+        const textWidth = (value: string): number => Array.from(value).reduce((width, character) => width + (character.codePointAt(0)! > 127 ? 2 : 1), 0)
+        let tableWidth = 0
+        headers.forEach((header, i) => {
+          const label = reportNodeText(header).replace(/\s+/g, ' ').trim()
+          const values = [label, ...rows.map(row => reportNodeText(row.children?.[i] ?? { type: 'text', value: '' }).replace(/\s+/g, ' ').trim())]
+          const maxWidth = Math.max(...values.map(textWidth))
+          const short = maxWidth <= 28
+          const minCh = short ? Math.max(6, maxWidth + 4) : Math.max(24, textWidth(label) + 4)
+          tableWidth += minCh
+          for (const cell of [header, ...rows.flatMap(row => row.children?.[i] ? [row.children[i]] : [])]) {
+            cell.data = { ...cell.data, hProperties: { ...cell.data?.hProperties, 'data-report-min-ch': minCh, 'data-report-label': label, 'data-report-short': short ? 'true' : 'false' } }
+          }
+        })
+        node.data = { ...node.data, hProperties: { ...node.data?.hProperties, 'data-report-min-ch': tableWidth, 'data-report-columns': headers.length, 'data-report-print-cards': headers.length >= 6 || tableWidth > 100 ? 'true' : 'false' } }
+        node.align ??= headers.map(() => null)
         node.align.forEach((_, i) => {
           const values = rows.map(row => reportNodeText(row.children?.[i] ?? { type: 'text', value: '' }).trim()).filter(value => value && value !== '—' && value !== '-')
           if (values.length && values.every(value => /^[+−-]?\d[\d,.]*(?:\s*(?:%|점|개|명|차시|시간|회|건|일|분|\/\d+))?$/.test(value))) node.align![i] = 'right'
@@ -79,6 +144,28 @@ function remarkReportCards() {
   }
 }
 
+/** 새 형식의 요약을 히어로에도 표시하며 기존 본문은 생략하지 않는다. */
+export function reportSummary(content: string): { summary: string; keywords: string[] } {
+  // 코드 블록의 제목은 제외하고 핵심 요약 섹션의 첫 문장을 읽는다.
+  let fenced = ''
+  let active = false
+  const lines: string[] = []
+  for (const line of content.split('\n')) {
+    const fence = line.match(/^\s{0,3}(`{3,}|~{3,})/)
+    if (fence) { if (!fenced) fenced = fence[1][0]; else if (fenced === fence[1][0]) fenced = ''; continue }
+    if (fenced) continue
+    if (/^##\s+/.test(line)) {
+      if (active) break
+      active = line.replace(/^##\s+/, '').replace(/[*_]/g, '').trim() === '이 단계 핵심 요약'
+      continue
+    }
+    if (active && line.trim()) lines.push(line.trim())
+  }
+  const clean = (value: string) => value.replace(/\*\*|__|`/g, '').replace(/^[-*]\s+/, '').trim()
+  const keywordLine = lines.find(line => /^(?:[-*]\s*)?(?:\*\*)?키워드(?:\*\*)?\s*[:：]/.test(line))
+  return { summary: clean(lines.find(line => line !== keywordLine) ?? ''), keywords: keywordLine ? clean(keywordLine).replace(/^키워드\s*[:：]\s*/, '').split(/[·,]/).map(word => word.trim()).filter(Boolean) : [] }
+}
+
 function reportDate(milliseconds?: number): string {
   return milliseconds && Number.isFinite(milliseconds)
     ? new Date(milliseconds).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -86,34 +173,39 @@ function reportDate(milliseconds?: number): string {
 }
 
 /** 기존 프로젝트·산출물·저장 보고서 데이터만 사용한다. */
-export function ReportHero({ stage, project, generatedAt, generating = false }: {
+export function ReportHero({ stage, project, generatedAt, generating = false, content = '' }: {
   stage: StageCode
   project: Project | null
   generatedAt?: number
   generating?: boolean
+  content?: string
 }) {
   const activities = STAGES.find(item => item.code === stage)?.activities ?? []
   const confirmed = activities.filter(code => project?.artifacts?.[code]?.status === 'confirmed').length
   const updatedAt = project?.updatedAt?.toMillis?.()
   const StageIcon = STAGE_ICONS[stage]
-  return <div className="mb-6 min-w-0" data-report-hero>
-    <div className="relative overflow-hidden rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-primary-container)] p-4 text-[var(--md-sys-on-primary-container)] sm:p-6">
-      <StageIcon size={120} weight="duotone" aria-hidden="true" className="pointer-events-none absolute -right-4 -top-4 opacity-[0.08]" />
-      <div className="relative flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container-lowest)] text-[var(--md-sys-primary)]"><StageIcon size={28} weight="duotone" aria-hidden="true" /></div>
-        <div className="min-w-0">
-          <p className="text-[12px] font-medium tracking-wide">{stage} · 단계 분석 보고서</p>
-          <h3 className="mt-1 text-[24px] font-semibold leading-8">{STAGE_NAMES[stage]} 단계</h3>
-          <p className="mt-2 break-words text-[14px]">{project?.title ?? '프로젝트'}</p>
-          <p className="mt-3 flex items-start gap-1.5 text-[12px]"><CalendarBlank size={16} className="shrink-0" aria-hidden="true" /><span>{generating ? '보고서 생성 중' : `생성일 · ${reportDate(generatedAt)}`}</span></p>
-        </div>
+  const colors = reportStageColors(STAGE_COLOR[stage].hex)
+  const { summary, keywords } = reportSummary(content)
+  const saved = activities.filter(code => !!project?.artifacts?.[code]).length
+  const versions = activities.reduce((total, code) => total + (project?.artifacts?.[code]?.version ?? 0), 0)
+  const kpis = [
+    { label: '활동 수', value: activities.length, unit: '개', tone: 'primary', Icon: ListChecks },
+    { label: '확정 활동', value: confirmed, unit: '개', tone: 'green', Icon: CheckCircle },
+    { label: '저장 산출물', value: saved, unit: '개', tone: 'secondary', Icon: Database },
+    { label: '누적 저장 버전', value: versions, unit: '회', tone: 'amber', Icon: ArrowsClockwise },
+  ]
+  return <div className="report-hero" data-report-hero>
+    <style>{REPORT_DASHBOARD_CSS}</style>
+    <div className="report-hero-banner" style={{ backgroundImage: `linear-gradient(120deg, ${colors.band}, ${colors.deep} 68%, #0B57D0)` }}>
+      <div className="report-hero-title">
+        <div className="report-stage-icon"><StageIcon size={28} weight="duotone" aria-hidden="true" /></div>
+        <div><p className="report-eyebrow">{stage} · 단계 분석 보고서</p><h3>{STAGE_NAMES[stage]} 단계</h3><p className="report-project-name">{project?.title ?? '프로젝트'}</p></div>
       </div>
+      {summary && <p className="report-hero-summary">{summary}</p>}
+      {keywords.length > 0 && <div className="report-keywords" aria-label="핵심 키워드">{keywords.map((keyword, i) => <span className="report-chip" key={i}>{keyword}</span>)}</div>}
+      <div className="report-dates"><span><CalendarBlank size={14} aria-hidden="true" /> {generating ? '보고서 생성 중' : `생성일 · ${reportDate(generatedAt)}`}</span>{updatedAt && <span><Clock size={14} aria-hidden="true" /> 마지막 갱신 · {reportDate(updatedAt)}</span>}</div>
     </div>
-    <dl className="mt-3 flex flex-wrap gap-2 text-[12px]">
-      <div className="flex items-center gap-2 rounded-full bg-[var(--md-sys-surface-container-high)] px-3 py-2 text-[var(--md-sys-on-surface)]"><ListChecks size={16} aria-hidden="true" /><dt>활동 수</dt><dd className="font-semibold tabular-nums">{activities.length}개</dd></div>
-      <div className="flex items-center gap-2 rounded-full bg-[var(--md-sys-tertiary-container)] px-3 py-2 text-[var(--md-sys-on-tertiary-container)]"><CheckCircle size={16} aria-hidden="true" /><dt>확정 활동</dt><dd className="font-semibold tabular-nums">{confirmed}개</dd></div>
-      {updatedAt && <div className="flex min-w-0 items-start gap-2 rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container)] px-3 py-2 text-[var(--md-sys-on-surface-variant)]"><Clock size={16} className="shrink-0" aria-hidden="true" /><dt className="shrink-0">마지막 갱신</dt><dd>{reportDate(updatedAt)}</dd></div>}
-    </dl>
+    <dl className="report-kpis">{kpis.map(({ label, value, unit, tone, Icon }) => <div className={`report-kpi report-${tone}`} key={label}><dt><Icon size={16} aria-hidden="true" />{label}</dt><dd>{value}<small>{unit}</small></dd></div>)}</dl>
   </div>
 }
 
@@ -125,7 +217,7 @@ function reportCellContent(children: ReactNode): ReactNode {
       return lines.map((line, index) => <span key={index}>
         {index > 0 && <br />}
         {line.split(/((?:초등(?:학교)?\s*|초)?[1-6]\s*[-~–]\s*[1-6]\s*학년(?:군)?)/g).map((part, i) =>
-          i % 2 ? <span key={i} className="whitespace-nowrap">{part}</span> : part)}
+          i % 2 ? <span key={i} className="whitespace-nowrap">{part}</span> : reportStandardContent(part))}
       </span>)
     }
     if (isValidElement<{ children?: ReactNode }>(child)) {
@@ -135,43 +227,65 @@ function reportCellContent(children: ReactNode): ReactNode {
   })
 }
 
-/** 화면용 MD3 보고서. PDF용 기존 렌더와 분리해 내보내기 모양을 보존한다. */
-export function ReportMarkdown({ content }: { content: string }) {
-  return <div className="min-w-0 max-w-full break-words text-[14px] leading-7 text-[var(--md-sys-on-surface-variant)]">
-    <ReactMarkdown remarkPlugins={[...REMARK_PLUGINS, remarkReportCards]} components={{
-      section: ({ children }) => <section data-report-section className="my-6 min-w-0 overflow-hidden rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] shadow-sm">{children}</section>,
-      h1: ({ children }) => <h1 className="mb-6 text-[24px] font-medium leading-8 text-[var(--md-sys-on-surface)]">{children}</h1>,
+function reportStandardContent(text: string): ReactNode {
+  return text.split(/(\[?\d[가-힣]+\d{2}-\d{2}\]?)/g).map((part, i) => i % 2
+    ? <span key={i} className="report-standard">{part}</span>
+    : part.split(/([A-Za-z][A-Za-z0-9_:/?&=.%#@+~-]{23,})/g).map((word, j) => j % 2
+      ? <span key={j} className="report-long-english">{word}</span>
+      : word))
+}
+
+/** 화면과 PDF가 공유하는 MD3 대시보드 본문. 예전 보고서의 내용도 유지한다. */
+export function ReportMarkdown({ content, stage, project }: { content: string; stage?: StageCode; project?: Project | null }) {
+  const colors = stage ? reportStageColors(STAGE_COLOR[stage].hex) : undefined
+  return <div className="report-dashboard" style={colors ? { '--report-stage-band': colors.band, '--report-stage-container': colors.container } as CSSProperties : undefined}>
+    <style>{REPORT_DASHBOARD_CSS}</style>
+    <ReactMarkdown remarkPlugins={[...REMARK_PLUGINS, [remarkReportCards, { stage, project }]]} components={{
+      section: ({ children, node }) => {
+        const kind = String(node?.properties?.['data-report-kind'] ?? node?.properties?.dataReportKind ?? 'general')
+        if (kind === 'appendix') {
+          const [heading, ...body] = Children.toArray(children)
+          return <section data-report-section data-report-kind="appendix" className="report-card report-appendix">
+            <details data-report-appendix>
+              <summary className="report-appendix-toggle">{heading}<span className="report-appendix-action"><span className="report-appendix-expand">펼치기</span><span className="report-appendix-collapse">접기</span><ArrowRight size={16} aria-hidden="true" /></span></summary>
+              {body}
+            </details>
+          </section>
+        }
+        return <section data-report-section data-report-kind={kind} data-report-wide={node?.properties?.['data-report-wide'] ?? node?.properties?.dataReportWide ? 'true' : undefined} className="report-card">{children}</section>
+      },
+      h1: ({ children }) => <h1>{children}</h1>,
       h2: ({ children }) => {
         const raw = reportHeadingText(children)
         const SectionIcon = sectionIcon(raw)
-        return <h2 className="m-0 flex items-center gap-3 border-b border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container)] px-4 py-4 text-[18px] font-medium leading-7 text-[var(--md-sys-on-surface)]">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-primary-container)] text-[var(--md-sys-primary)]"><SectionIcon size={22} weight="duotone" aria-hidden="true" /></span>
-          <span className="min-w-0">{stripLeadingEmoji(raw) || children}</span>
-        </h2>
+        return <h2><span className="report-section-icon"><SectionIcon size={22} weight="duotone" aria-hidden="true" /></span><span>{stripLeadingEmoji(raw) || children}</span></h2>
       },
-      h3: ({ children }) => <h3 className="mb-3 mt-5"><span className="inline-flex max-w-full items-start gap-2 rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-secondary-container)] px-3 py-2 text-[14px] font-medium text-[var(--md-sys-on-secondary-container)]"><ListChecks size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span className="min-w-0">{stripLeadingEmoji(reportHeadingText(children)) || children}</span></span></h3>,
-      h4: ({ children }) => <h4 className="mb-2 mt-4 font-medium text-[var(--md-sys-on-surface)]">{stripLeadingEmoji(reportHeadingText(children)) || children}</h4>,
-      p: ({ children }) => <p className="my-4 max-w-[72ch] first:mt-0 last:mb-0">{children}</p>,
-      strong: ({ children }) => <strong className="font-semibold text-[var(--md-sys-on-surface)]">{children}</strong>,
-      ul: ({ children }) => <ul className="my-4 space-y-3">{children}</ul>,
-      ol: ({ children }) => <ol className="my-4 list-decimal space-y-3">{children}</ol>,
+      h3: ({ children }) => <h3><span className="report-chip"><ListChecks size={16} aria-hidden="true" /><span>{stripLeadingEmoji(reportHeadingText(children)) || children}</span></span></h3>,
+      h4: ({ children }) => <h4>{stripLeadingEmoji(reportHeadingText(children)) || children}</h4>,
+      p: ({ children }) => <p>{children}</p>,
+      strong: ({ children }) => <strong>{children}</strong>,
+      ul: ({ children }) => <ul>{children}</ul>,
+      ol: ({ children }) => <ol>{children}</ol>,
       li: ({ children, node }) => {
         const number = node?.properties?.['data-report-number'] ?? node?.properties?.dataReportNumber
-        return <li className="flex list-none items-start gap-3"><span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--md-sys-primary-container)] text-[12px] font-medium text-[var(--md-sys-primary)]" aria-hidden="true">{number ? String(number) : <CheckCircle size={16} weight="fill" />}</span><div className="min-w-0 flex-1">{children}</div></li>
+        return <li><span className="report-list-mark" aria-hidden="true">{number ? String(number) : <CheckCircle size={16} weight="fill" />}</span><div className="report-list-content">{children}</div></li>
       },
-      blockquote: ({ children }) => <aside role="note" aria-label="인사이트와 권고" className="my-5 flex gap-3 rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-secondary-container)] p-4 text-[var(--md-sys-on-secondary-container)]"><Lightbulb size={24} weight="duotone" className="shrink-0" aria-hidden="true" /><div className="min-w-0"><p className="mb-2 text-[12px] font-semibold">인사이트 · 권고</p>{children}</div></aside>,
-      table: ({ children }) => <div role="region" aria-label="보고서 표" tabIndex={0} className="my-5 max-h-[60vh] max-w-full overflow-auto rounded-[var(--md-sys-radius-md)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] focus-visible:outline-2 focus-visible:outline-[var(--md-sys-primary)]">
-        <table className="w-full min-w-[640px] border-separate border-spacing-0 text-left text-[13px] leading-6">{children}</table>
-      </div>,
-      thead: ({ children }) => <thead>{children}</thead>,
-      th: ({ children, style }) => <th scope="col" className="sticky top-0 z-10 min-w-[10rem] whitespace-nowrap border-b border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container)] px-4 py-3 font-medium text-[var(--md-sys-on-surface-variant)] first:min-w-[9rem]" style={style}>{children}</th>,
-      tr: ({ children }) => <tr className="hover:bg-[var(--md-sys-surface-container-low)]">{children}</tr>,
-      td: ({ children, style }) => <td className="min-w-[10rem] border-b border-[var(--md-sys-outline-variant)] px-4 py-3 align-top tabular-nums [overflow-wrap:anywhere] first:min-w-[9rem]" style={style}>{reportCellContent(children)}</td>,
-      hr: () => <hr className="my-6 border-[var(--md-sys-outline-variant)]" />,
-      em: ({ children }) => <em className="text-[var(--md-sys-on-surface-variant)]">{children}</em>,
-      code: ({ children }) => <code className="rounded-[var(--md-sys-radius-xs)] bg-[var(--md-sys-surface-container-high)] px-1.5 py-0.5 text-[0.9em]">{children}</code>,
-      pre: ({ children }) => <pre className="my-4 max-w-full overflow-x-auto rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-surface-container-high)] p-4 text-[13px]">{children}</pre>,
-      a: ({ href, children }) => <a href={href} className="text-[var(--md-sys-primary)] underline underline-offset-2">{children}</a>,
+      blockquote: ({ children }) => <aside role="note" aria-label="인사이트와 권고" className="report-callout"><Lightbulb size={24} weight="duotone" aria-hidden="true" /><div><div className="report-callout-label">인사이트 · 권고</div>{children}</div></aside>,
+      table: ({ children, node }) => {
+        const printCards = String(node?.properties?.['data-report-print-cards'] ?? node?.properties?.dataReportPrintCards) === 'true'
+        const minCh = Number(node?.properties?.['data-report-min-ch'] ?? node?.properties?.dataReportMinCh)
+        return <div role="region" aria-label="보고서 표" tabIndex={0} className={`report-table-scroll${printCards ? ' report-table-wide' : ''}`}><table data-columns={node?.properties?.['data-report-columns'] ?? node?.properties?.dataReportColumns} style={minCh ? { minWidth: `${minCh}ch` } : undefined}>{children}</table></div>
+      },
+      th: ({ children, style, node }) => {
+        const minCh = Number(node?.properties?.['data-report-min-ch'] ?? node?.properties?.dataReportMinCh)
+        return <th scope="col" style={{ ...style, ...(minCh ? { minWidth: `${minCh}ch` } : {}) }}>{children}</th>
+      },
+      td: ({ children, style, node }) => {
+        const properties = node?.properties ?? {}
+        const minCh = Number(properties['data-report-min-ch'] ?? properties.dataReportMinCh)
+        const short = String(properties['data-report-short'] ?? properties.dataReportShort) === 'true'
+        return <td data-short-cell={short ? 'true' : undefined} data-long-cell={short ? undefined : 'true'} data-label={properties['data-report-label'] ?? properties.dataReportLabel} style={{ ...style, ...(minCh ? { minWidth: `${minCh}ch` } : {}) }}>{reportCellContent(children)}</td>
+      },
     }}>{content}</ReactMarkdown>
   </div>
 }

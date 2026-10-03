@@ -8,6 +8,10 @@ import React from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
+import * as phosphorIcons from '@phosphor-icons/react'
+import { STAGE_COLOR } from '../src/lib/ui/stageColors.ts'
+import { REPORT_DASHBOARD_CSS, REPORT_COLOR_TONES, REPORT_SECTION_TONES, reportStageColors } from '../src/components/modals/reportDashboardStyles.ts'
+import { buildReportPrintDocument } from '../src/components/modals/printReport.ts'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
@@ -1065,6 +1069,7 @@ const { ArtifactMarkdown } = loadArtifactTsx('../src/components/artifacts/Artifa
 })
 const { Ds12Renderer } = loadArtifactTsx('../src/components/artifacts/structured/Ds12Renderer.tsx', {
   '../ArtifactMarkdown': { ArtifactMarkdown },
+  '@/lib/report/artifactToMarkdown': await import('../src/lib/report/artifactToMarkdown.ts'),
 })
 
 test('030: Ds-2 패널·상세 모달은 저장 본문의 굵게·목록·표를 렌더하고 원문을 변경하지 않는다', () => {
@@ -1370,15 +1375,18 @@ test('33c: 생성 프롬프트에 팀 준비·최근 대화·우선순위 한 �
 // ─── TASK-034: 보고서 화면 MD3 표 · 모바일 모달 · 내보내기 보존 ─────────
 const reportIcons = loadArtifactTsx('../src/components/ui/ReportSectionIcon.tsx', {})
 const reportPhosphorIcons = new Proxy({}, { get: (_, name) => props => React.createElement('svg', { ...props, 'data-report-icon': String(name) }) })
-const { ReportMarkdown, ReportHero } = loadArtifactTsx('../src/components/modals/ReportMarkdown.tsx', {
+const reportBindings = {
   react: React,
   'react-markdown': { __esModule: true, default: ReactMarkdown },
   '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
   '@/components/ui/ReportSectionIcon': reportIcons,
-  '@/types': { STAGES },
+  '@/types': { STAGES, displayActivityCode },
+  '@/lib/ui/stageColors': { STAGE_COLOR },
+  './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors },
   '@/lib/report/reportSections': { REPORT_SECTIONS, findReportSection },
   '@phosphor-icons/react': reportPhosphorIcons,
-})
+}
+const { ReportMarkdown, ReportHero, reportSummary } = loadArtifactTsx('../src/components/modals/ReportMarkdown.tsx', reportBindings)
 
 test('034a: 보고서 MD3 데이터 표는 학년군·강조를 보존하고 고정 머리글·첫 열 최소 폭·내부 스크롤을 제공한다', () => {
   const markdown = '# 보고서\n\n## 📊 완성도 평가\n\n**‘일’**로 정하고 1~3개를 비교한다.\n\n1. 첫 활동\n2. 둘째 활동\n\n| 학년군 | 근거 |\n| --- | --- |\n| **1-2학년군** | 3-4학년군 자료\u2028[4사08-02] |\n| 5-6학년군 | 【자료1】 / 【자료2】 |'
@@ -1387,14 +1395,14 @@ test('034a: 보고서 MD3 데이터 표는 학년군·강조를 보존하고 고
   assert.match(html, /1~3개/)
   for (const label of ['1-2학년군', '3-4학년군', '5-6학년군']) assert.ok(html.includes(`<span class="whitespace-nowrap">${label}</span>`))
   assert.match(html, /<strong[^>]*><span><span class="whitespace-nowrap">1-2학년군/)
-  assert.match(html, /role="region" aria-label="보고서 표" tabindex="0"[^>]*max-h-\[60vh\][^>]*overflow-auto/)
-  assert.match(html, /<table class="[^"]*min-w-\[640px\]/)
-  assert.match(html, /<th scope="col" class="sticky top-0[^"]*first:min-w-\[9rem\]/)
-  assert.match(html, /<td class="[^"]*border-b[^"]*first:min-w-\[9rem\]/)
-  assert.match(html, /<br\/>\[4사08-02\]/)
+  assert.match(html, /role="region" aria-label="보고서 표" tabindex="0" class="report-table-scroll"/)
+  assert.match(REPORT_DASHBOARD_CSS, /min-width:440px/)
+  assert.match(html, /<th scope="col"/); assert.match(REPORT_DASHBOARD_CSS, /position:sticky;top:0/)
+  assert.match(REPORT_DASHBOARD_CSS, /td:first-child\{min-width:7rem/)
+  assert.match(html, /<br\/>[\s\S]*class="report-standard">\[4사08-02\]/)
   assert.match(html, /【자료1】<\/span><span><br\/>【자료2】/)
-  assert.match(html, /<ol[^>]*list-decimal/)
-  assert.match(html, /md-sys-surface-container/)
+  assert.match(html, /<ol>/)
+  assert.match(html, /report-card/)
   assert.doesNotMatch(html, /\*\*|<del>/)
 })
 
@@ -1414,6 +1422,7 @@ function reportModalFixture(name, selected = false, isHost = true) {
     '@/types': { STAGES, ACTIVITY_META },
     '@/components/ui/MD3Button': { MD3Button: props => { callbacks.push(props); return React.createElement(MD3Button, props) } },
     './ReportMarkdown': { ReportMarkdown, ReportHero },
+    './printReport': { printReport() {} },
     '@phosphor-icons/react': new Proxy({}, { get: () => () => null }),
     '@/lib/firebase/projects': { setAnalysisReport() {}, saveStageReport() {} },
     '@/lib/hwpx/generateHwpx': { generateHwpx() {} },
@@ -1433,8 +1442,8 @@ test('034b: 생성·저장 보고서 모달은 16px 모바일 여백·폭 제한
     assert.match(html, /overflow-y-auto overflow-x-hidden/)
     assert.match(html, /rounded-\[var\(--md-sys-radius-xl\)\]/)
     assert.match(html, /aria-label="단계 (?:분석 )?보고서 닫기"/)
-    assert.match(html, /<div class="hidden" aria-hidden="true">/)
-    assert.match(html, /font-size:1.55rem;font-weight:900/)
+    assert.match(html, /class="report-dashboard"/)
+    assert.doesNotMatch(html, /<div class="hidden" aria-hidden="true">|material-symbols/)
     assert.equal(callbacks.filter(b => b.variant === 'outlined').length, 2)
     assert.equal(callbacks.filter(b => b.variant === 'tonal').length, 1)
     assert.doesNotMatch(html, /단계로 이동|다시 생성|morph-btn/)
@@ -1447,14 +1456,14 @@ test('034b: 생성·저장 보고서 모달은 16px 모바일 여백·폭 제한
   assert.match(list.html, /설계\(Ds\) 단계/)
 })
 
-test('034c: 화면용 렌더와 PDF용 렌더를 분리하고 MD·PDF·HWPX 다운로드 입력은 유지한다', () => {
+test('034c: 화면의 보고서 DOM을 PDF에 공유하고 MD·HWPX 다운로드 입력은 유지한다', () => {
   const generated = fs.readFileSync(new URL('../src/components/modals/StageAnalysisModal.tsx', import.meta.url), 'utf8')
   const saved = fs.readFileSync(new URL('../src/components/modals/StageReportsModal.tsx', import.meta.url), 'utf8')
   for (const source of [generated, saved]) {
     assert.match(source, /<ReportMarkdown content=\{/)
-    assert.match(source, /className="hidden" aria-hidden="true" ref=\{contentRef\}/)
-    assert.match(source, /const html = contentEl\.innerHTML/)
-    assert.match(source, /<ReactMarkdown\s+remarkPlugins=\{REMARK_PLUGINS\}/)
+    assert.match(source, /<div ref=\{contentRef\}>/)
+    assert.match(source, /printReport\(contentRef\.current,/)
+    assert.doesNotMatch(source, /<ReactMarkdown|className="hidden"|ReportIcon/)
   }
   assert.match(generated, /new Blob\(\[markdown\]/)
   assert.match(generated, /generateHwpx\(markdown,/)
@@ -1645,19 +1654,19 @@ test('040a: ##별 카드에 제목과 본문을 묶고, 코드 블록 제목은 
   const content = '# 보고서\n\n## 새 보고서 핵심 메모\n\n근거를 확인해 주세요.\n\n> 조사 결과를 다음 활동에 활용하세요.\n\n### Ds-3 학습활동\n\n- 지도 비교\n- 인터뷰\n\n3. 질문 만들기\n4. 기록하기\n\n## 새 활동 기록\n\n```md\n## 코드 블록 제목\n```\n\n| 학년군 | 활동 수 | 도달률 |\n| --- | --- | --- |\n| 1-2학년군 | 3 | 80% |\n| 3-4학년군 | 4 | 90% |'
   const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content }))
   assert.equal((html.match(/<section data-report-section/g) ?? []).length, 2)
-  assert.match(html, /<section[^>]*>[\s\S]*<h2[^>]*>[\s\S]*새 보고서 핵심 메모[\s\S]*<div class="min-w-0 p-4 sm:p-5">[\s\S]*근거를 확인해 주세요/)
+  assert.match(html, /<section[^>]*>[\s\S]*<h2[^>]*>[\s\S]*새 보고서 핵심 메모[\s\S]*<div class="report-body">[\s\S]*근거를 확인해 주세요/)
   assert.match(html, /data-report-icon="Target"/)
   assert.match(html, /data-report-icon="ListChecks"/)
   assert.match(html, /<aside role="note" aria-label="인사이트와 권고"/)
   assert.match(html, /인사이트 · 권고/)
-  assert.match(html, /<h3[^>]*><span class="[^"]*md-sys-secondary-container/)
+  assert.match(html, /<h3[^>]*><span class="report-chip"/)
   assert.match(html, /data-report-icon="CheckCircle"/)
   assert.match(html, /aria-hidden="true">3<\/span>/)
   assert.match(html, /aria-hidden="true">4<\/span>/)
-  assert.match(html, /max-w-\[72ch\]/)
-  assert.match(html, /<th[^>]*style="text-align:right">활동 수<\/th>/)
-  assert.match(html, /<th[^>]*style="text-align:right">도달률<\/th>/)
-  assert.match(html, /<td[^>]*style="text-align:right"><span>80%<\/span><\/td>/)
+  assert.match(REPORT_DASHBOARD_CSS, /max-width:72ch/)
+  assert.match(html, /<th[^>]*style="text-align:right;min-width:\d+ch">활동 수<\/th>/)
+  assert.match(html, /<th[^>]*style="text-align:right;min-width:\d+ch">도달률<\/th>/)
+  assert.match(html, /<td[^>]*style="text-align:right;min-width:\d+ch"><span>80%<\/span><\/td>/)
   assert.match(html, /<span class="whitespace-nowrap">1-2학년군<\/span>/)
 })
 
@@ -1667,11 +1676,11 @@ test('040b: 히어로는 현재 단계 데이터로 활동·확정 수와 프로
   assert.match(html, /설계 단계/)
   assert.match(html, /우리 동네 폭염과 그늘/)
   assert.match(html, /data-report-icon="PencilRuler"/)
-  assert.match(html, /<dt>활동 수<\/dt><dd[^>]*>5개<\/dd>/)
-  assert.match(html, /<dt>확정 활동<\/dt><dd[^>]*>1개<\/dd>/)
+  assert.match(html, /<dt>[\s\S]*활동 수<\/dt><dd>5<small>개<\/small><\/dd>/)
+  assert.match(html, /<dt>[\s\S]*확정 활동<\/dt><dd>1<small>개<\/small><\/dd>/)
   assert.match(html, /생성일 ·/)
   assert.match(html, /마지막 갱신/)
-  assert.match(html, /flex flex-wrap gap-2/)
+  assert.match(html, /class="report-kpis"/)
   const generating = renderToStaticMarkup(React.createElement(ReportHero, { stage: 'A', project: null, generating: true }))
   assert.match(generating, /보고서 생성 중/)
   assert.doesNotMatch(generating, /생성일 ·|마지막 갱신/)
@@ -1697,11 +1706,11 @@ const task039ph = await import('../src/lib/report/artifactPlaceholders.ts')
 const task039prompt = await import('../src/lib/report/stageReportPrompt.ts')
 
 test('39a: 보고서 고정 섹션 상수와 단계별 정렬 섹션, 예전 머리글은 null', () => {
-  assert.deepEqual(task039sections.REPORT_SECTIONS.map(s => s.title), ['이 단계 핵심 요약', '한눈에 보기', '활동별 산출물 및 분석', '성취기준·평가 정렬', '강점', '보완점', '다음 단계 제안'])
+  assert.deepEqual(task039sections.REPORT_SECTIONS.map(s => s.title), ['이 단계 핵심 요약', '한눈에 보기', '활동별 산출물 및 분석', '성취기준·평가 연결', '잘 설계된 점', '함께 다듬어 볼 아이디어', '다음 단계 제안', '부록: 산출물 원문'])
   assert.ok(task039sections.REPORT_SECTIONS.every(s => s.key && s.icon))
-  assert.equal(task039sections.reportSectionsFor('T')[3].title, '팀 협력 구조 점검')
-  assert.equal(task039sections.reportSectionsFor('Ds')[3].title, '성취기준·평가 정렬')
-  assert.equal(task039sections.REPORT_SECTIONS[3].title, '성취기준·평가 정렬') // 원본 상수는 바뀌지 않음
+  assert.equal(task039sections.reportSectionsFor('T')[3].title, '팀 협력 구조 살펴보기')
+  assert.equal(task039sections.reportSectionsFor('Ds')[3].title, '성취기준·평가 연결')
+  assert.equal(task039sections.REPORT_SECTIONS[3].title, '성취기준·평가 연결') // 원본 상수는 바뀌지 않음
   assert.equal(task039sections.findReportSection('🎯 이 단계 핵심 요약')?.key, 'summary')
   assert.equal(task039sections.findReportSection('성찰·개선 연결')?.key, 'alignment')
   assert.equal(task039sections.findReportSection('설계 강점 (산출물 근거 기반)'), null)
@@ -1736,12 +1745,14 @@ test('39c: 산출물 원문은 JSON 원문 대신 표·문장으로, 프롬프�
   assert.match(overview, /\| 평가 설계 \(Ds-1\) \| 확정 \| 1개 \|/)
   assert.match(overview, /\(Ds-3\) \| 미작성 \| - \|/)
   const prompt = task039prompt.buildAnalysisPrompt('Ds', { title: 'herdr', targetGradeGroup: '초1-6' }, artifacts)
-  for (const title of ['이 단계 핵심 요약', '한눈에 보기', '활동별 산출물 및 분석', '성취기준·평가 정렬', '강점', '보완점', '다음 단계 제안']) {
+  for (const title of ['이 단계 핵심 요약', '한눈에 보기', '활동별 산출물 및 분석', '성취기준·평가 연결', '잘 설계된 점', '함께 다듬어 볼 아이디어', '다음 단계 제안']) {
     assert.match(prompt, new RegExp(`\\n## ${title}\\n`))
   }
-  assert.match(prompt, /\n\{\{ARTIFACT:Ds-1-1\}\}\n/)
-  assert.match(prompt, /문단은 3문장 이하/)
-  assert.match(prompt, /'> ' 인용 블록/)
+  // TASK-042: 원문 자리표시는 본문이 아니라 서버가 붙이는 부록에 있다.
+  assert.doesNotMatch(prompt, /\{\{ARTIFACT:/)
+  assert.match(task039prompt.buildArtifactAppendix('Ds'), /\n\{\{ARTIFACT:Ds-1-1\}\}/)
+  assert.match(prompt, /문단을 쓰지 않는다/)
+  assert.match(prompt, /'> ' 인용 한 줄/)
   assert.doesNotMatch(prompt, /## 설계 단계 심층 분석|JSON\.stringify/)
   const route = fs.readFileSync(new URL('../src/app/api/analyze/stage/route.ts', import.meta.url), 'utf8')
   assert.match(route, /sendText\(expander\.push\(/)
@@ -1755,4 +1766,343 @@ test('39d: A-2-1 표 구분선 칸 수가 머리글과 같고, Ds-2 데이터 �
   const renderer = fs.readFileSync(new URL('../src/components/artifacts/structured/Ds12Renderer.tsx', import.meta.url), 'utf8')
   assert.match(renderer, /ds\.split\(\/\\n\|\\s\+\\\/\\s\+\/\)/)
   assert.doesNotMatch(renderer, /ds\.split\(\/\[\\n,\]\/\)/)
+})
+
+// ─── TASK-042: 대시보드형 보고서 — 요약 두 줄·짧은 글머리·부록 원문 ─────────
+test('42a: 요약은 한 문장(60자)+키워드 줄, 강점·보완점 글머리 3개, 다음 단계 번호 3개, 활동별 글머리 2개+인용', () => {
+  const artifacts = { 'Ds-1-1': { content: { '평가 계획': '| a | b |\n|---|---|\n| 1 | 2 |' } } }
+  const prompt = task039prompt.buildAnalysisPrompt('Ds', { title: 'herdr', targetGradeGroup: '초1-6' }, artifacts)
+  const section = title => prompt.split(`\n## ${title}\n`).pop().split('\n## ')[0]
+  assert.match(section('이 단계 핵심 요약'), /^\n\(팀이 만든 설계의 핵심을 교사 눈높이로 한 문장 — 60자 이내\)\n키워드: \(핵심 키워드 3~5개를 ' · '로 구분\)\n/)
+  assert.equal((section('잘 설계된 점').match(/^- \*\*/gm) ?? []).length, 3)
+  assert.equal((section('함께 다듬어 볼 아이디어').match(/^- \*\*/gm) ?? []).length, 3)
+  assert.doesNotMatch(section('함께 다듬어 볼 아이디어'), /\|/)
+  assert.equal((section('다음 단계 제안').match(/^\d\. /gm) ?? []).length, 3)
+  const activity = section('활동별 산출물 및 분석').split('\n### ')[1]
+  assert.equal((activity.match(/^- /gm) ?? []).length, 2)
+  assert.equal((activity.match(/^> /gm) ?? []).length, 1)
+  for (const table of section('한눈에 보기').split('\n\n').filter(block => block.startsWith('|'))) {
+    const columns = table.split('\n')[0].split('|').length - 2
+    assert.ok(columns >= 3 && columns <= 4, table.split('\n')[0])
+  }
+  assert.match(prompt, /항목당 40자 안팎/)
+  assert.doesNotMatch(prompt, /## 부록/) // AI 는 부록을 쓰지 않는다
+})
+
+test('42b: 서버가 붙이는 부록은 고정 머리글과 활동별 원문으로 치환되고, 스트림 끝에 한 번만 붙는다', () => {
+  const appendix = task039prompt.buildArtifactAppendix('Ds')
+  assert.match(appendix, /^\n\n## 부록: 산출물 원문\n\n### 평가 설계 \(Ds-1\)\n\n\{\{ARTIFACT:Ds-1-1\}\}/)
+  assert.equal(task039sections.findReportSection('부록: 산출물 원문')?.key, 'appendix')
+  const originals = task039prompt.buildArtifactOriginals('Ds', { 'Ds-1-2': { content: { '데이터 출처': '사진, 지도' } } })
+  const ex = task039ph.createArtifactPlaceholderExpander(originals)
+  const out = ex.push(appendix) + ex.flush()
+  assert.match(out, /### 문제 상황 설정 \(Ds-2\)\n\n\*\*데이터 출처\*\*\n\n사진, 지도/)
+  assert.doesNotMatch(out, /\{\{ARTIFACT:/)
+  const route = fs.readFileSync(new URL('../src/app/api/analyze/stage/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /if \(appendixSent\) return/)
+  assert.ok(route.indexOf('sendAppendix()') < route.indexOf("type: 'done'"))
+})
+
+// ─── TASK-041: 대시보드 · 화면/PDF 동일 마크업 · SVG · 인쇄 색 ─────────
+test('041a: 새 요약·키워드를 히어로에 표시하고 기존 보고서·코드 블록은 손실 없이 유지한다', () => {
+  const content = '```md\n## 이 단계 핵심 요약\n가짜 요약\n```\n\n## 이 단계 핵심 요약\n근거로 학생의 성장을 확인했습니다.\n키워드: 인터뷰 · 그늘 지도 · 시민 참여\n\n## 강점\n- 질문을 자기 말로 바꿨습니다.'
+  const result = reportSummary(content)
+  assert.equal(result.summary, '근거로 학생의 성장을 확인했습니다.')
+  assert.deepEqual(Array.from(result.keywords), ['인터뷰', '그늘 지도', '시민 참여'])
+  const hero = renderToStaticMarkup(React.createElement(ReportHero, { stage: 'Ds', project: { title: '동네 폭염', artifacts: { 'Ds-1-1': { status: 'confirmed', version: 3 }, 'Ds-1-2': { status: 'draft', version: 2 }, 'T-1-1': { status: 'confirmed', version: 8 } } }, content }))
+  assert.match(hero, /linear-gradient\(120deg, #007065, #004f47 68%, #0B57D0\)/)
+  assert.equal((hero.match(/class="report-chip"/g) ?? []).length, 3)
+  assert.equal((hero.match(/class="report-kpi report-/g) ?? []).length, 4)
+  for (const [label, count, unit] of [['활동 수', 5, '개'], ['확정 활동', 1, '개'], ['저장 산출물', 2, '개'], ['누적 저장 버전', 5, '회']]) {
+    assert.ok(hero.includes(`${label}</dt><dd>${count}<small>${unit}</small></dd>`), label)
+  }
+  const old = '## 옛 수업 분석\n\n먼저 학생의 질문 기록을 확인하고 모둠별 차이를 검토합니다.\n\n### 기존 활동\n\n- 원래 기록\n\n| 학년군 | 근거 |\n| --- | --- |\n| 3-4학년군 | [4사08-02] |'
+  assert.equal(reportSummary(old).summary, '')
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: old }))
+  for (const text of ['먼저 학생의 질문 기록', '기존 활동', '원래 기록', '[4사08-02]']) assert.ok(html.includes(text))
+  assert.match(html, /<table\b/)
+  assert.doesNotMatch(html, /material-symbols|\[object Object\]/)
+})
+
+test('041b: 강점·보완점·정렬·다음 단계·활동 카드를 구조화하고 실제 해당 단계의 확정 상태를 표시한다', () => {
+  const content = '## 강점\n- 학생이 근거를 찾았습니다.\n\n## 보완점\n- 첫 질문을 돕습니다.\n\n## 다음 단계 제안\n- 질문 카드 준비\n- 주민에게 묻기\n\n## 성취기준·평가 정렬\n- [4사08-02] 지역 문제 해결\n\n| 학년군 | 성취기준 | 수 |\n| --- | --- | --- |\n| 3-4학년군 | [4사08-02] | 3 |\n\n## 활동별 산출물 및 분석\n### Ds-1 평가 설계\n- 관찰 기준표\n### Ds-2 문제 상황\n- 그늘 지도\n### Ds-3 학습활동\n- 인터뷰'
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content, stage: 'Ds', project: { artifacts: { 'Ds-1-1': { status: 'confirmed' }, 'Ds-1-2': { status: 'draft' }, 'T-1-1': { status: 'confirmed' } } } }))
+  for (const kind of ['strengths', 'improvements', 'next', 'alignment', 'activities']) assert.ok(html.includes(`data-report-kind="${kind}"`))
+  assert.match(html, /class="report-grid"/)
+  assert.equal((html.match(/<article class="report-activity"/g) ?? []).length, 3)
+  assert.match(html, /data-status="confirmed">확정/)
+  assert.match(html, /data-status="draft">작성 중/)
+  assert.match(html, /data-status="missing">산출물 없음/)
+  assert.match(html, /aria-hidden="true">1<\/span>/)
+  assert.match(html, /aria-hidden="true">2<\/span>/)
+  assert.match(html, /class="report-standard">\[4사08-02\]/)
+  assert.match(html, /<td data-short-cell="true" data-label="수" style="text-align:right;min-width:\d+ch"><span>3<\/span><\/td>/)
+  assert.match(REPORT_DASHBOARD_CSS, /min-width:720px[\s\S]*repeat\(2,minmax\(0,1fr\)\)/)
+  assert.match(REPORT_DASHBOARD_CSS, /max-width:540px/)
+  assert.match(REPORT_DASHBOARD_CSS, /padding:7px 10px/)
+})
+
+test('041c: 실제 phosphor SVG와 화면 마크업·CSS를 그대로 인쇄하며 제목을 이스케이프한다', () => {
+  const real = loadArtifactTsx('../src/components/modals/ReportMarkdown.tsx', { ...reportBindings, '@phosphor-icons/react': phosphorIcons })
+  const content = '## 이 단계 핵심 요약\n학생들이 동네 자료를 근거로 제안했습니다.\n키워드: 동네 · 근거\n\n## 강점\n- **‘일’**로 정하고 1~3개 비교\n\n## 보완점\n- 질문 카드 준비'
+  const markup = renderToStaticMarkup(React.createElement(React.Fragment, null,
+    React.createElement(real.ReportHero, { stage: 'A', project: null, content }),
+    React.createElement(real.ReportMarkdown, { content })))
+  assert.match(markup, /<svg[\s\S]*<(?:path|circle|rect)/)
+  const document = buildReportPrintDocument(markup, '</title><script>침입</script> & 보고서')
+  assert.equal(document.split('<body>')[1].split('</body>')[0], markup)
+  assert.ok(document.includes(REPORT_DASHBOARD_CSS))
+  assert.match(document, /<title>&lt;\/title&gt;&lt;script&gt;침입&lt;\/script&gt; &amp; 보고서<\/title>/)
+  assert.match(document, /@page\{size:A4/)
+  assert.match(document, /break-inside:avoid/)
+  assert.match(document, /print-color-adjust:exact/)
+  assert.match(document, /<strong>‘일’<\/strong>로/)
+  assert.match(document, /1~3개/)
+  assert.doesNotMatch(document, /material-symbols|fonts.googleapis|<script|>target<|>assignment</i)
+})
+
+test('041d: 인쇄는 DOM 복사·닫기 후 글꼴 준비를 기다리고 차단된 팝업을 조용히 종료한다', async () => {
+  const calls = []
+  let finishFonts
+  const fonts = new Promise(resolve => { finishFonts = resolve })
+  const win = { document: { querySelectorAll: () => [], fonts: { ready: fonts }, write: markup => calls.push(['write', markup]), close: () => calls.push(['document.close']) }, requestAnimationFrame: callback => callback(), print: () => calls.push(['print']), close: () => calls.push(['window.close']) }
+  const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors }, window: { open: () => win } })
+  module.printReport({ innerHTML: '<div class="report-dashboard"><svg></svg>현재 화면</div>' }, '인쇄')
+  assert.equal(calls[0][0], 'write')
+  assert.equal(calls[1][0], 'document.close')
+  const loading = win.onload()
+  assert.equal(calls.length, 2)
+  finishFonts()
+  await loading
+  assert.deepEqual(calls[2], ['print'])
+  assert.match(calls[0][1], /<svg><\/svg>현재 화면/)
+  win.onafterprint()
+  assert.deepEqual(calls[3], ['window.close'])
+  const blocked = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors }, window: { open: () => null } })
+  assert.doesNotThrow(() => blocked.printReport({ innerHTML: '현재 화면' }, '인쇄'))
+})
+
+test('041e: 실제 섹션 팔레트·KPI·모든 단계 그라데이션의 글자 대비는 4.5:1 이상이다', () => {
+  const rgb = hex => hex.slice(1).match(/../g).map(value => parseInt(value, 16))
+  const luminance = values => values.map(value => { const s = value / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4 }).reduce((total, value, i) => total + value * [0.2126, 0.7152, 0.0722][i], 0)
+  const contrast = (a, b) => { const [dark, light] = [luminance(rgb(a)), luminance(rgb(b))].sort((a, b) => a - b); return (light + 0.05) / (dark + 0.05) }
+  for (const tone of Object.values(REPORT_COLOR_TONES)) {
+    assert.ok(contrast(tone.ink, tone.container) >= 4.5, `container ${tone.container}`)
+    assert.ok(contrast(tone.ink, tone.surface) >= 4.5, `surface ${tone.surface}`)
+    assert.ok(contrast(tone.bandInk, tone.band) >= 4.5, `band ${tone.band}`)
+    assert.ok(REPORT_DASHBOARD_CSS.includes(`--report-band:${tone.band};--report-band-ink:${tone.bandInk}`))
+  }
+  for (const color of Object.values(STAGE_COLOR)) {
+    const tones = reportStageColors(color.hex)
+    assert.ok(contrast('#FFFFFF', tones.band) >= 4.5, color.hex)
+    assert.ok(contrast('#FFFFFF', tones.deep) >= 4.5, color.hex)
+    assert.ok(contrast('#1A1C1E', tones.container) >= 4.5, color.hex)
+    assert.ok(contrast('#FFFFFF', REPORT_COLOR_TONES.primary.band) >= 4.5)
+  }
+})
+
+test('041f: 부록 원문만 기본 접힘으로 표시하고 본문 그리드 뒤에 원래 표·강조를 보존한다', () => {
+  const content = '## 강점\n- 질문을 자기 말로 바꿨습니다.\n\n## 부록: 산출물 원문\n### 평가 설계 (Ds-1)\n\n| 기준 | 증거 |\n| --- | --- |\n| **자기 말 질문** | 3차시 [4사08-02] |'
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content }))
+  assert.equal((html.match(/<details data-report-appendix="true">/g) ?? []).length, 1)
+  assert.doesNotMatch(html, /<details[^>]*\sopen(?:=|\s|>)/)
+  assert.match(html, /<summary class="report-appendix-toggle">[\s\S]*부록: 산출물 원문[\s\S]*펼치기/)
+  assert.match(html, /<\/section><\/div>\s*<section data-report-section="true" data-report-kind="appendix"/)
+  assert.match(html, /<strong><span>자기 말 질문<\/span><\/strong>/)
+  assert.match(html, /<table\b/)
+  assert.match(html, /\[4사08-02\]/)
+  assert.match(html, /data-report-icon="Database"/)
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-appendix-collapse\{display:none\}/)
+  const legacy = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: '## 부록 안내\n\n예전 보고서의 일반 섹션' }))
+  assert.doesNotMatch(legacy, /<details/)
+  assert.match(legacy, /예전 보고서의 일반 섹션/)
+})
+
+test('041g: PDF 복사본의 부록은 자동으로 펼쳐 새 페이지에서 인쇄하고 원래 화면은 건드리지 않는다', async () => {
+  const screenAppendix = { open: false }
+  const printAppendix = { open: false }
+  const markup = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: '## 다음 단계 제안\n1. 기록하기\n\n## 부록: 산출물 원문\n\n저장된 원문' }))
+  let written
+  let printed = false
+  const win = { document: { fonts: { ready: Promise.resolve() }, querySelectorAll: selector => { assert.equal(selector, 'details[data-report-appendix]'); return [printAppendix] }, write: html => { written = html }, close() {} }, requestAnimationFrame: callback => callback(), print: () => { assert.equal(printAppendix.open, true); printed = true }, close() {} }
+  const module = loadArtifactTsx('../src/components/modals/printReport.ts', { './reportDashboardStyles': { REPORT_DASHBOARD_CSS, reportStageColors }, window: { open: () => win } })
+  const source = { innerHTML: markup, appendix: screenAppendix }
+  module.printReport(source, '부록 포함 보고서')
+  await win.onload()
+  assert.equal(printed, true)
+  assert.equal(screenAppendix.open, false)
+  assert.equal(source.innerHTML, markup)
+  assert.equal(written.split('<body>')[1].split('</body>')[0], markup)
+  assert.match(written, /저장된 원문/)
+  assert.match(written, /\.report-card\.report-appendix\{break-before:page;page-break-before:always;break-inside:auto/)
+  assert.match(written, /@media print\{[\s\S]*\.report-appendix-action\{display:none\}/)
+})
+
+// ─── TASK-043: 산출물 원문 정규화 — 라벨 문단·성취기준 줄을 표로, 여러 줄 문단은 목록으로 ─────────
+const task043 = await import('../src/lib/report/artifactToMarkdown.ts')
+const herdrScenario = [
+  '**제목**: 우리 동네 그늘지도와 그늘막 설치 제안',
+  '',
+  '**행1 (실제성)**: 여름날, 학교 주변을 걸어 보니 친구들뿐 아니라 어린 동생, 유모차를 끄는 보호자, 지팡이를 짚은 어르신들이 햇볕을 피해 쉴 곳을 찾고 있었다. 학교 놀이터의 미끄럼틀도 뜨거워져 점심시간에 이용하기 어려운 날이 있었다.',
+  '구청에서는 학교 주변 두 곳에 그늘막을 더 설치하기 전에 어린이 주민의 의견을 받으려고 한다.',
+  '',
+  '**행2 (학습 내용+산출물)**: 학생들은 어린이 주민이자 학교·마을 환경 조사단이 되어 학교 놀이터와 주변 두 장소를 살펴본다.',
+  '',
+  '**행3 (청중+행위)**: 학생들은 완성한 학년군별 그늘지도, 위치 제안 자료, 주장 글과 디지털 포스터를 학교 구성원과 구청 담당자에게 전달하고 발표한다.',
+  '',
+  '**1-2학년군 하위 질문**: 우리 학교 놀이터와 주변에서 어디가 가장 뜨겁고, 그곳을 이용하는 사람에게 어떤 그늘이 필요할까?',
+].join('\n')
+const herdrAlignment = [
+  '**1-2학년군 국어 [2국03-02]**: 놀이터와 학교 주변의 더위 경험과 그늘이 필요한 까닭을 그림과 함께 문장으로 표현하는 과정에서 평가한다.',
+  '**1-2학년군 통합교과 [2바02-01]**: 학교와 마을에서 더위로 불편한 사람과 장소를 살펴보고 공동체를 위해 할 수 있는 작은 일을 찾아 실천하는 과정에서 평가한다.',
+  '**3-4학년군 과학 [4과16-01]·[4과16-03]**: 기후변화와 인간 활동의 관계를 자료로 살펴보고 생활 속 기후변화 대응 방법을 찾고 공유하는 과정에서 평가한다.',
+  '**5-6학년군 미술 [6미02-05]**: 기후 자료와 해결안의 내용을 디지털 매체와 포스터로 융합하여 표현하는 과정에서 평가한다.',
+].join('\n')
+
+test('43a: herdr Ds-2 문제상황 — 굵은 라벨 문단이 행 번호 없는 2열 표가 되고, 이어진 줄은 같은 칸에 붙는다', () => {
+  const md = task043.normalizeArtifactText(herdrScenario)
+  const lines = md.split('\n')
+  assert.equal(lines[0], '| 구분 | 내용 |')
+  assert.equal(lines[1], '| --- | --- |')
+  assert.equal(lines[2], '| 제목 | 우리 동네 그늘지도와 그늘막 설치 제안 |')
+  assert.match(lines[3], /^\| 실제성 \| 여름날, .*있었다\. 구청에서는 .*받으려고 한다\. \|$/)
+  assert.match(lines[4], /^\| 학습 내용\+산출물 \| 학생들은 어린이 주민이자/)
+  assert.match(lines[5], /^\| 청중\+행위 \| /)
+  assert.match(lines[6], /^\| 1-2학년군 하위 질문 \| 우리 학교 놀이터/)
+  assert.equal(lines.length, 7)
+  assert.doesNotMatch(md, /행\d|\*\*/)
+  assert.equal(task043.cleanRowLabel('행2 (학습 내용+산출물)'), '학습 내용+산출물')
+  assert.equal(task043.cleanRowLabel('데이터 출처'), '데이터 출처')
+})
+
+test('43b: herdr 성취기준 연결 — 4열 표(학년군·교과·성취기준·평가 내용), 코드 먼저 꼴도 읽는다', () => {
+  const md = task043.normalizeArtifactText(herdrAlignment)
+  const lines = md.split('\n')
+  assert.equal(lines[0], '| 학년군 | 교과 | 성취기준 | 평가 내용 |')
+  assert.equal(lines[2], '| 1-2학년군 | 국어 | [2국03-02] | 놀이터와 학교 주변의 더위 경험과 그늘이 필요한 까닭을 그림과 함께 문장으로 표현하는 과정에서 평가한다. |')
+  assert.match(lines[3], /^\| 1-2학년군 \| 통합교과 \| \[2바02-01\] \| /)
+  assert.match(lines[4], /^\| 3-4학년군 \| 과학 \| \[4과16-01\]·\[4과16-03\] \| /)
+  assert.equal(lines.length, 6)
+  const codeFirst = task043.parseStandardsAlignmentLines('[2국03-02] (국어/중심): 문장으로 표현\n[4사08-02] (사회/연계): 위치 제안')
+  assert.deepEqual(codeFirst, [
+    { gradeBand: '1-2학년군', subject: '국어', standards: '[2국03-02]', content: '문장으로 표현' },
+    { gradeBand: '3-4학년군', subject: '사회', standards: '[4사08-02]', content: '위치 제안' },
+  ])
+  assert.equal(task043.parseStandardsAlignmentLines('한 줄뿐인 설명'), null)
+  assert.equal(task043.parseStandardsAlignmentLines(herdrAlignment.split('\n')[0]), null) // 한 줄은 표로 만들지 않음
+})
+
+test('43c: 표는 그대로, 여러 줄 문단은 줄마다 목록, 한 줄 문단·기존 목록은 그대로', () => {
+  const table = '| a | b |\n| --- | --- |\n| 1 | 2 |'
+  assert.equal(task043.normalizeArtifactText(table), table)
+  assert.equal(task043.normalizeArtifactText('첫째 줄\n둘째 줄'), '- 첫째 줄\n- 둘째 줄')
+  assert.equal(task043.normalizeArtifactText('한 줄 문단'), '한 줄 문단')
+  assert.equal(task043.normalizeArtifactText('1. 하나\n2. 둘'), '1. 하나\n2. 둘')
+  assert.equal(task043.normalizeArtifactText('**핵심 질문**: 왜 더울까?'), '**핵심 질문**: 왜 더울까?') // 라벨 1개는 표로 만들지 않음
+  assert.equal(task043.normalizeArtifactText('**a|b**: 값|값\n**c**: d'), '| 구분 | 내용 |\n| --- | --- |\n| a\\|b | 값\\|값 |\n| c | d |')
+})
+
+test('43d: 보고서 부록 원문과 Ds-2 산출물 패널이 같은 정규화를 쓴다', () => {
+  const originals = task039prompt.buildArtifactOriginals('Ds', { 'Ds-1-2': { content: { _schema: 'Ds-1-2', '문제상황': herdrScenario, '성취기준 연결': herdrAlignment } } })
+  const ds2 = originals['Ds-1-2']
+  assert.match(ds2, /\*\*문제상황\*\*\n\n\| 구분 \| 내용 \|\n\| --- \| --- \|\n\| 제목 \|/)
+  assert.match(ds2, /\*\*성취기준 연결\*\*\n\n\| 학년군 \| 교과 \| 성취기준 \| 평가 내용 \|/)
+  assert.doesNotMatch(ds2, /행1 \(실제성\)/)
+  const renderer = fs.readFileSync(new URL('../src/components/artifacts/structured/Ds12Renderer.tsx', import.meta.url), 'utf8')
+  assert.match(renderer, /\{normalizeArtifactText\(sel\.alignmentText\)\}/)
+})
+
+// ─── TASK-044: 보고서 관점 — 평가자가 아니라 설계 동료(요약·칭찬·제안형) ─────────
+test('44a: 섹션 키·아이콘은 유지하고 제목만 긍정형으로, 예전 제목도 같은 섹션으로 인식한다', () => {
+  const byKey = Object.fromEntries(task039sections.REPORT_SECTIONS.map(s => [s.key, s]))
+  assert.equal(byKey.strengths.title, '잘 설계된 점')
+  assert.equal(byKey.strengths.icon, 'ThumbsUp')
+  assert.equal(byKey.improvements.title, '함께 다듬어 볼 아이디어')
+  assert.equal(byKey.improvements.icon, 'Wrench')
+  for (const [old, key] of [['강점', 'strengths'], ['보완점', 'improvements'], ['성취기준·평가 정렬', 'alignment'], ['팀 협력 구조 점검', 'alignment'], ['설계·실행 정렬', 'alignment']]) {
+    assert.equal(task039sections.findReportSection(old)?.key, key, old)
+  }
+  assert.equal(task039sections.findReportSection('함께 다듬어 볼 아이디어')?.icon, 'Wrench')
+})
+
+test('44b: 프롬프트는 동료 페르소나·제안형 어조·금지 예와 바꾼 예를 쓰고, 점수·판정 표가 없다', () => {
+  const prompt = task039prompt.buildAnalysisPrompt('Ds', { title: 'herdr', targetGradeGroup: '초1-6' }, { 'Ds-1-1': { content: { '평가 계획': 'x' } } })
+  assert.match(prompt, /수업설계 동료입니다/)
+  assert.match(prompt, /평가하거나 채점하는 사람이 아니라/)
+  assert.match(prompt, /❌ 쓰지 말 것: "문제상황의 실제성은 강력하지만 학년군별 평가 근거를 확보해야 한다\."/)
+  assert.match(prompt, /✅ 이렇게: "학년군마다 실제 동네 장면이 살아 있어요\./)
+  assert.match(prompt, /'~하면 더 좋아질 수 있어요'/)
+  const output = prompt.split('보고서만 출력하세요.')[1]
+  assert.doesNotMatch(output, /점수|5점|충분 \/ 보완 필요 \/ 부족|종합|진단|격려가 아닌 판단/)
+  const section = title => output.split(`\n## ${title}\n`).pop().split('\n## ')[0]
+  assert.match(section('성취기준·평가 연결'), /^\n\| 연결이 잘 된 곳 \|[\s\S]*\n다음에 연결해 볼 곳:\n- /)
+  assert.match(section('함께 다듬어 볼 아이디어'), /이유: \(한 구절\)/)
+  assert.match(section('다음 단계 제안'), /^\n> \(다음 단계를 시작하는 팀을 응원하는 한 줄\)\n\n1\. \(바로 해 볼 일/)
+  assert.match(section('잘 설계된 점'), /구체적 근거와 함께 칭찬/)
+})
+
+test('041h: 섹션별 컬러 머리 띠·표 머리글·칩과 서로 다른 KPI tonal 색을 화면/PDF 공통 CSS로 쓴다', () => {
+  const content = REPORT_SECTIONS.map(section => `## ${section.title}\n\n### 활동 메모\n\n- 관찰 근거`).join('\n\n')
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content, stage: 'DI' }))
+  const colors = reportStageColors(STAGE_COLOR.DI.hex)
+  assert.ok(html.includes(`--report-stage-band:${colors.band};--report-stage-container:${colors.container}`))
+  for (const [kind, toneName] of Object.entries(REPORT_SECTION_TONES)) {
+    assert.ok(html.includes(`data-report-kind="${kind}"`), kind)
+    const tone = REPORT_COLOR_TONES[toneName]
+    assert.ok(REPORT_DASHBOARD_CSS.includes(`.report-card[data-report-kind="${kind}"]{--report-container:${tone.container};--report-ink:${tone.ink};--report-band:${tone.band}`), kind)
+  }
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-card h2\{[^}]*color:var\(--report-band-ink\);background:var\(--report-band\)/)
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-dashboard th\{[^}]*background:var\(--report-band,#0B57D0\);color:var\(--report-band-ink,#FFFFFF\)/)
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-card \.report-chip\{background:var\(--report-band\);color:var\(--report-band-ink\)/)
+  const hero = renderToStaticMarkup(React.createElement(ReportHero, { stage: 'DI', project: null }))
+  for (const tone of ['primary', 'green', 'secondary', 'amber']) assert.ok(hero.includes(`report-kpi report-${tone}`))
+  assert.match(hero, /linear-gradient\(120deg, #bd4200, #852f00 68%, #0B57D0\)/)
+  assert.match(REPORT_DASHBOARD_CSS, /border-top:5px solid var\(--report-band\)/)
+  const pdf = buildReportPrintDocument(html, '컬러 보고서')
+  assert.ok(pdf.includes(REPORT_DASHBOARD_CSS))
+  assert.match(pdf, /print-color-adjust:exact/)
+})
+
+test('041i: Ds-3 8열 표는 짧은 열의 실제 길이로 최소 폭을 정하고 PDF에서 머리글:값 카드가 된다', () => {
+  const longText = '동네의 그늘이 있는 장소와 없는 장소를 비교하고 주민이 이용하는 시간과 이유를 기록한다.'
+  const content = `## 활동별 산출물 및 분석\n\n| 순서 | 흐름 단계 | 차시 | 핵심/부가 | 담당 교과 | 활동명 | 학생 수행 | 기록 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 1 | 지역 조사 | 3차시 | 핵심 | 국어·통합교과 | 그늘 비교 | ${longText} | 관찰 지도 |\n| 2 | 자료 정리 | 4차시 | 부가 | 사회 | 인터뷰 | 질문 카드로 주민에게 묻고 이유를 자기 말로 설명한다. | https://example.com/verylongunbrokenresourceidentifierabcdefghijklmnopqrst |`
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content, stage: 'Ds' }))
+  assert.match(html, /class="report-table-scroll report-table-wide"/)
+  assert.match(html, /<table data-columns="8" style="min-width:\d+ch"/)
+  assert.match(html, /<th scope="col" style="min-width:13ch">흐름 단계<\/th>/)
+  assert.match(html, /<td data-short-cell="true" data-label="흐름 단계" style="min-width:13ch">/)
+  const subjectWidth = html.match(/<td data-short-cell="true" data-label="담당 교과" style="min-width:(\d+)ch">/)
+  assert.ok(subjectWidth)
+  assert.ok(Number(subjectWidth[1]) >= 18)
+  assert.match(html, /<td data-long-cell="true" data-label="학생 수행" style="min-width:24ch">/)
+  assert.match(html, /class="report-long-english"/)
+  assert.ok(html.includes(longText))
+  assert.ok(html.includes('국어·통합교과'))
+  assert.match(REPORT_DASHBOARD_CSS, /td\{word-break:keep-all;overflow-wrap:normal\}/)
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-long-english\{word-break:normal;overflow-wrap:anywhere\}/)
+  assert.match(REPORT_DASHBOARD_CSS, /th\{[^}]*white-space:nowrap/)
+  assert.match(REPORT_DASHBOARD_CSS, /td\[data-short-cell="true"\]\{white-space:nowrap\}/)
+  assert.match(REPORT_DASHBOARD_CSS, /@media print\{\s*\.report-table-wide/)
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide thead\{display:none\}/)
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide tbody tr\{display:grid;/)
+  assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide td:before\{content:attr\(data-label\);display:block;white-space:nowrap/)
+  assert.doesNotMatch(REPORT_DASHBOARD_CSS, /table-layout:fixed|white-space:normal!important/)
+  const pdf = buildReportPrintDocument(html, '8열 활동 표')
+  for (const label of ['순서', '흐름 단계', '담당 교과', '학생 수행']) assert.ok(pdf.includes(`data-label="${label}"`))
+})
+
+test('041j: 부록 원문의 2열·4열 표도 열 폭·성취기준 칩·단어 유지·같은 색 머리글을 사용한다', () => {
+  const content = '## 부록: 산출물 원문\n\n### 문제 상황 설정 (Ds-2)\n\n| 구분 | 내용 |\n| --- | --- |\n| 실제성 | 주민이 이용하는 그늘의 위치를 사진과 지도로 확인하고 모두에게 필요한 장소를 제안한다. |\n\n| 학년군 | 교과 | 성취기준 | 평가 내용 |\n| --- | --- | --- | --- |\n| 3-4학년군 | 사회 | [4사08-02] 지역 문제 해결에 참여한다. | 주민 의견을 근거로 그늘막 위치를 제안한다. |'
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content, stage: 'Ds' }))
+  assert.equal((html.match(/<table\b/g) ?? []).length, 2)
+  assert.match(html, /<table data-columns="2" style="min-width:\d+ch"/)
+  assert.match(html, /<table data-columns="4" style="min-width:\d+ch"/)
+  assert.match(html, /<td data-short-cell="true" data-label="구분" style="min-width:\d+ch">/)
+  assert.match(html, /<td data-short-cell="true" data-label="교과" style="min-width:\d+ch">/)
+  assert.match(html, /<span class="report-standard">\[4사08-02\]<\/span>/)
+  assert.match(html, /<span class="whitespace-nowrap">3-4학년군<\/span>/)
+  assert.match(html, /<details data-report-appendix="true">/)
+  const pdf = buildReportPrintDocument(html, '원문 부록')
+  assert.ok(pdf.includes('주민 의견을 근거로 그늘막 위치를 제안한다.'))
+  assert.ok(pdf.includes('.report-card[data-report-kind="appendix"]{--report-container:#C2E7FF;--report-ink:#001D35;--report-band:#00639B;'))
 })

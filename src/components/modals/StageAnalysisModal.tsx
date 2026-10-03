@@ -1,13 +1,11 @@
 'use client'
 
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@/components/ui/ReportSectionIcon'
-import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { ReportHero, ReportMarkdown } from './ReportMarkdown'
+import { printReport } from './printReport'
 import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar, ArrowRight } from '@phosphor-icons/react'
 import { setAnalysisReport, saveStageReport } from '@/lib/firebase/projects'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
@@ -328,52 +326,8 @@ export function StageAnalysisModal({
   }
 
   function downloadPdf() {
-    const contentEl = contentRef.current
-    if (!contentEl) return
-    const win = window.open('', '_blank')
-    if (!win) return
-
-    // 렌더된 DOM의 innerHTML을 그대로 복사 → 화면과 동일한 스타일 유지
-    const html = contentEl.innerHTML
-
-    win.document.write(`<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <title>${project?.title ?? ''} ${STAGE_LABELS[stage]} 분석 보고서</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <style>
-    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    body {
-      font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
-      max-width: 740px;
-      margin: 0 auto;
-      padding: 36px 40px;
-      color: #202124;
-      background: white;
-      font-size: 14px;
-      line-height: 1.7;
-    }
-    @page { size: A4; margin: 18mm 15mm; }
-    @media print {
-      body { padding: 0; }
-    }
-  </style>
-</head>
-<body>
-  ${html}
-  <script>
-    window.onload = () => {
-      setTimeout(() => {
-        window.print()
-        window.onafterprint = () => window.close()
-      }, 600)
-    }
-  <\/script>
-</body>
-</html>`)
-    win.document.close()
+    if (!contentRef.current) return
+    printReport(contentRef.current, `${project?.title ?? ''} ${STAGE_LABELS[stage]} 분석 보고서`)
   }
 
   async function downloadHwpx() {
@@ -418,125 +372,24 @@ export function StageAnalysisModal({
         </header>
 
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
-          <ReportHero stage={stage} project={project} generating={status === 'loading' || status === 'streaming'} generatedAt={project?.stageReports?.[stage]?.content === markdown ? project.stageReports[stage]?.savedAt : undefined} />
-          {status === 'loading' && <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 text-center text-[var(--md-sys-on-surface-variant)]">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]"><ChartBar size={28} weight="fill" /></div>
-            <p className="text-[16px] font-medium">{isHost ? '산출물 분석 중...' : '보고서가 생성 중입니다'}</p>
-            <p className="text-[13px]">{isHost ? 'T-CID 협력 수업설계 관점에서 분석합니다' : '방장이 분석을 완료하면 자동으로 표시됩니다'}</p>
-            {!isHost && <SpinnerGap size={20} className="animate-spin text-[var(--md-sys-primary)]" />}
-          </div>}
-          {(status === 'streaming' || status === 'done') && markdown && <div className="min-w-0">
-            <ReportMarkdown content={markdown} />
-            {status === 'streaming' && <SpinnerGap size={16} className="mt-2 animate-spin text-[var(--md-sys-primary)]" />}
-            {/* PDF 내보내기는 기존 인라인 스타일의 본문을 그대로 사용한다. */}
-            <div className="hidden" aria-hidden="true" ref={contentRef}>
-              <ReactMarkdown
-                remarkPlugins={REMARK_PLUGINS}
-                components={{
-                  h1: ({ children }) => (
-                    <h1 style={{ fontSize: '1.55rem', fontWeight: 900, color: '#202124', margin: '0 0 2rem', lineHeight: 1.2, letterSpacing: '-0.03em', paddingBottom: '0.9rem', borderBottom: '3px solid #1A73E8' }}>
-                      {children}
-                    </h1>
-                  ),
-                  h2: ({ children }) => {
-                    // 이모지 제목 → M3 tonal 컨테이너 + 벡터 아이콘
-                    const raw = childrenToText(children)
-                    const iconName = pickReportIcon(raw)
-                    return (
-                      <div style={{ marginTop: '2.4rem', marginBottom: '1rem' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.9rem', fontWeight: 600, color: '#0842A0', background: '#D3E3FD', borderRadius: '10px', padding: '0.45rem 0.9rem', letterSpacing: '0.01em' }}>
-                          {iconName && <ReportIcon name={iconName} size={18} />}
-                          {stripLeadingEmoji(raw) || children}
-                        </span>
-                      </div>
-                    )
-                  },
-                  h3: ({ children }) => {
-                    const raw = childrenToText(children)
-                    return (
-                      <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#202124', margin: '1.6rem 0 0.4rem', paddingLeft: '0.65rem', borderLeft: '3px solid #0B57D0', lineHeight: 1.4 }}>
-                        {stripLeadingEmoji(raw) || children}
-                      </h3>
-                    )
-                  },
-                  p: ({ children }) => (
-                    <p style={{ fontSize: '0.92rem', color: '#3C4043', lineHeight: 1.82, margin: '0.55rem 0' }}>
-                      {children}
-                    </p>
-                  ),
-                  strong: ({ children }) => (
-                    <strong style={{ fontWeight: 800, color: '#202124', background: 'rgba(26,115,232,0.08)', borderRadius: '3px', padding: '0 3px' }}>
-                      {children}
-                    </strong>
-                  ),
-                  blockquote: ({ children }) => (
-                    <div style={{ margin: '0.9rem 0', padding: '0.85rem 1.1rem', background: 'linear-gradient(135deg, #EAF2FF 0%, #F3E5F5 100%)', borderLeft: '4px solid #1A73E8', borderRadius: '0 12px 12px 0', fontSize: '0.9rem', color: '#1a2e5a', fontWeight: 600, lineHeight: 1.75 }}>
-                      {children}
-                    </div>
-                  ),
-                  ul: ({ children }) => (
-                    <ul style={{ listStyle: 'none', padding: 0, margin: '0.6rem 0' }}>{children}</ul>
-                  ),
-                  ol: ({ children }) => (
-                    <ol style={{ listStyle: 'none', padding: 0, margin: '0.6rem 0', counterReset: 'ol' }}>{children}</ol>
-                  ),
-                  li: ({ children }) => (
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', marginBottom: '0.5rem', fontSize: '0.91rem', color: '#3C4043', lineHeight: 1.75 }}>
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1A73E8', flexShrink: 0, marginTop: '0.52rem', display: 'inline-block' }} />
-                      <span>{children}</span>
-                    </li>
-                  ),
-                  table: ({ children }) => (
-                    <div style={{ margin: '1rem 0', borderRadius: '12px', border: '1.5px solid #DADCE0', overflow: 'hidden' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', tableLayout: 'auto' }}>{children}</table>
-                    </div>
-                  ),
-                  thead: ({ children }) => (
-                    <thead style={{ background: '#1A73E8', color: 'white' }}>{children}</thead>
-                  ),
-                  th: ({ children }) => (
-                    <th style={{ padding: '0.65rem 1rem', textAlign: 'left', fontWeight: 700, fontSize: '0.83rem', color: 'white', wordBreak: 'keep-all', overflowWrap: 'anywhere', verticalAlign: 'top' }}>{children}</th>
-                  ),
-                  tr: ({ children }) => <tr>{children}</tr>,
-                  td: ({ children }) => {
-                    const baseStyle: React.CSSProperties = { padding: '0.6rem 1rem', borderTop: '1px solid #F1F3F4', color: '#3C4043', fontSize: '0.88rem', verticalAlign: 'top', lineHeight: 1.6, wordBreak: 'keep-all', overflowWrap: 'anywhere' }
-                    const text = typeof children === 'string' ? children : null
-                    if (text && text.includes('\u2028')) {
-                      return (
-                        <td style={baseStyle}>
-                          {text.split('\u2028').filter(Boolean).map((line, i) => (
-                            <span key={i} style={{ display: 'block' }}>{line}</span>
-                          ))}
-                        </td>
-                      )
-                    }
-                    return <td style={baseStyle}>{children}</td>
-                  },
-                  hr: () => (
-                    <hr style={{ border: 'none', borderTop: '1.5px solid #F1F3F4', margin: '1.8rem 0' }} />
-                  ),
-                  em: ({ children }) => (
-                    <em style={{ fontStyle: 'italic', color: '#5F6368', fontSize: '0.88rem' }}>{children}</em>
-                  ),
-                  code: ({ children }) => (
-                    <code style={{ background: '#F8F9FA', border: '1px solid #DADCE0', borderRadius: '4px', padding: '0.1rem 0.4rem', fontSize: '0.85rem', color: '#202124' }}>{children}</code>
-                  ),
-                }}
-              >
-                {markdown}
-              </ReactMarkdown>
-              {status === 'streaming' && (
-                <span className="inline-flex items-center gap-1 ml-1 text-[#1A73E8]">
-                  <SpinnerGap size={14} className="animate-spin" />
-                </span>
-              )}
-            </div>
-          </div>}
-          {status === 'error' && <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <p className="font-medium text-[var(--md-sys-error)]">분석 중 오류가 발생했습니다</p>
-            <p className="break-words text-[13px] text-[var(--md-sys-on-surface-variant)]">{errorMsg}</p>
-            <MD3Button variant="filled" onClick={rerunAnalysis}>다시 시도</MD3Button>
-          </div>}
+          <div ref={contentRef}>
+            <ReportHero content={markdown} stage={stage} project={project} generating={status === 'loading' || status === 'streaming'} generatedAt={project?.stageReports?.[stage]?.content === markdown ? project.stageReports[stage]?.savedAt : undefined} />
+            {status === 'loading' && <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 text-center text-[var(--md-sys-on-surface-variant)]">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]"><ChartBar size={28} weight="fill" /></div>
+              <p className="text-[16px] font-medium">{isHost ? '산출물 분석 중...' : '보고서가 생성 중입니다'}</p>
+              <p className="text-[13px]">{isHost ? 'T-CID 협력 수업설계 관점에서 분석합니다' : '방장이 분석을 완료하면 자동으로 표시됩니다'}</p>
+              {!isHost && <SpinnerGap size={20} className="animate-spin text-[var(--md-sys-primary)]" />}
+            </div>}
+            {(status === 'streaming' || status === 'done') && markdown && <div className="min-w-0">
+              <ReportMarkdown content={markdown} stage={stage} project={project} />
+              {status === 'streaming' && <SpinnerGap size={16} className="mt-2 animate-spin text-[var(--md-sys-primary)]" />}
+            </div>}
+            {status === 'error' && <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+              <p className="font-medium text-[var(--md-sys-error)]">분석 중 오류가 발생했습니다</p>
+              <p className="break-words text-[13px] text-[var(--md-sys-on-surface-variant)]">{errorMsg}</p>
+              <MD3Button variant="filled" onClick={rerunAnalysis}>다시 시도</MD3Button>
+            </div>}
+          </div>
         </div>
         {status === 'streaming' && <div className="flex shrink-0 items-center gap-2 border-t border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container)] px-4 py-3 text-[13px] text-[var(--md-sys-on-surface-variant)] sm:px-6">
           <SpinnerGap size={16} className="animate-spin text-[var(--md-sys-primary)]" />분석 생성 중...
