@@ -11,8 +11,9 @@ export function validateProblemStandards(
   if (!allowed.size || !detail.standardsAlignment) return detail
   return {
     ...detail,
-    standardsAlignment: detail.standardsAlignment.filter(alignment =>
-      allowed.has(alignment.standardId.trim().replace(/^\[|\]$/g, '')),
-    ),
+    standardsAlignment: detail.standardsAlignment.filter(alignment => {
+      const code = Array.from(alignment.standardId.matchAll(STANDARD_CODE), match => match[1])[0]
+      return !!code && allowed.has(code)
+    }),
   }
 }

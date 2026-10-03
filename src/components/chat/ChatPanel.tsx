@@ -1223,6 +1223,7 @@ function ChatPanelContent() {
   const [failedChatRequest, setFailedChatRequest] = useState<{
     activityCode: ActivityCode
     userId?: string
+    assistantMessageId?: string
     messages: Array<{ role: string; content: string; displayName?: string }>
   } | null>(null)
   const [showDiscussionConfirm, setShowDiscussionConfirm] = useState(false)
@@ -2083,7 +2084,7 @@ function ChatPanelContent() {
   async function streamFromAPI(
     msgs: Array<{ role: string; content: string; displayName?: string }>,
     onChunk: (text: string) => void,
-    onDone: (fullText: string) => void | Promise<void>,
+    onDone: (fullText: string) => string | void | Promise<string | void>,
   ) {
     const decisionDeferred = hasDeferredDecision(msgs)
     if (decisionDeferred) onChunk = () => {} // Validate deferred responses before displaying gates.
@@ -2219,8 +2220,11 @@ function ChatPanelContent() {
       if (controller.signal.aborted) {
         if (fullText.trim().length > 0) {
           // 부분 응답이 있으면 보존 — assistant 메시지로 커밋 + 꼬리표
-          await onDone(fullText + '\n\n_[응답이 중간에 끊겼습니다 — 재시도 버튼으로 이어서 받아주세요]_')
-          setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: msgs })
+          const partialId = await onDone(fullText + '\n\n_[응답이 중간에 끊겼습니다 — 재시도 버튼으로 이어서 받아주세요]_')
+          setFailedChatRequest({
+            activityCode: currentActivity, userId: userProfile?.uid, messages: msgs,
+            assistantMessageId: typeof partialId === 'string' ? partialId : undefined,
+          })
           return
         }
         throw new Error('AI 응답이 60초 이상 멈춰 연결을 종료했습니다. 재시도 버튼을 눌러주세요.')
@@ -2432,7 +2436,9 @@ function ChatPanelContent() {
   }
 
   function offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops: boolean, userMessage: string) {
-    if (isHost && onlyConfirmedNoops && /이동|넘어가|다음\s*활동|다음\s*단계|다음으로/.test(userMessage)) {
+    if (isHost && onlyConfirmedNoops
+      && !/고쳐|수정|바꿔|보완|전에/.test(userMessage)
+      && /이동|넘어가|다음\s*활동|다음\s*단계|다음으로/.test(userMessage)) {
       handlePromptNextCommand()
     }
   }
@@ -2762,7 +2768,7 @@ ${discussionSummary}
           }, newMsgIdAnalysis).catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
-
+          return newMsgIdAnalysis
         }
       )
     } catch (err) {
@@ -3675,9 +3681,11 @@ ${discussionSummary}
     if (!text.trim() || isLoading || isAnalyzing || !project) return
     setIsIdle(false)
     setChatError(null)
+    const retryRequest = retryExistingMessage ? getRetryRequest() : null
+    let responseMessageId = retryRequest?.assistantMessageId
     setFailedChatRequest(null)
     // 재시도는 기존 대화의 발신자를 유지하고 AI 응답만 다시 요청한다.
-    let requestMessages = retryExistingMessage ? (getRetryRequest()?.messages ?? messages) : messages
+    let requestMessages = retryExistingMessage ? (retryRequest?.messages ?? messages) : messages
     if (!retryExistingMessage) {
       const senderDisplayName = userProfile?.displayName
       const directMessageId = generateMessageId(proj.id, currentActivity)
@@ -3750,8 +3758,11 @@ ${discussionSummary}
           }
           const finalText = parsedActionCardD ? parsedActionCardD.cleanText : t2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
           if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
-          const newMsgId = generateMessageId(proj.id, currentActivity)
-          addMessage({ id: newMsgId, role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now(),
+          const replacingResponse = !!responseMessageId
+          const newMsgId = responseMessageId ?? generateMessageId(proj.id, currentActivity)
+          responseMessageId = newMsgId
+          if (replacingResponse) replaceMessage(newMsgId, finalText)
+          else addMessage({ id: newMsgId, role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now(),
             ...(parsedActionCardD ? { actionCard: parsedActionCardD.card, actionCardState: 'pending' as const } : {}),
           })
           if (hm) setHelpCardMap(prev => ({ ...prev, [newMsgId]: hm }))
@@ -3777,12 +3788,13 @@ ${discussionSummary}
           if (advance?.nextActivity) setPendingAdvance(advance.nextActivity)
           else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
           else offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops, text)
+          return newMsgId
         }
       )
     } catch (err) {
       console.error('Chat error:', err)
       setChatError('AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.')
-      setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: requestMessages })
+      setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: requestMessages, assistantMessageId: responseMessageId })
       if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
       clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? '').catch(() => {})
     } finally { setIsLoading(false) }
@@ -3897,6 +3909,7 @@ ${discussionSummary}
         setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid).catch(() => {})
       }
     }, 800)
+    let responseMessageId: string | undefined
     try {
       await streamFromAPI(
         [...messages, tempUserMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
@@ -3948,6 +3961,7 @@ ${discussionSummary}
             streamingFlushRef.current = null
           }
           const newMsgId = generateMessageId(proj.id, currentActivity)
+          responseMessageId = newMsgId
           addMessage({
             id: newMsgId,
             role: 'assistant',
@@ -3988,12 +4002,13 @@ ${discussionSummary}
             setPendingAdvance(advance.nextActivity)
           } else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
           else offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops, userMessage)
+          return newMsgId
         }
       )
     } catch (err) {
       console.error('Chat error:', err)
       setChatError('AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.')
-      setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: [...messages, tempUserMsg] })
+      setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: [...messages, tempUserMsg], assistantMessageId: responseMessageId })
       // 에러 시에도 스트리밍 상태 정리
       if (streamingFlushRef.current) {
         clearInterval(streamingFlushRef.current)

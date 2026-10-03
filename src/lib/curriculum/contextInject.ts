@@ -578,6 +578,36 @@ function searchMergedStandards(keywords: string[], gradeGroup: string, topK: num
 /** 여러 학년군 컨텍스트 총 길이 상한 — 학년군 수만큼 늘어나므로 프롬프트 폭주를 막는다. */
 const MULTI_BAND_CONTEXT_LIMIT = 24_000
 
+/** 시트에 없는 성취기준 대체 요청을 위한 최근 교사 발언 기반 후보. 초등 학년군마다 최대 5개. */
+export function buildReplacementStandardsContext(
+  messages: Array<{ role: string; content: string }>,
+  gradeGroup: string,
+  teamGradeBands?: readonly (string | null | undefined)[] | null,
+): string {
+  const recent = messages
+    .filter(message => message.role === 'user' && !message.content.startsWith('[시스템 리마인더]'))
+    .slice(-3)
+    .map(message => ({ ...message, content: message.content.replace(/^\[[^\]]+\]:\s*/, '') }))
+  if (!recent.some(message => /바꿔|바꾸|대신|고쳐|수정|교체|추가|넣어/.test(message.content))) return ''
+  const bands = normalizeTeamGradeBands(teamGradeBands)
+  const allowedBands = bands.length ? bands : normalizeTeamGradeBands([gradeGroup])
+  if (!allowedBands.length) return ''
+  const keywords = extractKeywords(recent)
+  if (!keywords.length) return ''
+  const blocks = allowedBands.map(band => {
+    const code = toGradeGroupCode(band)
+    const found = new Map<string, CurriculumStandard>()
+    for (const standard of searchMergedStandards(keywords, code, 10)) {
+      if (standard.grade_band !== code) continue
+      const key = standard.code.replace(/^\[|\]$/g, '')
+      if (!found.has(key)) found.set(key, standard)
+    }
+    const candidates = [...found.values()].slice(0, 5)
+    return `### ${band}\n${candidates.map(standard => `${standard.code} — ${standard.text}`).join('\n') || '(대체 후보 없음 — 확인 필요)'}`
+  })
+  return `\n\n## 대체 후보 성취기준 (최근 사용자 요청 기반, 학년군별 최대 5개)\n${blocks.join('\n\n')}\n▶ 대체 요청 시 해당 학년군의 이 후보에서만 고르고, 후보가 없으면 확인 필요로 안내한다. 성취기준 코드·원문을 지어내지 않는다.`
+}
+
 /**
  * 여러 학년군 팀(1·3·5학년 담임 등)의 교육과정 컨텍스트.
  *
@@ -660,6 +690,9 @@ export function buildCurriculumContext(
 ): string {
   // 활성화된 활동인지 확인
   if (!ONTOLOGY_ENABLED_ACTIVITIES.includes(activityCode)) return ''
+  const replacementContext = activityCode === 'A-2-1'
+    ? buildReplacementStandardsContext(messages, gradeGroup, teamGradeBands)
+    : ''
 
   // 여러 학년군 팀: 학년군마다 컨텍스트를 따로 만든다(한 학년군 팀은 아래 기존 경로 그대로).
   const teamBands = normalizeTeamGradeBands(teamGradeBands)
@@ -671,7 +704,7 @@ export function buildCurriculumContext(
       confirmedArtifacts,
       graphSavedData,
       targetSubjects,
-    )
+    ) + replacementContext
   }
   if (teamBands.length === 1) gradeGroup = toGradeGroupCode(teamBands[0])
 
@@ -687,20 +720,21 @@ export function buildCurriculumContext(
             targetSubjects,
           )
         : ''
-      return '\n\n---\n' + ctx + contentSystemContext
+      return '\n\n---\n' + ctx + contentSystemContext + replacementContext
     }
   }
 
   // 키워드 추출
   const keywords = extractKeywords(messages, confirmedArtifacts)
-  if (keywords.length === 0) return ''
+  if (keywords.length === 0) return replacementContext
 
   // 성취기준 검색: KG + JSON 교육과정 병합 (KG에 없는 성취기준을 JSON에서 보완)
   const standards = searchMergedStandards(keywords, gradeGroup, activityCode === 'A-2-1' ? 20 : 12)
-  if (standards.length === 0) return ''
+  if (standards.length === 0) return replacementContext
 
   // 활동별 컨텍스트 블록 생성
   return '\n\n---\n'
     + buildActivityContext(activityCode, standards, keywords)
     + buildContentSystemContext(activityCode, keywords, gradeGroup, targetSubjects)
+    + replacementContext
 }
