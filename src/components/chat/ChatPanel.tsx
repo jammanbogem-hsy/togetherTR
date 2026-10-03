@@ -1219,6 +1219,11 @@ function ChatPanelContent() {
   const [flowNotice, setFlowNotice] = useState<string | null>(null)
   useEffect(() => { setIsIdle(false) }, [discussionMode])
   const [chatError, setChatError] = useState<string | null>(null)
+  const [failedChatRequest, setFailedChatRequest] = useState<{
+    activityCode: ActivityCode
+    userId?: string
+    messages: Array<{ role: string; content: string; displayName?: string }>
+  } | null>(null)
   const [showDiscussionConfirm, setShowDiscussionConfirm] = useState(false)
   const [showStandardsBrowser, setShowStandardsBrowser] = useState(false)
   const [showCoreIdeaBrowser, setShowCoreIdeaBrowser] = useState(false)
@@ -1436,7 +1441,7 @@ function ChatPanelContent() {
     latestText?: string,
     origin: 'ai' | 'manual' = 'ai',
     confirmAfter = false,
-  ): Promise<void> {
+  ): Promise<boolean> {
     // AI가 요약 플레이스홀더를 넣은 경우 최근 채팅에서 실제 콘텐츠를 추출.
     // A안/B안 선택지·절차 확정 문구는 추출 전에 제거 — 모든 build*Structured/enrich가 같은 ctx를 공유하므로 단일 차단점.
     const contextMsgs = sanitizeChatForExtraction(
@@ -1448,7 +1453,7 @@ function ChatPanelContent() {
     // 선택지·절차·상태 라인을 여기서 제거해야 한다 (전 경로 공통 단일 관문).
     const cleanedSections = sanitizeArtifactSections(rawSections)
     let sections = enrichArtifactSections(cleanedSections, contextMsgs)
-    if (Object.keys(sections).length === 0) return
+    if (Object.keys(sections).length === 0) return false
 
     // T-1-1: 구조화된 산출물로 변환 — AI 자유 형식 대신 스키마가 구조를 강제
     const targetAct = actCode ?? currentActivity
@@ -1512,7 +1517,8 @@ function ChatPanelContent() {
       if (confirmAfter && (existing?.status ?? firestoreArtifact?.status) !== 'confirmed') {
         await applyArtifactConfirm(targetActivity)
       }
-      return
+      return targetActivity === currentActivity
+        && (existing?.status ?? firestoreArtifact?.status) === 'confirmed'
     }
     // AI가 실제 변경을 입력한 경우에만 안내하고, manual 저장은 제외한다.
     if (origin === 'ai') flashCoeditHint(targetAct)
@@ -1522,7 +1528,7 @@ function ChatPanelContent() {
         proj.id, targetActivity, sections,
         userProfile?.uid ?? '', userProfile?.displayName ?? '팀원',
       )
-      return
+      return false
     }
     const canConfirm = !confirmAfter
       || !targetMeta.requiredSections?.length
@@ -1588,6 +1594,7 @@ function ChatPanelContent() {
         }
       } catch { /* 감지 실패는 무시 */ }
     }
+    return false
   }
 
   // ARTIFACT_CONFIRM 신호를 처리 — 현재 또는 지정 활동 산출물을 confirmed 상태로 저장
@@ -1629,26 +1636,29 @@ function ChatPanelContent() {
     updates: Array<{ activityCode?: string; sections: Record<string, string> }>,
     confirmCodes: string[],
     latestText: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    let onlyConfirmedNoops = updates.length > 0
+    const commitUpdate = async (activityCode: string, sections: Record<string, string>, confirm = false) => {
+      const unchanged = await applyArtifactUpdates(sections, activityCode as ActivityCode, latestText, 'ai', confirm)
+      onlyConfirmedNoops = onlyConfirmedNoops && unchanged
+    }
     if (!isHost && project.mode === 'collaborative') {
       for (const update of updates) {
-        await applyArtifactUpdates(
-          update.sections,
-          update.activityCode as ActivityCode | undefined,
-          latestText,
-        )
+        await commitUpdate(update.activityCode || currentActivity, update.sections)
       }
-      return
+      return onlyConfirmedNoops
     }
     await applyArtifactSignalBatch({
       currentActivity,
       updates,
       confirmCodes,
-      commitUpdate: (activityCode, sections, confirm) =>
-        applyArtifactUpdates(sections, activityCode as ActivityCode, latestText, 'ai', confirm),
-      confirmExisting: activityCode =>
-        applyArtifactConfirm(activityCode as ActivityCode),
+      commitUpdate,
+      confirmExisting: async activityCode => {
+        onlyConfirmedNoops = false
+        await applyArtifactConfirm(activityCode as ActivityCode)
+      },
     })
+    return onlyConfirmedNoops
   }
 
   const scrollToLatestAIResponse = useCallback(() => {
@@ -2040,6 +2050,15 @@ function ChatPanelContent() {
     : undefined
 
   // 메시지 배열 → API 전송 형식 (user 메시지에 발신자 이름 주입)
+  function confirmedArtifactReminder() {
+    const local = currentArtifact?.activityCode === currentActivity ? currentArtifact : null
+    const status = local?.status ?? proj.artifacts?.[currentActivity]?.status
+    const nextCode = getNextActivityCode(currentActivity)
+    return status === 'confirmed' && nextCode
+      ? `\n현재 활동 산출물은 이미 확정됨. 사용자가 이동 의사만 밝히면 재저장하지 말고 [ACTIVITY_ADVANCE: ${nextCode}]만 보낸다.`
+      : ''
+  }
+
   function buildApiMessages(msgs: Array<{ role: string; content: string; displayName?: string }>) {
     const mapped = msgs.map(m => ({
       role: m.role,
@@ -2050,7 +2069,7 @@ function ChatPanelContent() {
     const actMeta = ACTIVITY_META[currentActivity]
     const reminder = {
       role: 'user' as const,
-      content: `[시스템 리마인더] 현재 활동: ${displayActivityCode(currentActivity)} (${actMeta?.label}), 내부 코드: ${currentActivity}. 사용자에게 보이는 머리말은 "${displayActivityCode(currentActivity)}: ${actMeta?.label}"로 씁니다. 이 활동에서의 대화를 수행 중이며, [ACTIVITY_ADVANCE] 신호 없이는 아직 이동하지 않은 상태입니다.`,
+      content: `[시스템 리마인더] 현재 활동: ${displayActivityCode(currentActivity)} (${actMeta?.label}), 내부 코드: ${currentActivity}. 사용자에게 보이는 머리말은 "${displayActivityCode(currentActivity)}: ${actMeta?.label}"로 씁니다. 이 활동에서의 대화를 수행 중이며, [ACTIVITY_ADVANCE] 신호 없이는 아직 이동하지 않은 상태입니다.${confirmedArtifactReminder()}`,
     }
     // 마지막 user 메시지 바로 앞에 삽입
     const lastUserIdx = mapped.map(m => m.role).lastIndexOf('user')
@@ -2200,6 +2219,7 @@ function ChatPanelContent() {
         if (fullText.trim().length > 0) {
           // 부분 응답이 있으면 보존 — assistant 메시지로 커밋 + 꼬리표
           await onDone(fullText + '\n\n_[응답이 중간에 끊겼습니다 — 재시도 버튼으로 이어서 받아주세요]_')
+          setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: msgs })
           return
         }
         throw new Error('AI 응답이 60초 이상 멈춰 연결을 종료했습니다. 재시도 버튼을 눌러주세요.')
@@ -2410,6 +2430,12 @@ function ChatPanelContent() {
     setPendingAdvance(nextActivity)
   }
 
+  function offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops: boolean, userMessage: string) {
+    if (isHost && onlyConfirmedNoops && /이동|넘어가|다음\s*활동|다음\s*단계|다음으로/.test(userMessage)) {
+      handlePromptNextCommand()
+    }
+  }
+
   // ─── 활동 시작 환영 메시지 (API 호출 없음, 정적) ────────
   function showWelcomeMessage(welcomeText: string) {
     // 고정 ID로 저장: Firestore 콜백이 재호출돼도 같은 ID로 dedup 됨
@@ -2441,9 +2467,14 @@ function ChatPanelContent() {
     if (!project?.started) return
     if (!messagesLoaded) return
     // 개인 설계는 축약 환영 메시지 우선, 없으면 팀판으로 폴백 (협력 모드는 기존 그대로)
-    const welcome = (project?.mode === 'solo' ? SOLO_ACTIVITY_WELCOME[currentActivity] : undefined)
+    let welcome = (project?.mode === 'solo' ? SOLO_ACTIVITY_WELCOME[currentActivity] : undefined)
       ?? ACTIVITY_WELCOME[currentActivity]
     if (!welcome) return
+    if (currentActivity === 'A-1-2' && !Object.keys(project.artifacts?.['A-1-1']?.content ?? {}).length) {
+      welcome = welcome
+        .replace('팀이 정한 기준에 따라 검토', '팀 비전과 학생 삶과의 연결을 기준으로 검토')
+        .replace('지금까지 정한 기준으로 보면', '팀 비전과 학생 삶과의 연결을 기준으로 보면')
+    }
     // 이미 AI 메시지가 있으면 전송 안 함
     const hasAIMessage = messages.some(m => m.role === 'assistant')
     if (hasAIMessage) return
@@ -3635,12 +3666,20 @@ ${discussionSummary}
   )
 
   // ─── 직접 메시지 전송 (HelpCard 등 버튼에서 호출) ──────
+  function getRetryRequest() {
+    return !isLoading && !isAnalyzing
+      && failedChatRequest?.activityCode === currentActivity
+      && failedChatRequest.userId === userProfile?.uid
+      ? failedChatRequest : null
+  }
+
   async function sendMessageDirectly(text: string, retryExistingMessage = false) {
     if (!text.trim() || isLoading || isAnalyzing || !project) return
     setIsIdle(false)
     setChatError(null)
+    setFailedChatRequest(null)
     // 재시도는 기존 대화의 발신자를 유지하고 AI 응답만 다시 요청한다.
-    let requestMessages = messages
+    let requestMessages = retryExistingMessage ? (getRetryRequest()?.messages ?? messages) : messages
     if (!retryExistingMessage) {
       const senderDisplayName = userProfile?.displayName
       const directMessageId = generateMessageId(proj.id, currentActivity)
@@ -3729,7 +3768,7 @@ ${discussionSummary}
             .catch(console.error)
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
-          await processArtifactSignals(upd, cCodes, finalText)
+          const onlyConfirmedNoops = await processArtifactSignals(upd, cCodes, finalText)
 
           // 구조화 산출물 자동 저장 fallback
 
@@ -3739,11 +3778,13 @@ ${discussionSummary}
           // 저장은 (a) A안/B안 명시 선택 또는 (b) ACTION_CARD primary 클릭 후 ARTIFACT_UPDATE 신호 경로만 허용.
           if (advance?.nextActivity) setPendingAdvance(advance.nextActivity)
           else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
+          else offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops, text)
         }
       )
     } catch (err) {
       console.error('Chat error:', err)
       setChatError('AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.')
+      setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: requestMessages })
       if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
       clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? '').catch(() => {})
     } finally { setIsLoading(false) }
@@ -3801,6 +3842,7 @@ ${discussionSummary}
     setInput('')
     setIsIdle(false)  // 사용자 입력 시 idle 해제
     setChatError(null)  // 새 메시지 전송 시 이전 에러 초기화
+    setFailedChatRequest(null)
 
     // memberInfo 캐시 대신 현재 프로필 이름을 직접 사용 (이름 변경 시 불일치 방지)
     const senderDisplayName = userProfile?.displayName
@@ -3931,7 +3973,7 @@ ${discussionSummary}
             .catch((err) => { console.error(err); setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.') })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
-          await processArtifactSignals(updates, confirmCodes2, displayText)
+          const onlyConfirmedNoops = await processArtifactSignals(updates, confirmCodes2, displayText)
 
           // 구조화 산출물 자동 저장 fallback (A안/B안 선택 후 AI 응답)
 
@@ -3947,11 +3989,13 @@ ${discussionSummary}
             // → 사용자가 산출물을 검토·확정한 후 직접 "다음 단계로" 버튼을 눌러야 이동
             setPendingAdvance(advance.nextActivity)
           } else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
+          else offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops, userMessage)
         }
       )
     } catch (err) {
       console.error('Chat error:', err)
       setChatError('AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.')
+      setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: [...messages, tempUserMsg] })
       // 에러 시에도 스트리밍 상태 정리
       if (streamingFlushRef.current) {
         clearInterval(streamingFlushRef.current)
@@ -4120,11 +4164,11 @@ ${discussionSummary}
               </span>
             )}
           </MD3Button>
-          {/* 끊긴 대화 재시도 버튼: 마지막 메시지가 user이고 로딩 중이 아닐 때 */}
+          {/* 이 클라이언트가 보낸 AI 요청이 실패한 경우에만 재시도 */}
           {(() => {
-            const lastMsg = messages[messages.length - 1]
-            const canRetry = !isLoading && lastMsg && lastMsg.role === 'user'
-            if (!canRetry) return null
+            const retryRequest = getRetryRequest()
+            const lastMsg = retryRequest?.messages.at(-1)
+            if (!lastMsg) return null
             const retryContent = lastMsg.content
             return (
               <MD3Button

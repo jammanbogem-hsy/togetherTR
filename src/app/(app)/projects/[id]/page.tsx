@@ -37,6 +37,11 @@ import { Avatar } from '@/components/ui/Avatar'
 import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 
+function hasMemberHost(project: Project): boolean {
+  const members = project.memberUids ?? Object.keys(project.memberInfo ?? {})
+  return [project.hostUid, project.createdBy].some(uid => !!uid && members.includes(uid))
+}
+
 // ─── 대기실 ──────────────────────────────────────────
 function WaitingRoom({
   project,
@@ -198,13 +203,13 @@ function WaitingRoom({
                 style={{ '--cc': 'rgba(0,0,0,0.04)', '--cx1': '50%', '--cy1': '0%', '--cx2': '50%', '--cy2': '100%', '--card-speed': '0.5s', border: '2px solid #DADCE0' } as React.CSSProperties}>
                 방장이 시작 버튼을 누를 때까지 기다려주세요
               </div>
-              <button
+              {!hasMemberHost(project) && <button
                 onClick={onBecomeHost}
                 className="morph-btn w-full py-3 border-2 border-[#FFCC80] text-[#E65100] text-[13px] font-bold hover:bg-[#FFF3E0] transition-all flex items-center justify-center gap-1.5"
               >
                 <Crown size={15} weight="fill" className="text-[#F9AB00]" />
                 방장 권한 받기
-              </button>
+              </button>}
             </div>
           )}
         </div>
@@ -769,6 +774,7 @@ export default function ProjectPage() {
     : project.hostUid === uid || project.createdBy === uid
 
   async function handleClaimHost() {
+    if (!project || hasMemberHost(project)) return
     if (!window.confirm('방장 권한을 가져오시겠습니까?\n기존 방장은 방장 권한을 잃게 됩니다.')) return
     setClaimingHost(true)
     await transferHost(projectId, uid).catch(console.error)
@@ -850,7 +856,7 @@ export default function ProjectPage() {
                   <Crown size={18} weight="fill" />
                   방장
                 </span>
-              ) : !project.demoRun ? (
+              ) : !project.demoRun && !hasMemberHost(project) ? (
                 <MD3Button
                   onClick={handleClaimHost}
                   disabled={claimingHost}
@@ -861,7 +867,7 @@ export default function ProjectPage() {
                 >
                   {claimingHost ? '처리 중...' : '방장 되기'}
                 </MD3Button>
-              ) : <span className="inline-flex h-10 items-center gap-2 rounded-full bg-[#D3E3FD] px-4 text-[13px] font-medium text-[#0842A0]"><Sparkle size={18} weight="fill" />AI 팀</span>}
+              ) : project.demoRun ? <span className="inline-flex h-10 items-center gap-2 rounded-full bg-[#D3E3FD] px-4 text-[13px] font-medium text-[#0842A0]"><Sparkle size={18} weight="fill" />AI 팀</span> : null}
               <div className="ml-auto flex items-center gap-1">
                 {/* 팀원 수·목록 — 버튼만 인라인, 팝오버는 createPortal로 body에 렌더(좌측 overflow-hidden 탈출) */}
                 <MD3Button
