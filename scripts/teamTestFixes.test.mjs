@@ -8,24 +8,24 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
-import { buildSystemPrompt } from '../src/lib/prompts/system.ts'
+import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, buildSystemPrompt } from '../src/lib/prompts/system.ts'
 import { buildOutlinePrompts, buildDetailPrompts, parseOutline } from '../src/lib/problem-situation/generation.ts'
 import { parsePsReady, cleanPsReady } from '../src/lib/problem-situation/readySignal.ts'
 import { ACTIVITY_META, displayActivityCode } from '../src/types/index.ts'
-import { artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
+import { applyArtifactSignalBatch, artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
 import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction } from '../src/lib/artifacts/schemas.ts'
 
 const chat = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
 const tree = ts.createSourceFile('ChatPanel.tsx', chat, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-function loadChatFunction(name, bindings) {
+function loadChatFunction(name, bindings, sourceTree = tree) {
   let found
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node
     ts.forEachChild(node, visit)
   }
-  visit(tree)
+  visit(sourceTree)
   assert.ok(found, name)
-  const source = ts.transpileModule(`exports.fn = ${found.getText(tree)}`, {
+  const source = ts.transpileModule(`exports.fn = ${found.getText(sourceTree)}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText
   const context = { exports: {}, ...bindings }
@@ -184,6 +184,7 @@ test('B: 다른 팀원이 재시도해도 사용자 메시지는 추가·저장�
     messages: [original], project: { id: 'test' }, proj: { id: 'test' }, currentActivity: 'A-1-2',
     userProfile: { uid: 'member', displayName: '잠만보잠만보' }, isLoading: false, isAnalyzing: false,
     setIsIdle() {}, setChatError() {}, setIsLoading() {}, clearStreamingText() {}, appendStreamingText() {},
+    setFailedChatRequest() {}, getRetryRequest: () => null,
     streamingAccumRef: { current: '' }, streamingFlushRef: { current: null },
     setStreamingState: async () => {}, clearStreamingState: async () => {},
     setInterval: () => 1, clearInterval() {},
@@ -199,6 +200,7 @@ test('B: 다른 팀원이 재시도해도 사용자 메시지는 추가·저장�
   assert.equal(requests[0][0].displayName, '홍성용')
   const buildApiMessages = loadChatFunction('buildApiMessages', {
     currentActivity: 'T-2-1', ACTIVITY_META, displayActivityCode,
+    confirmedArtifactReminder: () => '',
   })
   const apiMessages = buildApiMessages(requests[0])
   assert.equal(apiMessages.at(-1).content, '[홍성용]: 다음으로 가요')
@@ -207,6 +209,130 @@ test('B: 다른 팀원이 재시도해도 사용자 메시지는 추가·저장�
   assert.equal(additions.length, 1)
   assert.equal(saves.length, 1)
   assert.equal(requests[1][1].displayName, '잠만보잠만보')
+})
+
+test('5b: 확정 상태에서만 매 요청 리마인더에 실제 다음 활동 이동 신호를 넣는다', () => {
+  for (const status of ['confirmed', 'in_review', 'ai_draft', undefined]) {
+    const reminder = loadChatFunction('confirmedArtifactReminder', {
+      currentActivity: 'A-2-1', currentArtifact: null,
+      proj: { artifacts: { 'A-2-1': { status } } }, getNextActivityCode: () => 'A-2-2',
+    })
+    const build = loadChatFunction('buildApiMessages', {
+      currentActivity: 'A-2-1', ACTIVITY_META, displayActivityCode, confirmedArtifactReminder: reminder,
+    })
+    const text = build([{ role: 'user', content: '다음 활동으로 가요' }])[0].content
+    if (status === 'confirmed') {
+      assert.match(text, /현재 활동 산출물은 이미 확정됨/)
+      assert.match(text, /재저장하지 말고 \[ACTIVITY_ADVANCE: A-2-2\]만 보낸다/)
+    } else assert.doesNotMatch(text, /이미 확정됨|\[ACTIVITY_ADVANCE:/)
+  }
+})
+
+test('5b: 확정 산출물의 동일 내용 신호만 있고 이동 의도가 있을 때 기존 이동 카드 경로를 쓴다', async () => {
+  for (const status of ['confirmed', 'in_review']) {
+    const h = artifactHarness(status)
+    const process = loadChatFunction('processArtifactSignals', {
+      currentActivity: 'T-1-2', isHost: true, project: { mode: 'collaborative' },
+      applyArtifactUpdates: h.apply, applyArtifactSignalBatch, applyArtifactConfirm: async () => {},
+    })
+    let offered = 0
+    const offer = loadChatFunction('offerAdvanceAfterConfirmedNoop', {
+      isHost: true, handlePromptNextCommand: () => offered++,
+    })
+    const updates = [{ sections: { '설계 방향': '- **자료 읽기**: 근거를 살핀다' } }]
+    const unchanged = await process(updates, [], '')
+    offer(unchanged, '다음 활동으로 가요')
+    assert.equal(offered, status === 'confirmed' ? 1 : 0)
+    offer(unchanged, '고맙습니다')
+    assert.equal(offered, status === 'confirmed' ? 1 : 0)
+    assert.equal(await process([], [], ''), false)
+    assert.equal(await process([{ sections: { '설계 방향': '- **자료 읽기**: 출처도 확인한다' } }], [], ''), false)
+  }
+  let offered = false
+  const memberOffer = loadChatFunction('offerAdvanceAfterConfirmedNoop', {
+    isHost: false, handlePromptNextCommand: () => { offered = true },
+  })
+  memberOffer(true, '넘어가 주세요')
+  assert.equal(offered, false)
+})
+
+test('2: 실패 요청은 해당 클라이언트·발신자·활동에서만 재시도할 수 있다', () => {
+  const failed = { activityCode: 'A-2-1', userId: 'member', messages: [{ role: 'user', content: '분석해 주세요' }] }
+  const defaults = { isLoading: false, isAnalyzing: false, currentActivity: 'A-2-1', userProfile: { uid: 'member' }, failedChatRequest: failed }
+  for (const [overrides, visible] of [
+    [{}, true], [{ failedChatRequest: null }, false],
+    [{ userProfile: { uid: 'host' } }, false], [{ currentActivity: 'A-2-2' }, false],
+    [{ isLoading: true }, false], [{ isAnalyzing: true }, false],
+  ]) {
+    const request = loadChatFunction('getRetryRequest', { ...defaults, ...overrides })()
+    assert.equal(!!request, visible)
+  }
+})
+
+test('2: 실패 후 다른 팀원 메시지가 도착해도 재시도는 원래 요청만 재전송한다', async () => {
+  const original = { role: 'user', content: '분석해 주세요', displayName: '잠만보잠만보' }
+  const requests = [], failures = [], additions = [], saves = []
+  const bindings = {
+    messages: [original, { role: 'user', content: '다른 의견', displayName: '홍성용' }],
+    project: { id: 'test' }, proj: { id: 'test' }, currentActivity: 'A-2-1',
+    userProfile: { uid: 'member' }, isLoading: false, isAnalyzing: false,
+    setIsIdle() {}, setChatError() {}, setIsLoading() {}, clearStreamingText() {}, appendStreamingText() {},
+    getRetryRequest: () => ({ messages: [original] }), setFailedChatRequest: value => failures.push(value),
+    streamingAccumRef: { current: '' }, streamingFlushRef: { current: null },
+    setStreamingState: async () => {}, clearStreamingState: async () => {},
+    setInterval: () => 1, clearInterval() {}, console: { error() {} },
+    addMessage: value => additions.push(value), saveMessage: async value => saves.push(value),
+    streamFromAPI: async request => { requests.push(request); throw new Error('failed') },
+  }
+  await loadChatFunction('sendMessageDirectly', bindings)(original.content, true)
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), [original])
+  assert.equal(additions.length + saves.length, 0)
+  assert.equal(failures.at(-1).userId, 'member')
+  assert.equal(failures.at(-1).messages.length, 1)
+  await loadChatFunction('sendMessageDirectly', { ...bindings, streamFromAPI: async () => {} })(original.content, true)
+  assert.equal(failures.at(-1), null)
+})
+
+test('13: 방장 또는 생성자가 멤버에 있으면 권한 넘겨받기를 숨기고 부재 시에는 유지한다', () => {
+  const page = fs.readFileSync(new URL('../src/app/(app)/projects/[id]/page.tsx', import.meta.url), 'utf8')
+  const pageTree = ts.createSourceFile('page.tsx', page, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const hasHost = loadChatFunction('hasMemberHost', {}, pageTree)
+  assert.equal(hasHost({ createdBy: 'host', memberUids: ['host', 'member'] }), true)
+  assert.equal(hasHost({ hostUid: 'new-host', createdBy: 'former-host', memberUids: ['new-host', 'member'] }), true)
+  assert.equal(hasHost({ hostUid: 'gone', createdBy: 'host', memberUids: ['host', 'member'] }), true)
+  assert.equal(hasHost({ createdBy: 'host', memberInfo: { host: {}, member: {} } }), true)
+  assert.equal(hasHost({ hostUid: 'gone', createdBy: 'gone', memberUids: ['member'] }), false)
+  assert.equal(hasHost({ memberUids: ['member'] }), false)
+})
+
+test('7: 주제 선정 기준 산출물이 없을 때만 A-2 환영 문구를 자연스럽게 바꾼다', () => {
+  let welcomeEffect
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === 'useEffect'
+      && node.arguments[0]?.getText(tree).includes('showWelcomeMessage(welcome)')) welcomeEffect = node.arguments[0]
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  assert.ok(welcomeEffect)
+  const source = ts.transpileModule(`exports.fn = ${welcomeEffect.getText(tree)}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText
+  for (const hasCriteria of [false, true]) {
+    const project = { started: true, hostUid: 'host', mode: 'collaborative', artifacts: hasCriteria ? { 'A-1-1': { content: { '주제 선정 기준': '실생활 연결' } } } : {} }
+    let shown
+    const context = {
+      exports: {}, project, proj: project, currentActivity: 'A-1-2', messagesLoaded: true, messages: [],
+      userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME,
+      showWelcomeMessage: text => { shown = text },
+    }
+    vm.runInNewContext(source, context)
+    context.exports.fn()
+    if (hasCriteria) assert.equal(shown, ACTIVITY_WELCOME['A-1-2'])
+    else {
+      assert.match(shown, /팀 비전과 학생 삶과의 연결을 기준으로 보면/)
+      assert.doesNotMatch(shown, /지금까지 정한 기준|팀이 정한 기준/)
+    }
+  }
 })
 
 function artifactHarness(status = 'confirmed', host = true, withLocal = true) {
@@ -262,4 +388,52 @@ test('D: 단일 물결표는 글자 그대로, 이중 물결표만 취소선으�
   assert.match(html, /1~3개, 3~5개, ~해야 한다/)
   assert.match(html, /<del>지울 말<\/del>/)
   assert.equal((html.match(/<del>/g) ?? []).length, 1)
+})
+
+// ─── TASK-013: #18 · #21 · #12 ─────────────────────────────
+const { canAutoFillContentCells } = await import('../src/lib/curriculum/sheetContentAutofill.ts')
+const { extractFallbackStandards } = await import('../src/lib/problem-situation/standardsFallback.ts')
+const { resolveLayoutState, NARROW_DEFAULT_STATE } = await import('../src/components/layout/useLayoutToggle.ts')
+
+test('18: 성취기준이 빈 행은 내용 칸을 자동 보강하지 않는다', () => {
+  const coreIdea = '지구의 기후시스템은 태양 복사와 지구 복사, 인간 활동 등의 영향을 받는다.'
+  assert.equal(canAutoFillContentCells({ coreIdea, standard: '' }), false)
+  assert.equal(canAutoFillContentCells({ coreIdea, standard: '   ' }), false)
+  assert.equal(canAutoFillContentCells({ coreIdea: '', standard: '[4과16-01] 기후변화 현상의 예를 알고' }), false)
+  assert.equal(canAutoFillContentCells({ coreIdea, standard: '[4과16-01] 기후변화 현상의 예를 알고' }), true)
+  const sheet = fs.readFileSync(new URL('../src/components/chat/CurriculumSheetModal.tsx', import.meta.url), 'utf8')
+  assert.match(sheet, /if \(!canAutoFillContentCells\(row\)\) return row/)
+})
+
+test('21: 지식 그래프가 없으면 A-2-1 분석표·분석시트에서 학년군별 성취기준 목록을 만든다', () => {
+  const analysisRows = [
+    { subject: '1-2학년군 국어', standard: '필자는 … 글을 쓴다. [2국03-02] 쓰기에 흥미를 가지며 자신의 생각이나 느낌을 문장으로 표현한다.' },
+    { subject: '3-4학년군 과학', standard: '[4과16-01] 기후변화 현상의 예를 알고 토의할 수 있다. / [4과16-03] 기후변화 대응 방법을 조사하고 실천할 수 있다.' },
+    { subject: '5-6학년군 사회', standard: '[6사02-01] 우리나라의 계절별 기후 특징을 자료에서 탐구한다.' },
+  ]
+  const sheetRows = [{ gradeBand: '5-6학년군', subject: '과학', standard: '[6과06-01] 기상 요소를 조사한다.' }, { subject: '사회', standard: '[6사02-01] 중복' }]
+  const list = extractFallbackStandards({ analysisRows, sheetRows })
+  assert.deepEqual(list.map(item => item.code), ['2국03-02', '4과16-01', '4과16-03', '6과06-01', '6사02-01'])
+  assert.deepEqual(list.map(item => item.gradeBand), ['1-2학년군', '3-4학년군', '3-4학년군', '5-6학년군', '5-6학년군'])
+  assert.equal(list.find(item => item.code === '4과16-01').subject, '과학')
+  assert.match(list.find(item => item.code === '4과16-01').text, /^기후변화 현상의 예를 알고/)
+  assert.equal(list.find(item => item.code === '6사02-01').text, '우리나라의 계절별 기후 특징을 자료에서 탐구한다.')
+  // 행 데이터가 없으면 산출물 텍스트에서 코드만 읽고, 아무것도 없으면 빈 목록(기존 안내 유지)
+  assert.deepEqual(extractFallbackStandards({ analysisText: 'rows: [object Object]\ncommonElements: [4사08-02] 지역 문제' }).map(item => item.code), ['4사08-02'])
+  assert.deepEqual(extractFallbackStandards({ analysisRows: '[object Object]', sheetRows: null }), [])
+  const designer = fs.readFileSync(new URL('../src/components/problem-situation/ProblemSituationDesigner.tsx', import.meta.url), 'utf8')
+  assert.match(designer, /fallbackStandards=\{fallbackStandards\}/)
+  assert.match(designer, /setStandardSources\(\{ analysisRows: d\?\.artifacts\?\.\['A-2-1'\]\?\.content\?\.rows, sheetRows: d\?\.curriculumSheet \}\)/)
+})
+
+test('12: 좁은 화면은 저장값이 없으면 사이드바·산출물을 접고, 넓은 화면·사용자 저장값은 그대로 둔다', () => {
+  assert.deepEqual(resolveLayoutState(null, true), NARROW_DEFAULT_STATE)
+  assert.deepEqual(NARROW_DEFAULT_STATE, { stage: true, sidebar: false, artifact: false })
+  assert.deepEqual(resolveLayoutState(null, false), { stage: true, sidebar: true, artifact: true })
+  assert.deepEqual(resolveLayoutState({ sidebar: true }, true), { stage: true, sidebar: true, artifact: false })
+  assert.deepEqual(resolveLayoutState({ stage: false, sidebar: false, artifact: true }, false), { stage: false, sidebar: false, artifact: true })
+  const hook = fs.readFileSync(new URL('../src/components/layout/useLayoutToggle.ts', import.meta.url), 'utf8')
+  // 좁은 화면 선택은 별도 키에 저장해 넓은 화면 저장값을 덮어쓰지 않는다.
+  assert.match(hook, /`layoutPanels:\$\{projectId\}:narrow`/)
+  assert.match(hook, /writeStorage\(projectId, mode, /)
 })

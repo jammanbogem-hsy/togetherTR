@@ -37,6 +37,7 @@ import type { SheetGradeMode } from '@/lib/curriculum/sheetGradeBands'
 import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 import { canFillRowDescription, requestRowDescription } from '@/lib/curriculum/rowDescriptions'
+import { canAutoFillContentCells } from '@/lib/curriculum/sheetContentAutofill'
 import { needsRowBridge, rowBridgeSource, canApplyRowBridge, rowBridgeSelection, filterContentByStandardCourse } from '@/lib/curriculum/rowBridge'
 import { AchievementLevelDisclosure } from '@/components/curriculum/AchievementLevelDisclosure'
 
@@ -809,6 +810,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   }, [onPresenceUpdate, currentUid, currentUserName, currentUserColor])
 
   // 그래프 등 외부 경로에서 온 행의 빈 지식·이해/과정·기능을 내용체계 원문으로 자동 보강 — 빈 셀만, 사용자가 편집 중인 셀 제외.
+  // 성취기준이 빈 행은 영역을 좁힐 수 없어 보강하지 않는다(엉뚱한 영역 항목 방지, #18).
   // 채워지면 재실행돼도 no-op이라 루프가 종료된다.
   useEffect(() => {
     if (!open || loading || contentItems.length === 0) return
@@ -816,7 +818,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     const changedCells: Array<{ rowId: string; field: 'knowledge' | 'processFunction' | 'valueAttitude'; value: string }> = []
     const changedRowIds = new Set<string>()
     const nextRows = rows.map(row => {
-      if (!(row.coreIdea ?? '').trim()) return row
+      if (!canAutoFillContentCells(row)) return row
       let next = row
       for (const field of ['knowledge', 'processFunction', 'valueAttitude'] as const) {
         if ((row[field] ?? '').trim()) continue

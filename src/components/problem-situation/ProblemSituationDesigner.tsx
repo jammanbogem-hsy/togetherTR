@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { parsePsReady, cleanPsReady } from '@/lib/problem-situation/readySignal'
+import { extractFallbackStandards, type FallbackStandard } from '@/lib/problem-situation/standardsFallback'
 import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass, FileTextIcon as FileText, SidebarSimpleIcon as SidebarSimple, CaretRightIcon as CaretRight, CircleNotchIcon as CircleNotch, PencilRulerIcon as PencilRuler } from '@phosphor-icons/react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -225,10 +226,12 @@ function Block({
 }
 
 // ─── 노드 맵 컴포넌트 ─────────────────────────────────
-function NodeMap({ centerNode, selectedStandards }: {
+function NodeMap({ centerNode, selectedStandards, fallbackStandards = [] }: {
   centerNode: GraphSavedData['centerNode']; selectedStandards: GraphSavedData['selectedStandards']
+  fallbackStandards?: FallbackStandard[]
 }) {
   const hasData = centerNode !== null || selectedStandards.length > 0
+  if (!hasData && fallbackStandards.length > 0) return <FallbackStandardList standards={fallbackStandards} />
   if (!hasData) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-[#9AA0A6] text-xs text-center px-4 gap-2">
@@ -269,6 +272,37 @@ function NodeMap({ centerNode, selectedStandards }: {
               <div key={n.id} className="bg-white rounded-md px-2 py-1.5 border border-[#E8EAED]">
                 <div className="text-[10px] font-semibold text-[#444]">[{shortStdId(n.id)}]</div>
                 <div className="text-[10px] text-[#666] leading-relaxed line-clamp-2 mt-0.5">{n.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// 지식 그래프가 없을 때 A-2-1 분석표·분석시트의 성취기준을 학년군별로 보여 준다.
+function FallbackStandardList({ standards }: { standards: FallbackStandard[] }) {
+  const byBand = new Map<string, FallbackStandard[]>()
+  for (const standard of standards) {
+    const band = standard.gradeBand || '학년군 미지정'
+    byBand.set(band, [...(byBand.get(band) ?? []), standard])
+  }
+  return (
+    <div className="flex flex-col gap-3 p-3 overflow-y-auto h-full">
+      {Array.from(byBand.entries()).map(([band, items]) => (
+        <div key={band} className="rounded-lg border border-[#DADCE0] bg-[#F8F9FA] p-2.5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10px] font-semibold text-[#1967D2]">{band}</span>
+            <span className="text-[10px] text-[#9AA0A6]">({items.length}개)</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {items.map(item => (
+              <div key={item.code} className="bg-white rounded-md px-2 py-1.5 border border-[#E8EAED]">
+                <div className="text-[10px] font-semibold text-[#444]">
+                  [{item.code}]{item.subject && <span className="ml-1 font-normal text-[#9AA0A6]">{item.subject}</span>}
+                </div>
+                {item.text && <div className="text-[10px] text-[#666] leading-relaxed line-clamp-2 mt-0.5">{item.text}</div>}
               </div>
             ))}
           </div>
@@ -650,11 +684,14 @@ export default function ProblemSituationDesigner({
 
   // graphSavedData: Firestore 실시간 리스너로 항상 최신 데이터 유지
   const [localGraphData, setLocalGraphData] = useState<Props['graphSavedData']>(graphSavedData ?? null)
+  // 지식 그래프 없이 분석시트로 진행한 팀을 위한 성취기준 대체 목록 원천 (같은 구독에서 읽음)
+  const [standardSources, setStandardSources] = useState<{ analysisRows?: unknown; sheetRows?: unknown }>({})
   useEffect(() => {
     // onSnapshot: 컴포넌트가 열려 있는 동안 Firestore 변경을 실시간으로 반영
     const unsub = onSnapshot(doc(db, 'projects', projectId), (snap) => {
       if (snap.exists()) {
         const d = snap.data()
+        setStandardSources({ analysisRows: d?.artifacts?.['A-2-1']?.content?.rows, sheetRows: d?.curriculumSheet })
         const gd = d?.graphSavedData
         // graphSavedData 필드가 존재하고 선택된 성취기준 또는 중심 노드가 있으면 유효
         const hasCenter = gd?.centerNode != null
@@ -666,6 +703,12 @@ export default function ProblemSituationDesigner({
     }, (err) => console.error('[ProblemSituationDesigner] onSnapshot 오류:', err))
     return () => unsub()
   }, [projectId])
+
+  const hasGraphStandards = localGraphData?.centerNode != null || (localGraphData?.selectedStandards?.length ?? 0) > 0
+  const fallbackStandards = hasGraphStandards ? [] : extractFallbackStandards({
+    ...standardSources,
+    analysisText: achievementStandardsAnalysis,
+  })
 
   // 확정된 문제상황
   const [currentData, setCurrentData] = useState<ProblemSituationData | null>(savedData ?? null)
@@ -890,7 +933,7 @@ export default function ProblemSituationDesigner({
             <div className="px-3 py-2.5 border-b border-[#DADCE0] flex-shrink-0 flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold text-[#202124]">교과 융합 성취기준</div>
-                <div className="text-[10px] text-[#9AA0A6] mt-0.5">A-2-1 지식 그래프에서 저장된 노드</div>
+                <div className="text-[10px] text-[#9AA0A6] mt-0.5">{hasGraphStandards || fallbackStandards.length === 0 ? 'A-2-1 지식 그래프에서 저장된 노드' : 'A-2-1 분석표·분석시트의 성취기준'}</div>
               </div>
               <button
                 type="button"
@@ -904,6 +947,7 @@ export default function ProblemSituationDesigner({
             <NodeMap
               centerNode={localGraphData?.centerNode ?? null}
               selectedStandards={localGraphData?.selectedStandards ?? []}
+              fallbackStandards={fallbackStandards}
             />
           </div>
         ) : (
