@@ -7,6 +7,8 @@ import ts from 'typescript'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
 import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, buildSystemPrompt } from '../src/lib/prompts/system.ts'
 import { buildOutlinePrompts, buildDetailPrompts, parseOutline } from '../src/lib/problem-situation/generation.ts'
@@ -996,4 +998,31 @@ test('33c: 단계 이동 창이 끝날 때 이미 동기화·구독으로 받은
   const finish = modal.slice(modal.indexOf('// 로컬 상태도 즉시 반영'))
   assert.doesNotMatch(finish.slice(0, 600).replace(/\/\/.*$/gm, ''), /setMessages\(/)
   assert.doesNotMatch(modal, /^\s*setMessages,\s*$/m)
+})
+
+// ─── TASK-029: #34 따옴표·괄호 뒤 한글 조사가 붙는 굵게 표시 ─────────
+for (const [markdown, bold, particle] of [
+  ['**‘일’**로', '‘일’', '로'],
+  ['**산출물(표)**을', '산출물(표)', '을'],
+  ['**기후위기**를', '기후위기', '를'],
+]) {
+  test(`34: ${markdown}는 조사 앞까지 strong으로 파싱한다`, () => {
+    const processor = unified().use(remarkParse).use(REMARK_PLUGINS)
+    const paragraph = processor.parse(markdown).children[0]
+    assert.equal(paragraph.type, 'paragraph')
+    assert.deepEqual(paragraph.children.map(node => (
+      node.type === 'strong'
+        ? { type: node.type, text: node.children.map(child => child.value).join('') }
+        : { type: node.type, text: node.value }
+    )), [{ type: 'strong', text: bold }, { type: 'text', text: particle }])
+  })
+}
+
+test('34: CJK 굵게 플러그인을 적용해도 1~3개 범위 물결표는 보존한다', () => {
+  const processor = unified().use(remarkParse).use(REMARK_PLUGINS)
+  const paragraph = processor.parse('1~3개').children[0]
+  assert.equal(paragraph.type, 'paragraph')
+  assert.deepEqual(paragraph.children.map(node => ({ type: node.type, text: node.value })), [
+    { type: 'text', text: '1~3개' },
+  ])
 })
