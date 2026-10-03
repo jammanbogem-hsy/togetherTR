@@ -6,17 +6,10 @@ import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, type StageCode } from '@/types'
-import { cn } from '@/lib/utils'
+import { MD3Button } from '@/components/ui/MD3Button'
+import { ReportMarkdown } from './ReportMarkdown'
 import { X, FileText, ArrowLeft, DownloadSimple, FilePdf } from '@phosphor-icons/react'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
-
-const STAGE_COLOR: Record<string, { bg: string; text: string; light: string; border: string }> = {
-  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]', border: 'border-[#1A73E8]' },
-  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]', border: 'border-[#7B1FA2]' },
-  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]', border: 'border-[#00897B]' },
-  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]', border: 'border-[#E65100]' },
-  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]', border: 'border-[#C62828]' },
-}
 
 const STAGE_LABELS: Record<string, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
@@ -33,7 +26,6 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   if (savedStages.length === 0) return null
 
   const selectedReport = selectedStage ? stageReports[selectedStage] : null
-  const selectedColor = selectedStage ? STAGE_COLOR[selectedStage] : null
   const displayContent = (selectedReport?.content ?? '')
     .replace(/~~([\s\S]+?)~~/g, '$1')
     .split('\n')
@@ -140,141 +132,63 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-
-      <div className="relative z-10 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ width: '860px', height: '85vh', maxHeight: '90vh' }}>
-
-        {/* 헤더 */}
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-[#E8EAED] flex-shrink-0">
-          {selectedStage && (
-            <button
-              onClick={() => setSelectedStage(null)}
-              className="flex items-center gap-1 text-[13px] text-[#5F6368] hover:text-[#202124] hover:bg-[#F1F3F4] rounded-full px-2.5 py-1.5 transition-all"
-            >
-              <ArrowLeft size={15} weight="bold" />
-              목록
-            </button>
-          )}
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <FileText size={18} weight="fill" className="text-[#5F6368] flex-shrink-0" />
-            <h2 className="text-[15px] font-extrabold text-[#202124] truncate">
-              {selectedStage
-                ? `${STAGE_LABELS[selectedStage]}(${selectedStage}) 단계 보고서`
-                : '저장된 단계 보고서'}
-            </h2>
-          </div>
-          {selectedStage && selectedReport && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={downloadMd}
-                className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-white border border-[#DADCE0] text-[#5F6368] rounded-full hover:border-[#1A73E8] hover:text-[#1A73E8] transition-colors"
-              >
-                <FileText size={14} weight="fill" />
-                MD
-              </button>
-              <button
-                onClick={downloadPdf}
-                className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-white border border-[#DADCE0] text-[#5F6368] rounded-full hover:border-[#E65100] hover:text-[#E65100] transition-colors"
-              >
-                <FilePdf size={14} weight="fill" />
-                PDF
-              </button>
-              <button
-                onClick={downloadHwpx}
-                className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-white border border-[#DADCE0] text-[#5F6368] rounded-full hover:border-[#00AEEF] hover:text-[#00AEEF] transition-colors"
-              >
-                <DownloadSimple size={14} weight="bold" />
-                HWPX 베타
-              </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[var(--md-sys-scrim)] backdrop-blur-sm" onClick={onClose} />
+      <div role="dialog" aria-modal="true" aria-labelledby="stage-reports-title" className="relative z-10 flex h-[min(85vh,calc(100dvh_-_2rem))] w-full min-w-0 max-w-[860px] flex-col overflow-hidden rounded-[var(--md-sys-radius-xl)] bg-[var(--md-sys-surface-container-low)] shadow-2xl">
+        <header className="shrink-0 border-b border-[var(--md-sys-outline-variant)] p-4 sm:px-6">
+          <div className="flex items-start gap-2">
+            {selectedStage && <MD3Button variant="text" tone="neutral" onClick={() => setSelectedStage(null)} aria-label="보고서 목록으로" icon={<ArrowLeft size={20} />} />}
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <FileText size={22} weight="fill" className="mt-1 shrink-0 text-[var(--md-sys-primary)]" />
+              <h2 id="stage-reports-title" className="text-[20px] font-medium leading-7 text-[var(--md-sys-on-surface)]">{selectedStage ? `${STAGE_LABELS[selectedStage]}(${selectedStage}) 단계 보고서` : '저장된 단계 보고서'}</h2>
             </div>
-          )}
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-[#5F6368] hover:bg-[#F1F3F4] transition-colors flex-shrink-0"
-          >
-            <X size={18} weight="bold" />
-          </button>
-        </div>
-
-        {/* 본문 */}
-        {!selectedStage ? (
-          /* 목록 */
-          <div className="flex-1 overflow-y-auto p-6">
-            <p className="text-[12px] text-[#9AA0A6] font-medium mb-4">
-              완료된 단계의 심층 분석 보고서입니다. 단계를 선택해 전체 내용을 확인하세요.
+            <MD3Button variant="text" tone="neutral" onClick={onClose} aria-label="단계 보고서 닫기" icon={<X size={20} />} />
+          </div>
+          {selectedStage && selectedReport && <div className="mt-4 flex flex-wrap gap-2">
+            <MD3Button variant="outlined" onClick={downloadMd} icon={<FileText size={18} />}>MD</MD3Button>
+            <MD3Button variant="tonal" onClick={downloadPdf} icon={<FilePdf size={18} />}>PDF</MD3Button>
+            <MD3Button variant="outlined" onClick={downloadHwpx} icon={<DownloadSimple size={18} />}>HWPX 베타</MD3Button>
+          </div>}
+        </header>
+        {!selectedStage ? <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+          <p className="mb-4 text-[13px] text-[var(--md-sys-on-surface-variant)]">완료된 단계의 심층 분석 보고서입니다. 단계를 선택해 전체 내용을 확인하세요.</p>
+          <div className="grid grid-cols-1 gap-3">
+            {savedStages.map(stageInfo => {
+              const report = stageReports[stageInfo.code]!
+              return <button type="button" key={stageInfo.code} onClick={() => setSelectedStage(stageInfo.code as StageCode)}
+                className="group w-full min-w-0 rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] p-4 text-left transition-colors hover:bg-[var(--md-sys-surface-container)] focus-visible:outline-2 focus-visible:outline-[var(--md-sys-primary)]">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-primary-container)] text-[14px] font-medium text-[var(--md-sys-on-primary-container)]">{stageInfo.code}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">{STAGE_LABELS[stageInfo.code]}({stageInfo.code}) 단계</p>
+                    <p className="mt-1 text-[12px] text-[var(--md-sys-on-surface-variant)]">{formatDate(report.savedAt)}</p>
+                  </div>
+                  <span className="hidden text-[13px] font-medium text-[var(--md-sys-primary)] sm:inline">보고서 보기 →</span>
+                </div>
+                <p className="mt-3 line-clamp-2 break-words text-[13px] leading-6 text-[var(--md-sys-on-surface-variant)]">{report.content.replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').substring(0, 150)}...</p>
+              </button>
+            })}
+          </div>
+        </div> : <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container)] px-4 py-3 text-[13px] text-[var(--md-sys-on-surface-variant)] sm:px-6">
+            <span className="rounded-full bg-[var(--md-sys-primary-container)] px-3 py-1 font-medium text-[var(--md-sys-on-primary-container)]">{selectedStage}</span>
+            <span className="min-w-0">{STAGE_LABELS[selectedStage]}({selectedStage}) 단계 심층 분석 보고서</span>
+            <span className="text-[12px] sm:ml-auto">{formatDate(selectedReport!.savedAt)}</span>
+          </div>
+          {reportStale && <div className="mx-4 mt-4 rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-error-container)] p-4 text-[var(--md-sys-on-error-container)] sm:mx-6">
+            <p className="text-[13px] font-medium">⚠ 이 보고서가 현재 분석시트와 일치하지 않습니다 — 보고서를 다시 생성해야 최신 교과·중심 교과가 반영됩니다.</p>
+            <p className="mt-1 text-[12px]">
+              {addedNotInReport.length > 0 && <>추가됨: {addedNotInReport.join('·')} · </>}
+              {removedStillInReport.length > 0 && <>삭제됨: {removedStillInReport.join('·')} · </>}
+              현재 분석시트 — 교과: {currentSubjects.join('·')}{currentCenter ? ` · 중심 교과: ${currentCenter}` : ''}
             </p>
-            <div className="grid grid-cols-1 gap-3">
-              {savedStages.map(stageInfo => {
-                const report = stageReports[stageInfo.code]!
-                const color = STAGE_COLOR[stageInfo.code]
-                return (
-                  <button
-                    key={stageInfo.code}
-                    onClick={() => setSelectedStage(stageInfo.code as StageCode)}
-                    className={cn(
-                      'w-full text-left rounded-2xl border-2 p-5 hover:shadow-md transition-all group',
-                      color.border, color.light
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-[13px] flex-shrink-0', color.bg)}>
-                          {stageInfo.code}
-                        </div>
-                        <div>
-                          <p className={cn('text-[15px] font-extrabold', color.text)}>
-                            {STAGE_LABELS[stageInfo.code]}({stageInfo.code}) 단계
-                          </p>
-                          <p className="text-[11px] text-[#9AA0A6] font-medium mt-0.5">
-                            {formatDate(report.savedAt)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className={cn('text-[12px] font-bold px-3 py-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all', color.bg, 'text-white')}>
-                        보고서 보기 →
-                      </div>
-                    </div>
-                    {/* 미리보기 */}
-                    <p className="text-[12px] text-[#5F6368] mt-3 leading-relaxed line-clamp-2">
-                      {report.content.replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').substring(0, 150)}...
-                    </p>
-                  </button>
-                )
-              })}
-            </div>
+          </div>}
+          <div className="min-w-0 p-4 sm:p-6">
+            <p className="mb-4 text-[12px] text-[var(--md-sys-on-surface-variant)]">HWPX는 기본형 내보내기만 지원합니다. 제목, 문단, 목록, 단순 표를 우선 보존하며 복잡한 스타일은 간소화됩니다.</p>
+            <ReportMarkdown content={displayContent} />
           </div>
-        ) : (
-          /* 보고서 뷰어 */
-          <div className="flex-1 overflow-y-auto">
-            {/* 단계 배지 */}
-            <div className={cn('px-6 py-3 flex items-center gap-2 border-b border-[#E8EAED]', selectedColor!.light)}>
-              <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-white font-extrabold text-[11px]', selectedColor!.bg)}>
-                {selectedStage}
-              </div>
-              <span className={cn('text-[13px] font-bold', selectedColor!.text)}>
-                {STAGE_LABELS[selectedStage]}({selectedStage}) 단계 심층 분석 보고서
-              </span>
-              <span className="ml-auto text-[11px] text-[#9AA0A6]">
-                {formatDate(selectedReport!.savedAt)}
-              </span>
-            </div>
-
-            {/* 분석시트 변경 감지 — 내용 불일치 경고 */}
-            {reportStale && (
-              <div className="px-6 py-3 bg-[#FEF7E0] border-b border-[#FFE082]">
-                <p className="text-[12px] font-bold text-[#B06000]">⚠ 이 보고서가 현재 분석시트와 일치하지 않습니다 — 보고서를 다시 생성해야 최신 교과·중심 교과가 반영됩니다.</p>
-                <p className="text-[11px] text-[#7A5200] mt-1">
-                  {addedNotInReport.length > 0 && <>추가됨: {addedNotInReport.join('·')} · </>}
-                  {removedStillInReport.length > 0 && <>삭제됨: {removedStillInReport.join('·')} · </>}
-                  현재 분석시트 — 교과: {currentSubjects.join('·')}{currentCenter ? ` · 중심 교과: ${currentCenter}` : ''}
-                </p>
-              </div>
-            )}
-
-            {/* 마크다운 */}
-            <div className="px-10 py-7" ref={contentRef}>
+          {/* 기존 PDF 출력 본문·스타일은 화면 개편과 분리해 보존한다. */}
+          <div className="hidden" aria-hidden="true" ref={contentRef}>
               <p className="text-[11px] text-[#9AA0A6] font-medium mb-4">
                 HWPX는 기본형 내보내기만 지원합니다. 제목, 문단, 목록, 단순 표를 우선 보존하며 복잡한 스타일은 간소화됩니다.
               </p>
@@ -384,9 +298,8 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
               >
                 {displayContent}
               </ReactMarkdown>
-            </div>
           </div>
-        )}
+        </div>}
       </div>
     </div>
   )

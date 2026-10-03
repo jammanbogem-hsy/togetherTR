@@ -6,18 +6,11 @@ import { pickReportIcon, stripLeadingEmoji, childrenToText, ReportIcon } from '@
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
-import { cn } from '@/lib/utils'
+import { MD3Button } from '@/components/ui/MD3Button'
+import { ReportMarkdown } from './ReportMarkdown'
 import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar, ArrowRight } from '@phosphor-icons/react'
 import { setAnalysisReport, saveStageReport } from '@/lib/firebase/projects'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
-
-const STAGE_COLOR: Record<string, { bg: string; text: string; light: string }> = {
-  T:  { bg: 'bg-[#1A73E8]', text: 'text-[#1A73E8]', light: 'bg-[#E8F0FE]' },
-  A:  { bg: 'bg-[#7B1FA2]', text: 'text-[#7B1FA2]', light: 'bg-[#F3E5F5]' },
-  Ds: { bg: 'bg-[#00897B]', text: 'text-[#00897B]', light: 'bg-[#E0F2F1]' },
-  DI: { bg: 'bg-[#E65100]', text: 'text-[#E65100]', light: 'bg-[#FBE9E7]' },
-  E:  { bg: 'bg-[#C62828]', text: 'text-[#C62828]', light: 'bg-[#FFEBEE]' },
-}
 
 const STAGE_LABELS: Record<string, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
@@ -50,7 +43,6 @@ export function StageAnalysisModal({
   const hasStartedRef = useRef(false)
 
   const stage = project?.currentStage ?? 'T'
-  const color = STAGE_COLOR[stage]
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -403,94 +395,40 @@ export function StageAnalysisModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(32,33,36,0.6)', backdropFilter: 'blur(4px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="stage-analysis-title"
-        tabIndex={-1}
-        className="bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ width: '780px', maxWidth: '96vw', height: '86vh' }}
-      >
-        {/* 헤더 */}
-        <div className={cn('flex items-center justify-between px-6 py-4 flex-shrink-0', color.light)}>
-          <div className="flex items-center gap-3">
-            <div className={cn('w-10 h-10 flex items-center justify-center rounded-xl', color.bg)}
-              style={{ animation: 'morph-shape 8s ease-in-out infinite' }}>
-              <ChartBar size={20} weight="fill" className="text-white" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--md-sys-scrim)] p-4 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="stage-analysis-title" tabIndex={-1}
+        className="flex h-[min(86vh,calc(100dvh_-_2rem))] w-full min-w-0 max-w-[860px] flex-col overflow-hidden rounded-[var(--md-sys-radius-xl)] bg-[var(--md-sys-surface-container-low)] shadow-2xl">
+        <header className="shrink-0 border-b border-[var(--md-sys-outline-variant)] p-4 sm:px-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]">
+              <ChartBar size={22} weight="fill" />
             </div>
-            <div>
-              <p className={cn('text-[11px] font-bold uppercase tracking-widest', color.text)}>{stage} 단계</p>
-              <h2 id="stage-analysis-title" className="text-[16px] font-extrabold text-[#202124]">
-                {STAGE_LABELS[stage]} 단계 분석 보고서
-              </h2>
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] font-medium text-[var(--md-sys-on-surface-variant)]">{stage} 단계</p>
+              <h2 id="stage-analysis-title" className="text-[20px] font-medium leading-7 text-[var(--md-sys-on-surface)]">{STAGE_LABELS[stage]} 단계 분석 보고서</h2>
             </div>
+            <MD3Button variant="text" tone="neutral" onClick={onClose} aria-label="단계 분석 보고서 닫기" icon={<X size={20} />} />
           </div>
-          <div className="flex items-center gap-2">
-            {status === 'done' && (
-              <>
-                <button onClick={downloadMd}
-                  className="morph-btn flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-white border-2 border-[#DADCE0] text-[#5F6368] hover:border-[#1A73E8] hover:text-[#1A73E8] transition-colors"
-                >
-                  <FileText size={15} weight="fill" />
-                  MD 저장
-                </button>
-                <button onClick={downloadPdf}
-                  className="morph-btn flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-[#1A73E8] text-white hover:bg-[#1557B0] transition-colors"
-                  style={{ filter: 'drop-shadow(0 2px 6px rgba(26,115,232,0.35))' }}
-                >
-                  <FilePdf size={15} weight="fill" />
-                  PDF 저장
-                </button>
-                <button onClick={downloadHwpx}
-                  className="morph-btn flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-white border-2 border-[#DADCE0] text-[#5F6368] hover:border-[#00AEEF] hover:text-[#00AEEF] transition-colors"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                    <path d="M3 4a2 2 0 012-2h10l6 6v12a2 2 0 01-2 2H5a2 2 0 01-2-2V4z" stroke="currentColor" strokeWidth="1.5"/>
-                    <path d="M13 2v6h6" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                    <text x="5" y="18" fontSize="7" fontWeight="bold" fill="currentColor">H</text>
-                  </svg>
-                  HWPX 베타
-                </button>
-              </>
-            )}
-            <button type="button" onClick={onClose} aria-label="단계 분석 보고서 닫기"
-              className="w-8 h-8 rounded-full flex items-center justify-center text-[#9AA0A6] hover:bg-[#F1F3F4] hover:text-[#202124] transition-colors ml-1"
-            >
-              <X size={18} weight="bold" />
-            </button>
-          </div>
-        </div>
+          {status === 'done' && <div className="mt-4 flex flex-wrap gap-2">
+            <MD3Button variant="outlined" onClick={downloadMd} icon={<FileText size={18} />}>MD 저장</MD3Button>
+            <MD3Button variant="tonal" onClick={downloadPdf} icon={<FilePdf size={18} />}>PDF 저장</MD3Button>
+            <MD3Button variant="outlined" onClick={downloadHwpx} icon={<DownloadSimple size={18} />}>HWPX 베타</MD3Button>
+          </div>}
+        </header>
 
-        {/* 본문 */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 py-7">
-          {status === 'loading' && (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-[#9AA0A6]">
-              <div className={cn('w-16 h-16 flex items-center justify-center', color.bg)}
-                style={{ animation: 'morph-shape 7s ease-in-out infinite, stage-bounce 2.8s ease-in-out infinite', filter: `drop-shadow(0 4px 14px ${color.bg.replace('bg-', '')})` }}>
-                <ChartBar size={28} weight="fill" className="text-white" />
-              </div>
-              {isHost ? (
-                <>
-                  <p className="text-[14px] font-semibold text-[#5F6368]">산출물 분석 중...</p>
-                  <p className="text-[12px] text-[#9AA0A6]">T-CID 협력 수업설계 관점에서 분석합니다</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-[14px] font-semibold text-[#5F6368]">보고서가 생성 중입니다</p>
-                  <p className="text-[12px] text-[#9AA0A6]">방장이 분석을 완료하면 자동으로 표시됩니다</p>
-                  <SpinnerGap size={20} className={cn('animate-spin mt-1', color.text)} />
-                </>
-              )}
-            </div>
-          )}
-
-          {(status === 'streaming' || status === 'done') && markdown && (
-            <div className="max-w-none" ref={contentRef}>
+        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+          {status === 'loading' && <div className="flex h-full flex-col items-center justify-center gap-4 text-center text-[var(--md-sys-on-surface-variant)]">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]"><ChartBar size={28} weight="fill" /></div>
+            <p className="text-[16px] font-medium">{isHost ? '산출물 분석 중...' : '보고서가 생성 중입니다'}</p>
+            <p className="text-[13px]">{isHost ? 'T-CID 협력 수업설계 관점에서 분석합니다' : '방장이 분석을 완료하면 자동으로 표시됩니다'}</p>
+            {!isHost && <SpinnerGap size={20} className="animate-spin text-[var(--md-sys-primary)]" />}
+          </div>}
+          {(status === 'streaming' || status === 'done') && markdown && <div className="min-w-0">
+            <ReportMarkdown content={markdown} />
+            {status === 'streaming' && <SpinnerGap size={16} className="mt-2 animate-spin text-[var(--md-sys-primary)]" />}
+            {/* PDF 내보내기는 기존 인라인 스타일의 본문을 그대로 사용한다. */}
+            <div className="hidden" aria-hidden="true" ref={contentRef}>
               <ReactMarkdown
                 remarkPlugins={REMARK_PLUGINS}
                 components={{
@@ -592,54 +530,24 @@ export function StageAnalysisModal({
                 </span>
               )}
             </div>
-          )}
-
-          {status === 'error' && (
-            <div className="flex flex-col items-center justify-center h-full gap-4">
-              <p className="text-[14px] text-red-500 font-semibold">분석 중 오류가 발생했습니다</p>
-              <p className="text-[12px] text-[#9AA0A6]">{errorMsg}</p>
-              <button onClick={rerunAnalysis}
-                className="morph-btn px-5 py-2.5 bg-[#1A73E8] text-white text-[13px] font-bold hover:bg-[#1557B0] transition-colors">
-                다시 시도
-              </button>
-            </div>
-          )}
+          </div>}
+          {status === 'error' && <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+            <p className="font-medium text-[var(--md-sys-error)]">분석 중 오류가 발생했습니다</p>
+            <p className="break-words text-[13px] text-[var(--md-sys-on-surface-variant)]">{errorMsg}</p>
+            <MD3Button variant="filled" onClick={rerunAnalysis}>다시 시도</MD3Button>
+          </div>}
         </div>
-
-        {/* 하단 상태 바 */}
-        {status === 'streaming' && (
-          <div className={cn('px-6 py-2.5 flex-shrink-0 flex items-center gap-2 border-t border-[#F1F3F4]', color.light)}>
-            <SpinnerGap size={14} className={cn('animate-spin', color.text)} />
-            <span className={cn('text-[12px] font-semibold', color.text)}>분석 생성 중...</span>
+        {status === 'streaming' && <div className="flex shrink-0 items-center gap-2 border-t border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container)] px-4 py-3 text-[13px] text-[var(--md-sys-on-surface-variant)] sm:px-6">
+          <SpinnerGap size={16} className="animate-spin text-[var(--md-sys-primary)]" />분석 생성 중...
+        </div>}
+        {status === 'done' && <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container)] p-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <span className="rounded-full bg-[var(--md-sys-tertiary-container)] px-3 py-1 text-[12px] font-medium text-[var(--md-sys-on-tertiary-container)]">✓ 분석 완료</span>
+            {isHost && <p className="mt-2 text-[12px] text-[var(--md-sys-on-surface-variant)]">보고서가 저장됐습니다 · “보고서 확인”에서 다시 볼 수 있어요</p>}
           </div>
-        )}
-        {status === 'done' && (
-          <div className="px-6 py-3 flex-shrink-0 flex items-center justify-between gap-3 border-t border-[#F1F3F4] bg-[#F8F9FA]">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <span className="text-[12px] text-[#34A853] font-semibold whitespace-nowrap">✓ 분석 완료</span>
-              {isHost && (
-                <span className="text-[11px] text-[#00897B] font-semibold hidden sm:inline">
-                  💾 보고서가 저장됐습니다 · 우측 상단 &ldquo;보고서 확인&rdquo;에서 다시 볼 수 있어요
-                </span>
-              )}
-              {isHost && (
-                <button onClick={rerunAnalysis}
-                  className="text-[11px] text-[#9AA0A6] hover:text-[#5F6368] underline transition-colors whitespace-nowrap ml-auto">
-                  다시 생성
-                </button>
-              )}
-            </div>
-            {isHost && nextStage && (
-              <button
-                onClick={handleMoveToNextStage}
-                className="morph-btn flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold text-white bg-[#1A73E8] hover:bg-[#1557B0] transition-colors whitespace-nowrap flex-shrink-0"
-              >
-                {STAGE_LABELS[nextStage]} 단계로 이동
-                <ArrowRight size={15} weight="bold" />
-              </button>
-            )}
-          </div>
-        )}
+          {isHost && <MD3Button variant="text" tone="neutral" onClick={rerunAnalysis}>다시 생성</MD3Button>}
+          {isHost && nextStage && <MD3Button variant="filled" onClick={handleMoveToNextStage} trailing={<ArrowRight size={18} />} className="w-full sm:w-auto">{STAGE_LABELS[nextStage]} 단계로 이동</MD3Button>}
+        </footer>}
       </div>
     </div>
   )

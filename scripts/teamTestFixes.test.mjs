@@ -18,7 +18,7 @@ import { serializeArtifactForPrompt } from '../src/lib/artifacts/serializeArtifa
 import { validateProblemStandards } from '../src/lib/problem-situation/validateStandards.ts'
 import { withCurriculumReadCache, readOncePerCurriculumContext } from '../src/lib/curriculum/readCache.ts'
 import { buildCurriculumContext, buildReplacementStandardsContext } from '../src/lib/curriculum/contextInject.ts'
-import { ACTIVITY_META, displayActivityCode } from '../src/types/index.ts'
+import { ACTIVITY_META, STAGES, displayActivityCode } from '../src/types/index.ts'
 import { applyArtifactSignalBatch, artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
 import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction } from '../src/lib/artifacts/schemas.ts'
 
@@ -1362,4 +1362,95 @@ test('33c: 생성 프롬프트에 팀 준비·최근 대화·우선순위 한 �
   const designer = fs.readFileSync(new URL('../src/components/problem-situation/ProblemSituationDesigner.tsx', import.meta.url), 'utf8')
   assert.match(designer, /setTeamPreparation\(buildTeamPreparationContext\(d\?\.artifacts\)\)/)
   assert.match(designer, /recentConversation: buildRecentConversationContext\(useProjectStore\.getState\(\)\.messages\)/)
+})
+
+// ─── TASK-034: 보고서 화면 MD3 표 · 모바일 모달 · 내보내기 보존 ─────────
+const reportIcons = loadArtifactTsx('../src/components/ui/ReportSectionIcon.tsx', {})
+const { ReportMarkdown } = loadArtifactTsx('../src/components/modals/ReportMarkdown.tsx', {
+  react: React,
+  'react-markdown': { __esModule: true, default: ReactMarkdown },
+  '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
+  '@/components/ui/ReportSectionIcon': reportIcons,
+})
+
+test('034a: 보고서 MD3 데이터 표는 학년군·강조를 보존하고 고정 머리글·첫 열 최소 폭·내부 스크롤을 제공한다', () => {
+  const markdown = '# 보고서\n\n## 📊 완성도 평가\n\n**‘일’**로 정하고 1~3개를 비교한다.\n\n1. 첫 활동\n2. 둘째 활동\n\n| 학년군 | 근거 |\n| --- | --- |\n| **1-2학년군** | 3-4학년군 자료\u2028[4사08-02] |\n| 5-6학년군 | 【자료1】 / 【자료2】 |'
+  const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: markdown }))
+  assert.match(html, /<strong[^>]*>‘일’<\/strong>로/)
+  assert.match(html, /1~3개/)
+  for (const label of ['1-2학년군', '3-4학년군', '5-6학년군']) assert.ok(html.includes(`<span class="whitespace-nowrap">${label}</span>`))
+  assert.match(html, /<strong[^>]*><span><span class="whitespace-nowrap">1-2학년군/)
+  assert.match(html, /role="region" aria-label="보고서 표" tabindex="0"[^>]*max-h-\[60vh\][^>]*overflow-auto/)
+  assert.match(html, /<table class="[^"]*min-w-\[640px\]/)
+  assert.match(html, /<th scope="col" class="sticky top-0[^"]*first:min-w-\[9rem\]/)
+  assert.match(html, /<td class="[^"]*border-b[^"]*first:min-w-\[9rem\]/)
+  assert.match(html, /<br\/>\[4사08-02\]/)
+  assert.match(html, /【자료1】<\/span><span><br\/>【자료2】/)
+  assert.match(html, /<ol[^>]*list-decimal/)
+  assert.match(html, /md-sys-surface-container/)
+  assert.doesNotMatch(html, /\*\*|<del>/)
+})
+
+function reportModalFixture(name, selected = false, isHost = true) {
+  const callbacks = []
+  const markdown = '# 보고서\n\n| 학년군 | 내용 |\n| --- | --- |\n| 1-2학년군 | **‘일’**로 정하기 |'
+  const project = { id: 'herdr', title: '기후위기', currentStage: 'Ds', artifacts: {}, stageReports: { Ds: { content: markdown, savedAt: 1 } } }
+  let cursor = 0
+  const states = name === 'StageAnalysisModal' ? [markdown, 'done', ''] : [selected ? 'Ds' : null]
+  const { MD3Button } = loadArtifactTsx('../src/components/ui/MD3Button.tsx', { react: React, '@/lib/utils': { cn: (...v) => v.filter(Boolean).join(' ') } })
+  const bindings = {
+    react: { ...React, useState: () => [states[cursor++], () => {}], useEffect() {}, useLayoutEffect() {} },
+    'react-markdown': { __esModule: true, default: ReactMarkdown },
+    '@/components/ui/ReportSectionIcon': reportIcons,
+    '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
+    '@/store/project': { useProjectStore: () => ({ project, userProfile: { uid: 'member' }, setPendingStageMove() {} }) },
+    '@/types': { STAGES, ACTIVITY_META },
+    '@/components/ui/MD3Button': { MD3Button: props => { callbacks.push(props); return React.createElement(MD3Button, props) } },
+    './ReportMarkdown': { ReportMarkdown },
+    '@phosphor-icons/react': new Proxy({}, { get: () => () => null }),
+    '@/lib/firebase/projects': { setAnalysisReport() {}, saveStageReport() {} },
+    '@/lib/hwpx/generateHwpx': { generateHwpx() {} },
+  }
+  const module = loadArtifactTsx(`../src/components/modals/${name}.tsx`, bindings)
+  const html = renderToStaticMarkup(React.createElement(module[name], { onClose() {}, isHost }))
+  return { html, callbacks, markdown }
+}
+
+test('034b: 생성·저장 보고서 모달은 16px 모바일 여백·폭 제한·줄바꿈 버튼을 쓰며 팀원 이동 권한을 보존한다', () => {
+  for (const [name, selected] of [['StageAnalysisModal', false], ['StageReportsModal', true]]) {
+    const { html, callbacks } = reportModalFixture(name, selected, false)
+    assert.match(html, /fixed inset-0 z-50[^>]*p-4/)
+    assert.match(html, /role="dialog" aria-modal="true"/)
+    assert.match(html, /w-full min-w-0 max-w-\[860px\]/)
+    assert.match(html, /flex flex-wrap gap-2/)
+    assert.match(html, /overflow-y-auto overflow-x-hidden/)
+    assert.match(html, /rounded-\[var\(--md-sys-radius-xl\)\]/)
+    assert.match(html, /aria-label="단계 (?:분석 )?보고서 닫기"/)
+    assert.match(html, /<div class="hidden" aria-hidden="true">/)
+    assert.match(html, /font-size:1.55rem;font-weight:900/)
+    assert.equal(callbacks.filter(b => b.variant === 'outlined').length, 2)
+    assert.equal(callbacks.filter(b => b.variant === 'tonal').length, 1)
+    assert.doesNotMatch(html, /단계로 이동|다시 생성|morph-btn/)
+  }
+  const host = reportModalFixture('StageAnalysisModal')
+  assert.match(host.html, /단계로 이동/)
+  assert.ok(host.callbacks.some(b => b.variant === 'filled'))
+  const list = reportModalFixture('StageReportsModal')
+  assert.match(list.html, /저장된 단계 보고서/)
+  assert.match(list.html, /설계\(Ds\) 단계/)
+})
+
+test('034c: 화면용 렌더와 PDF용 렌더를 분리하고 MD·PDF·HWPX 다운로드 입력은 유지한다', () => {
+  const generated = fs.readFileSync(new URL('../src/components/modals/StageAnalysisModal.tsx', import.meta.url), 'utf8')
+  const saved = fs.readFileSync(new URL('../src/components/modals/StageReportsModal.tsx', import.meta.url), 'utf8')
+  for (const source of [generated, saved]) {
+    assert.match(source, /<ReportMarkdown content=\{/)
+    assert.match(source, /className="hidden" aria-hidden="true" ref=\{contentRef\}/)
+    assert.match(source, /const html = contentEl\.innerHTML/)
+    assert.match(source, /<ReactMarkdown\s+remarkPlugins=\{REMARK_PLUGINS\}/)
+  }
+  assert.match(generated, /new Blob\(\[markdown\]/)
+  assert.match(generated, /generateHwpx\(markdown,/)
+  assert.match(saved, /new Blob\(\[selectedReport\.content\]/)
+  assert.match(saved, /generateHwpx\(displayContent,/)
 })
