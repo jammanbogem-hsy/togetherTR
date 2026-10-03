@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { parsePsReady, cleanPsReady } from '@/lib/problem-situation/readySignal'
 import { extractFallbackStandards, type FallbackStandard } from '@/lib/problem-situation/standardsFallback'
+import { isEmptyScenarioDetail, usableGraphData } from '@/lib/problem-situation/designerState'
 import { XIcon as X, ArrowClockwiseIcon as ArrowClockwise, PaperPlaneRightIcon as PaperPlaneRight, FloppyDiskIcon as FloppyDisk, SpinnerGapIcon as SpinnerGap, CheckCircleIcon as CheckCircle, ArrowsOutIcon as ArrowsOut, BookOpenIcon as BookOpen, UsersIcon as Users, DatabaseIcon as Database, LightbulbIcon as Lightbulb, MagnifyingGlassIcon as MagnifyingGlass, FileTextIcon as FileText, SidebarSimpleIcon as SidebarSimple, CaretRightIcon as CaretRight, CircleNotchIcon as CircleNotch, PencilRulerIcon as PencilRuler } from '@phosphor-icons/react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -50,7 +51,8 @@ const GEN_STEPS = [
 
 // 생성은 2단계로 나뉜다. Firebase Hosting이 요청 하나를 60초에서 끊기 때문에
 // 개요(후보 요약+탐구 질문)를 먼저 받고, 후보별 상세는 병렬 요청으로 이어서 받는다.
-type DetailStatus = 'loading' | 'error' | 'done'
+// empty: 응답은 왔지만 성취기준 연결이 비어 자동 재요청 1회 뒤에도 비어 있는 상태
+type DetailStatus = 'loading' | 'error' | 'done' | 'empty'
 type DetailStatusMap = Partial<Record<number, DetailStatus>>
 
 // Hosting 제한(60초)보다 조금 앞서 끊어 사용자에게 명확한 안내를 보여준다.
@@ -337,7 +339,7 @@ function ResultView({
   const selectedStatus = detailStatus[selectedIndex]
   // 상세가 아직 생성 중이거나 실패한 후보는 산출물로 선택할 수 없다 (빈 상세 저장 방지).
   // 상세는 두 조각으로 나뉘어 도착하므로 일부만 채워진 상태에서도 선택을 막는다.
-  const detailPending = selectedStatus === 'loading' || selectedStatus === 'error'
+  const detailPending = selectedStatus === 'loading' || selectedStatus === 'error' || selectedStatus === 'empty'
   const anyDetailLoading = candidates.some((_, i) => detailStatus[i] === 'loading')
   const detailDoneCount = candidates.filter((c, i) => detailStatus[i] === 'done' || (detailStatus[i] == null && !!c.fullScenario)).length
   // 조각이 아직 안 온 필드는 빈칸 대신 생성 중 표시
@@ -460,10 +462,12 @@ function ResultView({
                   이 후보의 상세(문제 상황 전문·성취기준 연결·실제 자료·산출물·AI 점검)를 생성하고 있습니다. 약 30초 정도 걸립니다.
                 </p>
               </div>
-            ) : selectedStatus === 'error' ? (
+            ) : selectedStatus === 'error' || selectedStatus === 'empty' ? (
               <div className="px-4 py-3 bg-[#FCE8E6] border-b border-[#DADCE0] flex items-center gap-2 flex-wrap">
                 <p className="text-[11px] text-[#C5221F] leading-relaxed flex-1 min-w-0" style={{ wordBreak: 'keep-all' }}>
-                  이 후보의 상세 생성에 실패했습니다. 다른 후보에는 영향이 없습니다.
+                  {selectedStatus === 'empty'
+                    ? '성취기준 연결을 불러오지 못했어요 — 다시 생성해 주세요.'
+                    : '이 후보의 상세 생성에 실패했습니다. 다른 후보에는 영향이 없습니다.'}
                 </p>
                 <button
                   type="button"
@@ -494,6 +498,21 @@ function ResultView({
                 {detail.fullScenario}
               </p>
             </Block>
+
+            {selectedStatus === 'empty' && !(detail.standardsAlignment?.length > 0) && (
+              <div className="px-4 py-3 bg-[#FCE8E6] border-b border-[#DADCE0] flex items-center gap-2 flex-wrap">
+                <p className="text-[11px] text-[#C5221F] leading-relaxed flex-1 min-w-0" style={{ wordBreak: 'keep-all' }}>
+                  성취기준 연결을 불러오지 못했어요 — 다시 생성해 주세요.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onRetryDetail(selectedIndex)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-[#C5221F] hover:bg-[#A50E0E] px-3 py-1 rounded-full transition-colors"
+                >
+                  <ArrowClockwise size={12} weight="bold" /> 다시 생성
+                </button>
+              </div>
+            )}
 
             {detail.standardsAlignment?.length > 0 && (
               <Block label="성취기준 연결" onZoom={openZoom}>
@@ -692,13 +711,8 @@ export default function ProblemSituationDesigner({
       if (snap.exists()) {
         const d = snap.data()
         setStandardSources({ analysisRows: d?.artifacts?.['A-2-1']?.content?.rows, sheetRows: d?.curriculumSheet })
-        const gd = d?.graphSavedData
-        // graphSavedData 필드가 존재하고 선택된 성취기준 또는 중심 노드가 있으면 유효
-        const hasCenter = gd?.centerNode != null
-        const hasStandards = Array.isArray(gd?.selectedStandards) && gd.selectedStandards.length > 0
-        if (gd && (hasCenter || hasStandards)) {
-          setLocalGraphData(gd)
-        }
+        // 그래프가 비워지면 이전 그래프를 남기지 않고 null로 바꿔 대체 성취기준 목록이 보이게 한다.
+        setLocalGraphData(usableGraphData(d?.graphSavedData))
       }
     }, (err) => console.error('[ProblemSituationDesigner] onSnapshot 오류:', err))
     return () => unsub()
@@ -736,10 +750,18 @@ export default function ProblemSituationDesigner({
 
   // 후보 하나의 상세를 두 조각(scenario / plan)으로 동시에 요청해 결과에 병합한다.
   // 조각이 도착하는 대로 화면에 채우고, 둘 다 성공해야 'done'. gen이 바뀌었으면(재생성) 늦은 응답은 버린다.
-  const loadCandidateDetail = useCallback(async (outline: ProblemSituationResult, index: number, gen: number) => {
+  // scenario 조각의 성취기준 연결이 비면 그 조각만 자동으로 1회 다시 받고, 그래도 비면 'empty'로 둔다.
+  const loadCandidateDetail = useCallback(async (
+    outline: ProblemSituationResult,
+    index: number,
+    gen: number,
+    parts: readonly DetailPart[] = DETAIL_PARTS,
+    autoRetry = true,
+  ): Promise<void> => {
     setDetailStatus(prev => ({ ...prev, [index]: 'loading' }))
     const body = buildRequestBody()
-    const results = await Promise.allSettled(DETAIL_PARTS.map(async part => {
+    let emptyScenario = false
+    const results = await Promise.allSettled(parts.map(async part => {
       const { detail } = await postGenerate<{ index: number; part: DetailPart; detail: Partial<ProblemCandidateDetail> }>({
         ...body,
         phase: 'detail',
@@ -748,6 +770,7 @@ export default function ProblemSituationDesigner({
         outline,
       })
       if (gen !== generationRef.current) return
+      if (isEmptyScenarioDetail(part, detail)) emptyScenario = true
       setResult(prev => (prev ? applyCandidateDetail(prev, index, detail) : prev))
     }))
     if (gen !== generationRef.current) return
@@ -755,6 +778,11 @@ export default function ProblemSituationDesigner({
     if (failed.length > 0) {
       console.error(`[ProblemSituationDesigner] 후보 ${index + 1} 상세 생성 실패:`, failed.map(f => f.reason))
       setDetailStatus(prev => ({ ...prev, [index]: 'error' }))
+      return
+    }
+    if (emptyScenario) {
+      if (autoRetry) return loadCandidateDetail(outline, index, gen, ['scenario'], false)
+      setDetailStatus(prev => ({ ...prev, [index]: 'empty' }))
       return
     }
     setDetailStatus(prev => ({ ...prev, [index]: 'done' }))

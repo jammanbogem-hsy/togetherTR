@@ -29,7 +29,7 @@ export const NARROW_DEFAULT_STATE: LayoutPanelState = {
 }
 
 /** 이 폭 미만이면 좁은 화면 레이아웃을 쓴다 (펼친 사이드바·산출물 패널만으로 채팅이 눌리는 폭). */
-export const NARROW_QUERY = '(max-width: 899.98px)'
+export const NARROW_QUERY = 'not all and (min-width: 900px)'
 
 type LayoutMode = 'wide' | 'narrow'
 

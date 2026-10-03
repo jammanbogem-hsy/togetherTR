@@ -13,6 +13,7 @@ import { buildOutlinePrompts, buildDetailPrompts, parseOutline } from '../src/li
 import { parsePsReady, cleanPsReady } from '../src/lib/problem-situation/readySignal.ts'
 import { serializeArtifactForPrompt } from '../src/lib/artifacts/serializeArtifactForPrompt.ts'
 import { validateProblemStandards } from '../src/lib/problem-situation/validateStandards.ts'
+import { buildCurriculumContext, buildReplacementStandardsContext } from '../src/lib/curriculum/contextInject.ts'
 import { ACTIVITY_META, displayActivityCode } from '../src/types/index.ts'
 import { applyArtifactSignalBatch, artifactContentEquals } from '../src/lib/chat/artifactSignalBatch.ts'
 import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction } from '../src/lib/artifacts/schemas.ts'
@@ -102,6 +103,85 @@ test('25: generate 상세 응답은 클라이언트로 돌려주기 전에 성�
   assert.equal(body.index, 1)
   assert.equal(body.part, 'scenario')
   assert.deepEqual(body.detail.standardsAlignment.map(item => item.standardId), ['4사08-02'])
+})
+
+test('15a: 성취기준 코드 뒤 원문이 있어도 검증하고 남긴 값은 바꾸지 않는다', () => {
+  const good = { standardId: '2국03-02 쓰기에 흥미를 가지며 생각을 표현한다.', subject: '국어', isCenter: true, connection: '포스터 문장을 쓴다.' }
+  const bracketed = { ...good, standardId: '[2국03-02] 쓰기 활동' }
+  const outside = { ...good, standardId: '2국03-03 글을 쓴다.' }
+  const result = validateProblemStandards({ standardsAlignment: [good, bracketed, outside] }, '[2국03-02] 쓰기에 흥미를 가진다.')
+  assert.deepEqual(result.standardsAlignment, [good, bracketed])
+})
+
+test('15c: 이동 전 수정·보완을 요청하면 동일 내용 응답이어도 이동 카드를 띄우지 않는다', () => {
+  let offered = 0
+  const offer = loadChatFunction('offerAdvanceAfterConfirmedNoop', { isHost: true, handlePromptNextCommand: () => offered++ })
+  for (const text of ['다음으로 넘어가기 전에 고쳐 주세요', '다음 활동으로 가기 전에 수정해 주세요', '다음 단계 전에 바꿔 주세요', '다음으로 넘기기 전에 보완해 주세요']) offer(true, text)
+  assert.equal(offered, 0)
+  offer(true, '다음 활동으로 이동해 주세요')
+  assert.equal(offered, 1)
+})
+
+test('15d: 최근 교사의 대체 요청에서 주민 참여 성취기준과 원문을 찾아 A-2-1 컨텍스트에 넣는다', () => {
+  const messages = [
+    { role: 'assistant', content: '문화 다양성 성취기준입니다.' },
+    { role: 'user', content: '[시스템 리마인더] 현재 활동 A-3' },
+    { role: 'user', content: '[잠만보잠만보]: 사회 3-4는 지역 문제·주민 참여 성취기준으로 바꿔 주세요' },
+  ]
+  const block = buildReplacementStandardsContext(messages, '초3-4')
+  assert.match(block, /대체 후보 성취기준/)
+  assert.match(block, /\[4사08-02\].*주민 자치와 주민 참여의 중요성/)
+  assert.match(block, /후보에서만 고르고, 후보가 없으면 확인 필요/)
+  assert.doesNotMatch(block, /중1-3|9[가-힣]+\d{2}-\d{2}/)
+  assert.ok(buildCurriculumContext('A-2-1', messages, '초3-4').includes(block))
+  assert.doesNotMatch(buildCurriculumContext('A-2-2', messages, '초3-4'), /대체 후보 성취기준/)
+  assert.equal(buildReplacementStandardsContext([{ role: 'user', content: '지역 문제·주민 참여가 중요해요' }], '초3-4'), '')
+  assert.equal(buildReplacementStandardsContext(messages, '중1-3'), '')
+})
+
+test('15d: 여러 학년군의 후보는 각각 최대 5개이며 해당 학년군 코드만 제공한다', () => {
+  const block = buildReplacementStandardsContext([{ role: 'user', content: '지역 문제·주민 참여 성취기준으로 바꿔 주세요' }], '초1-2', ['1-2', '3-4', '5-6'])
+  const expected = { '1-2학년군': '2', '3-4학년군': '4', '5-6학년군': '6' }
+  for (const [band, content] of [...block.matchAll(/### ([^\n]+)\n([\s\S]*?)(?=\n### |\n\n### |\n▶|$)/g)].map(match => [match[1], match[2]])) {
+    const codes = [...content.matchAll(/\[?(\d[가-힣]{1,3}\d{2}-\d{2})\]? —/g)].map(match => match[1])
+    assert.ok(codes.length <= 5)
+    assert.equal(new Set(codes).size, codes.length)
+    assert.ok(codes.every(code => code.startsWith(expected[band])), band)
+  }
+  assert.equal([...block.matchAll(/### /g)].length, 3)
+  const graph = { centerNode: { id: 'x', label: '[4사03-01]', text: '사회 변화', subjectId: 'sub_soc' }, selectedStandards: [], agentNotes: [] }
+  assert.match(buildCurriculumContext('A-2-1', [{ role: 'user', content: '지역 문제·주민 참여로 바꿔 주세요' }], '초3-4', undefined, graph), /대체 후보 성취기준/)
+})
+
+test('15b: 부분 답 재시도는 같은 ID의 Firestore 문서와 로컬 메시지를 대체한다', async () => {
+  const original = { role: 'user', content: '자료를 정리해 주세요', displayName: '잠만보잠만보' }
+  const writes = [], additions = [], replacements = []
+  const send = loadChatFunction('sendMessageDirectly', {
+    project: { id: 'test' }, proj: { id: 'test' }, currentActivity: 'A-2-1', messages: [original],
+    userProfile: { uid: 'member' }, isLoading: false, isAnalyzing: false,
+    getRetryRequest: () => ({ messages: [original], assistantMessageId: 'partial-answer' }),
+    setIsIdle() {}, setChatError() {}, setFailedChatRequest() {}, setIsLoading() {},
+    clearStreamingText() {}, appendStreamingText() {}, streamingAccumRef: { current: '' }, streamingFlushRef: { current: null },
+    setStreamingState: async () => {}, clearStreamingState: async () => {}, setInterval: () => 1, clearInterval() {},
+    discardResponseAfterActivityChange: async () => false,
+    parseTeamGradeBandsSignal: () => null, parseDiscussionSignal: () => null, parseActivityAdvance: () => null,
+    parseActivityReturn: () => null, parseArtifactConfirm: text => ({ codes: [], cleanText: text }),
+    parseArtifactUpdates: text => ({ updates: [], cleanText: text }), parseHelpCard: text => ({ cleanText: text }),
+    parseOptions: () => null, parseActionCard: () => null, Timestamp: { now: () => 1 },
+    generateMessageId: () => { throw new Error('재시도에 새 ID를 만들면 안 된다') },
+    addMessage: message => additions.push(message), replaceMessage: (...args) => replacements.push(args),
+    saveMessage: async (...args) => writes.push(args), processArtifactSignals: async () => false,
+    offerAdvanceAfterConfirmedNoop() {}, console,
+    streamFromAPI: async (_messages, _chunk, done) => { assert.equal(await done('완성된 답변'), 'partial-answer') },
+  })
+  await send(original.content, true)
+  assert.equal(additions.length, 0)
+  assert.deepEqual(replacements, [['partial-answer', '완성된 답변']])
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0][0], 'test')
+  assert.equal(writes[0][1], 'A-2-1')
+  assert.equal(writes[0][3], 'partial-answer')
+  assert.equal(writes[0][2].content, '완성된 답변')
 })
 
 for (const [text, expected] of [
@@ -507,4 +587,35 @@ test('12: 좁은 화면은 저장값이 없으면 사이드바·산출물을 접
   // 좁은 화면 선택은 별도 키에 저장해 넓은 화면 저장값을 덮어쓰지 않는다.
   assert.match(hook, /`layoutPanels:\$\{projectId\}:narrow`/)
   assert.match(hook, /writeStorage\(projectId, mode, /)
+})
+
+// ─── TASK-016: 워크숍 빈 성취기준 재요청 · 그래프 비움 · 좁은 화면 경계 ─────────
+const { isEmptyScenarioDetail, usableGraphData } = await import('../src/lib/problem-situation/designerState.ts')
+const { NARROW_QUERY: TASK016_NARROW_QUERY } = await import('../src/components/layout/useLayoutToggle.ts')
+
+test('016a: 성취기준 연결이 빈 scenario 조각만 재요청 대상이고, 자동 재요청은 1회 뒤 empty 안내로 끝난다', () => {
+  assert.equal(isEmptyScenarioDetail('scenario', { fullScenario: '전문', standardsAlignment: [], realData: [] }), true)
+  assert.equal(isEmptyScenarioDetail('scenario', { fullScenario: '전문' }), true)
+  assert.equal(isEmptyScenarioDetail('scenario', null), true)
+  assert.equal(isEmptyScenarioDetail('scenario', { standardsAlignment: [{ standardId: '4과16-01', subject: '과학', connection: '', isCenter: false }] }), false)
+  assert.equal(isEmptyScenarioDetail('plan', { learningContent: '' }), false)
+  const designer = fs.readFileSync(new URL('../src/components/problem-situation/ProblemSituationDesigner.tsx', import.meta.url), 'utf8')
+  assert.match(designer, /if \(autoRetry\) return loadCandidateDetail\(outline, index, gen, \['scenario'\], false\)/)
+  assert.match(designer, /setDetailStatus\(prev => \(\{ \.\.\.prev, \[index\]: 'empty' \}\)\)/)
+  assert.match(designer, /성취기준 연결을 불러오지 못했어요 — 다시 생성/)
+  assert.match(designer, /selectedStatus === 'error' \|\| selectedStatus === 'empty'/)
+})
+
+test('016b: 비워진 그래프는 null 로 바뀌어 대체 성취기준 목록이 보인다', () => {
+  const center = { id: 'E6SOC02-01', text: '기후', subjectId: 'social' }
+  assert.equal(usableGraphData(null), null)
+  assert.equal(usableGraphData({ centerNode: null, selectedStandards: [], agentNotes: [] }), null)
+  assert.equal(usableGraphData({ centerNode: null, selectedStandards: [center] })?.selectedStandards.length, 1)
+  assert.equal(usableGraphData({ centerNode: center, selectedStandards: [] })?.centerNode, center)
+  const designer = fs.readFileSync(new URL('../src/components/problem-situation/ProblemSituationDesigner.tsx', import.meta.url), 'utf8')
+  assert.match(designer, /setLocalGraphData\(usableGraphData\(d\?\.graphSavedData\)\)/)
+})
+
+test('016c: 좁은 화면 미디어쿼리는 정확히 900px 미만(소수 폭 포함)이다', () => {
+  assert.equal(TASK016_NARROW_QUERY, 'not all and (min-width: 900px)')
 })
