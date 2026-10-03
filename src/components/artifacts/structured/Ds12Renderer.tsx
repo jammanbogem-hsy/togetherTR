@@ -1,6 +1,7 @@
 'use client'
 
 import { ArtifactMarkdown } from '../ArtifactMarkdown'
+import { normalizeArtifactText } from '@/lib/report/artifactToMarkdown'
 
 // Ds-1-2 문제상황 산출물 렌더러 (자체 완결).
 // 저장 형태가 여러 가지라 content를 유연하게 정규화한다:
@@ -260,7 +261,8 @@ export function Ds12Renderer({ data }: { data: AnyRec }) {
             {sel.alignment.length === 0 && sel.alignmentText && (
               <div className="px-4 py-3">
                 <div className="text-[11px] font-bold text-[#5F6368] uppercase tracking-wide mb-2">성취기준 연결 (평가 기준)</div>
-                <ArtifactMarkdown className="text-[12px] text-[#3C4043] [word-break:keep-all]">{sel.alignmentText}</ArtifactMarkdown>
+                {/* '[학년군] [교과] [코드]: 내용' 줄들은 표로 — 단일 줄바꿈으로 한 문단에 뭉치지 않게 */}
+                <ArtifactMarkdown className="text-[12px] text-[#3C4043] [word-break:keep-all]">{normalizeArtifactText(sel.alignmentText)}</ArtifactMarkdown>
               </div>
             )}
 

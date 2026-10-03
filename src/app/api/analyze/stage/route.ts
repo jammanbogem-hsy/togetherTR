@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
 import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
 import type { StageCode } from '@/types'
-import { buildAnalysisPrompt, buildArtifactOriginals } from '@/lib/report/stageReportPrompt'
+import { buildAnalysisPrompt, buildArtifactAppendix, buildArtifactOriginals } from '@/lib/report/stageReportPrompt'
 import { createArtifactPlaceholderExpander } from '@/lib/report/artifactPlaceholders'
 
 export const runtime = 'nodejs'
@@ -37,17 +37,26 @@ export async function POST(request: Request) {
           const sendText = (text: string) => {
             if (text) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text })}\n\n`))
           }
+          // 산출물 원문은 본문 뒤 '부록' 섹션으로 서버가 붙인다(한 번만).
+          let appendixSent = false
+          const sendAppendix = () => {
+            if (appendixSent) return
+            appendixSent = true
+            sendText(expander.push(buildArtifactAppendix(stage)) + expander.flush())
+          }
           for await (const chunk of response) {
             sendText(expander.push(chunk.choices?.[0]?.delta?.content ?? ''))
             // 'length'(출력 한도) 등으로 끝나도 done 을 보내 UI 가 멈추지 않게 한다
             if (chunk.choices?.[0]?.finish_reason) {
               sendText(expander.flush())
+              sendAppendix()
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
             }
             if (chunk.usage) usage = chunk.usage
           }
           // 종료 사유 없이 끝난 스트림도 남은 글자를 내보낸다(이미 내보냈으면 빈 문자열).
           sendText(expander.flush())
+          sendAppendix()
           logLlmUsage('analyze/stage', model, usage as never, performance.now() - startedAt)
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown error'

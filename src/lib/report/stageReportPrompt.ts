@@ -3,7 +3,8 @@ import type { StageCode } from '@/types'
 import { STAGES, ACTIVITY_META, displayActivityCode } from '@/types'
 import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
 import { artifactPlaceholder } from './artifactPlaceholders'
-import { reportSectionsFor } from './reportSections'
+import { normalizeArtifactText } from './artifactToMarkdown'
+import { REPORT_SECTIONS, reportSectionsFor } from './reportSections'
 
 const STAGE_LABELS: Record<StageCode, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
@@ -194,7 +195,8 @@ export function buildArtifactOriginals(
   const stageInfo = STAGES.find(s => s.code === stage)
   return Object.fromEntries((stageInfo?.activities ?? []).map(code => {
     const content = artifacts[code]?.content
-    const text = content ? renderArtifactContent(content).trim() : ''
+    // 굵은 라벨 문단·성취기준 줄·여러 줄 문단을 표·목록으로 정규화한다(보고서·PDF·MD 내보내기 공통).
+    const text = content ? normalizeArtifactText(renderArtifactContent(content)) : ''
     return [code, text || '*산출물이 아직 작성되지 않았습니다.*']
   }))
 }
@@ -224,6 +226,18 @@ function deepAnalysisPoints(stage: StageCode): string {
   return STAGE_DEEP_ANALYSIS[stage].replace(/^##[^\n]*\n+/, '').replace(/^###\s*분석 포인트[^\n]*\n/m, '').trim()
 }
 
+/**
+ * 보고서 끝 '## 부록: 산출물 원문' — AI 가 아니라 서버가 스트림 끝에 붙인다(본문은 대시보드처럼 짧게,
+ * 원문은 화면에서 접어 둔다). 자리표시로 만들어 스트림의 치환기가 원문으로 바꾼다.
+ */
+export function buildArtifactAppendix(stage: StageCode): string {
+  const stageInfo = STAGES.find(s => s.code === stage)
+  const appendix = REPORT_SECTIONS.find(section => section.key === 'appendix')!
+  const blocks = (stageInfo?.activities ?? []).map(code =>
+    `### ${ACTIVITY_META[code].label} (${displayActivityCode(code)})\n\n${artifactPlaceholder(code)}`)
+  return `\n\n## ${appendix.title}\n\n${blocks.join('\n\n')}\n`
+}
+
 export function buildAnalysisPrompt(
   stage: StageCode,
   project: { title: string; targetGradeGroup: string; targetSubjects?: string[] },
@@ -233,31 +247,35 @@ export function buildAnalysisPrompt(
   const [summary, overview, activities, alignment, strengths, improvements, next] = reportSectionsFor(stage)
   const originals = buildArtifactOriginals(stage, artifacts)
 
-  // AI 입력용 산출물 원문(읽기용) — 출력에는 원문 대신 자리표시만 쓴다.
+  // AI 입력용 산출물 원문(읽기용) — 출력에는 쓰지 않는다. 원문은 서버가 부록으로 붙인다.
   const sourceBlocks = stageInfo.activities.map(code =>
     `### ${ACTIVITY_META[code].label} (${displayActivityCode(code)})\n\n${originals[code]}`).join('\n\n')
 
   const activityTemplate = stageInfo.activities.map(code => `### ${ACTIVITY_META[code].label} (${displayActivityCode(code)})
 
-${artifactPlaceholder(code)}
+- (이 활동에서 팀이 정한 핵심과 그 의미 — 40자 안팎)
+- (잘 설계된 점, 또는 '~하면 더 좋아질 수 있어요' 제안 — 40자 안팎)
 
-#### 분석
+> (이 활동의 핵심을 교사 눈높이로 한 줄)`).join('\n\n')
 
-- (팀의 결정이 갖는 의미 — 1~2문장, 산출물의 구체적 내용을 근거로)
-- (강점 또는 주목할 점 — 1~2문장)
-- (보완할 점 — 1~2문장)
+  return `당신은 T-CID(팀 협력 수업설계)를 잘 아는 수업설계 동료입니다. 교사팀이 만든 설계를 평가하거나 채점하는 사람이 아니라, 설계의 핵심을 한눈에 정리해 주고 잘한 점을 짚어 주며 다음 걸음을 함께 고민하는 지원자입니다. 아래 산출물을 읽고 교사가 한눈에 보는 대시보드형 보고서를 씁니다.
 
-> (이 활동에서 가장 주목할 결정을 한 문장으로)`).join('\n\n')
-
-  return `당신은 T-CID(팀 협력 수업설계) 모델 전문가이자 교육과정 설계 분석가입니다. 아래 산출물을 읽고 구조화된 분석 보고서를 씁니다.
+**어조 원칙**:
+- 판정·채점·등급을 매기지 않는다. 점수, '충분/부족', '미흡', '위험' 같은 평가어를 쓰지 않는다.
+- '~해야 한다', '~가 필요하다', '~를 확보해야 한다' 같은 단정·지시 대신 '~하면 더 좋아질 수 있어요', '~를 더해 보면 어떨까요' 같은 제안형으로 쓴다.
+- 칭찬은 산출물의 구체적 근거(코드·활동명·장면)와 함께 쓴다. 막연한 칭찬은 쓰지 않는다.
+- 존중하는 말투(해요체)로 쓴다.
+- ❌ 쓰지 말 것: "문제상황의 실제성은 강력하지만 학년군별 평가 근거를 확보해야 한다."
+- ✅ 이렇게: "학년군마다 실제 동네 장면이 살아 있어요. 평가 요소마다 근거 코드를 한 줄씩 붙이면 연결이 더 또렷해질 수 있어요."
 
 **작성 원칙**:
 - 아래 출력 형식의 머리글(#, ##, ###)을 이름·순서 그대로 쓴다. 머리글을 바꾸거나 빼거나 새로 만들지 않는다.
-- {{ARTIFACT:코드}} 줄은 서버가 산출물 원문으로 바꾸는 자리표시다. 그 줄을 글자 그대로 한 줄로 두고, 원문을 다시 베껴 쓰지 않는다.
-- 문단은 3문장 이하. 나열은 목록, 비교·수치·판단은 마크다운 표로 쓴다.
-- 인사이트·권고는 '> ' 인용 블록 한 줄로 압축한다.
-- 분석은 산출물의 구체적 내용(코드·활동명·장면)을 근거로 한다. 단순 재서술·일반론 금지.
-- 표의 칸 안에서는 줄을 바꾸지 않는다. **굵게**는 핵심 키워드에만 쓴다.
+- 문단을 쓰지 않는다. 모든 내용은 짧은 글머리(항목당 40자 안팎) 또는 짧은 표 칸으로 쓴다.
+- 표는 열 3~4개, 칸마다 한 구절. 칸 안에서 줄을 바꾸지 않는다.
+- 핵심 메시지는 '> ' 인용 한 줄로 압축한다.
+- 내용은 산출물의 구체적 내용을 근거로 한다. 일반론 금지.
+- 산출물 원문은 출력하지 않는다(서버가 보고서 끝 부록으로 붙인다). '${next.title}' 다음에는 아무것도 쓰지 않는다.
+- **굵게**는 핵심 키워드에만 쓴다.
 
 ## 프로젝트 정보
 - 제목: ${project.title}
@@ -265,11 +283,11 @@ ${artifactPlaceholder(code)}
 - 교과: ${project.targetSubjects?.join(', ') ?? '미지정'}
 - 분석 단계: ${STAGE_LABELS[stage]}(${stage})
 
-## 산출물 원문 (읽기용 — 출력에 다시 쓰지 말 것)
+## 산출물 원문 (읽기용 — 출력하지 말 것)
 
 ${sourceBlocks}
 
-## ${alignment.title} 점검 항목
+## ${alignment.title} — 살펴볼 관점 (판정하지 말고, 잘 이어진 곳과 다음에 이어 볼 곳을 찾는 데만 쓴다)
 
 ${deepAnalysisPoints(stage)}
 
@@ -281,9 +299,8 @@ ${deepAnalysisPoints(stage)}
 
 ## ${summary.title}
 
-(이 팀이 이 단계에서 만든 것과 설계 방향 — 3문장 이하)
-
-> (이 단계를 대표하는 핵심 결정 한 문장)
+(팀이 만든 설계의 핵심을 교사 눈높이로 한 문장 — 60자 이내)
+키워드: (핵심 키워드 3~5개를 ' · '로 구분)
 
 ## ${overview.title}
 
@@ -291,7 +308,7 @@ ${buildOverviewTable(stage, artifacts)}
 
 | 핵심 수치 | 값 | 의미 |
 | --- | --- | --- |
-| (산출물에서 셀 수 있는 수치 3~4개: 예) 연결 성취기준 수, 학년군 수, 총 차시, 평가 장면 수) | (숫자) | (한 구절) |
+| (산출물에서 셀 수 있는 수치 3~4개: 예) 연결 성취기준 수, 학년군 수, 총 차시, 평가 장면 수) | (숫자) | (10자 안팎) |
 
 ## ${activities.title}
 
@@ -299,40 +316,31 @@ ${activityTemplate}
 
 ## ${alignment.title}
 
-| 점검 항목 | 판단 | 근거 |
+| 연결이 잘 된 곳 | 무엇과 무엇이 | 근거 |
 | --- | --- | --- |
-| (위 점검 항목마다 한 줄) | (충분 / 보완 필요 / 부족) | (산출물 근거 한 문장) |
+| (잘 이어진 곳 2~3개, 짧게) | (예: 성취기준 ↔ 평가 요소) | (한 구절) |
 
-> (정렬에서 가장 중요한 진단 한 문장)
+다음에 연결해 볼 곳:
+- (아직 이어지지 않은 곳과 이어 볼 방법 — 제안형, 40자 안팎)
+- (같은 형식, 1~2개)
 
 ## ${strengths.title}
 
-- **(키워드)**: (산출물 근거 + T-CID 관점 해석, 2문장 이하)
+- **(키워드)**: (구체적 근거와 함께 칭찬 — 40자 안팎)
 - **(키워드)**: (같은 형식)
 - **(키워드)**: (같은 형식)
 
 ## ${improvements.title}
 
-| 보완점 | 왜 중요한가 | 바로 할 수 있는 조치 |
-| --- | --- | --- |
-| (산출물에서 발견한 구체적 공백 3가지, 한 줄씩) | | |
+- **(아이디어)**: (제안 한 줄 — '~하면 더 좋아질 수 있어요') · 이유: (한 구절)
+- **(아이디어)**: (같은 형식)
+- **(아이디어)**: (같은 형식)
 
 ## ${next.title}
 
-1. (다음 단계에서 먼저 할 일 — 1~2문장)
+> (다음 단계를 시작하는 팀을 응원하는 한 줄)
+
+1. (바로 해 볼 일 — 40자 안팎)
 2. (같은 형식)
-3. (같은 형식)
-
-| 평가 항목 | 점수 (5점) | 근거 |
-| --- | --- | --- |
-| 산출물 완성도 | | |
-| 교과 융합 깊이 | | |
-| 학습자 중심성 | | |
-| 다음 단계 준비도 | | |
-| 팀 협력 수준 | | |
-
-> **종합**: (정확한 진단 한 문장 — 격려가 아닌 판단)
-
----
-*T-CID 협력 수업설계 모델 기반 분석 보고서*`
+3. (같은 형식)`
 }
