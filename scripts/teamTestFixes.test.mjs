@@ -850,3 +850,43 @@ test('28e: 새 버전이 저장되면 이전 버전의 다시 논의 요청만 �
   assert.deepEqual(task022.staleRediscussUids(confirmations, 'A-2-1', 3), [])
   assert.deepEqual(task022.staleRediscussUids(undefined, 'T-2-1', 3), [])
 })
+
+// ─── TASK-023: #31 재논의 요청과 명시적 저장·확정 구분 ─────────
+const task023Flow = await import('../src/lib/activity/conversation-flow.ts')
+
+test('31: 확인 카드의 재논의 요청 뒤 팀 일정 저장 요청은 보류가 아니다', () => {
+  const reason = '[다시 논의 요청] 목요일은 돌봄 지원 때문에 어려워요.'
+  assert.equal(task023Flow.isDecisionDeferred(reason), false)
+  assert.equal(task023Flow.isDecisionDeferred(`[캔바1]: ${reason}`), false)
+  assert.equal(task023Flow.hasDeferredDecision([
+    { role: 'user', content: reason },
+    { role: 'user', content: '화요일 15:40으로 팀 일정 저장해 주세요' },
+  ]), false)
+})
+
+test('31: 결정은 보류할게요는 명시적인 결정 보류다', () => {
+  assert.equal(task023Flow.isDecisionDeferred('결정은 보류할게요'), true)
+  assert.equal(task023Flow.hasDeferredDecision([{ role: 'user', content: '결정은 보류할게요' }]), true)
+})
+
+test('31: 다시 논의하기 뒤 확정해 주세요는 보류를 해제한다', () => {
+  assert.equal(task023Flow.hasDeferredDecision([
+    { role: 'user', content: '다시 논의하기' },
+    { role: 'user', content: '확정해 주세요' },
+  ]), false)
+})
+
+test('31: 다시 논의하기 단독은 결정 보류를 유지한다', () => {
+  assert.equal(task023Flow.isDecisionDeferred('다시 논의하기'), true)
+  assert.equal(task023Flow.hasDeferredDecision([{ role: 'user', content: '다시 논의하기' }]), true)
+})
+
+test('31: 띄어쓰기·존댓말 저장 요청은 재개하고 명시적인 저장 거절은 유지한다', () => {
+  for (const content of ['저장해 주세요', '저장해 줘', '저장할게요', '저장 할 게요', '저장 부탁해요', '저장 부탁드립니다', '확정해 주세요', '확정해 주십시오', 'A안을 선택하겠습니다']) {
+    assert.equal(task023Flow.hasDeferredDecision([{ role: 'user', content: '다시 논의하기' }, { role: 'user', content }]), false, content)
+  }
+  assert.equal(task023Flow.hasDeferredDecision([
+    { role: 'user', content: '저장해 주세요' },
+    { role: 'user', content: '저장하지 않을게요' },
+  ]), true)
+})

@@ -28,6 +28,8 @@ export function PendingConfirmationBanner() {
   const { activityCode, entry } = pending[0]
   const code = activityCode as ActivityCode
   const label = ACTIVITY_META[code]?.label ?? activityCode
+  const labelEnding = label.replace(/[\s)]+$/g, '').slice(-1)
+  const objectParticle = /[가-힣]/.test(labelEnding) && (labelEnding.charCodeAt(0) - 0xAC00) % 28 !== 0 ? '을' : '를'
   const artifact = project.artifacts?.[code]
 
   async function respond(response: Parameters<typeof respondArtifactConfirmation>[4]) {
@@ -54,7 +56,7 @@ export function PendingConfirmationBanner() {
         className="fixed left-1/2 top-3 z-[80] w-[min(92vw,440px)] -translate-x-1/2 rounded-2xl border border-[#FFE0B2] bg-white p-3 shadow-lg"
       >
         <p className="text-[12px] font-bold text-[#202124] leading-snug" style={{ wordBreak: 'keep-all' }}>
-          팀장이 {displayActivityCode(code)}·{label}을(를) 정리했어요. 내용을 확인해 주세요.
+          팀장이 {displayActivityCode(code)}·{label}{objectParticle} 정리했어요. 내용을 확인해 주세요.
         </p>
         <p className="mt-0.5 text-[10px] text-[#9AA0A6]">
           내가 대화에 없을 때 저장된 산출물이에요{pending.length > 1 ? ` · 확인할 산출물 ${pending.length}건` : ''}
