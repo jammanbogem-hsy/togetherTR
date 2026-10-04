@@ -399,6 +399,21 @@ export function trainingSaveNoticeChip(text: string): string | null {
 }
 
 /**
+ * 화면 버튼이 보낸 연수 메시지를 교사 말풍선 대신 작은 칩으로 보일 문구. 저장 데이터는 그대로.
+ * 양식 저장 알림 / AI 도움 요청 / 단계별 진행 요청. 해당 없으면 null.
+ */
+export function trainingMessageChip(text: string, senderName?: string): string | null {
+  const body = text.replace(/^\s*\[답장:[^\]]*\]\s*/, '')
+  const by = senderName?.trim() ? ` · ${senderName.trim()}` : ''
+  const saved = trainingSaveNoticeChip(body)
+  if (saved) return `${saved}${by}`
+  const help = parseTrainingHelpRequest(body)
+  if (help) return `AI 도움 요청 · ${help.label}${by}`
+  if (body.trim() === TRAINING_STEP_BY_STEP) return `단계별 진행 요청${by}`
+  return null
+}
+
+/**
  * 연수용 활동의 첫 안내(AI 없이 고정) — 할 일 한 줄, 필수 칸, 한 번 묻는 칸, 도움 버튼, 저장 안내.
  * 일반 환영(ACTIVITY_WELCOME) 대신 쓴다.
  */

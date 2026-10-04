@@ -2878,7 +2878,7 @@ test('T12: 연수용 첫 안내는 AI 없이 정의로 만든 짧은 고정 안�
 test('T13: ChatPanel — 연수용 환영 분기·저장 알림 칩·연수용 활동은 구조화 빌더를 건너뛰어 양식 원문 키 유지', () => {
   const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.match(panel, /let welcome = isTrainingActivity\(proj, currentActivity\)\n      \? buildTrainingWelcome\(currentActivity\)/)
-  assert.match(panel, /const savedChip = msg\.role === 'user' \? trainingSaveNoticeChip\(msg\.content\) : null/)
+  assert.match(panel, /const trainingChip = msg\.role === 'user' \? trainingMessageChip\(msg\.content, msg\.displayName\) : null/)
   assert.match(panel, /if \(isTrainingActivity\(proj, targetAct\)\) \{\n      \/\/ 원문 그대로 저장\n    \} else if \(targetAct === 'T-1-1'\)/)
   assert.match(panel, /if \(isTrainingActivity\(proj, targetActivity\)\) \{\n      \/\/ 원문 그대로 저장\n    \} else if \(targetActivity === 'T-1-1'\)/)
 })
@@ -3514,4 +3514,70 @@ test('T7b-4: 구조 변경 보호 — 반영 확인 전엔 지키고, 서버에 
   assert.equal(lib.structuralKeysOfPatch({ type: 'add-column', column: { id: 'c9' } }).join(','), 'col+:c9')
   assert.equal(lib.prepareWorkspacePatch({ type: 'update-cell' }, { rows: [] }, false).type, 'update-cell')
   assert.equal(lib.prepareWorkspacePatch({ type: 'update-cell', updatedBy: 'a' }, { rows: [] }, true).type, 'replace-all')
+})
+
+// ─── TASK-T4b: 연수용 첫 안내가 실제 이동 경로마다 나오는지 · 버튼 요청 칩 ─────────
+function runWelcomeEffect({ project, currentActivity }) {
+  let welcomeEffect
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === 'useEffect'
+      && node.arguments[0]?.getText(tree).includes('showWelcomeMessage(welcome)')) welcomeEffect = node.arguments[0]
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  const source = ts.transpileModule(`exports.fn = ${welcomeEffect.getText(tree)}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText
+  let shown = null
+  const context = {
+    exports: {}, project, proj: project, currentActivity, messagesLoaded: true, messages: [], messagesLoadedByFallback: false,
+    userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage: () => true,
+    isTrainingActivity: training.isTrainingActivity, buildTrainingWelcome: training.buildTrainingWelcome,
+    showWelcomeMessage: text => { shown = text },
+  }
+  vm.runInNewContext(source, context)
+  context.exports.fn()
+  return shown
+}
+
+test('T17: 연수용 비핵심 활동은 어떤 경로로 들어가도 고정 첫 안내, 핵심·일반은 기존 환영', () => {
+  const base = { started: true, hostUid: 'host', mode: 'collaborative', currentCycle: 1, artifacts: {} }
+  const on = { ...base, trainingMode: { enabled: true, coreFormal: true } }
+  for (const code of ['T-2-1', 'T-2-2', 'T-2-3', 'A-1-1', 'A-2-3', 'Ds-1-1', 'DI-2-1', 'E-2-1']) {
+    const shown = runWelcomeEffect({ project: on, currentActivity: code })
+    assert.equal(shown, training.buildTrainingWelcome(code), code)
+    assert.doesNotMatch(shown, /오늘 함께할 순서/, code)
+  }
+  assert.equal(runWelcomeEffect({ project: on, currentActivity: 'T-1-2' }), ACTIVITY_WELCOME['T-1-2']) // 핵심 절차
+  assert.equal(runWelcomeEffect({ project: base, currentActivity: 'T-2-2' }), ACTIVITY_WELCOME['T-2-2']) // 일반 프로젝트
+  const soloAll = { ...base, mode: 'solo', trainingMode: { enabled: true, coreFormal: false } }
+  assert.equal(runWelcomeEffect({ project: soloAll, currentActivity: 'T-1-1' }), training.buildTrainingWelcome('T-1-1'))
+  // 이동 경로(사이드바·다음 활동·단계 이동 창·방장 동기화)는 모두 currentActivity 만 바꾸고, 환영은 이 effect 하나가 만든다.
+  const sources = {
+    sidebar: fs.readFileSync(new URL('../src/components/activity/ActivitySidebar.tsx', import.meta.url), 'utf8'),
+    stageMove: fs.readFileSync(new URL('../src/components/modals/StageMoveModal.tsx', import.meta.url), 'utf8'),
+    page: fs.readFileSync(new URL('../src/app/(app)/projects/[id]/page.tsx', import.meta.url), 'utf8'),
+    chat: fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8'),
+  }
+  assert.match(sources.sidebar, /setCurrentActivity\(code\)/)
+  assert.match(sources.stageMove, /setCurrentActivity\(firstActivity\)/)
+  assert.match(sources.page, /setCurrentActivity\(project\.currentActivity\)/)
+  assert.match(sources.chat, /setCurrentActivity\(nextActivity\)/)
+  for (const [name, src] of Object.entries(sources)) {
+    if (name !== 'chat') assert.doesNotMatch(src, /ACTIVITY_WELCOME|welcome-\$\{/, name)
+  }
+  assert.equal((sources.chat.match(/showWelcomeMessage\(/g) ?? []).length, 1 + 1) // 정의 1 + 호출 1
+  assert.equal((sources.chat.match(/(?<!SOLO_)ACTIVITY_WELCOME\[currentActivity\]/g) ?? []).length, 1)
+})
+
+test('T18: AI 도움·단계별 진행 요청도 교사 말풍선 대신 작은 칩(저장 형식 그대로)', () => {
+  const help = training.formatTrainingHelpRequest(training.TRAINING_ACTIVITIES['T-2-2'].help[0])
+  assert.equal(training.trainingMessageChip(help, '홍성용'), 'AI 도움 요청 · 갈등 규칙 예시 · 홍성용')
+  assert.equal(training.trainingMessageChip('[단계별로 함께 진행]', '홍성용'), '단계별 진행 요청 · 홍성용')
+  assert.equal(training.trainingMessageChip(`${training.formatTrainingSaveNotice('T-2-1')} 조언해 주세요`, '캔바1'), 'T-3 역할 배분 양식을 저장했어요 · 캔바1')
+  assert.equal(training.trainingMessageChip('[단계별로 함께 진행] 해 주세요'), null) // 교사가 직접 친 말은 말풍선
+  assert.equal(training.trainingMessageChip('조언해 주세요', '홍성용'), null)
+  assert.equal(training.trainingMessageChip('[답장: "규칙"]\n[AI 도움: 갈등 규칙 예시] 예시'), 'AI 도움 요청 · 갈등 규칙 예시')
+  const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /data-testid=\{isSaveChip \? 'training-save-chip' : 'training-request-chip'\}/)
 })

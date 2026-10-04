@@ -69,7 +69,7 @@ import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/st
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
 import { CHECKLIST_ALL_DONE_NOTE, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
-import { buildTrainingWelcome, isTrainingActivity, shouldReplyTrainingQuietly, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
+import { buildTrainingWelcome, isTrainingActivity, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { TrainingModeBar } from '@/components/training/TrainingModeBar'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -4715,13 +4715,14 @@ ${discussionSummary}
         {visibleMessages.map((msg) => {
           if (msg.role === 'system') return null
 
-          // 연수용 양식 저장 알림은 교사 말풍선이 아니라 작은 시스템 칩으로(저장 데이터 형식은 그대로)
-          const savedChip = msg.role === 'user' ? trainingSaveNoticeChip(msg.content) : null
-          if (savedChip) {
+          // 연수용 화면 버튼 메시지(양식 저장 알림·AI 도움 요청·단계별 진행 요청)는 교사 말풍선이 아니라 작은 칩으로(저장 데이터 형식은 그대로)
+          const trainingChip = msg.role === 'user' ? trainingMessageChip(msg.content, msg.displayName) : null
+          if (trainingChip) {
+            const isSaveChip = !!trainingSaveNoticeChip(msg.content)
             return (
-              <div key={msg.id} className="flex justify-center py-1" data-testid="training-save-chip">
-                <span className="rounded-full bg-[#E6F4EA] px-3 py-1 text-[12px] font-medium text-[#137333]">
-                  ✓ {savedChip}{msg.displayName ? ` · ${msg.displayName}` : ''}
+              <div key={msg.id} className="flex justify-center py-1" data-testid={isSaveChip ? 'training-save-chip' : 'training-request-chip'}>
+                <span className={cn('rounded-full px-3 py-1 text-[12px] font-medium', isSaveChip ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#E8F0FE] text-[#0B57D0]')}>
+                  {isSaveChip ? '✓ ' : ''}{trainingChip}
                 </span>
               </div>
             )
