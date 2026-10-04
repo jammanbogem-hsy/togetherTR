@@ -349,6 +349,8 @@ export function TeamRulesWorkspaceModal({
   const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
   const sync = useWorkspaceSync({
     open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    // 서버 저장본이 비어 있으면(빈 초안·산출물에서 채워 연 표) 첫 변경은 화면 표 통째로 저장 (#T7b)
+    remoteBlank: isBlankWorkspace(savedWorkspace),
     preserve: (next, current, key) => preserveEditingValue(next, current, key),
   })
 
@@ -463,7 +465,7 @@ export function TeamRulesWorkspaceModal({
     setWorkspace(next)
     setMessage('')
     try {
-      const cleanPatch = stripUndefinedDeep(patch) as TeamRulesWorkspacePatch
+      const cleanPatch = stripUndefinedDeep(sync.prepare(patch, next)) as TeamRulesWorkspacePatch
       const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       if (saved) sync.applySaved(normalizeWorkspace(saved))
     } catch (error) {

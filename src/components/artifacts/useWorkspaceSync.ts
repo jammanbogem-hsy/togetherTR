@@ -20,6 +20,69 @@ export function pendingKeyOfPatch(patch: unknown): string | null {
   return p?.type === 'update-cell' && p.rowId && p.columnId ? `${p.rowId}:${p.columnId}` : null
 }
 
+/**
+ * 구조 변경(행·열 추가·삭제) 키 — 서버 스냅숏에 그 변경이 보일 때까지 로컬 구조를 지킨다(#T7b).
+ * 'row+:id' / 'row-:id' / 'col+:id' / 'col-:id'
+ */
+export function structuralKeysOfPatch(patch: unknown): string[] {
+  const p = patch as { type?: string; row?: { id?: string }; rowId?: string; column?: { id?: string }; columnId?: string } | null
+  switch (p?.type) {
+    case 'add-row': return p.row?.id ? [`row+:${p.row.id}`] : []
+    case 'delete-row': return p.rowId ? [`row-:${p.rowId}`] : []
+    case 'add-column': return p.column?.id ? [`col+:${p.column.id}`] : []
+    case 'delete-column': return p.columnId ? [`col-:${p.columnId}`] : []
+    default: return []
+  }
+}
+
+interface StructuredLike { rows?: Array<{ id: string; cells?: Record<string, unknown> }>; columns?: Array<{ id: string }> }
+
+/** 들어온 표에 아직 반영되지 않은 로컬 구조 변경을 덧입힌다. 이미 반영된 키는 confirmed 로 돌려준다. */
+export function applyStructuralChanges<W>(incoming: W, current: W, keys: Iterable<string>): { next: W; confirmed: string[] } {
+  const inc = incoming as unknown as StructuredLike
+  const cur = current as unknown as StructuredLike
+  let rows = Array.isArray(inc.rows) ? [...inc.rows] : undefined
+  let columns = Array.isArray(inc.columns) ? [...inc.columns] : undefined
+  const confirmed: string[] = []
+  for (const key of new Set(keys)) {
+    const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)]
+    if (kind === 'row+' && rows) {
+      if (rows.some(r => r.id === id)) { confirmed.push(key); continue }
+      const mine = cur.rows?.find(r => r.id === id)
+      if (!mine) continue
+      // 로컬 표에서 바로 앞에 있던 행 뒤에 넣는다(없으면 끝)
+      const localIndex = cur.rows!.indexOf(mine)
+      const before = cur.rows!.slice(0, localIndex).reverse().find(r => rows!.some(x => x.id === r.id))
+      const at = before ? rows.findIndex(r => r.id === before.id) + 1 : (localIndex === 0 ? 0 : rows.length)
+      rows.splice(at, 0, mine)
+    } else if (kind === 'row-' && rows) {
+      if (!rows.some(r => r.id === id)) { confirmed.push(key); continue }
+      rows = rows.filter(r => r.id !== id)
+    } else if (kind === 'col+' && columns) {
+      if (columns.some(c => c.id === id)) { confirmed.push(key); continue }
+      const mine = cur.columns?.find(c => c.id === id)
+      if (!mine) continue
+      columns = [...columns, mine]
+      rows = rows?.map(r => ({ ...r, cells: { ...r.cells, [id]: cur.rows?.find(x => x.id === r.id)?.cells?.[id] ?? '' } }))
+    } else if (kind === 'col-' && columns) {
+      if (!columns.some(c => c.id === id)) { confirmed.push(key); continue }
+      columns = columns.filter(c => c.id !== id)
+    }
+  }
+  const next = { ...(incoming as object), ...(rows ? { rows } : {}), ...(columns ? { columns } : {}) } as W
+  return { next, confirmed }
+}
+
+/**
+ * 서버 저장본이 비어 있으면(빈 초안이거나 산출물에서 채워 연 표) 칸·행 단위 patch 는 서버의 빈 표에 적용돼
+ * 화면의 행을 잃는다. 이때는 첫 변경을 지금 화면의 표 통째(replace-all)로 보낸다.
+ */
+export function prepareWorkspacePatch<P, W>(patch: P, next: W, remoteBlank: boolean): P {
+  const p = patch as unknown as { type?: string; updatedBy?: string }
+  if (!remoteBlank || p?.type === 'replace-all') return patch
+  return { type: 'replace-all', workspace: next, updatedBy: p?.updatedBy } as unknown as P
+}
+
 /** 칸별 저장 대기 수를 세는 장부(같은 칸에 여러 저장이 겹쳐도 마지막이 끝날 때까지 지킨다). */
 export function createPendingLedger() {
   const pending = new Map<string, number>()
@@ -48,6 +111,8 @@ export function createPendingLedger() {
 }
 
 export interface WorkspaceSync<W> {
+  /** 서버 저장본이 비어 있으면 첫 변경을 화면 표 통째(replace-all)로 바꾼다. */
+  prepare<P>(patch: P, next: W): P
   /** 저장 요청을 장부에 올린다 — 끝날 때까지 그 칸은 원격 스냅숏이 덮지 않는다. */
   track<T>(patch: unknown, promise: Promise<T>): Promise<T>
   /** 저장 응답을 반영 — 편집 중·대기 중 칸은 로컬 값 유지. */
@@ -56,15 +121,20 @@ export interface WorkspaceSync<W> {
   settledLatest(): Promise<W>
 }
 
-export function useWorkspaceSync<W>({ open, incoming, workspace, setWorkspace, editingKey, preserve }: {
+export function useWorkspaceSync<W>({ open, incoming, workspace, setWorkspace, editingKey, preserve, remoteBlank = false }: {
   open: boolean
   incoming: W
+  /** 서버 저장본이 실질적으로 비어 있는지(isBlankWorkspace) */
+  remoteBlank?: boolean
   workspace: W
   setWorkspace: (update: (current: W) => W) => void
   editingKey: string | null
   preserve: PreserveFn<W>
 }): WorkspaceSync<W> {
   const [ledger] = useState(createPendingLedger)
+  // 서버에 반영이 확인될 때까지 지키는 구조 변경(행·열 추가·삭제)
+  const [structural] = useState(() => new Set<string>())
+  const remoteBlankRef = useRef(remoteBlank)
   const latestRef = useRef(workspace)
   const editingRef = useRef(editingKey)
   const preserveRef = useRef(preserve)
@@ -72,22 +142,41 @@ export function useWorkspaceSync<W>({ open, incoming, workspace, setWorkspace, e
     latestRef.current = workspace
     editingRef.current = editingKey
     preserveRef.current = preserve
+    remoteBlankRef.current = remoteBlank
   })
+
 
   const protectedKeys = useCallback(() => [
     ...ledger.keys(),
     ...(editingRef.current ? [editingRef.current] : []),
   ], [ledger])
 
+  const mergeIncoming = useCallback((next: W, current: W): W => {
+    const cells = mergeIncomingWorkspace(next, current, protectedKeys(), preserveRef.current)
+    const { next: merged, confirmed } = applyStructuralChanges(cells, current, structural)
+    for (const key of confirmed) structural.delete(key)
+    return merged
+  }, [protectedKeys, structural])
+
   // 원격 스냅숏이 들어올 때만 반영한다. editingKey 변화(칸 이동·blur)로는 다시 돌지 않는다.
   useEffect(() => {
     if (!open) return
-    setWorkspace(current => mergeIncomingWorkspace(incoming, current, protectedKeys(), preserveRef.current))
-  }, [incoming, open, protectedKeys, setWorkspace])
+    setWorkspace(current => mergeIncoming(incoming, current))
+  }, [incoming, open, mergeIncoming, setWorkspace])
 
   return {
-    track: (patch, promise) => ledger.track(patch, promise),
-    applySaved: saved => setWorkspace(current => mergeIncomingWorkspace(saved, current, protectedKeys(), preserveRef.current)),
+    prepare: (patch, next) => {
+      for (const key of structuralKeysOfPatch(patch)) structural.add(key)
+      const prepared = prepareWorkspacePatch(patch, next, remoteBlankRef.current)
+      // 통째로 보낸 뒤에는 서버가 비어 있지 않다 — 응답 전 다음 변경이 또 통째로 가지 않게
+      if (prepared !== patch) remoteBlankRef.current = false
+      return prepared
+    },
+    track: (patch, promise) => {
+      for (const key of structuralKeysOfPatch(patch)) structural.add(key)
+      return ledger.track(patch, promise)
+    },
+    applySaved: saved => setWorkspace(current => mergeIncoming(saved, current)),
     settledLatest: async () => {
       await ledger.settle()
       return latestRef.current

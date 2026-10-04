@@ -457,6 +457,8 @@ export function LearningActivityWorkspaceModal({
   const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
   const sync = useWorkspaceSync({
     open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    // 서버 저장본이 비어 있으면(빈 초안·산출물에서 채워 연 표) 첫 변경은 화면 표 통째로 저장 (#T7b)
+    remoteBlank: isBlankWorkspace(savedWorkspace),
     preserve: (next, current, key) => preserveEditingValue(next, current, key, pendingDeletionsRef.current),
   })
 
@@ -581,7 +583,7 @@ export function LearningActivityWorkspaceModal({
     setMessage('')
     try {
       // Firestore는 nested undefined를 거부 — patch에 잔존하는 undefined를 송신 직전에 청소.
-      const cleanPatch = stripUndefinedDeep(patch) as LearningActivityWorkspacePatch
+      const cleanPatch = stripUndefinedDeep(sync.prepare(patch, next)) as LearningActivityWorkspacePatch
       const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       if (deletedIds?.length) {
         for (const id of deletedIds) pendingDeletionsRef.current.delete(id)

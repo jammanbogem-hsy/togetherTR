@@ -3411,3 +3411,107 @@ test('T16e: 프롬프트 — 단계 종료 체크리스트의 팀 확인 칸은 
   assert.match(training, /연수용 약식 진행 규칙/)
   assert.match(training, /\*\*팀 확인\*\* 칸에는 '☐' 한 글자만 쓴다/)
 })
+
+// ─── TASK-T7b: '+ 행'·'+ 열' 회귀 — 비어 있는 서버 저장본에서 새 행·열이 사라지던 결함 ─────────
+const { isBlankWorkspace: t7bIsBlank } = await import('../src/lib/coedit/workspaceBlank.ts')
+function loadModalInternals(file) {
+  const source = fs.readFileSync(new URL(`../src/components/artifacts/${file}`, import.meta.url), 'utf8')
+    + '\nexports.__normalize = normalizeWorkspace; exports.__preserve = preserveEditingValue; exports.__emptyRow = emptyRow;'
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+  }).outputText
+  const stub = new Proxy(function () {}, { get: (_t, key) => key === '__esModule' ? true : key === Symbol.toPrimitive ? () => '' : stub, apply: () => stub, construct: () => stub })
+  const real = { react: React, 'react/jsx-runtime': jsxRuntime, '@/lib/coedit/workspaceBlank': { isBlankWorkspace: t7bIsBlank } }
+  const context = { exports: {}, require: name => real[name] ?? stub, console, Math, Date, JSON, Object, Array, Set, Map, String, Number }
+  vm.runInNewContext(compiled, context)
+  return context.exports
+}
+const t7bModals = fs.readdirSync(new URL('../src/components/artifacts/', import.meta.url)).filter(f => f.endsWith('WorkspaceModal.tsx') && f !== 'CoeditWorkspaceModal.tsx')
+
+function t7bFlow(m, { saved, artifact, structural }) {
+  const runner = makeHookRunner()
+  const hook = loadArtifactTsx('../src/components/artifacts/useWorkspaceSync.ts', { react: runner.fakeReact, setTimeout, clearTimeout })
+  let ws = m.__normalize(saved, artifact)
+  const setWorkspace = update => { ws = update(ws) }
+  const props = (incoming, remote) => ({ open: true, incoming, workspace: ws, setWorkspace, editingKey: null, remoteBlank: t7bIsBlank(remote), preserve: (n, c, k) => m.__preserve(n, c, k, new Set()) })
+  let sync = runner.render(hook.useWorkspaceSync, props(ws, saved))
+  const { patch, next } = structural(ws)
+  ws = next // commit: 로컬 즉시 반영
+  const prepared = sync.prepare(patch, next)
+  // 서버: replace-all 이면 화면 표 통째, 아니면 그 구조 변경만 서버 저장본에 적용
+  const server = prepared.type === 'replace-all' ? JSON.parse(JSON.stringify(prepared.workspace)) : structural(m.__normalize(saved, artifact), saved).serverApply(saved)
+  sync.track(prepared, Promise.resolve(server))
+  // 저장 전 옛 스냅숏 → 저장 후 새 스냅숏 → 저장 응답 반영
+  sync = runner.render(hook.useWorkspaceSync, props(m.__normalize(saved, artifact), saved))
+  const afterStale = ws
+  sync = runner.render(hook.useWorkspaceSync, props(m.__normalize(server, artifact), server))
+  sync.applySaved(m.__normalize(server, artifact))
+  return { prepared, afterStale, final: ws }
+}
+
+const addRow = ws => {
+  const row = { id: 'new_row', cells: Object.fromEntries(ws.columns.map(c => [c.id, ''])), color: '#FFFFFF' }
+  return { patch: { type: 'add-row', row, updatedBy: '홍성용' }, next: { ...ws, rows: [...ws.rows, row] }, serverApply: saved => ({ ...saved, rows: [...(saved?.rows ?? []), row] }) }
+}
+const addColumn = ws => {
+  const column = { id: 'new_col', label: '새 열', color: '#E8F0FE' }
+  return {
+    patch: { type: 'add-column', column, updatedBy: '홍성용' },
+    next: { ...ws, columns: [...ws.columns, column], rows: ws.rows.map(r => ({ ...r, cells: { ...r.cells, new_col: '' } })) },
+    serverApply: saved => ({ ...saved, columns: [...(saved?.columns ?? []), column], rows: (saved?.rows ?? []).map(r => ({ ...r, cells: { ...r.cells, new_col: '' } })) }),
+  }
+}
+
+test('T7b-1: 12개 공동 편집 창 — 빈 서버 저장본에서 + 행·+ 열 이 사라지지 않는다(연수용 양식 원문·빈 초안)', () => {
+  assert.equal(t7bModals.length, 12)
+  for (const file of t7bModals) {
+    const m = loadModalInternals(file)
+    for (const artifact of [undefined, { '역할 배분': '연수 양식 원문 문자열' }]) {
+      const row = t7bFlow(m, { saved: undefined, artifact, structural: addRow })
+      assert.equal(row.prepared.type, 'replace-all', `${file} 빈 서버면 통째 저장`)
+      assert.ok(row.afterStale.rows.some(r => r.id === 'new_row'), `${file} 옛 스냅숏 뒤에도 새 행`)
+      assert.ok(row.final.rows.some(r => r.id === 'new_row'), `${file} 저장 뒤에도 새 행`)
+      const col = t7bFlow(m, { saved: undefined, artifact, structural: addColumn })
+      assert.ok(col.final.columns.some(c => c.id === 'new_col'), `${file} 새 열`)
+    }
+  }
+})
+
+test('T7b-2: 일반 프로젝트(내용 있는 저장본) — + 행 은 add-row 그대로 보내고, 저장 전 옛 스냅숏이 와도 새 행 유지', () => {
+  for (const file of t7bModals) {
+    const m = loadModalInternals(file)
+    const base = m.__normalize(undefined, undefined)
+    const filledRow = { id: 'filled', cells: Object.fromEntries(base.columns.map(c => [c.id, '내용'])), color: '#FFFFFF' }
+    const saved = { ...base, rows: [filledRow] }
+    assert.equal(t7bIsBlank(saved), false, file)
+    const row = t7bFlow(m, { saved, artifact: undefined, structural: addRow })
+    assert.equal(row.prepared.type, 'add-row', file)
+    assert.equal(row.afterStale.rows.map(r => r.id).join(','), 'filled,new_row', `${file} 옛 스냅숏`)
+    assert.equal(row.final.rows.map(r => r.id).join(','), 'filled,new_row', `${file} 저장 뒤`)
+  }
+})
+
+test('T7b-3: 산출물에서 채워 연 표(T-3 역할 배분) — 새 행과 기존 행이 함께 저장되고 남는다', () => {
+  const m = loadModalInternals('RoleDistributionWorkspaceModal.tsx')
+  const artifact = { _schema: 'T-2-1', roles: [{ teacherName: '홍성용', subject: '국어', strengths: '기록', role: '진행', responsibilities: '회의록', deadline: '10/9' }] }
+  const row = t7bFlow(m, { saved: undefined, artifact, structural: addRow })
+  assert.equal(row.prepared.type, 'replace-all')
+  assert.equal(row.prepared.workspace.rows.length, 2)
+  assert.equal(row.final.rows.length, 2)
+  assert.equal(row.final.rows[0].cells.teacherName, '홍성용')
+  assert.equal(row.final.rows[1].id, 'new_row')
+})
+
+test('T7b-4: 구조 변경 보호 — 반영 확인 전엔 지키고, 서버에 보이면 해제(삭제도 같은 규칙)', () => {
+  const lib = loadArtifactTsx('../src/components/artifacts/useWorkspaceSync.ts', { react: makeHookRunner().fakeReact, setTimeout, clearTimeout })
+  const cur = { columns: [{ id: 'a' }], rows: [{ id: 'r1', cells: { a: '1' } }, { id: 'r2', cells: { a: '' } }] }
+  const stale = { columns: [{ id: 'a' }], rows: [{ id: 'r1', cells: { a: '1' } }, { id: 'gone', cells: { a: 'x' } }] }
+  const { next, confirmed } = lib.applyStructuralChanges(stale, cur, ['row+:r2', 'row-:gone'])
+  assert.equal(next.rows.map(r => r.id).join(','), 'r1,r2')
+  assert.equal(confirmed.length, 0)
+  const done = lib.applyStructuralChanges({ columns: [{ id: 'a' }], rows: [{ id: 'r1', cells: {} }, { id: 'r2', cells: {} }] }, cur, ['row+:r2', 'row-:gone'])
+  assert.equal([...done.confirmed].sort().join(','), 'row+:r2,row-:gone')
+  assert.equal(lib.structuralKeysOfPatch({ type: 'add-column', column: { id: 'c9' } }).join(','), 'col+:c9')
+  assert.equal(lib.prepareWorkspacePatch({ type: 'update-cell' }, { rows: [] }, false).type, 'update-cell')
+  assert.equal(lib.prepareWorkspacePatch({ type: 'update-cell', updatedBy: 'a' }, { rows: [] }, true).type, 'replace-all')
+})
