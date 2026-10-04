@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createDebouncedPatchQueue, mergeCoeditIncoming } from './useWorkspaceSync'
 import { createPortal } from 'react-dom'
 import { FloppyDisk, PaperPlaneRight, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
 import type {
@@ -103,39 +104,35 @@ export function CoeditWorkspaceModal({
   const [ws, setWs] = useState<CoeditWorkspace>(() => workspace ?? emptyWorkspace())
   // 지금 편집 중인 셀 — 원격 스냅샷이 이 셀만은 덮어쓰지 않도록 보호한다
   const editingKeyRef = useRef<string | null>(null)
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 칸별 지연 저장(#T7): 칸마다 타이머를 따로 둬서 400ms 안에 다른 칸으로 옮겨도 앞 칸 저장이 취소되지 않는다.
+  // 보내는 중인 칸도 응답이 올 때까지 원격 스냅샷이 덮지 않게 센다.
+  const onPatchSaveRef = useRef(onPatchSave)
+  useEffect(() => { onPatchSaveRef.current = onPatchSave })
+  const inflightKeysRef = useRef(new Map<string, number>())
+  const [cellQueue] = useState(() => createDebouncedPatchQueue<CoeditWorkspacePatch>((p, key) => {
+    const inflight = inflightKeysRef.current
+    inflight.set(key, (inflight.get(key) ?? 0) + 1)
+    return onPatchSaveRef.current(p)
+      .catch(() => setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.'))
+      .finally(() => {
+        const left = (inflight.get(key) ?? 1) - 1
+        if (left > 0) inflight.set(key, left)
+        else inflight.delete(key)
+      })
+  }))
 
   useEffect(() => {
     if (!workspace) return
-    setWs(prev => {
-      const editing = editingKeyRef.current
-      if (!editing) return workspace
-      // `main:rowId:colId` 또는 `blockId:rowId:colId`
-      const [scope, rowId, colId] = editing.split(':')
-      const keepFrom = (rows: CoeditWorkspaceRow[], src: CoeditWorkspaceRow[]) => {
-        const mine = src.find(r => r.id === rowId)?.cells?.[colId]
-        if (mine === undefined) return rows
-        return rows.map(r => r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: mine } } : r)
-      }
-      if (scope === 'main') {
-        return { ...workspace, rows: keepFrom(workspace.rows, prev.rows) }
-      }
-      return {
-        ...workspace,
-        blocks: workspace.blocks.map(b => {
-          if (b.id !== scope || !b.table) return b
-          const prevBlock = prev.blocks.find(x => x.id === scope)
-          if (!prevBlock?.table) return b
-          return { ...b, table: { ...b.table, rows: keepFrom(b.table.rows, prevBlock.table.rows) } }
-        }),
-      }
-    })
-  }, [workspace])
+    // 편집 중 칸·대기 중 칸·보내는 중인 칸은 로컬 값을 지킨다(늦게 온 옛 스냅샷이 새 입력을 덮지 않게).
+    setWs(prev => mergeCoeditIncoming(workspace, prev, [
+      ...cellQueue.keys(),
+      ...inflightKeysRef.current.keys(),
+      ...(editingKeyRef.current ? [editingKeyRef.current] : []),
+    ]))
+  }, [workspace, cellQueue])
 
-  // 언마운트 시 대기 중인 저장을 흘려보낸다 (마지막 타이핑 유실 방지)
-  useEffect(() => () => {
-    if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
-  }, [])
+  // 닫힐 때(언마운트) 대기 중인 저장은 취소하지 않고 바로 보낸다 (마지막 타이핑 유실 방지)
+  useEffect(() => () => { void cellQueue.flushAll() }, [cellQueue])
 
   // 최초 진입 시 기본 컬럼·보조 표를 한 번 저장해 둔다 (호스트만 — 동시 시드 충돌 방지)
   useEffect(() => {
@@ -162,29 +159,26 @@ export function CoeditWorkspaceModal({
     })
   }, [currentUid, currentUserName, currentUserColor, onPresenceUpdate])
 
-  /** 구조 변경(줄 추가·삭제 등) — 로컬 즉시 반영 후 바로 저장 */
+  /** 구조 변경(줄 추가·삭제 등) — 로컬 즉시 반영 후 바로 저장. 대기 중인 칸 저장을 먼저 보내 순서를 지킨다. */
   const patch = useCallback(async (p: CoeditWorkspacePatch, next: CoeditWorkspace) => {
     setWs(next)
     setError(null)
     try {
+      await cellQueue.flushAll()
       await onPatchSave(p)
     } catch {
       setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.')
     }
-  }, [onPatchSave])
+  }, [onPatchSave, cellQueue])
 
-  /** 셀 타이핑 — 로컬은 즉시, 원격 저장은 400ms 디바운스 (keystroke마다 쓰지 않는다) */
+  /** 셀 타이핑 — 로컬은 즉시, 원격 저장은 칸별 400ms 디바운스 (keystroke마다 쓰지 않는다) */
   const patchCellDebounced = useCallback((p: CoeditWorkspacePatch, next: CoeditWorkspace) => {
     setWs(next)
     setError(null)
-    if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
-    flushTimerRef.current = setTimeout(() => {
-      flushTimerRef.current = null
-      void onPatchSave(p).catch(() => {
-        setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.')
-      })
-    }, 400)
-  }, [onPatchSave])
+    // 주 표 칸은 칸 단위, 보조 표는 표 단위(upsert-block)로 대기한다 — 같은 키의 더 새 저장만 앞의 것을 대체한다.
+    const key = p.type === 'update-cell' ? `main:${p.rowId}:${p.columnId}` : p.type === 'upsert-block' ? p.block.id : 'structure'
+    cellQueue.schedule(key, p)
+  }, [cellQueue])
 
   const newRowId = () => `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
@@ -303,7 +297,7 @@ export function CoeditWorkspaceModal({
                 {columns.map(c => (
                   <th
                     key={c.id}
-                    className="px-3 py-2 text-left text-[13px] font-medium text-[#6B6A67] bg-[#F7F7F5] border-b border-r border-[#E9E9E7] whitespace-nowrap"
+                    className="px-3 py-2 text-left text-[13px] font-semibold text-[#202124] bg-[#F7F7F5] border-b border-r border-[#E9E9E7] whitespace-nowrap"
                     style={{ boxShadow: c.color ? `inset 0 2px 0 0 ${c.color}` : undefined }}
                   >
                     {c.label}

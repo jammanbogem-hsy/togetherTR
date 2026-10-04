@@ -33,10 +33,10 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
     <aside aria-label="연수용 모드" className="shrink-0 border-b border-[#DADCE0] bg-[#F3F7FE] px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         <span className="font-semibold text-[#0842A0]">연수용 모드</span>
-        <span role="status" className="flex items-center gap-1 text-[#3C4043]">
+        {(!loaded || status.requiredTotal > 0) && <span role="status" className="flex items-center gap-1 text-[#3C4043]">
           <CheckCircle size={16} aria-hidden="true" />
           {!loaded ? '내용을 불러오는 중…' : `필수 칸 ${status.requiredTotal - status.missingRequired.length}/${status.requiredTotal}`}
-        </span>
+        </span>}
         {loaded && status.missingRequired.length > 0 && <span className="text-xs text-[#8A3D00]">미입력: {status.missingRequired.map(field => field.label).join(' · ')}</span>}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">

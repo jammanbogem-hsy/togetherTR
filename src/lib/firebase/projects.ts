@@ -22,6 +22,8 @@ import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collab
 import { buildTeamGradeBandUpdate } from '@/lib/curriculum/teamGradeBandState'
 import { canFillRowDescription, type RowDescriptionUpdate } from '@/lib/curriculum/rowDescriptions'
 import { isTrainingActivity } from '@/lib/training/trainingMode'
+import { serializeWorkspaceSave } from './serializeSave'
+import { messageDocPath } from '@/lib/chat/checklist'
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -1253,22 +1255,25 @@ export async function patchTeamVisionWorkspace(
   projectId: string,
   patch: TeamVisionWorkspacePatch,
 ): Promise<TeamVisionWorkspace> {
-  // [lag fix 2026-05-14] runTransaction → getDoc+updateDoc 단순화 (IGW와 동일 path).
-  // Why: 같은 사용자가 빠른 blur/click으로 연속 commit하면 자기 자신과 base-version 충돌(failed-precondition) →
-  //      5회 backoff retry 후 throw → "저장 못함" + retry 동안 main thread lag.
-  //      동시 편집 race-safety는 last-write-wins로 trade-off.
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyTeamVisionWorkspacePatch(data.teamVisionWorkspace, patch)
-  // row.cells / block.table 등 nested 객체 안 undefined까지 제거 — cleanTeamVisionRow/Block은 1-level만 처리
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
-  await updateDoc(ref, {
-    teamVisionWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'teamVisionWorkspace', async () => {
+    // [lag fix 2026-05-14] runTransaction → getDoc+updateDoc 단순화 (IGW와 동일 path).
+    // Why: 같은 사용자가 빠른 blur/click으로 연속 commit하면 자기 자신과 base-version 충돌(failed-precondition) →
+    //      5회 backoff retry 후 throw → "저장 못함" + retry 동안 main thread lag.
+    //      동시 편집 race-safety는 last-write-wins로 trade-off.
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyTeamVisionWorkspacePatch(data.teamVisionWorkspace, patch)
+    // row.cells / block.table 등 nested 객체 안 undefined까지 제거 — cleanTeamVisionRow/Block은 1-level만 처리
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+    await updateDoc(ref, {
+      teamVisionWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 // presence는 부모 projects/{id}를 건드리지 않도록 subcollection으로 분리 (IGW와 동일).
@@ -1529,22 +1534,25 @@ export async function patchIntegratedGoalWorkspace(
   projectId: string,
   patch: IntegratedGoalWorkspacePatch,
 ): Promise<IntegratedGoalWorkspace> {
-  // [lag fix 2026-05-14] runTransaction → getDoc+updateDoc 로 단순화.
-  // Why: 같은 사용자가 빠른 blur/click으로 연속 commit하면 자기 자신과 base-version 충돌(failed-precondition)이 나
-  //      5회 backoff retry 후 throw → "저장하지 못했습니다" + retry 동안 main thread lag.
-  //      동시 편집의 race-safety는 last-write-wins로 trade-off (다중 사용자 동시 편집 시 한쪽 변경이 덮어쓸 수 있음).
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyIntegratedGoalWorkspacePatch(data.integratedGoalWorkspace, patch)
-  // row.cells / block.table 등 nested 객체 안 undefined까지 제거 — cleanXxxRow/Block은 1-level만 처리
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
-  await updateDoc(ref, {
-    integratedGoalWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'integratedGoalWorkspace', async () => {
+    // [lag fix 2026-05-14] runTransaction → getDoc+updateDoc 로 단순화.
+    // Why: 같은 사용자가 빠른 blur/click으로 연속 commit하면 자기 자신과 base-version 충돌(failed-precondition)이 나
+    //      5회 backoff retry 후 throw → "저장하지 못했습니다" + retry 동안 main thread lag.
+    //      동시 편집의 race-safety는 last-write-wins로 trade-off (다중 사용자 동시 편집 시 한쪽 변경이 덮어쓸 수 있음).
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyIntegratedGoalWorkspacePatch(data.integratedGoalWorkspace, patch)
+    // row.cells / block.table 등 nested 객체 안 undefined까지 제거 — cleanXxxRow/Block은 1-level만 처리
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+    await updateDoc(ref, {
+      integratedGoalWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 // presence는 부모 projects/{id}를 건드리지 않도록 subcollection으로 분리
@@ -1683,23 +1691,26 @@ export async function patchLessonDesignDirectionWorkspace(
   projectId: string,
   patch: LessonDesignDirectionWorkspacePatch,
 ): Promise<LessonDesignDirectionWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  return runTransaction(db, async transaction => {
-    const snap = await transaction.get(ref)
-    if (!snap.exists()) throw new Error('project-not-found')
-    const data = snap.data() as Project
-    const base = { ...emptyLessonDesignDirectionWorkspace(), ...data.lessonDesignDirectionWorkspace }
-    const nextWorkspace = applyLessonDesignDirectionWorkspacePatch(base, patch)
-    // Once migrated, legacy whole-workspace saves must not overwrite CRDT text.
-    if (snap.data().lessonDesignDirectionDocument?.state) {
-      nextWorkspace.blocks = data.lessonDesignDirectionWorkspace?.blocks ?? []
-    }
-    const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
-    transaction.update(ref, {
-      lessonDesignDirectionWorkspace: cleanWorkspace,
-      updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'lessonDesignDirectionWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    return runTransaction(db, async transaction => {
+      const snap = await transaction.get(ref)
+      if (!snap.exists()) throw new Error('project-not-found')
+      const data = snap.data() as Project
+      const base = { ...emptyLessonDesignDirectionWorkspace(), ...data.lessonDesignDirectionWorkspace }
+      const nextWorkspace = applyLessonDesignDirectionWorkspacePatch(base, patch)
+      // Once migrated, legacy whole-workspace saves must not overwrite CRDT text.
+      if (snap.data().lessonDesignDirectionDocument?.state) {
+        nextWorkspace.blocks = data.lessonDesignDirectionWorkspace?.blocks ?? []
+      }
+      const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+      transaction.update(ref, {
+        lessonDesignDirectionWorkspace: cleanWorkspace,
+        updatedAt: serverTimestamp(),
+      })
+      return cleanWorkspace
     })
-    return cleanWorkspace
   })
 }
 
@@ -1826,17 +1837,20 @@ export async function patchEvaluationPlanWorkspace(
   projectId: string,
   patch: EvaluationPlanWorkspacePatch,
 ): Promise<EvaluationPlanWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyEvaluationPlanWorkspacePatch(data.evaluationPlanWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
-  await updateDoc(ref, {
-    evaluationPlanWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'evaluationPlanWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyEvaluationPlanWorkspacePatch(data.evaluationPlanWorkspace, patch)
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+    await updateDoc(ref, {
+      evaluationPlanWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type EvaluationPlanPresenceEntry = {
@@ -1943,17 +1957,20 @@ export async function patchProblemSituationWorkspace(
   projectId: string,
   patch: ProblemSituationWorkspacePatch,
 ): Promise<ProblemSituationWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyProblemSituationWorkspacePatch(data.problemSituationWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
-  await updateDoc(ref, {
-    problemSituationWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'problemSituationWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyProblemSituationWorkspacePatch(data.problemSituationWorkspace, patch)
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+    await updateDoc(ref, {
+      problemSituationWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type ProblemSituationPresenceEntry = {
@@ -2065,17 +2082,20 @@ export async function patchSupportToolWorkspace(
   projectId: string,
   patch: SupportToolWorkspacePatch,
 ): Promise<SupportToolWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applySupportToolWorkspacePatch(data.supportToolWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
-  await updateDoc(ref, {
-    supportToolWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'supportToolWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applySupportToolWorkspacePatch(data.supportToolWorkspace, patch)
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace)
+    await updateDoc(ref, {
+      supportToolWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type SupportToolPresenceEntry = {
@@ -2203,17 +2223,20 @@ export async function patchRoleDistributionWorkspace(
   projectId: string,
   patch: RoleDistributionWorkspacePatch,
 ): Promise<RoleDistributionWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyRoleDistributionWorkspacePatch(data.roleDistributionWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as RoleDistributionWorkspace
-  await updateDoc(ref, {
-    roleDistributionWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'roleDistributionWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyRoleDistributionWorkspacePatch(data.roleDistributionWorkspace, patch)
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as RoleDistributionWorkspace
+    await updateDoc(ref, {
+      roleDistributionWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type RoleDistributionPresenceEntry = {
@@ -2338,14 +2361,17 @@ export async function patchTeamRulesWorkspace(
   projectId: string,
   patch: TeamRulesWorkspacePatch,
 ): Promise<TeamRulesWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyTeamRulesWorkspacePatch(data.teamRulesWorkspace, patch)
-  const clean = stripUndefinedDeep(nextWorkspace) as TeamRulesWorkspace
-  await updateDoc(ref, { teamRulesWorkspace: clean, updatedAt: serverTimestamp() })
-  return clean
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'teamRulesWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyTeamRulesWorkspacePatch(data.teamRulesWorkspace, patch)
+    const clean = stripUndefinedDeep(nextWorkspace) as TeamRulesWorkspace
+    await updateDoc(ref, { teamRulesWorkspace: clean, updatedAt: serverTimestamp() })
+    return clean
+  })
 }
 
 export type TeamRulesPresenceEntry = {
@@ -2442,14 +2468,17 @@ export async function patchTeamScheduleWorkspace(
   projectId: string,
   patch: TeamScheduleWorkspacePatch,
 ): Promise<TeamScheduleWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyTeamScheduleWorkspacePatch(data.teamScheduleWorkspace, patch)
-  const clean = stripUndefinedDeep(nextWorkspace) as TeamScheduleWorkspace
-  await updateDoc(ref, { teamScheduleWorkspace: clean, updatedAt: serverTimestamp() })
-  return clean
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'teamScheduleWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyTeamScheduleWorkspacePatch(data.teamScheduleWorkspace, patch)
+    const clean = stripUndefinedDeep(nextWorkspace) as TeamScheduleWorkspace
+    await updateDoc(ref, { teamScheduleWorkspace: clean, updatedAt: serverTimestamp() })
+    return clean
+  })
 }
 
 export type TeamSchedulePresenceEntry = {
@@ -2662,17 +2691,20 @@ export async function patchTopicSelectionWorkspace(
   projectId: string,
   patch: TopicSelectionWorkspacePatch,
 ): Promise<TopicSelectionWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyTopicSelectionWorkspacePatch(data.topicSelectionWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as TopicSelectionWorkspace
-  await updateDoc(ref, {
-    topicSelectionWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'topicSelectionWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyTopicSelectionWorkspacePatch(data.topicSelectionWorkspace, patch)
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as TopicSelectionWorkspace
+    await updateDoc(ref, {
+      topicSelectionWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type TopicSelectionPresenceEntry = {
@@ -2888,17 +2920,20 @@ export async function patchLearningActivityWorkspace(
   projectId: string,
   patch: LearningActivityWorkspacePatch,
 ): Promise<LearningActivityWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyLearningActivityWorkspacePatch(data.learningActivityWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as LearningActivityWorkspace
-  await updateDoc(ref, {
-    learningActivityWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'learningActivityWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyLearningActivityWorkspacePatch(data.learningActivityWorkspace, patch)
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as LearningActivityWorkspace
+    await updateDoc(ref, {
+      learningActivityWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type LearningActivityPresenceEntry = {
@@ -3106,17 +3141,20 @@ export async function patchScaffoldingWorkspace(
   projectId: string,
   patch: ScaffoldingWorkspacePatch,
 ): Promise<ScaffoldingWorkspace> {
-  const ref = doc(db, 'projects', projectId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('project-not-found')
-  const data = snap.data() as Project
-  const nextWorkspace = applyScaffoldingWorkspacePatch(data.scaffoldingWorkspace, patch)
-  const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as ScaffoldingWorkspace
-  await updateDoc(ref, {
-    scaffoldingWorkspace: cleanWorkspace,
-    updatedAt: serverTimestamp(),
+  // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+  return serializeWorkspaceSave(projectId, 'scaffoldingWorkspace', async () => {
+    const ref = doc(db, 'projects', projectId)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) throw new Error('project-not-found')
+    const data = snap.data() as Project
+    const nextWorkspace = applyScaffoldingWorkspacePatch(data.scaffoldingWorkspace, patch)
+    const cleanWorkspace = stripUndefinedDeep(nextWorkspace) as ScaffoldingWorkspace
+    await updateDoc(ref, {
+      scaffoldingWorkspace: cleanWorkspace,
+      updatedAt: serverTimestamp(),
+    })
+    return cleanWorkspace
   })
-  return cleanWorkspace
 }
 
 export type ScaffoldingPresenceEntry = {
@@ -3432,7 +3470,8 @@ export function watchMessages(
     legacyQuery,
     (snap) => {
       legacyMessages = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }) as Message)
+        // legacyPath: 저장 위치 표시(문서에는 쓰지 않음) — 체크리스트 상태 저장 등이 같은 경로에 쓰게
+        .map(d => ({ id: d.id, ...d.data(), legacyPath: true }) as Message)
         .filter(message => message.activityCode === activityCode)
       ready.legacy = true
       emit()
@@ -3444,6 +3483,21 @@ export function watchMessages(
     unsubscribeActivity()
     unsubscribeLegacy()
   }
+}
+
+/**
+ * AI 답변 속 체크리스트 한 칸의 상태를 그 메시지 문서에 필드 경로로 저장한다(다른 칸·본문은 건드리지 않음).
+ * 팀원 화면에는 메시지 구독으로 실시간 반영된다.
+ */
+export async function setMessageChecklistItem(
+  projectId: string,
+  message: Pick<Message, 'id' | 'activityCode' | 'legacyPath'>,
+  index: number,
+  checked: boolean,
+  by: string,
+): Promise<void> {
+  const path = messageDocPath(projectId, message, ACTIVITY_META[message.activityCode].stage)
+  await updateDoc(doc(db, path), { [`checklistState.${index}`]: { checked, by, at: serverTimestamp() } })
 }
 
 // ─── 단계 전환 이력 ──────────────────────────────────
@@ -3756,14 +3810,17 @@ function createCoeditWorkspaceModule<T extends CoeditWorkspace>(
   }
 
   async function patchWorkspace(projectId: string, patch: CoeditWorkspacePatch): Promise<T> {
-    const ref = doc(db, 'projects', projectId)
-    const snap = await getDoc(ref)
-    if (!snap.exists()) throw new Error('project-not-found')
-    const data = snap.data() as Record<string, unknown>
-    const next = apply(data[field] as CoeditWorkspace | undefined, patch)
-    const clean = stripUndefinedDeep(next) as T
-    await updateDoc(ref, { [field]: clean, updatedAt: serverTimestamp() })
-    return clean
+    // 같은 필드 저장은 이 기기에서 순서대로(빠른 연속 저장이 앞 칸을 옛 값으로 덮지 않게, #T7)
+    return serializeWorkspaceSave(projectId, field, async () => {
+      const ref = doc(db, 'projects', projectId)
+      const snap = await getDoc(ref)
+      if (!snap.exists()) throw new Error('project-not-found')
+      const data = snap.data() as Record<string, unknown>
+      const next = apply(data[field] as CoeditWorkspace | undefined, patch)
+      const clean = stripUndefinedDeep(next) as T
+      await updateDoc(ref, { [field]: clean, updatedAt: serverTimestamp() })
+      return clean
+    })
   }
 
   async function flushPresence(projectId: string, uid: string, presence: CoeditPresenceEntry | null): Promise<void> {

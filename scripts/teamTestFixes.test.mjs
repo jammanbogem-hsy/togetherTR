@@ -2503,8 +2503,8 @@ test('T2: isTrainingActivity — 꺼짐·없음은 일반, coreFormal 기본 tru
 
 test('T3: trainingStatus — 비어 있는 A 칸만 missingRequired, 공백·빈 배열은 빈 칸', () => {
   const empty = training.trainingStatus('E-1-1', {})
-  assert.deepEqual(empty.missingRequired.map(f => f.key), ['사실', '해석', '수정안'])
-  assert.equal(empty.requiredTotal, 3)
+  assert.deepEqual(empty.missingRequired.map(f => f.key), ['해석', '수정안'])
+  assert.equal(empty.requiredTotal, 2)
   const partial = training.trainingStatus('Ds-1-2', { 문제상황: '그늘막 제안', '핵심 질문': '  ' })
   assert.deepEqual(partial.missingRequired, [])
   assert.deepEqual(partial.filled.map(f => f.key), ['문제상황'])
@@ -2578,6 +2578,14 @@ test('T7: buildSystemPrompt — 연수용 활동에만 규칙 주입(일반 규�
   assert.match(route, /trainingStepByStep: isStepByStepActive\(messages\.filter\(m => m\.role === 'user'\)/)
 })
 
+// TASK-T9 이후 허용된 유일한 차이: 단계 종료 체크리스트의 팀 확인 칸 '□' → '☐' 와 그 형식 안내 한 줄.
+function withChecklistFormat(text) {
+  return text
+    .replaceAll('| □ |', '| ☐ |')
+    .replace('**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").', '**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").\n**팀 확인** 칸에는 \'☐\' 한 글자만 쓴다 — 선생님들이 화면에서 직접 눌러 체크한다(✅·□·설명 글 쓰지 않기).')
+    .replace('아래 **축약 체크리스트**를 표로 출력한다:\n', '아래 **축약 체크리스트**를 표로 출력한다(확인 칸에는 \'☐\' 한 글자만 — 선생님이 화면에서 직접 체크):\n')
+}
+
 test('T8: 일반 프로젝트 프롬프트는 연수용 도입 전(태그 pre-training-mode-2026-10-04)과 한 글자도 같다', async t => {
   let source
   try {
@@ -2596,7 +2604,7 @@ test('T8: 일반 프로젝트 프롬프트는 연수용 도입 전(태그 pre-tr
       for (const stage of T_STAGES) {
         for (const code of stage.activities) {
           const args = [stage.code, code, tProject(trainingMode, mode), mode === 'solo' ? '개인+AI' : '팀+AI', '학습자 요약', null, '홍성용(팀장), 캔바1', artifacts, undefined]
-          assert.equal(buildSystemPrompt(...args), before.buildSystemPrompt(...args), `${mode} ${code} ${JSON.stringify(trainingMode)}`)
+          assert.equal(buildSystemPrompt(...args), withChecklistFormat(before.buildSystemPrompt(...args)), `${mode} ${code} ${JSON.stringify(trainingMode)}`)
         }
       }
     }
@@ -2606,7 +2614,7 @@ test('T8: 일반 프로젝트 프롬프트는 연수용 도입 전(태그 pre-tr
   for (const code of training.TRAINING_CORE_ACTIVITIES) {
     const stage = T_META[code].stage
     const args = [stage, code, on, '팀+AI', undefined, null, undefined, {}, undefined]
-    assert.equal(buildSystemPrompt(...args), before.buildSystemPrompt(...args), code)
+    assert.equal(buildSystemPrompt(...args), withChecklistFormat(before.buildSystemPrompt(...args)), code)
   }
   fs.rmSync(dir, { recursive: true, force: true })
 })
@@ -2860,7 +2868,7 @@ test('T12: 연수용 첫 안내는 AI 없이 정의로 만든 짧은 고정 안�
   assert.match(w, /- 도움이 필요하면 위 버튼: 역할 표로 정리/)
   assert.match(w, /토의한 결과를 오른쪽 양식에 옮겨 적고 저장하세요\.$/)
   assert.doesNotMatch(w, /오늘 함께할 순서|자신 있으신가요|\n\n\n/)
-  assert.match(training.buildTrainingWelcome('Ds-1-2'), /- 있으면 좋은 칸: 문제상황 핵심 질문/)
+  assert.match(training.buildTrainingWelcome('A-2-2'), /- 있으면 좋은 칸: 탐구 질문 \(학생 언어\)/)
   assert.doesNotMatch(training.buildTrainingWelcome('T-2-1'), /있으면 좋은 칸/)
   for (const code of T_ALL) assert.ok(training.TRAINING_INTRO[code], code)
   assert.equal(training.trainingSaveNoticeChip('[연수 양식 저장: T-3 역할 배분] 조언해 주세요'), 'T-3 역할 배분 양식을 저장했어요')
@@ -2888,6 +2896,144 @@ test('T14: 개입 금지 중 체크를 다시 켠 저장(" 이번 저장만 조�
   assert.equal(training.isTrainingQuiet(msgs, 'T-2-1'), true)
   // 그다음 저장은 다시 고정 응답
   assert.equal(training.shouldReplyTrainingQuietly(on, 'T-2-1', notice + training.TRAINING_ADVICE_ON, msgs.map(m => m.content)), true)
+})
+
+// ─── TASK-T6: 공동 편집 표 머리글 대비·활동 표시 번호 ───
+function workspaceModalTrees() {
+  const dir = new URL('../src/components/artifacts/', import.meta.url)
+  return fs.readdirSync(dir).filter(file => file.endsWith('WorkspaceModal.tsx')).map(file => {
+    const source = fs.readFileSync(new URL(file, dir), 'utf8')
+    return { file, source, tree: ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX) }
+  })
+}
+
+test('T6a: 모든 공동 편집 표의 주·보조·미리보기 머리글은 밝은 배경과 짙은 글자, 삭제·포커스 색을 쓴다', () => {
+  let inputs = 0, headers = 0
+  for (const { file, tree } of workspaceModalTrees()) {
+    function visit(node, inHeader = false) {
+      const tag = ts.isJsxElement(node) ? node.openingElement.tagName.getText(tree) : ''
+      const header = inHeader || tag === 'th' || tag === 'thead'
+      if (header && ts.isJsxAttribute(node) && node.name.text === 'className' && node.initializer && ts.isStringLiteral(node.initializer)) {
+        const value = node.initializer.text
+        assert.doesNotMatch(value, /text-white|bg-\[#1A73E8\]|border-\[#1557B0\]/, file)
+        const elementTag = node.parent.parent.tagName?.getText(tree)
+        if (elementTag === 'input') {
+          inputs++
+          for (const expected of ['text-[#202124]', 'font-semibold', 'placeholder:text-[#5F6368]', 'bg-transparent', 'hover:bg-black/5', 'focus:bg-white', 'focus:border-[#0B57D0]']) assert.ok(value.split(' ').includes(expected), `${file}: ${expected}`)
+        } else if (elementTag === 'button') {
+          assert.ok(value.includes('text-[#5F6368]'), file)
+          assert.ok(value.includes('hover:text-[#C5221F]'), file)
+        } else if (elementTag === 'th') {
+          headers++
+          if (value.includes('text-[')) assert.ok(value.includes('text-[#202124]'), file)
+        }
+      }
+      ts.forEachChild(node, child => visit(child, header))
+    }
+    visit(tree)
+  }
+  assert.ok(inputs >= 20, '주·보조 표 입력 머리글을 모두 검사')
+  assert.ok(headers >= 40, '미리보기·빈 머리칸 포함')
+})
+
+test('T6b: 머리글·placeholder·삭제 아이콘은 기본·hover·focus 배경에서 대비 4.5:1 이상이다', () => {
+  const luminance = hex => {
+    const rgb = hex.match(/\w\w/g).map(value => parseInt(value, 16) / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
+  }
+  for (const foreground of ['202124', '5F6368', 'C5221F']) {
+    for (const background of ['F7F7F5', 'EBEBE9', 'FFFFFF']) assert.ok((luminance(background) + 0.05) / (luminance(foreground) + 0.05) >= 4.5, `${foreground}/${background}`)
+  }
+})
+
+test('T6c: 공동 편집 창 배지는 내부 코드 대신 문서 표시 번호를 렌더하고 스키마는 내부 코드를 유지한다', () => {
+  const expected = {
+    TeamVision: ['T-1-1', 'T-1'], LessonDesignDirection: ['T-1-2', 'T-2'], RoleDistribution: ['T-2-1', 'T-3'], TeamRules: ['T-2-2', 'T-4'], TeamSchedule: ['T-2-3', 'T-5'],
+    TopicSelection: ['A-1-2', 'A-2'], IntegratedGoal: ['A-2-2', 'A-4'], EvaluationPlan: ['Ds-1-1', 'Ds-1'], ProblemSituation: ['Ds-1-2', 'Ds-2'], LearningActivity: ['Ds-1-3', 'Ds-3'], SupportTool: ['Ds-2-1', 'Ds-4'], Scaffolding: ['Ds-2-2', 'Ds-5'],
+  }
+  for (const { file, source, tree } of workspaceModalTrees()) {
+    const badge = expected[file.replace('WorkspaceModal.tsx', '')]
+    if (!badge) continue // DI·E 공용 창에는 코드 배지가 없다.
+    const [internal, displayed] = badge
+    let rendered = 0
+    function visit(node) {
+      if (ts.isJsxText(node)) assert.doesNotMatch(node.text, /\b(?:T|A|Ds|DI|E)-\d-\d\b/, file)
+      if (ts.isJsxExpression(node) && node.expression && ts.isCallExpression(node.expression) && node.expression.expression.getText(tree) === 'displayActivityCode') {
+        const code = node.expression.arguments[0]?.text
+        const markup = renderToStaticMarkup(React.createElement('span', null, displayActivityCode(code)))
+        assert.ok(!markup.includes(code) || displayActivityCode(code) === code, file)
+        if (code === internal) { assert.equal(markup, `<span>${displayed}</span>`); rendered++ }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(tree)
+    assert.ok(rendered, `${file}: 배지 변환`)
+    assert.ok(source.includes(`_schema: '${internal}'`) || source.includes(`_schema === '${internal}'`), `${file}: 저장 스키마 보존`)
+  }
+})
+
+// ─── TASK-T5b: 기존 영어 머리글 문자열까지 한국어로 재표시 ───
+test('T5b1: 운영 T-3의 구분선 없는 영어 표 문자열·마크다운 표·객체 배열은 모두 한국어로 표시한다', () => {
+  const rows = [
+    { deadline: '매주 화요일', teacherName: '홍성용', subject: '미입력', strengths: '미입력', role: '진행', responsibilities: '회의 진행' },
+    { deadline: '금요일', teacherName: '잠만보', subject: '사회', strengths: '**미입력**', role: '자료', responsibilities: '지도 \\| 사진 공유' },
+  ]
+  const bare = serializeArtifactForPrompt(rows)
+  const markdown = ['| deadline | teacherName | subject | strengths | role | responsibilities |', '| --- | --- | --- | --- | --- | --- |', ...bare.split('\n').slice(1).map(row => `| ${row} |`)].join('\n')
+  for (const value of [bare, markdown, rows]) {
+    const text = trainingUiState.trainingFormValues('T-2-1', { '역할 배분': value })['역할 배분']
+    assert.match(text, /완료 시점/)
+    assert.match(text, /교사명/)
+    assert.match(text, /담당 교과/)
+    assert.match(text, /팀 내 역할/)
+    assert.match(text, /담당 업무/)
+    assert.match(text, /매주 화요일/)
+    assert.match(text, /홍성용/)
+    assert.match(text, /사회/)
+    assert.doesNotMatch(text, /deadline|teacherName|subject|strengths|responsibilities|미입력|강점·전문성/)
+    const parsed = unified().use(remarkParse).use(REMARK_PLUGINS).parse(text)
+    assert.equal(parsed.children[0].type, 'table')
+    assert.equal(parsed.children[0].children[0].children.length, 5)
+  }
+  assert.equal(rows[0].strengths, '미입력')
+})
+
+test('T5b2: 다른 활동의 옛 영어 표 머리글도 교과별 한국어 열 이름으로 바꾸고 미입력 열은 생략한다', () => {
+  const fixtures = [
+    ['Ds-1-1', '평가 계획', [{ checkpoint: '발표', item: '근거', method: '관찰', timing: '3차시', actor: '미입력' }], ['확인 지점', '평가 요소', '평가 방법', '평가 시점']],
+    ['Ds-1-3', '학습 활동', [{ order: '1', phase: '탐색', name: '지도 조사', description: '지역 비교', coreType: '핵심', subject: '사회', session: '1차시', operation: '미입력' }], ['순서', '흐름 단계', '활동명', '활동 설명', '핵심/부가', '담당 교과', '누적 차시']],
+    ['Ds-1-2', '문제상황', [{ title: '우리 동네', authenticity: '폭염', contentProduct: '그늘 지도', audienceAction: '주민에게 제안' }], ['제목', '실제성', '학습 내용+산출물', '청중+행위']],
+    ['A-2-1', '성취기준분석표', [{ gradeBand: '3-4', subject: '사회', coreIdea: '주민 참여', standard: '[4사08-02]', knowledgeUnderstanding: '지역 문제', processFunction: '조사', valueAttitude: '참여' }], ['학년군', '교과', '핵심 아이디어', '성취기준 코드+원문', '지식·이해', '과정·기능', '가치·태도']],
+  ]
+  for (const [code, section, rows, labels] of fixtures) {
+    const text = trainingUiState.trainingFormValues(code, { [section]: serializeArtifactForPrompt(rows) })[section]
+    for (const label of labels) assert.ok(text.includes(label), `${code}: ${label}`)
+    assert.doesNotMatch(text, /checkpoint|item\s*\||method\s*\||actor\s*\||coreType|operation|authenticity|audienceAction|gradeBand|standard\s*\||미입력/, code)
+  }
+})
+
+test('T5b3: 평문·한국어 작성 표·코드 블록은 원문을 보존하고 여러 영어 표의 주변 글은 유지한다', () => {
+  for (const raw of ['홍성용: 사회·진행\n잠만보: 사회·자료 조사', 'deadline은 금요일이에요. 미입력 칸은 나중에 적을게요.', '| 교사명 | 역할 |\n| --- | --- |\n| 홍성용 | 미입력 |', '```text\nteacherName | role\n홍성용 | 진행\n```']) {
+    assert.equal(trainingUiState.trainingFormValues('T-2-1', { '역할 배분': raw })['역할 배분'], raw)
+  }
+  const raw = '첫 표\n**teacherName** | `role`\n홍성용 | 진행\n\n두 번째 표\nteacherName | subject | strengths\n잠만보 | 사회 | 미입력\n\n원문 메모'
+  const text = trainingUiState.trainingFormValues('T-2-1', { '역할 배분': raw })['역할 배분']
+  assert.match(text, /^첫 표\n\| 교사명 \| 팀 내 역할 \|/)
+  assert.match(text, /두 번째 표\n\| 교사명 \| 담당 교과 \|/)
+  assert.match(text, /원문 메모$/)
+  assert.doesNotMatch(text, /teacherName|strengths|미입력/)
+})
+
+test('T8a: 필수 칸이 없는 연수 막대는 0/0 상태를 생략하고 불러오는 중 안내는 유지한다', () => {
+  const { TrainingModeBar: EmptyRequiredBar } = loadArtifactTsx('../src/components/training/TrainingModeBar.tsx', {
+    ...trainingUiBindings,
+    trainingStatus: () => ({ missingRequired: [], filled: 0, requiredTotal: 0 }),
+  }, ['TrainingModeBar'])
+  const props = { project: trainingUiProject, activityCode: 'T-2-1', loaded: true, isHost: true, busy: false, onSend: () => {}, onNext: () => {} }
+  const html = renderToStaticMarkup(React.createElement(EmptyRequiredBar, props))
+  assert.doesNotMatch(html, /필수 칸|0\/0|role="status"/)
+  assert.match(html, /연수용 모드/)
+  assert.match(renderToStaticMarkup(React.createElement(EmptyRequiredBar, { ...props, loaded: false })), /내용을 불러오는 중/)
 })
 
 // ─── TASK-T5: 한국어 양식 재표시·입력 원문·개입 금지 체크 ───
@@ -2980,4 +3126,288 @@ test('T22: 개입 금지일 때 체크는 자동 해제되고 다시 켜도 프�
   assert.equal(trainingUiElements(render(), 'input')[0].props.checked, false)
   messages = [...messages, { id: 'normal', role: 'user', content: '이제 조언해 주세요', activityCode: 'T-2-1' }]
   assert.equal(trainingUiElements(render(), 'input')[0].props.checked, true)
+})
+
+// ─── TASK-T7: 공동 편집 '저장하기' 후 이전 버전으로 돌아가던 결함 ─────────
+function makeHookRunner() {
+  const slots = []
+  let index = 0
+  let effects = []
+  const fakeReact = {
+    useState(init) {
+      const k = index++
+      if (!(k in slots)) slots[k] = typeof init === 'function' ? init() : init
+      return [slots[k], value => { slots[k] = typeof value === 'function' ? value(slots[k]) : value }]
+    },
+    useRef(init) { const k = index++; if (!(k in slots)) slots[k] = { current: init }; return slots[k] },
+    useCallback(fn, deps) {
+      const k = index++
+      const prev = slots[k]
+      if (prev && prev.deps.every((d, j) => Object.is(d, deps[j]))) return prev.fn
+      slots[k] = { fn, deps }
+      return fn
+    },
+    useEffect(fn, deps) {
+      const k = index++
+      const prev = slots[k]
+      const changed = !deps || !prev || deps.some((d, j) => !Object.is(d, prev.deps[j]))
+      slots[k] = { deps }
+      if (changed) effects.push(fn)
+    },
+  }
+  return {
+    fakeReact,
+    render(hook, props) {
+      index = 0
+      effects = []
+      const out = hook(props)
+      for (const effect of effects) effect()
+      return out
+    },
+  }
+}
+const t7Runner = makeHookRunner()
+const t7Sync = loadArtifactTsx('../src/components/artifacts/useWorkspaceSync.ts', {
+  react: t7Runner.fakeReact,
+  setTimeout: (...args) => globalThis.setTimeout(...args), clearTimeout: (...args) => globalThis.clearTimeout(...args),
+})
+const t7Cell = (ws, key) => ws.rows.find(r => r.id === key.split(':')[0])?.cells[key.split(':')[1]]
+const t7Preserve = (next, current, key) => {
+  const [rowId, colId] = key.split(':')
+  const mine = current.rows.find(r => r.id === rowId)?.cells?.[colId]
+  if (mine === undefined) return next
+  return { ...next, rows: next.rows.map(r => r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: mine } } : r) }
+}
+const t7Ws = value => ({ rows: [{ id: 'r1', cells: { c1: value, c2: '근거' } }] })
+
+test('T7a: 칸에서 나가도(blur) 옛 저장본으로 되돌아가지 않고, 저장 대기 중 도착한 옛 스냅숏도 새 입력을 덮지 않는다', async () => {
+  let ws = t7Ws('옛 원칙')
+  const setWorkspace = update => { ws = update(ws) }
+  const saved1 = t7Ws('옛 원칙')
+  const props = (incoming, editingKey) => ({ open: true, incoming, workspace: ws, setWorkspace, editingKey, preserve: t7Preserve })
+  let sync = t7Runner.render(t7Sync.useWorkspaceSync, props(saved1, 'r1:c1'))
+  ws = t7Ws('새 원칙') // 타이핑(로컬 즉시 반영)
+  sync = t7Runner.render(t7Sync.useWorkspaceSync, props(saved1, 'r1:c1'))
+  // blur: 칸 저장 시작 + editingKey 해제 → 예전에는 이 시점에 옛 저장본으로 되돌아갔다
+  let resolvePatch
+  const patchDone = sync.track({ type: 'update-cell', rowId: 'r1', columnId: 'c1', value: '새 원칙' }, new Promise(r => { resolvePatch = r }))
+  sync = t7Runner.render(t7Sync.useWorkspaceSync, props(saved1, null))
+  assert.equal(t7Cell(ws, 'r1:c1'), '새 원칙')
+  // 저장 응답 전, 다른 사람의 옛 스냅숏 도착 → 대기 중 칸은 로컬 유지, 다른 칸은 원격 반영
+  sync = t7Runner.render(t7Sync.useWorkspaceSync, props({ rows: [{ id: 'r1', cells: { c1: '옛 원칙', c2: '근거(팀원 수정)' } }] }, null))
+  assert.equal(t7Cell(ws, 'r1:c1'), '새 원칙')
+  assert.equal(t7Cell(ws, 'r1:c2'), '근거(팀원 수정)')
+  // '저장하기': 대기 중인 칸 저장이 끝난 뒤의 최신 로컬 표로 통째 저장
+  let latestResolved = false
+  const latestPromise = sync.settledLatest().then(v => { latestResolved = true; return v })
+  await new Promise(r => setTimeout(r, 0))
+  assert.equal(latestResolved, false) // 칸 저장이 끝나기 전엔 통째 저장하지 않는다
+  resolvePatch(t7Ws('새 원칙'))
+  await patchDone
+  t7Runner.render(t7Sync.useWorkspaceSync, props({ rows: [{ id: 'r1', cells: { c1: '옛 원칙', c2: '근거(팀원 수정)' } }] }, null))
+  const latest = await latestPromise
+  assert.equal(t7Cell(latest, 'r1:c1'), '새 원칙')
+  assert.equal(t7Cell(latest, 'r1:c2'), '근거(팀원 수정)')
+})
+
+test('T7b: 저장 응답 반영(applySaved)도 편집 중인 다른 칸을 덮지 않고, 대기가 끝난 칸은 원격 값을 따른다', () => {
+  let ws = t7Ws('편집 중 글자')
+  const setWorkspace = update => { ws = update(ws) }
+  const sync = t7Runner.render(t7Sync.useWorkspaceSync, { open: true, incoming: ws, workspace: ws, setWorkspace, editingKey: 'r1:c1', preserve: t7Preserve })
+  sync.applySaved({ rows: [{ id: 'r1', cells: { c1: '옛 값', c2: '서버 근거' } }] })
+  assert.equal(t7Cell(ws, 'r1:c1'), '편집 중 글자')
+  assert.equal(t7Cell(ws, 'r1:c2'), '서버 근거')
+  assert.equal(t7Sync.pendingKeyOfPatch({ type: 'update-cell', rowId: 'a', columnId: 'b' }), 'a:b')
+  assert.equal(t7Sync.pendingKeyOfPatch({ type: 'add-row' }), null)
+})
+
+test('T7c: 범용 공동 편집 창 — 칸별 대기 저장(빠른 칸 이동에도 앞 칸 유지), 닫을 때 즉시 전송, 대기·전송 중 칸 보호', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const sent = []
+  const queue = t7Sync.createDebouncedPatchQueue(async (patch, key) => { sent.push([key, patch.value]) }, 400)
+  queue.schedule('main:r1:c1', { value: '첫 칸' })
+  t.mock.timers.tick(100)
+  queue.schedule('main:r2:c1', { value: '둘째 칸' }) // 400ms 안에 칸 이동 — 예전엔 첫 칸 저장이 취소됐다
+  queue.schedule('main:r2:c1', { value: '둘째 칸 수정' })
+  t.mock.timers.tick(400)
+  await Promise.resolve()
+  assert.deepEqual(sent, [['main:r1:c1', '첫 칸'], ['main:r2:c1', '둘째 칸 수정']])
+  queue.schedule('main:r3:c1', { value: '닫기 직전' })
+  await queue.flushAll() // 언마운트: 취소하지 않고 바로 보낸다
+  assert.deepEqual(sent.at(-1), ['main:r3:c1', '닫기 직전'])
+  assert.equal(queue.keys().length, 0)
+  t.mock.timers.tick(1000)
+  assert.equal(sent.length, 3) // 중복 전송 없음
+  const local = { rows: [{ id: 'r1', cells: { c1: '새' } }], blocks: [{ id: 'b1', table: { columns: [], rows: [{ id: 'x', cells: { k: '로컬 표' } }] } }] }
+  const remote = { rows: [{ id: 'r1', cells: { c1: '옛' } }], blocks: [{ id: 'b1', table: { columns: [], rows: [{ id: 'x', cells: { k: '옛 표' } }] } }] }
+  const merged = t7Sync.mergeCoeditIncoming(remote, local, ['main:r1:c1', 'b1'])
+  assert.equal(merged.rows[0].cells.c1, '새')
+  assert.equal(merged.blocks[0].table.rows[0].cells.k, '로컬 표')
+  assert.equal(t7Sync.mergeCoeditIncoming(remote, local, []).rows[0].cells.c1, '옛')
+})
+
+test('T7d: 12개 공동 편집 창이 공용 동기화를 쓰고, 칸 이동으로 동기화가 다시 돌지 않으며, 저장은 트랜잭션', () => {
+  const dir = new URL('../src/components/artifacts/', import.meta.url)
+  const modals = fs.readdirSync(dir).filter(f => f.endsWith('WorkspaceModal.tsx') && f !== 'CoeditWorkspaceModal.tsx')
+  assert.equal(modals.length, 12)
+  for (const file of modals) {
+    const src = fs.readFileSync(new URL(file, dir), 'utf8')
+    assert.doesNotMatch(src, /\}, \[artifactContent, editingKey, open, savedWorkspace\]\)/, file)
+    assert.match(src, /const sync = useWorkspaceSync\(\{/, file)
+    assert.doesNotMatch(src, /type: 'replace-all', workspace, updatedBy/, file) // 통째 저장은 최신 로컬 표로
+    assert.match(src, /workspace: await sync\.settledLatest\(\)/, file)
+    assert.doesNotMatch(src, /if \(saved\) setWorkspace\(normalizeWorkspace\(saved\)\)/, file)
+  }
+  const coedit = fs.readFileSync(new URL('CoeditWorkspaceModal.tsx', dir), 'utf8')
+  assert.match(coedit, /useEffect\(\(\) => \(\) => \{ void cellQueue\.flushAll\(\) \}, \[cellQueue\]\)/)
+  assert.doesNotMatch(coedit, /clearTimeout\(flushTimerRef/)
+  // 저장은 트랜잭션이 아니라(2026-05-14 자기 충돌 지연 때문에 뺐음) 같은 필드 저장을 줄 세운다.
+  const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  const fns = [...projects.matchAll(/export async function (patch\w+Workspace)\([\s\S]*?\n\}\n/g)]
+  assert.equal(fns.length, 12)
+  for (const fn of fns) assert.match(fn[0], /return serializeWorkspaceSave\(projectId, '\w+Workspace', async \(\) => \{/, fn[1])
+  assert.match(projects, /async function patchWorkspace\(projectId: string, patch: CoeditWorkspacePatch\)[\s\S]*?serializeWorkspaceSave\(projectId, field,/)
+})
+
+test('T7e: 같은 필드 저장은 순서대로 — 뒤 저장이 앞 저장 반영 전 문서를 읽어 앞 칸을 덮지 않는다', async () => {
+  const { serializeWorkspaceSave } = await import('../src/lib/firebase/serializeSave.ts')
+  let doc = { c1: '옛', c2: '옛' }
+  const save = (key, value, delay) => serializeWorkspaceSave('p', 'teamRulesWorkspace', async () => {
+    const read = { ...doc } // getDoc
+    await new Promise(r => setTimeout(r, delay))
+    doc = { ...read, [key]: value } // updateDoc(필드 통째)
+    return doc
+  })
+  await Promise.all([save('c1', '새1', 20), save('c2', '새2', 0)])
+  assert.deepEqual(doc, { c1: '새1', c2: '새2' })
+  // 앞 저장이 실패해도 뒤 저장은 진행
+  const failed = serializeWorkspaceSave('p', 'teamRulesWorkspace', async () => { throw new Error('x') })
+  const after = save('c1', '다시', 0)
+  await assert.rejects(failed)
+  assert.deepEqual(await after, { c1: '다시', c2: '새2' })
+  // 다른 필드는 기다리지 않는다
+  let otherDone = false
+  const slow = serializeWorkspaceSave('p', 'a', () => new Promise(r => setTimeout(r, 30)))
+  await serializeWorkspaceSave('p', 'b', async () => { otherDone = true })
+  assert.equal(otherDone, true)
+  await slow
+})
+
+test('T15: 칸 분류는 원본 분류표(사용자 제공)와 같고, 19개 활동 모두 필수 칸이 1개 이상', () => {
+  const byTier = (code, tier) => training.TRAINING_ACTIVITIES[code].fields.filter(f => f.tier === tier).map(f => f.key)
+  const expectedA = {
+    'T-1-1': ['팀 공통 비전', '개인 비전'], 'T-1-2': ['설계 방향'], 'T-2-1': ['역할 배분'], 'T-2-2': ['팀 규칙'], 'T-2-3': ['팀 일정'],
+    'A-1-1': ['주제 선정 기준'], 'A-1-2': ['최종 선정 주제'], 'A-2-1': ['성취기준분석표'],
+    'A-2-2': ['통합 수업목표', '공통 핵심 아이디어', '교과별 수업목표'], 'A-2-3': ['학습자 프로필'],
+    'Ds-1-1': ['평가 계획'], 'Ds-1-2': ['문제상황'], 'Ds-1-3': ['학습 활동'], 'Ds-2-1': ['활동별 자료 설계'], 'Ds-2-2': ['스캐폴딩 계획'],
+    'DI-1-1': ['개발 자료 목록'], 'DI-2-1': ['주요 상황 기록'], 'E-1-1': ['해석', '수정안'], 'E-2-1': ['협력 과정 성찰', '팀 개선안'],
+  }
+  const expectedB = { 'A-1-2': ['선정 근거'], 'A-2-2': ['탐구 질문'], 'Ds-2-1': ['Human-AI Agency'], 'E-1-1': ['사실'] }
+  for (const code of T_ALL) {
+    assert.deepEqual(byTier(code, 'A'), expectedA[code], `${code} 필수`)
+    assert.deepEqual(byTier(code, 'B'), expectedB[code] ?? [], `${code} 한 번 묻기`)
+    assert.ok(training.trainingStatus(code, {}).requiredTotal >= 1, code)
+  }
+  assert.equal(training.trainingStatus('T-2-3', {}).requiredTotal, 1) // 운영의 '필수 칸 0/0'
+})
+
+// ─── TASK-T9: AI 답변 속 체크리스트를 실제로 누를 수 있게 ─────────
+const checklistLib = await import('../src/lib/chat/checklist.ts')
+const tChecklistText = [
+  '아래 체크리스트로 점검해 볼까요?',
+  '',
+  '| 단계 | 핵심 점검 항목 | AI 분석 | 팀 확인 |',
+  '|------|-------------|--------|--------|',
+  '| T-1 비전 | 비전이 한 문장인가? | ✅ | ☐ |',
+  '| T-2 방향 | 원칙이 3개 이상인가? | ⚠️ (1개) | □ |',
+  '| T-5 일정 | 일정 공유? | ☐ 확인 필요 | ☑ |',
+  '',
+  '- [ ] 회의록 공유',
+  '- [x] 역할표 저장',
+  '문장 속 [ ] 체크와 [링크](https://a.b) 는 다르게',
+  '```',
+  '| 코드 | ☐ |',
+  '- [ ] 코드 안',
+  '```',
+  '`[ ]` 인라인 코드는 그대로',
+].join('\n')
+
+test('T16a: 체크박스 순번 — 표 칸의 단독 ☐·□·☑, 작업 목록, 문장 속 [ ]; 코드·설명 글 속 기호·링크는 제외', () => {
+  const { markdown, count, defaults } = checklistLib.prepareChecklistMarkdown(tChecklistText)
+  assert.equal(count, 6)
+  assert.deepEqual([...defaults], [false, false, true, false, true, false])
+  assert.match(markdown, /\| T-1 비전 \| 비전이 한 문장인가\? \| ✅ \| `⟦체크:0:0⟧` \|/) // AI 분석 칸의 ✅ 는 그대로
+  assert.match(markdown, /\| T-2 방향 \| 원칙이 3개 이상인가\? \| ⚠️ \(1개\) \| `⟦체크:1:0⟧` \|/)
+  assert.match(markdown, /\| ☐ 확인 필요 \| `⟦체크:2:1⟧` \|/) // 설명 글 속 ☐ 는 그대로
+  assert.match(markdown, /- `⟦체크:3:0⟧` 회의록 공유\n- `⟦체크:4:1⟧` 역할표 저장/)
+  assert.match(markdown, /문장 속 `⟦체크:5:0⟧` 체크와 \[링크\]\(https:\/\/a\.b\)/)
+  assert.match(markdown, /```\n\| 코드 \| ☐ \|\n- \[ \] 코드 안\n```/)
+  assert.match(markdown, /`\[ \]` 인라인 코드는 그대로/)
+  // 같은 글이면 같은 순번(안정적)
+  assert.equal(checklistLib.prepareChecklistMarkdown(tChecklistText).markdown, markdown)
+  assert.deepEqual(checklistLib.parseChecklistMark('⟦체크:4:1⟧'), { index: 4, defaultChecked: true })
+  assert.equal(checklistLib.parseChecklistMark('일반 코드'), null)
+})
+
+test('T16b: 저장 상태가 원문 기본값보다 우선하고, 모두 체크되면 안내', () => {
+  const none = checklistLib.checklistProgress(tChecklistText, {})
+  assert.deepEqual({ ...none }, { total: 6, checked: 2, allChecked: false })
+  const state = Object.fromEntries([0, 1, 3, 5].map(i => [String(i), { checked: true, by: '캔바1' }]))
+  assert.equal(checklistLib.checklistProgress(tChecklistText, state).allChecked, true)
+  assert.equal(checklistLib.checklistProgress(tChecklistText, { ...state, 2: { checked: false, by: '홍성용' } }).allChecked, false) // 다시 누르면 해제
+  assert.equal(checklistLib.checklistProgress('체크리스트 없음', {}).allChecked, false)
+  assert.equal(checklistLib.CHECKLIST_ALL_DONE_NOTE, '모든 항목을 확인했어요. 다음 단계로 넘어갈 준비가 됐습니다.')
+})
+
+test('T16c: 상태 저장 경로 — 메시지 문서의 checklistState.순번 필드만, 레거시 메시지는 단계 경로', () => {
+  assert.equal(checklistLib.messageDocPath('p1', { id: 'm1', activityCode: 'T-2-3' }, 'T'), 'projects/p1/conversations/T-2-3/messages/m1')
+  assert.equal(checklistLib.messageDocPath('p1', { id: 'm1', activityCode: 'T-2-3', legacyPath: true }, 'T'), 'projects/p1/conversations/T/messages/m1')
+  const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  assert.match(projects, /updateDoc\(doc\(db, path\), \{ \[`checklistState\.\$\{index\}`\]: \{ checked, by, at: serverTimestamp\(\) \} \}\)/)
+  assert.match(projects, /\.map\(d => \(\{ id: d\.id, \.\.\.d\.data\(\), legacyPath: true \}\) as Message\)/)
+  const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /replaceMessage\(msg\.id, msg\.content, \{ checklistState: \{ \.\.\.msg\.checklistState, \[String\(index\)\]: \{ checked, by \} \} \}\)/)
+  assert.match(panel, /checklist=\{msg\.role === 'assistant' \? \{/)
+})
+
+test('T16d: 렌더 — 진짜 체크박스, 저장 상태·체크한 사람 이름, canEdit=false 면 읽기 전용', () => {
+  const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(chatSource, /function ChecklistBox\(/)
+  const { MarkdownContent } = loadArtifactTsx('../src/components/chat/ChatPanel.tsx', {
+    'react-markdown': { __esModule: true, default: ReactMarkdown },
+    REMARK_PLUGINS, ReactMarkdown, cn: (...c) => c.filter(Boolean).join(' '),
+    markdownHeadingComponents: {}, HighlightedStrong: ({ children }) => React.createElement('strong', null, children),
+    INTERNAL_ACTIVITY_CODE_RE: /$^/g, displayActivityCode: c => c, splitGuideLines: () => null,
+    childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
+  }, ['MarkdownContent', 'ChecklistBox'])
+  const state = { 0: { checked: true, by: '캔바1' }, 4: { checked: false, by: '홍성용' } }
+  const html = renderToStaticMarkup(React.createElement(MarkdownContent, { text: tChecklistText, checklist: { state, canEdit: true, onToggle() {} } }))
+  const boxes = [...html.matchAll(/<input type="checkbox"[^>]*>/g)].map(m => m[0])
+  assert.equal(boxes.length, 6)
+  assert.deepEqual(boxes.map(b => b.includes('checked=""')), [true, false, true, false, false, false])
+  assert.ok(boxes.every(b => !b.includes('disabled=""')))
+  assert.match(html, /<span[^>]*>캔바1<\/span>/)
+  assert.doesNotMatch(html, /홍성용/) // 해제한 칸은 이름 숨김
+  assert.doesNotMatch(html, /⟦체크/)
+  const readOnly = renderToStaticMarkup(React.createElement(MarkdownContent, { text: tChecklistText, checklist: { state, canEdit: false, onToggle() {} } }))
+  assert.ok([...readOnly.matchAll(/<input type="checkbox"[^>]*>/g)].every(m => m[0].includes('disabled=""')))
+  const plain = renderToStaticMarkup(React.createElement(MarkdownContent, { text: tChecklistText }))
+  // 체크리스트 연결이 없으면 기존 렌더 그대로(표의 ☐ 는 글자, GFM 작업 목록은 원래처럼 누를 수 없는 표시)
+  assert.match(plain, />☐<\/td>/)
+  assert.ok([...plain.matchAll(/<input type="checkbox"[^>]*>/g)].every(m => m[0].includes('disabled=""')))
+  assert.doesNotMatch(plain, /⟦체크/)
+})
+
+test('T16e: 프롬프트 — 단계 종료 체크리스트의 팀 확인 칸은 ☐ 한 글자(일반·solo·연수용)', () => {
+  const project = { title: 't', schoolLevel: '초등', targetGradeGroup: '초3-4', targetSubjects: [], mode: 'collaborative', isA23Completed: false, currentCycle: 1 }
+  const team = buildSystemPrompt('T', 'T-2-3', project, '팀+AI', undefined, null, undefined, {}, undefined)
+  assert.match(team, /\*\*팀 확인\*\* 칸에는 '☐' 한 글자만 쓴다/)
+  assert.equal((team.match(/\| ☐ \|/g) ?? []).length, 13)
+  assert.doesNotMatch(team, /\| □ \|/)
+  const solo = buildSystemPrompt('T', 'T-2-3', { ...project, mode: 'solo' }, '개인+AI', undefined, null, undefined, {}, undefined)
+  assert.match(solo, /확인 칸에는 '☐' 한 글자만/)
+  assert.doesNotMatch(solo, /\| □ \|/)
+  const training = buildSystemPrompt('T', 'T-2-3', { ...project, trainingMode: { enabled: true, coreFormal: true } }, '팀+AI', undefined, null, undefined, {}, undefined)
+  assert.match(training, /연수용 약식 진행 규칙/)
+  assert.match(training, /\*\*팀 확인\*\* 칸에는 '☐' 한 글자만 쓴다/)
 })

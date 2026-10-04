@@ -2,7 +2,7 @@ import type { ActivityCode } from '@/types'
 
 // 기존 구조화 산출물 렌더러의 열 이름을 사용한다. 프롬프트 직렬화와 분리해 화면에 내부 키를 노출하지 않는다.
 const LABELS: Record<string, string> = {
-  teacherName: '교사명', subject: '담당 교과', strengths: '강점·전문성', role: '팀 내 역할', responsibilities: '담당 업무', deadline: '기한',
+  teacherName: '교사명', subject: '담당 교과', strengths: '강점·전문성', role: '팀 내 역할', responsibilities: '담당 업무', deadline: '완료 시점',
   teamVision: '팀 공통 비전', coreKeywords: '핵심 키워드', personalVisions: '개인 비전', keywords: '개인 비전 키워드', refinedVision: 'AI 정교화 비전',
   designPrinciples: '설계 방향', principle: '설계 원칙', rationale: '근거', roles: '역할 배분',
   rules: '팀 규칙', category: '구분', name: '이름', description: '설명', feasibility: '실천 방법', violation: '위반 시 대응',
@@ -51,7 +51,62 @@ function columnLabel(code: ActivityCode, key: string): string {
 function filled(text: string): boolean {
   return !/^(?:\s*|미입력|\(미입력\)|[-–—])$/.test(text.replace(/\*\*/g, '').trim())
 }
-const cell = (text: string) => text.trim().replace(/\|/g, '\\|').replace(/\r?\n/g, ' · ')
+const cell = (text: string) => text.trim().replace(/(?<!\\)\|/g, '\\|').replace(/\r?\n/g, ' · ')
+
+function tableCells(line: string): string[] | null {
+  const text = line.trim()
+  if (!text.includes('|')) return null
+  const cells = text.split(/(?<!\\)\|/)
+  if (text.startsWith('|')) cells.shift()
+  if (/(?<!\\)\|$/.test(text)) cells.pop()
+  return cells.map(value => value.trim())
+}
+
+/** 이전 양식 직렬화로 저장된 영어 머리글 표만 정리한다. 평문·교사 작성 표·코드 블록은 보존한다. */
+function legacyTableText(text: string, code: ActivityCode): string {
+  const lines = text.split(/\r?\n/)
+  const result: string[] = []
+  let changed = false
+  let fence: string | null = null
+  for (let index = 0; index < lines.length; index++) {
+    const marker = lines[index].trim().match(/^(`{3,}|~{3,})/)
+    if (marker) {
+      if (!fence) fence = marker[1][0]
+      else if (fence === marker[1][0]) fence = null
+    }
+    const headers = fence ? null : tableCells(lines[index])
+    const keys = headers?.map(header => header.replace(/\*\*|__|`/g, '').trim())
+    // 구분선이 없는 옛 프롬프트용 표도 포함하되, 알려진 구조화 키를 가진 머리행만 변환한다.
+    if (!keys || keys.length < 2 || !keys.some(key => Object.hasOwn(LABELS, key))
+      || !keys.every(key => Object.hasOwn(LABELS, key) || /[가-힣]/.test(key))) {
+      result.push(lines[index])
+      continue
+    }
+    let end = index + 1
+    const separator = tableCells(lines[end] ?? '')
+    if (separator?.length === keys.length && separator.every(value => /^:?-+:?$/.test(value))) end++
+    const rows: string[][] = []
+    while (end < lines.length) {
+      const row = tableCells(lines[end])
+      if (!row || row.length !== keys.length || row.every(value => /^:?-+:?$/.test(value))) break
+      rows.push(row)
+      end++
+    }
+    if (!rows.length) {
+      result.push(lines[index])
+      continue
+    }
+    const columns = keys.map((key, position) => ({ key, position })).filter(({ position }) => rows.some(row => filled(row[position])))
+    const data = rows.map(row => columns.map(({ position }) => filled(row[position]) ? row[position] : '')).filter(row => row.some(Boolean))
+    if (columns.length && data.length) {
+      const table = [columns.map(({ key }) => Object.hasOwn(LABELS, key) ? columnLabel(code, key) : key), columns.map(() => '---'), ...data]
+      result.push(...table.map(row => `| ${row.join(' | ')} |`))
+    }
+    changed = true
+    index = end - 1
+  }
+  return changed ? result.join(text.includes('\r\n') ? '\r\n' : '\n') : text
+}
 
 function structuredText(value: unknown, code: ActivityCode): string {
   if (value == null) return ''
@@ -81,7 +136,7 @@ function structuredText(value: unknown, code: ActivityCode): string {
   return typeof value === 'boolean' ? value ? '예' : '아니요' : String(value)
 }
 
-/** 교사가 적은 문자열은 그대로, 구조화 데이터만 한국어 표로 표시한다. */
+/** 평문은 그대로, 구조화 데이터와 예전에 영어 키 표로 저장된 문자열은 한국어로 표시한다. */
 export function trainingFormText(value: unknown, code: ActivityCode): string {
-  return typeof value === 'string' ? value : structuredText(value, code)
+  return typeof value === 'string' ? legacyTableText(value, code) : structuredText(value, code)
 }

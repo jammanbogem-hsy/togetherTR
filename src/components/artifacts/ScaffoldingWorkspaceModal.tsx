@@ -1,5 +1,7 @@
 'use client'
 
+import { displayActivityCode } from '@/types'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
@@ -16,6 +18,7 @@ import type { Ds22Structured } from '@/lib/artifacts/schemas'
 import type { ScaffoldingWorkspacePatch, ScaffoldingPresenceEntry } from '@/lib/firebase/projects'
 import type { ScaffoldingSuggestRequest, ScaffoldingSuggestResult } from '@/app/api/scaffolding/suggest/route'
 import { cn } from '@/lib/utils'
+import { useWorkspaceSync } from './useWorkspaceSync'
 import {
   AutoGrowTextarea,
   CaretOverlay,
@@ -414,11 +417,12 @@ export function ScaffoldingWorkspaceModal({
   // Why: 방금 삭제 요청한 id가 server stale 응답으로 부활하는 것 방지
   const pendingDeletionsRef = useRef<Set<string>>(new Set())
 
-  useEffect(() => {
-    if (!open) return
-    const next = normalizeWorkspace(savedWorkspace, artifactContent)
-    setWorkspace(current => preserveEditingValue(next, current, editingKey, pendingDeletionsRef.current))
-  }, [artifactContent, editingKey, open, savedWorkspace])
+  // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
+  const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const sync = useWorkspaceSync({
+    open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    preserve: (next, current, key) => preserveEditingValue(next, current, key, pendingDeletionsRef.current),
+  })
 
   // 마지막으로 송신한 presence를 추적해 heartbeat에서 동일 cellKey/caretPos로 갱신.
   const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number }>({ cellKey: 'modal:idle' })
@@ -542,11 +546,11 @@ export function ScaffoldingWorkspaceModal({
     try {
       // Firestore는 nested undefined를 거부 — patch에 잔존하는 undefined를 송신 직전에 청소.
       const cleanPatch = stripUndefinedDeep(patch) as ScaffoldingWorkspacePatch
-      const saved = await onPatchSave(cleanPatch)
+      const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       if (deletedIds?.length) {
         for (const id of deletedIds) pendingDeletionsRef.current.delete(id)
       }
-      if (saved) setWorkspace(normalizeWorkspace(saved))
+      if (saved) sync.applySaved(normalizeWorkspace(saved))
     } catch (error) {
       console.error('[scaffoldingWorkspace patch]', error)
       if (deletedIds?.length) {
@@ -563,9 +567,9 @@ export function ScaffoldingWorkspaceModal({
     }
     setSaving(true)
     try {
-      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace, updatedBy: currentUserName }) as ScaffoldingWorkspacePatch
-      const saved = await onPatchSave(cleanPatch)
-      if (saved) setWorkspace(normalizeWorkspace(saved))
+      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as ScaffoldingWorkspacePatch
+      const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
+      if (saved) sync.applySaved(normalizeWorkspace(saved))
       setMessage('공동 편집 초안을 저장했습니다.')
     } catch (error) {
       console.error('[scaffoldingWorkspace save]', error)
@@ -920,12 +924,12 @@ export function ScaffoldingWorkspaceModal({
     if (!isHost) return
     setSending(true)
     try {
-      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace, updatedBy: currentUserName }) as ScaffoldingWorkspacePatch
-      const saved = await onPatchSave(cleanPatch)
+      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as ScaffoldingWorkspacePatch
+      const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       const finalWorkspace = normalizeWorkspace(saved ?? workspace)
       const structured = workspaceToArtifact(finalWorkspace)
       await onSendArtifact(stripUndefinedDeep(structured) as Ds22Structured)
-      setMessage('Ds-2-2 산출물로 보냈습니다.')
+      setMessage(`${displayActivityCode('Ds-2-2')} 산출물로 보냈습니다.`)
       onClose()
     } catch (error) {
       console.error('[scaffoldingWorkspace send]', error)
@@ -952,7 +956,7 @@ export function ScaffoldingWorkspaceModal({
         <div className="px-6 py-4 border-b border-[#E8EAED] bg-white flex items-center gap-3 flex-shrink-0">
           <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#C4C7C5] bg-white px-3 text-[13px] font-medium text-[#3C4043]">
             <FileText size={17} weight="bold" />
-            Ds-2-2
+            {displayActivityCode('Ds-2-2')}
           </span>
           <span className="hidden sm:inline-flex h-8 items-center justify-center rounded-lg bg-[#D3E3FD] px-3 text-[13px] font-medium text-[#0842A0]">
             {editorModeLabel}
@@ -989,7 +993,7 @@ export function ScaffoldingWorkspaceModal({
             type="button"
             onClick={sendArtifact}
             disabled={!isHost || sending}
-            title={isHost ? '현재 워크스페이스를 Ds-2-2 산출물로 보냅니다' : '방장만 산출물로 보낼 수 있습니다'}
+            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('Ds-2-2')} 산출물로 보냅니다` : '방장만 산출물로 보낼 수 있습니다'}
             className="hidden sm:flex h-10 items-center gap-2 px-5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06327A] text-white text-[14px] font-medium shadow-[0_1px_2px_rgba(60,64,67,0.3),0_1px_3px_1px_rgba(60,64,67,0.15)] transition-colors disabled:opacity-40 disabled:shadow-none"
           >
             <PaperPlaneRight size={17} weight="fill" />
@@ -1016,7 +1020,7 @@ export function ScaffoldingWorkspaceModal({
           <div className="max-w-[1400px] mx-auto px-5 py-12 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-bold text-[#1A73E8]">Ds-2-2</span>
+                <span className="inline-flex items-center rounded-full bg-[#E8F0FE] px-5 py-2 text-[20px] font-bold text-[#1A73E8]">{displayActivityCode('Ds-2-2')}</span>
                 <span className="text-[30px] font-bold tracking-[-0.02em] text-[#37352F]">스캐폴딩 설계</span>
                 <span className="ml-auto hidden sm:inline-flex h-7 items-center rounded-md bg-[#F1F3F4] px-2.5 text-[12px] font-medium text-[#6B6A67]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
@@ -1094,7 +1098,7 @@ export function ScaffoldingWorkspaceModal({
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
                       <tr>
-                        <th className="sticky left-0 z-20 w-[76px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-3 py-3 text-left text-[13px] font-medium text-[#6B6A67]">행</th>
+                        <th className="sticky left-0 z-20 w-[76px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-3 py-3 text-left text-[13px] font-semibold text-[#202124]">행</th>
                         {workspace.columns.map(column => (
                           <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2.5">
                             <div className="flex items-center gap-1.5">
@@ -1106,9 +1110,9 @@ export function ScaffoldingWorkspaceModal({
                                   blurField()
                                 }}
                                 onFocus={() => focusField(`column:${column.id}`)}
-                                className="w-full rounded-md border border-transparent bg-white/10 px-2 py-1 text-[14px] font-semibold text-white placeholder:text-white/70 hover:bg-white/15 focus:border-white focus:bg-white focus:text-[#202124] focus:outline-none"
+                                className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[14px] font-semibold text-[#202124] placeholder:text-[#5F6368] hover:bg-black/5 focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                               />
-                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-white/75 transition-colors hover:bg-white/15 hover:text-white">
+                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-[#5F6368] transition-colors hover:bg-black/5 hover:text-[#C5221F]">
                                 <Trash size={15} weight="bold" />
                               </button>
                             </div>
@@ -1245,15 +1249,15 @@ export function ScaffoldingWorkspaceModal({
                                         updateBlock({ ...block, table: nextTable, content: '' })
                                         blurField()
                                       }}
-                                      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] font-semibold text-[#37352F] hover:bg-[#EFEFEE] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
+                                      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] font-semibold text-[#202124] placeholder:text-[#5F6368] hover:bg-black/5 focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                                     />
-                                    <button type="button" onClick={() => deleteBlockTableColumn(block, column.id)} className="flex h-8 w-8 items-center justify-center rounded-md text-[#9B9A97] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-[#EFEFEE] hover:text-[#37352F]">
+                                    <button type="button" onClick={() => deleteBlockTableColumn(block, column.id)} className="flex h-8 w-8 items-center justify-center rounded-md text-[#5F6368] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/5 hover:text-[#C5221F]">
                                       <Trash size={15} weight="bold" />
                                     </button>
                                   </div>
                                 </th>
                               ))}
-                              <th className="w-[72px] border-b border-[#1557B0] bg-[#1A73E8]" />
+                              <th className="w-[72px] border-b border-[#E9E9E7] bg-[#F7F7F5]" />
                             </tr>
                           </thead>
                           <tbody>
@@ -1535,14 +1539,14 @@ export function ScaffoldingWorkspaceModal({
                       <li>· <b>❷ (교사팀·협의)</b> 학습목표 근거로 적절성 토론 — <b>정답이 아닌 발판</b> 제공</li>
                       <li>· <b>❸ (교사팀+AI·조정)</b> 학생 수행 장면을 상상하며 자료 보완</li>
                       <li>· <b>❹ (개인교사·점검)</b> 수정 자료 공유·재보완 (반복 검토)</li>
-                      <li className="pt-1">· <b>GRR 원칙</b>: 교사 모델링 → 협력 수행 → 자율 수행. 점진적 제거는 <b>Ds-1-3 누적 차시</b> 기준</li>
+                      <li className="pt-1">· <b>GRR 원칙</b>: 교사 모델링 → 협력 수행 → 자율 수행. 점진적 제거는 <b>{displayActivityCode('Ds-1-3')} 누적 차시</b> 기준</li>
                     </ul>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="block text-[15px] font-bold text-[#202124]">AI 에이전트의 제안 받기</label>
-                  <p className="text-[13px] leading-relaxed text-[#5F6368]"><b>직전 단계(Ds-1-3)의 학습활동 표·누적 차시</b>와 <b>A-2-3 학습자 프로필</b>, <b>팀 채팅 대화</b>를 자동으로 읽어 <b>스캐폴딩 계획 · AI 점검</b>을 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
+                  <p className="text-[13px] leading-relaxed text-[#5F6368]"><b>직전 단계({displayActivityCode('Ds-1-3')})의 학습활동 표·누적 차시</b>와 <b>{displayActivityCode('A-2-3')} 학습자 프로필</b>, <b>팀 채팅 대화</b>를 자동으로 읽어 <b>스캐폴딩 계획 · AI 점검</b>을 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
                   {suggestError && (
                     <p className="text-[14px] font-semibold text-[#C5221F]">{suggestError}</p>
                   )}
@@ -1727,7 +1731,7 @@ export function ScaffoldingWorkspaceModal({
                   <thead>
                     <tr>
                       {DEFAULT_COLUMNS.map(column => (
-                        <th key={column.id} className="border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-3 py-2 text-left text-[13px] font-medium text-[#6B6A67] whitespace-nowrap">
+                        <th key={column.id} className="border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-3 py-2 text-left text-[13px] font-semibold text-[#202124] whitespace-nowrap">
                           {column.label}
                         </th>
                       ))}
@@ -1753,8 +1757,8 @@ export function ScaffoldingWorkspaceModal({
                 <table className="min-w-full border-collapse text-[15px]">
                   <thead>
                     <tr>
-                      <th className="border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-3 py-2 text-left text-[13px] font-medium text-[#6B6A67] whitespace-nowrap">지원 방안</th>
-                      <th className="border-b border-[#1557B0] bg-[#1A73E8] px-3 py-2 text-left text-[13px] font-medium text-[#6B6A67] whitespace-nowrap">대상 활동</th>
+                      <th className="border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-3 py-2 text-left text-[13px] font-semibold text-[#202124] whitespace-nowrap">지원 방안</th>
+                      <th className="border-b border-[#E9E9E7] bg-[#F7F7F5] px-3 py-2 text-left text-[13px] font-semibold text-[#202124] whitespace-nowrap">대상 활동</th>
                     </tr>
                   </thead>
                   <tbody>

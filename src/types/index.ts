@@ -1065,6 +1065,10 @@ export interface Message {
   actionCardState?: 'pending' | 'selected' | 'skipped'
   actionCardSelection?: 'primary' | 'secondary' | 'skip'
   cycleNumber?: number
+  /** AI 답변 속 체크리스트 상태 — 순번 → { checked, by, at } (lib/chat/checklist) */
+  checklistState?: Record<string, { checked: boolean; by?: string; at?: unknown } | undefined>
+  /** 화면 전용: 레거시(단계) 경로에서 불러온 메시지 — 문서에는 저장하지 않는다 */
+  legacyPath?: boolean
   createdAt: Timestamp
 }
 

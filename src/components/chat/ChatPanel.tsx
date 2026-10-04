@@ -61,13 +61,14 @@ import {
   sanitizeChatForExtraction,
   stripNonContentLines,
 } from '@/lib/artifacts/schemas'
-import { addKeyNote } from '@/lib/firebase/projects'
+import { addKeyNote, setMessageChecklistItem } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import { defaultGradeMode, effectiveRowGradeBand, resolveSheetGradeBand, toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
 import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
+import { CHECKLIST_ALL_DONE_NOTE, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
 import { buildTrainingWelcome, isTrainingActivity, shouldReplyTrainingQuietly, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { TrainingModeBar } from '@/components/training/TrainingModeBar'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
@@ -549,7 +550,32 @@ function HighlightedStrong({ children, dark, pendingAware = false }: {
   )
 }
 
-function MarkdownContent({ text, dark = false, standardTextMap }: { text: string; dark?: boolean; standardTextMap?: Record<string, string> }) {
+/** AI 답변 속 체크리스트 — 상태는 메시지 문서(checklistState)에 저장. canEdit=false 면 읽기 전용(관찰자 대비). */
+export interface MessageChecklistProps {
+  state?: ChecklistState | null
+  canEdit: boolean
+  onToggle: (index: number, checked: boolean) => void
+}
+
+function ChecklistBox({ index, defaultChecked, checklist, dark }: { index: number; defaultChecked: boolean; checklist: MessageChecklistProps; dark: boolean }) {
+  const saved = checklist.state?.[String(index)]
+  const checked = saved ? saved.checked : defaultChecked
+  return (
+    <span className="inline-flex items-center gap-1 align-middle" data-testid="message-checklist-item">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={!checklist.canEdit}
+        onChange={event => checklist.onToggle(index, event.target.checked)}
+        aria-label={`확인 항목 ${index + 1}`}
+        className={cn('h-4 w-4 cursor-pointer rounded accent-[#1A73E8] disabled:cursor-default', dark && 'accent-white')}
+      />
+      {checked && saved?.by && <span className={cn('text-[10px] leading-none', dark ? 'text-white/70' : 'text-[#5F6368]')}>{saved.by}</span>}
+    </span>
+  )
+}
+
+function MarkdownContent({ text, dark = false, standardTextMap, checklist }: { text: string; dark?: boolean; standardTextMap?: Record<string, string>; checklist?: MessageChecklistProps }) {
   // AI가 <br> 태그를 생성하는 경우 줄바꿈으로 치환
   // AI가 첫 줄에 [탐색] [팀+AI] 같은 활동유형/행위주체 태그를 출력하는 경우 제거
   // 표 셀 안의 <br/>은 ', '로, 표 밖은 줄바꿈으로
@@ -567,7 +593,9 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
     // → closing ** 뒤에 NBSP 삽입으로 강제 bold 닫힘 처리
     .replace(/([)'"'"」』】）\uAC00-\uD7A3\d])\*\*([\uAC00-\uD7A3])/g, '$1**\u00A0$2')
 
-  const guide = splitGuideLines(sanitized)
+  // 체크리스트가 연결된 AI 답변이면 ☐·[ ] 자리를 체크박스 표식으로 바꿔 그린다(순번은 글 순서).
+  const rendered = checklist ? prepareChecklistMarkdown(sanitized).markdown : sanitized
+  const guide = splitGuideLines(rendered)
 
   if (guide) {
     const strongComp = (isDark: boolean): Components => ({
@@ -625,11 +653,15 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
         ul: ({ children }) => <ul className="mt-1.5 mb-1.5 space-y-1 pl-4 list-disc">{children}</ul>,
         ol: ({ children }) => <ol className="mt-1.5 mb-1.5 space-y-1.5 pl-4 list-decimal">{children}</ol>,
         li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        code: ({ children }) => (
-          <code className={cn('px-1.5 py-0.5 rounded text-xs font-mono', dark ? 'bg-white/20' : 'bg-gray-200 text-gray-800')}>
-            {children}
-          </code>
-        ),
+        code: ({ children }) => {
+          const checkMark = checklist && typeof children === 'string' ? parseChecklistMark(children) : null
+          if (checkMark && checklist) return <ChecklistBox index={checkMark.index} defaultChecked={checkMark.defaultChecked} checklist={checklist} dark={dark} />
+          return (
+            <code className={cn('px-1.5 py-0.5 rounded text-xs font-mono', dark ? 'bg-white/20' : 'bg-gray-200 text-gray-800')}>
+              {children}
+            </code>
+          )
+        },
         blockquote: ({ children }) => (
           <aside
             role="note"
@@ -686,7 +718,7 @@ function MarkdownContent({ text, dark = false, standardTextMap }: { text: string
         },
       }}
     >
-      {sanitized}
+      {rendered}
     </ReactMarkdown>
   )
 }
@@ -913,7 +945,7 @@ function ContextMenuWrapper({ children, className, asArticle = false, ariaLabel 
 }
 
 // ─── 메시지 버블 ──────────────────────────────────────
-export function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage, standardTextMap, simulated = false }: {
+export function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage, standardTextMap, simulated = false, checklist }: {
   role: 'user' | 'assistant'
   content: string
   activityType?: ActivityType
@@ -926,8 +958,11 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
   stage?: string
   standardTextMap?: Record<string, string>
   simulated?: boolean
+  /** AI 답변 속 체크리스트(없으면 일반 렌더) */
+  checklist?: MessageChecklistProps
 }) {
   const isUser = role === 'user'
+  const checklistDone = !isUser && checklist ? checklistProgress(content, checklist.state).allChecked : false
   const alignRight = isUser && isSelf
   const avatarColor = senderColor ?? (isUser ? '#A0BCE8' : '#1F2937')
   const isLightColor = avatarColor.startsWith('#') && (() => {
@@ -1001,8 +1036,13 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
         >
           {isUser && !simulated
             ? <span className="whitespace-pre-wrap">{content}</span>
-            : <MarkdownContent text={content} standardTextMap={standardTextMap} />
+            : <MarkdownContent text={content} standardTextMap={standardTextMap} checklist={isUser ? undefined : checklist} />
           }
+          {checklistDone && (
+            <p className="mt-2 rounded-lg bg-white/70 px-3 py-1.5 text-[12px] font-medium text-[#137333]" data-testid="checklist-all-done" role="status">
+              ✓ {CHECKLIST_ALL_DONE_NOTE}
+            </p>
+          )}
         </div>
       </div>
     </ContextMenuWrapper>
@@ -3735,6 +3775,16 @@ ${discussionSummary}
       ? failedChatRequest : null
   }
 
+  // AI 답변 속 체크리스트 — 화면에 바로 반영하고 그 메시지 문서의 checklistState.순번 만 저장한다(팀원 화면은 구독으로 반영).
+  function toggleChecklistItem(msg: Message, index: number, checked: boolean) {
+    const by = userProfile?.displayName ?? '팀원'
+    replaceMessage(msg.id, msg.content, { checklistState: { ...msg.checklistState, [String(index)]: { checked, by } } })
+    setMessageChecklistItem(proj.id, msg, index, checked, by).catch(error => {
+      console.error('[checklist] save failed:', error)
+      setChatError('체크 상태를 저장하지 못했습니다. 다시 눌러 주세요.')
+    })
+  }
+
   // 연수용 화면(연수 막대 버튼·양식 저장 알림)이 보낸 메시지를 일반 전송 경로로 보낸다.
   // AI 응답 중이거나 대화를 불러오기 전이면 버리지 않고 줄에 세워 두었다가 순서대로 보낸다(저장 알림 누락 방지).
   const trainingQueueRef = useRef<string[]>([])
@@ -4817,6 +4867,11 @@ ${discussionSummary}
                 replyTo={msg.replyTo}
                 stage={ACTIVITY_META[msg.activityCode]?.stage}
                 standardTextMap={stdTooltipMap}
+                checklist={msg.role === 'assistant' ? {
+                  state: msg.checklistState,
+                  canEdit: !!userProfile,
+                  onToggle: (index, checked) => toggleChecklistItem(msg, index, checked),
+                } : undefined}
                 onReply={() => setReplyTo({
                   id: msg.id,
                   content: msg.content,

@@ -1,5 +1,7 @@
 'use client'
 
+import { displayActivityCode } from '@/types'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isBlankWorkspace } from '@/lib/coedit/workspaceBlank'
 import { createPortal } from 'react-dom'
@@ -27,6 +29,7 @@ import {
   useBlockDnd,
 } from './workspaceHelpers'
 import type { EvaluationPlanSuggestRequest, EvaluationPlanSuggestResult } from '@/app/api/evaluation-plan/suggest/route'
+import { useWorkspaceSync } from './useWorkspaceSync'
 
 interface PresenceEntry {
   uid: string
@@ -315,11 +318,12 @@ export function EvaluationPlanWorkspaceModal({
   const [suggestion, setSuggestion] = useState<EvaluationPlanSuggestResult | null>(null)
   const pendingDeletionsRef = useRef<Set<string>>(new Set())
 
-  useEffect(() => {
-    if (!open) return
-    const next = normalizeWorkspace(savedWorkspace, artifactContent)
-    setWorkspace(current => preserveEditingValue(next, current, editingKey))
-  }, [artifactContent, editingKey, open, savedWorkspace])
+  // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
+  const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const sync = useWorkspaceSync({
+    open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    preserve: (next, current, key) => preserveEditingValue(next, current, key),
+  })
 
   // 마지막 송신 presence 추적 + heartbeat
   const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number }>({ cellKey: 'modal:idle' })
@@ -424,8 +428,8 @@ export function EvaluationPlanWorkspaceModal({
     setMessage('')
     try {
       const cleanPatch = stripUndefinedDeep(patch) as EvaluationPlanWorkspacePatch
-      const saved = await onPatchSave(cleanPatch)
-      if (saved) setWorkspace(normalizeWorkspace(saved))
+      const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
+      if (saved) sync.applySaved(normalizeWorkspace(saved))
     } catch (error) {
       console.error('[evaluationPlanWorkspace patch]', error)
       setMessage('저장하지 못했습니다. 다시 시도해주세요.')
@@ -439,9 +443,9 @@ export function EvaluationPlanWorkspaceModal({
     }
     setSaving(true)
     try {
-      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace, updatedBy: currentUserName }) as EvaluationPlanWorkspacePatch
-      const saved = await onPatchSave(cleanPatch)
-      if (saved) setWorkspace(normalizeWorkspace(saved))
+      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as EvaluationPlanWorkspacePatch
+      const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
+      if (saved) sync.applySaved(normalizeWorkspace(saved))
       setMessage('공동 편집 초안을 저장했습니다.')
     } catch (error) {
       console.error('[evaluationPlanWorkspace save]', error)
@@ -589,7 +593,7 @@ export function EvaluationPlanWorkspaceModal({
   async function requestSuggestion(customPrompts?: Array<{ teacherName: string; text: string }>) {
     const hasContext = !!integratedGoal?.trim() || !!(subjectGoals && subjectGoals.length > 0)
     if (!hasContext) {
-      setSuggestError('이전 단계(A-2-2) 통합 수업목표가 아직 준비되지 않아 AI 제안을 만들 수 없습니다.')
+      setSuggestError(`이전 단계(${displayActivityCode('A-2-2')}) 통합 수업목표가 아직 준비되지 않아 AI 제안을 만들 수 없습니다.`)
       return
     }
 
@@ -678,12 +682,12 @@ export function EvaluationPlanWorkspaceModal({
     if (!isHost) return
     setSending(true)
     try {
-      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace, updatedBy: currentUserName }) as EvaluationPlanWorkspacePatch
-      const saved = await onPatchSave(cleanPatch)
+      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as EvaluationPlanWorkspacePatch
+      const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       const finalWorkspace = saved ?? workspace
       const structured = workspaceToArtifact(finalWorkspace)
       await onSendArtifact(stripUndefinedDeep(structured) as Ds11Structured)
-      setMessage('Ds-1-1 산출물로 보냈습니다.')
+      setMessage(`${displayActivityCode('Ds-1-1')} 산출물로 보냈습니다.`)
       onClose()
     } catch (error) {
       console.error('[evaluationPlanWorkspace send]', error)
@@ -711,7 +715,7 @@ export function EvaluationPlanWorkspaceModal({
         <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3 border-b border-[#DADCE0] bg-white">
           <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#C4C7C5] bg-white px-3 text-[13px] font-medium text-[#3C4043]">
             <FileText size={17} weight="bold" />
-            Ds-1-1
+            {displayActivityCode('Ds-1-1')}
           </span>
           <span className="hidden sm:inline-flex h-8 items-center justify-center rounded-lg bg-[#D3E3FD] px-3 text-[13px] font-medium text-[#0842A0]">
             {editorModeLabel}
@@ -748,7 +752,7 @@ export function EvaluationPlanWorkspaceModal({
             type="button"
             onClick={sendArtifact}
             disabled={!isHost || sending}
-            title={isHost ? '현재 워크스페이스를 Ds-1-1 산출물로 보냅니다' : '방장만 산출물로 보낼 수 있습니다'}
+            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('Ds-1-1')} 산출물로 보냅니다` : '방장만 산출물로 보낼 수 있습니다'}
             className="hidden sm:flex h-10 items-center gap-2 px-5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06327A] text-white text-[14px] font-medium shadow-[0_1px_2px_rgba(60,64,67,0.3),0_1px_3px_1px_rgba(60,64,67,0.15)] transition-colors disabled:opacity-40 disabled:shadow-none"
           >
             <PaperPlaneRight size={17} weight="fill" />
@@ -775,7 +779,7 @@ export function EvaluationPlanWorkspaceModal({
           <div className="max-w-[1400px] mx-auto px-5 py-12 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
             <article className="space-y-10 min-w-0">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-7 items-center rounded-md bg-[#D3E3FD] px-2.5 text-[13px] font-semibold text-[#0842A0]">Ds-1-1</span>
+                <span className="inline-flex h-7 items-center rounded-md bg-[#D3E3FD] px-2.5 text-[13px] font-semibold text-[#0842A0]">{displayActivityCode('Ds-1-1')}</span>
                 <span className="text-[30px] font-bold tracking-[-0.02em] text-[#37352F]">평가 설계</span>
                 <span className="ml-auto hidden sm:inline-flex h-7 items-center rounded-md bg-[#F1F3F4] px-2.5 text-[12px] font-medium text-[#6B6A67]">
                   {workspace.rows.length > 0 ? `${workspace.columns.length}열 · ${workspace.rows.length}행` : '문서 편집 중'}
@@ -807,7 +811,7 @@ export function EvaluationPlanWorkspaceModal({
                   <table className="min-w-full border-collapse text-sm">
                     <thead>
                       <tr>
-                        <th className="sticky left-0 z-20 w-12 border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2 text-left text-[13px] font-medium text-[#6B6A67]">행</th>
+                        <th className="sticky left-0 z-20 w-12 border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2 text-left text-[13px] font-semibold text-[#202124]">행</th>
                         {workspace.columns.map(column => (
                           <th key={column.id} className="min-w-[150px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2">
                             <div className="flex items-center gap-1.5">
@@ -819,9 +823,9 @@ export function EvaluationPlanWorkspaceModal({
                                   updateColumnLabel(column.id, event.target.value)
                                   blurField()
                                 }}
-                                className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] font-semibold text-[#37352F] hover:bg-[#EFEFEE] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
+                                className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] font-semibold text-[#202124] placeholder:text-[#5F6368] hover:bg-black/5 focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                               />
-                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-8 w-8 items-center justify-center rounded-md text-[#9B9A97] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-[#EFEFEE] hover:text-[#37352F]" aria-label="열 삭제">
+                              <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-8 w-8 items-center justify-center rounded-md text-[#5F6368] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/5 hover:text-[#C5221F]" aria-label="열 삭제">
                                 <Trash size={15} weight="bold" />
                               </button>
                             </div>
@@ -916,7 +920,7 @@ export function EvaluationPlanWorkspaceModal({
                               <thead>
                                 <tr>
                                   {table.columns.map(column => (
-                                    <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2 text-left text-[13px] font-medium text-[#6B6A67]">
+                                    <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2 text-left text-[13px] font-semibold text-[#202124]">
                                       {column.label}
                                     </th>
                                   ))}
@@ -1133,7 +1137,7 @@ export function EvaluationPlanWorkspaceModal({
                   <div className="flex-1 min-w-0">
                     <p className="text-[15px] font-semibold text-[#37352F]">추천 산출물 형식</p>
                     <ul className="mt-2 space-y-1 text-[14px] leading-relaxed text-[#5F6368]">
-                      <li>· <b>평가 항목</b>: A-2-2 수업목표와 1:1 대응, 결과+과정 평가 포함</li>
+                      <li>· <b>평가 항목</b>: {displayActivityCode('A-2-2')} 수업목표와 1:1 대응, 결과+과정 평가 포함</li>
                       <li>· <b>방법</b>: (평가자) 교사·동료·자기 + (과제유형) 포트폴리오·서논술형·구술발표·토의토론·프로젝트·실험실습</li>
                       <li>· <b>상·중·하</b>: 인지 수준이 아닌 <b>수행 정도</b>를 관찰 가능한 행동으로 기술</li>
                       <li className="text-[#9AA0A6]">※ 루브릭은 평가 방법이 아니라 채점 기준표(이 상/중/하 표 자체)입니다</li>
@@ -1162,7 +1166,7 @@ export function EvaluationPlanWorkspaceModal({
 
                 <div className="space-y-2">
                   <label className="block text-[15px] font-bold text-[#202124]">AI 에이전트의 제안 받기</label>
-                  <p className="text-[13px] leading-relaxed text-[#5F6368]">이전 단계(A-2-2) <b>통합 수업목표</b>와 학습자 맥락을 자동으로 읽어 <b>상/중/하 루브릭 표</b>를 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
+                  <p className="text-[13px] leading-relaxed text-[#5F6368]">이전 단계({displayActivityCode('A-2-2')}) <b>통합 수업목표</b>와 학습자 맥락을 자동으로 읽어 <b>상/중/하 루브릭 표</b>를 한꺼번에 제안합니다. 결과는 직접 수정한 뒤 &ldquo;워크스페이스에 적용&rdquo;하시면 됩니다.</p>
                   {suggestError && (
                     <p className="text-[14px] font-semibold text-[#C5221F]">{suggestError}</p>
                   )}
@@ -1323,10 +1327,10 @@ export function EvaluationPlanWorkspaceModal({
             <div className="rounded-2xl border border-[#DADCE0] overflow-hidden bg-white">
               <div className="overflow-x-auto">
                 <table className="min-w-full border-collapse text-[14px]">
-                  <thead className="bg-[#1A73E8]">
+                  <thead className="bg-[#F7F7F5]">
                     <tr>
                       {DEFAULT_COLUMNS.map(column => (
-                        <th key={column.id} className="border border-[#1557B0] px-2 py-2 text-left font-semibold text-white">{column.label}</th>
+                        <th key={column.id} className="border border-[#E9E9E7] px-2 py-2 text-left font-semibold text-[#202124]">{column.label}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1378,7 +1382,7 @@ export function EvaluationPlanWorkspaceModal({
         currentUserColor={currentUserColor}
         members={collaborativeMembers ?? []}
         title="평가 계획 AI에게 구체적으로 요청"
-        subtitle="Ds-1-1 — 각자 자기 행에 추가 요청을 적은 뒤 AI 제안 받기"
+        subtitle={`${displayActivityCode('Ds-1-1')} — 각자 자기 행에 추가 요청을 적은 뒤 AI 제안 받기`}
         onSubmit={async (prompts) => { await requestSuggestion(prompts) }}
       />
     )}
