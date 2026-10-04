@@ -3,13 +3,13 @@
 import { useState } from 'react'
 import { Timestamp } from 'firebase/firestore'
 import { ACTIVITY_META, displayActivityCode, type ActivityCode, type ArtifactStatus, type Project } from '@/types'
-import { TRAINING_ACTIVITIES, formatTrainingSaveNotice, isTrainingActivity, requestTrainingChatSend, trainingStatus } from '@/lib/training/trainingMode'
+import { TRAINING_ACTIVITIES, formatTrainingSaveNotice, isTrainingActivity, isTrainingQuiet, isTrainingSystemText, requestTrainingChatSend, trainingStatus } from '@/lib/training/trainingMode'
 import { proposeArtifactToHost, setProjectArtifact } from '@/lib/firebase/projects'
 import { useProjectStore } from '@/store/project'
 import { artifactContentEquals } from '@/lib/chat/artifactSignalBatch'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import { MD3Button } from '@/components/ui/MD3Button'
-import { buildTrainingFormContent, trainingFormValues } from './trainingFormState'
+import { buildTrainingFormContent, trainingFormValues, trainingSaveAdviceSuffix } from './trainingFormState'
 import { useTrainingAdvice } from './useTrainingAdvice'
 
 export function TrainingForm({ project, activityCode, content, loaded, readOnly = false }: {
@@ -28,8 +28,18 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
   project: Project; activityCode: ActivityCode; content: Record<string, unknown>; readOnly: boolean
 }) {
   const user = useProjectStore(state => state.userProfile)
+  const messages = useProjectStore(state => state.messages)
+  const quiet = isTrainingQuiet(messages, activityCode)
+  const quietToken = quiet ? [...messages].reverse().find(message => message.role === 'user' && message.activityCode === activityCode && !isTrainingSystemText(message.content))?.id ?? 'quiet' : null
   const isHost = !!user && (project.hostUid === user.uid || project.createdBy === user.uid)
-  const [advice, setAdvice] = useTrainingAdvice(project.id)
+  const [storedAdvice, setStoredAdvice] = useTrainingAdvice(project.id)
+  const [oneSaveAdvice, setOneSaveAdvice] = useState<string | null>(null)
+  const advice = quiet ? oneSaveAdvice === quietToken : storedAdvice
+  // 개입 금지 중의 체크는 그 저장 한 번만 허용한다. 프로젝트의 기본 선호는 바꾸지 않는다.
+  function setAdvice(enabled: boolean) {
+    if (quiet) setOneSaveAdvice(enabled ? quietToken : null)
+    else setStoredAdvice(enabled)
+  }
   const sourceKey = JSON.stringify(content)
   const [draft, setDraft] = useState(() => ({ sourceKey, values: trainingFormValues(activityCode, content), dirty: {} as Record<string, boolean> }))
   const [saving, setSaving] = useState(false)
@@ -79,8 +89,9 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
         }
         setFeedback('저장했습니다. 채운 내용은 팀과 공유됩니다.')
         if (current.project?.id === project.id && current.currentActivity === activityCode) {
-          requestTrainingChatSend(formatTrainingSaveNotice(activityCode) + (advice ? ' 조언해 주세요' : ' 조언은 필요 없어요'))
+          requestTrainingChatSend(formatTrainingSaveNotice(activityCode) + trainingSaveAdviceSuffix(quiet, advice))
         }
+        setOneSaveAdvice(null)
       } else {
         const sections = Object.fromEntries(Object.entries(draft.values).filter(([, text]) => text.trim()).map(([key, text]) => [key, text.trim()]))
         if (!Object.keys(sections).length) { setError('제안할 내용을 한 칸 이상 입력해 주세요.'); return }
@@ -116,9 +127,12 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
         </fieldset>
         {status.missingRequired.length > 0 && <p className="text-xs leading-relaxed text-[#8A3D00]">아직 비어 있는 필수 칸: {status.missingRequired.map(field => field.label).join(' · ')}</p>}
         {isHost && (
-          <label className="flex items-start gap-2 text-sm text-[#3C4043]">
-            <input type="checkbox" checked={advice} onChange={event => setAdvice(event.target.checked)} disabled={saving || readOnly} className="mt-1 size-4 shrink-0 accent-[#0B57D0]" />저장하면 AI 조언 받기
-          </label>
+          <div className="space-y-1">
+            <label className="flex items-start gap-2 text-sm text-[#3C4043]">
+              <input type="checkbox" checked={advice} onChange={event => setAdvice(event.target.checked)} disabled={saving || readOnly} className="mt-1 size-4 shrink-0 accent-[#0B57D0]" />저장하면 AI 조언 받기
+            </label>
+            {quiet && <p role="status" className="text-xs leading-relaxed text-[#5F6368]">{advice ? '개입 금지 요청 중 — 이번 저장 1회만 조언을 받아요.' : '개입 금지 요청 중 — 조언하지 않아요'}</p>}
+          </div>
         )}
         {error && <p role="alert" className="text-sm text-[#C5221F]">{error}</p>}
         {feedback && <p role="status" className="text-sm text-[#137333]">{feedback}</p>}

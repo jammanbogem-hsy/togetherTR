@@ -1,5 +1,5 @@
-import { TRAINING_ACTIVITIES } from '@/lib/training/trainingMode'
-import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
+import { TRAINING_ACTIVITIES, TRAINING_ADVICE_ON, TRAINING_ADVICE_OFF, TRAINING_ADVICE_ONCE } from '@/lib/training/trainingMode'
+import { trainingFormText } from './trainingFormText'
 import type { ActivityCode } from '@/types'
 
 // 일반 모드의 구조화 산출물도 입력칸에 불러와 기존 기록을 이어 쓴다.
@@ -26,7 +26,7 @@ export function trainingFormValues(code: ActivityCode, content: Record<string, u
     const aliases = STRUCTURED_FIELDS[code]?.[field.key] ?? []
     const value = direct ?? (aliases.length === 1 ? content[aliases[0]] : aliases.length > 1
       ? Object.fromEntries(aliases.filter(key => content[key] != null).map(key => [key, content[key]])) : undefined)
-    return [field.key, serializeArtifactForPrompt(value)]
+    return [field.key, trainingFormText(value, code)]
   }))
 }
 
@@ -46,4 +46,9 @@ export function buildTrainingFormContent(code: ActivityCode, previous: Record<st
 
 export function trainingAdviceKey(projectId: string): string {
   return `tcid:training-advice:${projectId}`
+}
+
+export function trainingSaveAdviceSuffix(quiet: boolean, advice: boolean): string {
+  if (!advice) return TRAINING_ADVICE_OFF
+  return quiet ? TRAINING_ADVICE_ONCE : TRAINING_ADVICE_ON
 }

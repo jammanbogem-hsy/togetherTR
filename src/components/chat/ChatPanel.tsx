@@ -68,7 +68,7 @@ import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList
 import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
-import { isTrainingActivity, shouldReplyTrainingQuietly, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
+import { buildTrainingWelcome, isTrainingActivity, shouldReplyTrainingQuietly, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { TrainingModeBar } from '@/components/training/TrainingModeBar'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -1463,7 +1463,10 @@ function ChatPanelContent() {
 
     // T-1-1: 구조화된 산출물로 변환 — AI 자유 형식 대신 스키마가 구조를 강제
     const targetAct = actCode ?? currentActivity
-    if (targetAct === 'T-1-1') {
+    // 연수용 활동은 교사 원문을 양식과 같은 섹션 키 문자열로 둔다(구조화 빌더로 바꾸면 양식 원문이 사라진다).
+    if (isTrainingActivity(proj, targetAct)) {
+      // 원문 그대로 저장
+    } else if (targetAct === 'T-1-1') {
       const structured = buildT11Structured(sections, contextMsgs, soloT11Opts())
       sections = structured as unknown as Record<string, string>
     } else if (targetAct === 'T-1-2') {
@@ -2512,10 +2515,13 @@ function ChatPanelContent() {
     if (!project?.started) return
     if (!messagesLoaded) return
     // 개인 설계는 축약 환영 메시지 우선, 없으면 팀판으로 폴백 (협력 모드는 기존 그대로)
-    let welcome = (project?.mode === 'solo' ? SOLO_ACTIVITY_WELCOME[currentActivity] : undefined)
-      ?? ACTIVITY_WELCOME[currentActivity]
+    // 연수용 약식 활동은 일반 환영 대신 trainingMode 정의로 만든 짧은 고정 안내(AI 없음)
+    let welcome = isTrainingActivity(proj, currentActivity)
+      ? buildTrainingWelcome(currentActivity)
+      : (project?.mode === 'solo' ? SOLO_ACTIVITY_WELCOME[currentActivity] : undefined)
+        ?? ACTIVITY_WELCOME[currentActivity]
     if (!welcome) return
-    if (currentActivity === 'A-1-2' && !Object.keys(project.artifacts?.['A-1-1']?.content ?? {}).length) {
+    if (!isTrainingActivity(proj, currentActivity) && currentActivity === 'A-1-2' && !Object.keys(project.artifacts?.['A-1-1']?.content ?? {}).length) {
       welcome = welcome
         .replace('팀이 정한 기준에 따라 검토', '팀 비전과 학생 삶과의 연결을 기준으로 검토')
         .replace('지금까지 정한 기준으로 보면', '팀 비전과 학생 삶과의 연결을 기준으로 보면')
@@ -2553,8 +2559,10 @@ function ChatPanelContent() {
       sanitizeArtifactSections(pendingArtifactSave.sections),
       ctxMsgs,
     )
-    // 구조화된 산출물로 변환
-    if (targetActivity === 'T-1-1') {
+    // 구조화된 산출물로 변환 (연수용 활동은 양식과 같은 섹션 키 원문 유지)
+    if (isTrainingActivity(proj, targetActivity)) {
+      // 원문 그대로 저장
+    } else if (targetActivity === 'T-1-1') {
       enrichedSections = buildT11Structured(enrichedSections, ctxMsgs, soloT11Opts()) as unknown as Record<string, string>
     } else if (targetActivity === 'T-1-2') {
       enrichedSections = buildT12Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
@@ -4656,6 +4664,18 @@ ${discussionSummary}
 
         {visibleMessages.map((msg) => {
           if (msg.role === 'system') return null
+
+          // 연수용 양식 저장 알림은 교사 말풍선이 아니라 작은 시스템 칩으로(저장 데이터 형식은 그대로)
+          const savedChip = msg.role === 'user' ? trainingSaveNoticeChip(msg.content) : null
+          if (savedChip) {
+            return (
+              <div key={msg.id} className="flex justify-center py-1" data-testid="training-save-chip">
+                <span className="rounded-full bg-[#E6F4EA] px-3 py-1 text-[12px] font-medium text-[#137333]">
+                  ✓ {savedChip}{msg.displayName ? ` · ${msg.displayName}` : ''}
+                </span>
+              </div>
+            )
+          }
 
           // 분석 결과 메시지 (토의 종료 후)
           // P0-phil3 (Task #32): AnalysisBubble 포맷은 유지하면서 msg.actionCard가 있으면 ActionCard 3버튼을 바로 아래 렌더.

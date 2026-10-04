@@ -162,6 +162,29 @@ const RAW: Record<ActivityCode, { fields: Array<ReturnType<typeof f>>; help: Tra
   },
 }
 
+/** 연수용 첫 안내의 '이 활동에서 할 일' 한 줄 */
+export const TRAINING_INTRO: Readonly<Record<ActivityCode, string>> = {
+  'T-1-1': '팀이 함께 지향하는 수업을 한 문장으로 적어요.',
+  'T-1-2': '수업설계에서 지킬 방향을 "~하려면 ~해야 한다"로 적어요.',
+  'T-2-1': '누가 무엇을 언제까지 맡을지 적어요.',
+  'T-2-2': '협의가 막힐 때 지킬 팀 규칙을 적어요.',
+  'T-2-3': '수업 실행일을 기준으로 팀 일정을 적어요.',
+  'A-1-1': '주제를 고를 기준을 적어요.',
+  'A-1-2': '팀이 고른 주제와 고른 이유를 적어요.',
+  'A-2-1': '주제와 이어지는 성취기준을 분석해 적어요.',
+  'A-2-2': '통합 수업목표를 한 문장으로 적어요.',
+  'A-2-3': '우리 학생들의 특성과 맥락을 적어요.',
+  'Ds-1-1': '무엇으로 학습을 확인할지 평가 계획을 적어요.',
+  'Ds-1-2': '학생이 해결할 문제상황을 적어요.',
+  'Ds-1-3': '학습 활동의 흐름과 차시를 적어요.',
+  'Ds-2-1': '활동마다 쓸 도구와 자료를 적어요.',
+  'Ds-2-2': '어려워할 활동에 줄 지원을 적어요.',
+  'DI-1-1': '준비할 자료 목록을 적어요.',
+  'DI-2-1': '수업에서 있었던 주요 장면을 적어요.',
+  'E-1-1': '수업에서 본 사실·해석·수정안을 적어요.',
+  'E-2-1': '협력 과정을 돌아보고 다음 운영 원칙을 적어요.',
+}
+
 function sectionLabel(code: ActivityCode, key: string): string {
   return ACTIVITY_META[code].recommendedSections?.find(section => section.key === key)?.label
     ?? ACTIVITY_META[code].requiredSections?.find(section => section.key === key)?.label
@@ -252,16 +275,47 @@ const NORMAL_RE = /조언\s*해\s*주|조언\s*(?:을|좀)?\s*(?:주세요|부�
 export type InterventionPreference = 'quiet' | 'normal'
 
 /** 사용자 발화(시간순)에서 마지막 개입 표현을 따른다. 아무 표현이 없으면 'normal'. */
+/**
+ * 화면 버튼이 만든 문구 — 교사가 직접 친 말이 아니므로 개입 선호 판단에서 뺀다.
+ * 양식 저장 알림·AI 도움·단계별 진행·직접 적기 복귀.
+ */
+export function isTrainingSystemText(text: string): boolean {
+  const body = text.replace(/^\s*\[답장:[^\]]*\]\s*/, '')
+  return /^\s*\[(?:연수 양식 저장|AI 도움):/.test(body) || body.includes('[단계별로 함께 진행]')
+}
+
+function lastPreferenceIn(text: string): InterventionPreference | null {
+  const marks = [
+    ...[...text.matchAll(QUIET_RE)].map(m => ({ end: (m.index ?? 0) + m[0].length, kind: 'quiet' as const })),
+    ...[...text.matchAll(NORMAL_RE)].map(m => ({ end: (m.index ?? 0) + m[0].length, kind: 'normal' as const })),
+  ].sort((a, b) => a.end - b.end || (a.kind === 'quiet' ? 1 : -1))
+  return marks.length ? marks[marks.length - 1].kind : null
+}
+
+/**
+ * 교사가 직접 친 발화(시간순)에서 마지막 개입 표현을 따른다. 아무 표현이 없으면 'normal'.
+ * 화면 버튼 문구(isTrainingSystemText)는 보지 않는다 — 버튼은 그 요청 한 번만 처리하고 상태는 바꾸지 않는다.
+ */
 export function detectInterventionPreference(userTexts: readonly string[]): InterventionPreference {
   let preference: InterventionPreference = 'normal'
   for (const text of userTexts) {
-    const marks = [
-      ...[...text.matchAll(QUIET_RE)].map(m => ({ end: (m.index ?? 0) + m[0].length, kind: 'quiet' as const })),
-      ...[...text.matchAll(NORMAL_RE)].map(m => ({ end: (m.index ?? 0) + m[0].length, kind: 'normal' as const })),
-    ].sort((a, b) => a.end - b.end || (a.kind === 'quiet' ? 1 : -1))
-    if (marks.length) preference = marks[marks.length - 1].kind
+    if (isTrainingSystemText(text)) continue
+    preference = lastPreferenceIn(text) ?? preference
   }
   return preference
+}
+
+export interface TrainingMessageLike {
+  role: string
+  content: string
+  activityCode?: string
+}
+
+/** 이 활동이 지금 개입 금지 상태인지 — 화면이 'AI 조언 받기' 체크 상태 표시에 쓴다. */
+export function isTrainingQuiet(messages: readonly TrainingMessageLike[], code: string): boolean {
+  return detectInterventionPreference(
+    messages.filter(m => m.role === 'user' && m.activityCode === code).map(m => m.content),
+  ) === 'quiet'
 }
 
 // ─── 채팅 메시지 형식(화면 ↔ 채팅) ─────────────────────────────────────
@@ -315,8 +369,9 @@ export function requestTrainingChatSend(text: string): void {
 }
 
 /**
- * 양식 저장 알림에 AI 없이 '저장했습니다.'로 답할지 — 연수용 활동이고, 알림 문장까지 포함한
- * 이 활동의 사용자 발화(시간순)에서 마지막 개입 표현이 '개입 금지'일 때.
+ * 양식 저장 알림에 AI 없이 '저장했습니다.'로 답할지 — 연수용 활동의 양식 저장 알림이고,
+ * (1) 교사가 직접 친 말로 이 활동이 개입 금지 상태이거나(알림의 체크 문구와 무관),
+ * (2) 이번 알림 자체가 조언을 원하지 않는다고 할 때('AI 조언 받기' 해제).
  */
 export function shouldReplyTrainingQuietly(
   project: TrainingProject,
@@ -324,7 +379,39 @@ export function shouldReplyTrainingQuietly(
   text: string,
   previousUserTexts: readonly string[],
 ): boolean {
-  return isTrainingActivity(project, code)
-    && parseTrainingSaveNotice(text) !== null
-    && detectInterventionPreference([...previousUserTexts, text]) === 'quiet'
+  if (!isTrainingActivity(project, code) || parseTrainingSaveNotice(text) === null) return false
+  const suffix = text.replace(SAVE_NOTICE_RE, '')
+  // 개입 금지 중에도 교사가 체크를 다시 켠 저장은 그 1회만 조언한다(알림은 시스템 문구라 상태는 그대로 quiet).
+  if (suffix.includes(TRAINING_ADVICE_ONCE.trim())) return false
+  if (detectInterventionPreference(previousUserTexts) === 'quiet') return true
+  return lastPreferenceIn(suffix) === 'quiet'
+}
+
+/** 양식 저장 알림 끝에 붙이는 조언 의사 — 체크(보통) / 체크 해제 / 개입 금지 중 다시 켠 체크(이번 1회) */
+export const TRAINING_ADVICE_ON = ' 조언해 주세요'
+export const TRAINING_ADVICE_OFF = ' 조언은 필요 없어요'
+export const TRAINING_ADVICE_ONCE = ' 이번 저장만 조언해 주세요'
+
+/** 채팅에 보이는 저장 알림 칩 문구 — 저장 데이터('[연수 양식 저장: …]')는 그대로 두고 표시만 바꾼다. */
+export function trainingSaveNoticeChip(text: string): string | null {
+  const notice = parseTrainingSaveNotice(text)
+  return notice ? `${notice.displayCode} ${notice.label} 양식을 저장했어요` : null
+}
+
+/**
+ * 연수용 활동의 첫 안내(AI 없이 고정) — 할 일 한 줄, 필수 칸, 한 번 묻는 칸, 도움 버튼, 저장 안내.
+ * 일반 환영(ACTIVITY_WELCOME) 대신 쓴다.
+ */
+export function buildTrainingWelcome(code: ActivityCode): string {
+  const def = TRAINING_ACTIVITIES[code]
+  const required = def.fields.filter(field => field.tier === 'A').map(field => field.label)
+  const askOnce = def.fields.filter(field => field.tier === 'B').map(field => field.label)
+  return [
+    `**${displayActivityCode(code)} ${ACTIVITY_META[code].label}** — ${TRAINING_INTRO[code]}`,
+    required.length ? `- 필수 칸: ${required.join(', ')}` : '',
+    askOnce.length ? `- 있으면 좋은 칸: ${askOnce.join(', ')}` : '',
+    def.help.length ? `- 도움이 필요하면 위 버튼: ${def.help.map(action => action.label).join(', ')}` : '',
+    '',
+    '토의한 결과를 오른쪽 양식에 옮겨 적고 저장하세요.',
+  ].filter((line, index, lines) => line !== '' || (index > 0 && lines[index - 1] !== '')).join('\n')
 }
