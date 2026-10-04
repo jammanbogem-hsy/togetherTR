@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useParams } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
@@ -41,6 +42,9 @@ import { Ds12Renderer } from './structured/Ds12Renderer'
 import { Ds13Renderer } from './structured/Ds13Renderer'
 import { Ds21Renderer } from './structured/Ds21Renderer'
 import { Ds22Renderer } from './structured/Ds22Renderer'
+import { TrainingForm } from '@/components/training/TrainingForm'
+import { isTrainingActivity } from '@/lib/training/trainingMode'
+import { MD3Button } from '@/components/ui/MD3Button'
 
 const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: Icon; className: string }> = {
   ai_draft:  { label: 'AI 초안', icon: Sparkle,      className: 'bg-[#E8F0FE] text-[#1A73E8]' },
@@ -1036,6 +1040,7 @@ export function ArtifactPanel() {
 }
 
 function InteractiveArtifactPanel() {
+  const routeParams = useParams<{ id: string }>()
   const { currentArtifact, viewingActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
   const activityMeta = ACTIVITY_META[viewingActivity]
   const [revisionNote, setRevisionNote] = useState('')
@@ -1452,6 +1457,31 @@ function InteractiveArtifactPanel() {
       stageCode: artifact.stageCode,
       activityCode: artifact.code,
     })
+  }
+
+  if (project && isTrainingActivity(project, viewingActivity)) {
+    const trainingContent = (firestoreArtifact?.content ?? displayContent) as Record<string, unknown>
+    return (
+      <div className="flex h-full min-w-0 flex-col overflow-hidden bg-white">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#DADCE0] bg-[#E8F0FE] px-4 py-3">
+          <span className="text-sm font-semibold text-[#0842A0]">연수 기록</span>
+          {displayArtifact && <StatusBadge status={effectiveStatus} />}
+          {hasContent && <MD3Button variant="text" size="xs" onClick={() => openArtifactPreview({ title: displayArtifact?.title ?? activityMeta.label, content: trainingContent, status: effectiveStatus, stageCode: activityMeta.stage, activityCode: viewingActivity })} aria-label="산출물 전체 보기" icon={<ArrowsOut size={16} />}>전체 보기</MD3Button>}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <TrainingForm project={project} activityCode={viewingActivity} content={trainingContent}
+            loaded={project.id === routeParams.id} readOnly={observationOnly} />
+        </div>
+        {!observationOnly && isHost && hasContent && (
+          <div className="shrink-0 border-t border-[#DADCE0] p-4">
+            {artifactError && <p role="alert" className="mb-2 text-sm text-[#C5221F]">{artifactError}</p>}
+            <MD3Button size="sm" variant={isConfirmed ? 'outlined' : 'filled'} disabled={isSaving}
+              onClick={isConfirmed ? handleRedraft : handleConfirm}>{isSaving ? '저장 중…' : isConfirmed ? '확정 취소 · 재검토' : '산출물 확정하기'}</MD3Button>
+          </div>
+        )}
+        <ArtifactPreviewModal modal={previewModal} onClose={() => setPreviewModal(null)} />
+      </div>
+    )
   }
 
   return (

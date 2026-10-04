@@ -1,6 +1,8 @@
 import type { StageCode, ActivityCode, ActorType, Project, ActivityMeta } from '@/types'
 import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
+import { isTrainingActivity } from '@/lib/training/trainingMode'
+import { buildTrainingActivityPrompt } from './training'
 import {
   resolveTeamGradeBands,
   isMultiGradeBandTeam,
@@ -3205,13 +3207,15 @@ export const SOLO_ACTIVITY_WELCOME: Partial<Record<ActivityCode, string>> = {
 export function buildSystemPrompt(
   stage: StageCode,
   activityCode: ActivityCode,
-  project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands' | 'curriculumSheet'>,
+  project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands' | 'curriculumSheet' | 'trainingMode'>,
   _actorType: ActorType,
   learnerProfileSummary?: string,
   currentArtifact?: { title: string; content: Record<string, unknown>; status: string; version: number } | null,
   teamMembers?: string,
   confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown>; status?: string }>,
-  activityStatus?: string
+  activityStatus?: string,
+  /** 연수용: 대화 기록에서 '[단계별로 함께 진행]'이 켜져 있으면 이 활동만 정식 절차로 진행 */
+  options?: { trainingStepByStep?: boolean },
 ): string {
   const activityMeta = ACTIVITY_META[activityCode]
   const displayCode = displayActivityCode(activityCode)
@@ -3398,7 +3402,12 @@ ${collaborativeContract.steps.map((step, index) => `${index + 1}. ${step.title}:
 완료 점검: ${collaborativeContract.completionCriteria.join(' / ')}
 교사의 기여를 먼저 듣고 초안·동료 검토·수정·실제 교사의 동의를 구분한다. AI의 요약이나 침묵은 합의가 아니다. 위의 데모·시뮬레이션 관련 문구는 데모 실행에만 적용한다. 일반 프로젝트의 실제 수업 기록은 사용자가 제공한 증거를 사용하고, 제공되지 않은 실행 결과는 생성하지 않는다. 실제 교사를 AI 페르소나로 대신 발언시키지 않는다.`
 
-  return [BASE_SYSTEM_PROMPT, ...(isSolo ? [SOLO_MODE_RULES] : []), contextSection, STAGE_PROMPTS[stage], procedure, activityContext, recommendedSectionsHint, cycleImprovementsSection, collaborativeQualityGuidance].join('\n\n')
+  // 연수용 약식 활동: 역할·말투·절차보다 앞에 둔다. 연수용이 아니면 배열이 비어 출력이 바뀌지 않는다.
+  const trainingPrompt = isTrainingActivity(project, activityCode) && !options?.trainingStepByStep
+    ? [buildTrainingActivityPrompt(activityCode)]
+    : []
+
+  return [BASE_SYSTEM_PROMPT, ...(isSolo ? [SOLO_MODE_RULES] : []), ...trainingPrompt, contextSection, STAGE_PROMPTS[stage], procedure, activityContext, recommendedSectionsHint, cycleImprovementsSection, collaborativeQualityGuidance].join('\n\n')
 }
 
 // Task #10: ACTIVITY_META.recommendedSections 기반 권장 섹션 힌트 블록 생성.

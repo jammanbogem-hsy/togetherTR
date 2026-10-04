@@ -284,6 +284,8 @@ export interface Project {
   id: string
   title: string
   mode: ProjectMode
+  /** 연수용 모드 — 없으면 일반 모드. coreFormal(기본 true)이면 핵심 절차 5개는 일반 진행 */
+  trainingMode?: { enabled: boolean; coreFormal: boolean }
   schoolLevel: SchoolLevel
   targetGradeGroup: GradeGroup
   // 팀 학년군 — 서로 다른 학년 담임이 한 팀일 때 실제 학년군 목록.

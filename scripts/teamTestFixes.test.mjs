@@ -2,6 +2,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import vm from 'node:vm'
 import ts from 'typescript'
 import React from 'react'
@@ -418,6 +422,7 @@ test('B: 다른 팀원이 재시도해도 사용자 메시지는 추가·저장�
     generateMessageId: () => 'new-message', Timestamp: { now: () => 1 },
     addMessage: message => additions.push(message), saveMessage: async (...args) => saves.push(args),
     handleA21SheetArtifactRequest: () => false,
+    shouldReplyTrainingQuietly: () => false, TRAINING_QUIET_REPLY: '저장했습니다.',
     streamFromAPI: async request => { requests.push(request) }, console,
   })
   await send(original.content, true)
@@ -2452,4 +2457,354 @@ test('048f: 라이브러리는 호출 때만 로드하고 페이지별 캡처·�
   captureError = true
   await assert.rejects(module.downloadReportPdf(staticReportDom('원문'), 'herdr', '설계'), /캡처 실패/)
   assert.deepEqual(calls.at(-1), ['remove'])
+})
+
+// ─── TASK-T1: 연수용 모드 1단계 — 판단·분류·AI 동작(코드로 보장) ─────────
+const training = await import('../src/lib/training/trainingMode.ts')
+const trainingPrompt = await import('../src/lib/prompts/training.ts')
+const { STAGES: T_STAGES, ACTIVITY_META: T_META } = await import('../src/types/index.ts')
+const T_ALL = T_STAGES.flatMap(s => s.activities)
+const tProject = (trainingMode, mode = 'collaborative') => ({ title: 't', schoolLevel: '초등', targetGradeGroup: '초3-4', targetSubjects: ['국어'], mode, isA23Completed: false, currentCycle: 1, ...(trainingMode ? { trainingMode } : {}) })
+
+test('T1: 19개 활동 모두 정의, 섹션 키는 산출물 키와 같고 A/B/C·B 이유·도움 버튼이 있다', () => {
+  assert.equal(Object.keys(training.TRAINING_ACTIVITIES).length, T_ALL.length)
+  for (const code of T_ALL) {
+    const def = training.TRAINING_ACTIVITIES[code]
+    const keys = [...(T_META[code].recommendedSections ?? []), ...(T_META[code].requiredSections ?? [])].map(s => s.key)
+    assert.ok(def.fields.length > 0, code)
+    for (const field of def.fields) {
+      assert.ok(keys.includes(field.key), `${code}:${field.key}`)
+      assert.ok(['A', 'B', 'C'].includes(field.tier))
+      assert.ok(field.label && !/[a-z]{3,}/.test(field.label.replace('Human-AI', '')), `${code} 라벨 한글`)
+      if (field.tier === 'B') assert.ok(field.reason, `${code}:${field.key} 이유`)
+    }
+    assert.ok(def.help.length > 0 && def.help.every(h => h.label && h.prompt), code)
+  }
+  assert.deepEqual(training.TRAINING_CORE_ACTIVITIES, ['T-1-1', 'T-1-2', 'A-1-2', 'A-2-1', 'A-2-2'])
+  for (const [code, deps] of Object.entries(training.TRAINING_DEPENDENCIES)) {
+    for (const dep of deps) assert.ok(T_ALL.indexOf(dep.from) < T_ALL.indexOf(code), `${code} ← ${dep.from}`)
+  }
+})
+
+test('T2: isTrainingActivity — 꺼짐·없음은 일반, coreFormal 기본 true면 핵심 5개 제외, false면 전부 약식(solo 포함)', () => {
+  assert.equal(training.isTrainingActivity(tProject(), 'Ds-1-1'), false)
+  assert.equal(training.isTrainingActivity(tProject({ enabled: false, coreFormal: true }), 'Ds-1-1'), false)
+  assert.equal(training.isTrainingActivity(null, 'Ds-1-1'), false)
+  const on = tProject({ enabled: true, coreFormal: true })
+  assert.equal(training.isTrainingActivity(on, 'T-1-1'), false)
+  assert.equal(training.isTrainingActivity(on, 'A-2-2'), false)
+  assert.equal(training.isTrainingActivity(on, 'T-2-1'), true)
+  assert.equal(training.isTrainingActivity({ trainingMode: { enabled: true } }, 'A-2-1'), false) // coreFormal 생략 = true
+  const all = tProject({ enabled: true, coreFormal: false }, 'solo')
+  assert.ok(T_ALL.every(code => training.isTrainingActivity(all, code)))
+})
+
+test('T3: trainingStatus — 비어 있는 A 칸만 missingRequired, 공백·빈 배열은 빈 칸', () => {
+  const empty = training.trainingStatus('E-1-1', {})
+  assert.deepEqual(empty.missingRequired.map(f => f.key), ['사실', '해석', '수정안'])
+  assert.equal(empty.requiredTotal, 3)
+  const partial = training.trainingStatus('Ds-1-2', { 문제상황: '그늘막 제안', '핵심 질문': '  ' })
+  assert.deepEqual(partial.missingRequired, [])
+  assert.deepEqual(partial.filled.map(f => f.key), ['문제상황'])
+  assert.deepEqual(training.trainingStatus('T-2-1', { '역할 배분': [] }).missingRequired.map(f => f.key), ['역할 배분'])
+  assert.deepEqual(training.trainingStatus('X-9-9', {}), { missingRequired: [], filled: [], requiredTotal: 0 })
+})
+
+test('T4: detectInterventionPreference — 개입 금지/해제 표현, 시간순·문장 안 마지막 표현 우선', () => {
+  const d = training.detectInterventionPreference
+  assert.equal(d([]), 'normal')
+  for (const text of ['개입하지 마세요', '조언은 필요 없어요', '조언 필요 없어', '저장만 해 주세요', '그대로 저장해', '도와주지 마세요']) assert.equal(d([text]), 'quiet', text)
+  for (const text of ['조언해 주세요', '도와주세요', '도와줘', '단계별로 같이 해요']) assert.equal(d([text]), 'normal', text)
+  assert.equal(d(['개입하지 마세요', '이제 도와주세요']), 'normal')
+  assert.equal(d(['도와주세요', '이번엔 저장만']), 'quiet')
+  assert.equal(d(['아까는 조언해 달랬는데 이제 조언은 필요 없어요']), 'quiet')
+  assert.equal(d(['저장만 하려다가 조언해 주세요']), 'normal')
+  assert.equal(d(['개입하지 마세요', '표 내용 확인했어요']), 'quiet') // 관계없는 말은 유지
+})
+
+test('T5: 메시지 형식 — 양식 저장 알림·AI 도움·단계별 진행, 개입 금지 저장은 AI 없이 고정 응답', () => {
+  const notice = training.formatTrainingSaveNotice('T-2-1')
+  assert.equal(notice, '[연수 양식 저장: T-3 역할 배분]')
+  assert.deepEqual(training.parseTrainingSaveNotice(`${notice} 조언은 필요 없어요`), { displayCode: 'T-3', label: '역할 배분' })
+  assert.equal(training.parseTrainingSaveNotice('그냥 대화'), null)
+  const help = training.formatTrainingHelpRequest(training.TRAINING_ACTIVITIES['Ds-1-1'].help[0])
+  assert.match(help, /^\[AI 도움: 평가 표로 정리\] /)
+  assert.deepEqual(training.parseTrainingHelpRequest(help)?.label, '평가 표로 정리')
+  assert.equal(training.isStepByStepActive(['[단계별로 함께 진행]']), true)
+  assert.equal(training.isStepByStepActive(['[단계별로 함께 진행]', '이제 직접 적을게요']), false)
+  assert.equal(training.isStepByStepActive(['안녕하세요']), false)
+  const on = tProject({ enabled: true, coreFormal: true })
+  const q = training.shouldReplyTrainingQuietly
+  assert.equal(q(on, 'T-2-1', `${notice} 조언은 필요 없어요`, []), true)
+  assert.equal(q(on, 'T-2-1', notice, ['개입하지 마세요']), true)
+  assert.equal(q(on, 'T-2-1', `${notice} 조언해 주세요`, ['개입하지 마세요']), false)
+  assert.equal(q(on, 'T-2-1', notice, []), false)
+  assert.equal(q(on, 'T-2-1', '개입하지 마세요', []), false) // 저장 알림이 아니면 대상 아님
+  assert.equal(q(on, 'T-1-1', `${notice} 조언은 필요 없어요`, []), false) // 핵심 절차는 일반 진행
+  assert.equal(q(tProject(), 'T-2-1', `${notice} 조언은 필요 없어요`, []), false)
+  assert.equal(training.TRAINING_QUIET_REPLY, '저장했습니다.')
+})
+
+test('T6: 연수용 활동 프롬프트 — 규칙·한글 칸 목록·의존 질문·도움 버튼, 영어 키·분류 기호 노출 금지 규칙', () => {
+  const p = trainingPrompt.buildTrainingActivityPrompt('Ds-2-1')
+  assert.match(p, /연수용 약식 진행 규칙 \[이 활동에 적용 — 아래 역할·말투·절차 규칙보다 우선\]/)
+  assert.match(p, /필수 칸[\s\S]*- 도구 연결 \(활동·도구·담당\)/)
+  assert.match(p, /한 번 묻기 칸[\s\S]*- 학생·AI·교사의 역할 경계 — 이유: /)
+  assert.match(p, /생략 칸[\s\S]*- AI 점검/)
+  assert.match(p, /Ds-3 학습활동 설계 산출물이 없으면 "도구가 필요한 학습 활동 이름"만 한 번 묻는다/)
+  assert.match(p, /\[AI 도움: 도구 추천\]/)
+  assert.match(p, /팀원 의견을 다시 묻거나/)
+  assert.match(p, /영어 키·내부 키/)
+  assert.match(p, /"\[AI 도움: 버튼이름\]"으로 시작하는 요청은 그 버튼이 말하는 한 가지 일만/)
+  assert.doesNotMatch(p, /Human-AI Agency|활동별 자료 설계/) // 내부 키 대신 한글 라벨
+})
+
+test('T7: buildSystemPrompt — 연수용 활동에만 규칙 주입(일반 규칙보다 앞), 핵심 절차·단계별 진행은 일반, solo 와 함께 동작', () => {
+  const on = tProject({ enabled: true, coreFormal: true })
+  const trainingP = buildSystemPrompt('Ds', 'Ds-1-1', on, '팀+AI', undefined, null, '홍성용(팀장)', {}, undefined)
+  assert.match(trainingP, /연수용 약식 진행 규칙/)
+  assert.ok(trainingP.indexOf('연수용 약식 진행 규칙') < trainingP.indexOf('## 이 프로젝트 정보') || trainingP.indexOf('## 이 프로젝트 정보') < 0)
+  const core = buildSystemPrompt('T', 'T-1-1', on, '팀+AI', undefined, null, undefined, {}, undefined)
+  assert.doesNotMatch(core, /연수용 약식 진행 규칙/)
+  const stepByStep = buildSystemPrompt('Ds', 'Ds-1-1', on, '팀+AI', undefined, null, undefined, {}, undefined, { trainingStepByStep: true })
+  assert.doesNotMatch(stepByStep, /연수용 약식 진행 규칙/)
+  const solo = buildSystemPrompt('Ds', 'Ds-1-1', tProject({ enabled: true, coreFormal: false }, 'solo'), '개인+AI', undefined, null, undefined, {}, undefined)
+  assert.match(solo, /연수용 약식 진행 규칙/)
+  assert.ok(solo.indexOf('연수용 약식 진행 규칙') > 0)
+  const route = fs.readFileSync(new URL('../src/app/api/chat/stream/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /trainingStepByStep: isStepByStepActive\(messages\.filter\(m => m\.role === 'user'\)/)
+})
+
+test('T8: 일반 프로젝트 프롬프트는 연수용 도입 전(태그 pre-training-mode-2026-10-04)과 한 글자도 같다', async t => {
+  let source
+  try {
+    source = execFileSync('git', ['show', 'pre-training-mode-2026-10-04:src/lib/prompts/system.ts'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname })
+  } catch {
+    t.skip('태그 없음')
+    return
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcid-prompt-'))
+  const file = path.join(dir, 'system.pre-training.ts')
+  fs.writeFileSync(file, source)
+  const before = await import(pathToFileURL(file).href)
+  const artifacts = { 'A-2-1': { title: 'a', content: { 성취기준분석표: '[4국03-03]' }, status: 'confirmed' } }
+  for (const mode of ['collaborative', 'solo']) {
+    for (const trainingMode of [undefined, { enabled: false, coreFormal: true }]) {
+      for (const stage of T_STAGES) {
+        for (const code of stage.activities) {
+          const args = [stage.code, code, tProject(trainingMode, mode), mode === 'solo' ? '개인+AI' : '팀+AI', '학습자 요약', null, '홍성용(팀장), 캔바1', artifacts, undefined]
+          assert.equal(buildSystemPrompt(...args), before.buildSystemPrompt(...args), `${mode} ${code} ${JSON.stringify(trainingMode)}`)
+        }
+      }
+    }
+  }
+  // 연수용이 켜져 있어도 핵심 절차 활동은 일반 프롬프트와 같다.
+  const on = tProject({ enabled: true, coreFormal: true })
+  for (const code of training.TRAINING_CORE_ACTIVITIES) {
+    const stage = T_META[code].stage
+    const args = [stage, code, on, '팀+AI', undefined, null, undefined, {}, undefined]
+    assert.equal(buildSystemPrompt(...args), before.buildSystemPrompt(...args), code)
+  }
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('T9: ChatPanel·저장 흐름 — 이벤트 수신, 개입 금지 저장은 AI 없이 고정 응답, 연수용 활동은 #28 확인 카드 생략', () => {
+  const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /window\.addEventListener\(TRAINING_SEND_EVENT, onTrainingSend\)/)
+  // AI 응답 중·불러오기 전에는 줄에 세웠다가 순서대로 보낸다(저장 알림 누락 방지).
+  assert.match(panel, /if \(isLoading \|\| isAnalyzing \|\| !messagesLoaded\) return\n    const next = trainingQueueRef\.current\.shift\(\)/)
+  assert.match(panel, /void sendMessageDirectly\(next\)\.finally\(\(\) => setTrainingQueueTick/)
+  // 연수 막대는 연수용 활동에서만, 슬롯 자리에 마운트
+  assert.match(panel, /TRAINING_BAR_SLOT[^\n]*\n      \{isTrainingActivity\(proj, currentActivity\) && \(\n        <TrainingModeBar/)
+  assert.match(panel, /onSend=\{enqueueTrainingSend\}/)
+  assert.match(panel, /onNext=\{nextCode => handleActivityAdvance\(nextCode\)\}/)
+  const quiet = panel.slice(panel.indexOf('if (shouldReplyTrainingQuietly('), panel.indexOf('setIsLoading(true)', panel.indexOf('if (shouldReplyTrainingQuietly(')))
+  assert.match(quiet, /content: TRAINING_QUIET_REPLY/)
+  assert.match(quiet, /return\n/)
+  assert.doesNotMatch(quiet, /streamFromAPI/)
+  assert.match(panel, /trainingMode: proj\.trainingMode,/)
+  const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  assert.match(projects, /if \(project\.mode === 'solo' \|\| project\.demoRun \|\| isTrainingActivity\(project, activityCode\)\) return/)
+})
+
+// ─── TASK-T2: 연수용 생성·설정·양식·채팅 막대 ───
+const trainingUiState = await import('../src/components/training/trainingFormState.ts')
+const trainingUi = await import('../src/lib/training/trainingMode.ts')
+const trainingUiProject = { id: 'training-ui', title: '연수', mode: 'collaborative', createdBy: 'host', hostUid: 'host', currentStage: 'T', trainingMode: { enabled: true, coreFormal: true } }
+const trainingUiButton = ({ children, icon, trailing, variant: _variant, size: _size, ...props }) => React.createElement('button', props, icon, children, trailing)
+const trainingUiBindings = {
+  ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES,
+  SOLO_HIDDEN_ACTIVITIES: ['T-2-1', 'T-2-2', 'T-2-3', 'E-2-1'],
+  useState: value => [typeof value === 'function' ? value() : value, () => {}],
+  MD3Button: trainingUiButton, CheckCircle: () => null, ArrowRight: () => null, Question: () => null,
+  StageAnalysisModal: () => null,
+}
+const { TrainingModeFields } = loadArtifactTsx('../src/components/training/TrainingModeFields.tsx', {}, ['TrainingModeFields'])
+const { TrainingModeBar } = loadArtifactTsx('../src/components/training/TrainingModeBar.tsx', trainingUiBindings, ['TrainingModeBar'])
+const { TrainingStepGuide } = loadArtifactTsx('../src/components/training/TrainingStepGuide.tsx', trainingUiBindings, ['TrainingStepGuide'])
+const formTree = ts.createSourceFile('TrainingForm.tsx', fs.readFileSync(new URL('../src/components/training/TrainingForm.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const { TrainingForm } = loadArtifactTsx('../src/components/training/TrainingForm.tsx', { ...trainingUiBindings, TrainingFormEditor: () => null }, ['TrainingForm'])
+
+test('T10: 생성 카드의 하위 핵심 절차 기본값·두 진행 방식 저장 연결', () => {
+  const off = renderToStaticMarkup(React.createElement(TrainingModeFields, { value: { enabled: false, coreFormal: true }, onChange() {} }))
+  assert.match(off, /연수용 모드/)
+  assert.doesNotMatch(off, /핵심 절차는 정식으로 진행/)
+  const on = renderToStaticMarkup(React.createElement(TrainingModeFields, { value: { enabled: true, coreFormal: true }, onChange() {} }))
+  assert.equal((on.match(/checked=""/g) ?? []).length, 2)
+  assert.match(on, /T-1·T-2·A-2·A-3·A-4/)
+  const page = fs.readFileSync(new URL('../src/app/(app)/projects/new/page.tsx', import.meta.url), 'utf8')
+  assert.match(page, /useState\(\{ enabled: false, coreFormal: true \}\)/)
+  assert.match(page, /\.\.\.\(trainingMode\.enabled \? \{ trainingMode \} : \{\}\)/)
+  assert.ok(page.indexOf('<TrainingModeFields') > page.indexOf('팀 협력 설계'))
+  assert.ok(page.indexOf('<TrainingModeFields') < page.indexOf('>학교급<'))
+})
+
+test('T11: 양식은 구조화·평문 기존 값을 불러오고 빈 칸 제외·다른 섹션 보존', () => {
+  const old = { _schema: 'Ds-1-1', rubric: [{ checkpoint: '3-4학년 발표', element: '근거', criteria: '[4사08-02]' }], '성취기준 연결': '기존 근거' }
+  const copy = structuredClone(old)
+  const values = trainingUiState.trainingFormValues('Ds-1-1', old)
+  assert.match(values['평가 계획'], /3-4학년 발표/)
+  assert.doesNotMatch(values['평가 계획'], /\[object Object\]/)
+  const saved = trainingUiState.buildTrainingFormContent('Ds-1-1', old, values)
+  assert.equal(saved['성취기준 연결'], '기존 근거')
+  assert.equal(saved['평가 계획'], values['평가 계획'])
+  assert.equal(saved._schema, undefined)
+  assert.equal(saved.rubric, undefined)
+  assert.deepEqual(old, copy)
+  const plain = { '팀 공통 비전': '기존 비전', '핵심 키워드': '공백 제거', '개인 비전': '삭제할 값', '추가 메모': '유지' }
+  assert.deepEqual(trainingUiState.buildTrainingFormContent('T-1-1', plain, { '팀 공통 비전': ' 새 비전 ', '핵심 키워드': '  ', '개인 비전': '' }), { '팀 공통 비전': '새 비전', '추가 메모': '유지' })
+  for (const code of Object.keys(trainingUi.TRAINING_ACTIVITIES)) assert.ok(Object.values(trainingUiState.trainingFormValues(code, {})).every(value => value === ''), code)
+  assert.notEqual(trainingUiState.trainingAdviceKey('one'), trainingUiState.trainingAdviceKey('two'))
+})
+
+test('T12: 일반·핵심 정식 활동의 양식·연수 막대 미노출, 기존 안내는 유지', () => {
+  for (const project of [{ ...trainingUiProject, trainingMode: undefined }, trainingUiProject]) {
+    const code = project.trainingMode ? 'T-1-1' : 'Ds-1-1'
+    const props = { project, activityCode: code, content: {}, loaded: true, isHost: true, busy: false, onNext() {}, onSend() {} }
+    assert.equal(renderToStaticMarkup(React.createElement(TrainingForm, props)), '')
+    assert.equal(renderToStaticMarkup(React.createElement(TrainingModeBar, props)), '')
+    assert.equal(renderToStaticMarkup(React.createElement(TrainingStepGuide, { ...props, children: '기존 안내' })), '기존 안내')
+  }
+  const html = renderToStaticMarkup(React.createElement(TrainingStepGuide, { project: trainingUiProject, activityCode: 'Ds-1-1', children: '평가 설계 안내' }))
+  assert.match(html, /<details/)
+  assert.doesNotMatch(html, /<details[^>]*open/)
+  assert.match(html, /정식 진행 스텝 보기/)
+  const loading = renderToStaticMarkup(React.createElement(TrainingForm, { project: trainingUiProject, activityCode: 'Ds-1-1', content: {}, loaded: false }))
+  assert.match(loading, /불러오는 중/)
+  assert.match(loading, /button[^>]*disabled/)
+  assert.doesNotMatch(loading, /textarea/)
+})
+
+function trainingUiElements(node, type, found = []) {
+  if (!node || typeof node !== 'object') return found
+  if (node.type === type) found.push(node)
+  React.Children.forEach(node.props?.children, child => trainingUiElements(child, type, found))
+  return found
+}
+
+test('T13: 막대 도움·필수 칸 상태·방장만 이동·마지막 보고서 연결', () => {
+  const sent = [], moved = []
+  const props = { project: trainingUiProject, activityCode: 'Ds-1-1', content: { '평가 계획': '계획' }, loaded: true, isHost: true, busy: false, onSend: text => sent.push(text), onNext: code => moved.push(code) }
+  const element = TrainingModeBar(props)
+  assert.match(renderToStaticMarkup(element), /필수 칸 1\/1/)
+  const buttons = trainingUiElements(element, trainingUiButton)
+  buttons[0].props.onClick()
+  assert.equal(sent[0], trainingUi.formatTrainingHelpRequest(trainingUi.TRAINING_ACTIVITIES['Ds-1-1'].help[0]))
+  buttons.at(-2).props.onClick()
+  assert.equal(sent[1], trainingUi.TRAINING_STEP_BY_STEP)
+  buttons.at(-1).props.onClick()
+  assert.deepEqual(moved, ['Ds-1-2'])
+  const memberNext = trainingUiElements(TrainingModeBar({ ...props, isHost: false }), trainingUiButton).at(-1)
+  assert.equal(memberNext.props.disabled, true)
+  memberNext.props.onClick()
+  assert.deepEqual(moved, ['Ds-1-2'])
+  for (const extra of [{ busy: true }, { loaded: false }]) assert.ok(trainingUiElements(TrainingModeBar({ ...props, ...extra }), trainingUiButton).every(button => button.props.disabled))
+  let reports = 0
+  const final = trainingUiElements(TrainingModeBar({ ...props, activityCode: 'E-2-1', onReport: () => reports++ }), trainingUiButton).at(-1)
+  assert.equal(final.props.children, '보고서 작성하기')
+  final.props.onClick()
+  assert.equal(reports, 1)
+})
+
+test('T14: 방장 양식 직접 저장·팀원 제안·조언 체크에 따른 알림·쓰기 실패와 활동 전환 방어', async () => {
+  async function run({ uid = 'host', advice = true, reject = false, changedActivity = false, unchanged = false } = {}) {
+    const writes = [], notices = [], drafts = [], feedback = [], errors = []
+    const project = { ...trainingUiProject, artifacts: unchanged ? { 'Ds-1-1': { title: '기존', version: 4, status: 'confirmed', content: { '평가 계획': '평가 표' } } } : {} }
+    const latest = { project, currentActivity: 'Ds-1-1', viewingActivity: changedActivity ? 'Ds-1-2' : 'Ds-1-1', setCurrentArtifact: value => drafts.push(value) }
+    const save = loadChatFunction('save', {
+      ...trainingUiBindings, project, activityCode: 'Ds-1-1', user: { uid, displayName: '교사' }, saving: false, readOnly: false,
+      draft: { values: { '평가 계획': '평가 표' } }, content: {}, advice,
+      useProjectStore: { getState: () => latest }, artifactContentEquals,
+      setSaving() {}, setError: value => errors.push(value), setFeedback: value => feedback.push(value), setDraft() {},
+      setProjectArtifact: async (...args) => { if (reject) throw Error('저장 실패'); writes.push(['save', ...args]) },
+      proposeArtifactToHost: async (...args) => writes.push(['propose', ...args]),
+      requestTrainingChatSend: text => notices.push(text), Timestamp: { now: () => 123 },
+    }, formTree)
+    await save()
+    return { writes, notices, drafts, feedback, errors }
+  }
+  const host = await run()
+  assert.equal(host.writes[0][0], 'save')
+  assert.equal(host.writes[0][3].status, 'in_review')
+  assert.equal(host.writes[0][3].content['평가 계획'], '평가 표')
+  assert.equal(host.drafts.length, 1)
+  assert.equal(host.notices[0], trainingUi.formatTrainingSaveNotice('Ds-1-1') + ' 조언해 주세요')
+  assert.equal((await run({ advice: false })).notices[0], trainingUi.formatTrainingSaveNotice('Ds-1-1') + ' 조언은 필요 없어요')
+  const member = await run({ uid: 'member' })
+  assert.equal(member.writes[0][0], 'propose')
+  assert.equal(member.notices.length, 0)
+  assert.match(member.feedback.at(-1), /방장에게/)
+  const failed = await run({ reject: true })
+  assert.equal(failed.notices.length, 0)
+  assert.match(failed.errors.at(-1), /저장하지 못했습니다/)
+  assert.equal((await run({ changedActivity: true })).writes.length, 0)
+  const noop = await run({ unchanged: true })
+  assert.equal(noop.writes.length, 0)
+  assert.equal(noop.drafts[0].status, 'confirmed')
+  assert.equal(noop.drafts[0].currentVersion, 4)
+})
+
+test('T15: 방장 설정 저장은 두 체크·갱신 시각만 쓰며 팀원에게는 설정을 열지 않는다', async () => {
+  const source = fs.readFileSync(new URL('../src/components/training/TrainingSettingsModal.tsx', import.meta.url), 'utf8')
+  const sourceTree = ts.createSourceFile('TrainingSettingsModal.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const writes = [], errors = []
+  let closed = 0
+  const value = { enabled: true, coreFormal: false }
+  const bindings = { isHost: true, saving: false, project: trainingUiProject, value, setSaving() {}, setError: error => errors.push(error), onClose: () => closed++, db: {}, doc: (_db, ...path) => path.join('/'), serverTimestamp: () => 'timestamp', updateDoc: async (...args) => writes.push(args) }
+  await loadChatFunction('save', bindings, sourceTree)()
+  assert.equal(writes[0][0], 'projects/training-ui')
+  assert.equal(writes[0][1].trainingMode, value)
+  assert.equal(writes[0][1].updatedAt, 'timestamp')
+  assert.equal(closed, 1)
+  await loadChatFunction('save', { ...bindings, isHost: false }, sourceTree)()
+  assert.equal(writes.length, 1)
+  await loadChatFunction('save', { ...bindings, updateDoc: async () => { throw Error('permission') } }, sourceTree)()
+  assert.match(errors.at(-1), /저장하지 못했습니다/)
+  assert.equal(closed, 1)
+  const { TrainingSettingsModal } = loadArtifactTsx('../src/components/training/TrainingSettingsModal.tsx', {
+    ...trainingUiBindings, useRef: () => ({ current: null }), useEffect() {}, useProjectStore: callback => callback({ userProfile: { uid: 'member' } }),
+  }, ['TrainingSettingsModal'])
+  assert.equal(TrainingSettingsModal({ project: trainingUiProject, onClose() {} }), null)
+})
+
+test('T16: AI 조언 설정은 프로젝트별로 보존되고 저장소 실패 시에도 같은 탭에서 바뀐다', () => {
+  const stored = new Map(), snapshots = []
+  let writesFail = false
+  const { useTrainingAdvice } = loadArtifactTsx('../src/components/training/useTrainingAdvice.ts', {
+    'react': { useSyncExternalStore: (_subscribe, client, server) => { snapshots.push({ client, server }); return client() } },
+    './trainingFormState': trainingUiState,
+    localStorage: { getItem: key => stored.get(key) ?? null, setItem: (key, value) => { if (writesFail) throw Error('quota'); stored.set(key, value) } },
+  })
+  const [first, change] = useTrainingAdvice('project-one')
+  assert.equal(first, true)
+  assert.equal(snapshots[0].server(), true)
+  change(false)
+  assert.equal(useTrainingAdvice('project-one')[0], false)
+  assert.equal(useTrainingAdvice('project-two')[0], true)
+  writesFail = true
+  const [, changeTwo] = useTrainingAdvice('project-two')
+  changeTwo(false)
+  assert.equal(useTrainingAdvice('project-two')[0], false)
+  changeTwo(true)
+  assert.equal(useTrainingAdvice('project-two')[0], true)
 })

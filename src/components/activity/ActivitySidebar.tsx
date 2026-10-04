@@ -12,6 +12,7 @@ import {
   CheckCircle, Warning, Clock, Shield, Star, CaretRight, ChartBar, Crown, ArrowBendUpLeft, type Icon,
 } from '@phosphor-icons/react'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
+import { TrainingStepGuide } from '@/components/training/TrainingStepGuide'
 
 const STAGE_ICON_MAP: Record<string, Icon> = {
   T:  UsersThree,
@@ -436,6 +437,7 @@ export function ActivitySidebar() {
           : baseTasks
         const sectionLabel = activityTasks ? `${displayActivityCode(viewingActivity)} 활동에서 할 일` : '팀이 할 일'
         return (
+          <TrainingStepGuide project={project} activityCode={viewingActivity}>
           <div className={cn('mx-3 mt-3 rounded-2xl border px-3.5 py-3', color.light, color.border)}>
             <p className={cn('text-[11px] font-bold uppercase tracking-wider mb-2 opacity-60', color.text)}>{sectionLabel}</p>
             {merged.map((task, i) => (
@@ -445,6 +447,7 @@ export function ActivitySidebar() {
               </div>
             ))}
           </div>
+          </TrainingStepGuide>
         )
       })()}
 
@@ -511,6 +514,7 @@ export function ActivitySidebar() {
             : viewingStatus
           const showWarningHint = viewingEffective === 'warning' && !!info.warningRecoveryHint
           return (
+            <TrainingStepGuide project={project} activityCode={viewingActivity}>
             <div className="mt-3 mx-1 rounded-2xl border border-[#AECBFA] bg-[#E8F0FE] px-3.5 py-3">
               <p className="text-[12px] font-bold text-[#1A73E8] mb-1.5">{info.title}</p>
               <p className="text-[11px] text-[#3C4043] leading-snug whitespace-pre-line mb-2">{info.body}</p>
@@ -534,6 +538,7 @@ export function ActivitySidebar() {
                 </div>
               )}
             </div>
+            </TrainingStepGuide>
           )
         })()}
 

@@ -68,6 +68,8 @@ import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList
 import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
+import { isTrainingActivity, shouldReplyTrainingQuietly, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
+import { TrainingModeBar } from '@/components/training/TrainingModeBar'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
@@ -2163,6 +2165,8 @@ function ChatPanelContent() {
           currentCycle: proj.currentCycle,
           // P1-I: 이전 주기 E 개선안 (T-1-1 시스템 프롬프트 주입용, 없으면 undefined)
           previousCycleImprovements: proj.previousCycleImprovements,
+          // 연수용 모드(없으면 undefined → 일반 프롬프트 그대로)
+          trainingMode: proj.trainingMode,
         },
         // 현재 활동의 기존 산출물 내용 전달 (AI가 수정 시 참조)
         currentArtifact: proj.artifacts?.[currentActivity] ?? null,
@@ -3723,6 +3727,32 @@ ${discussionSummary}
       ? failedChatRequest : null
   }
 
+  // 연수용 화면(연수 막대 버튼·양식 저장 알림)이 보낸 메시지를 일반 전송 경로로 보낸다.
+  // AI 응답 중이거나 대화를 불러오기 전이면 버리지 않고 줄에 세워 두었다가 순서대로 보낸다(저장 알림 누락 방지).
+  const trainingQueueRef = useRef<string[]>([])
+  const [trainingQueueTick, setTrainingQueueTick] = useState(0)
+  const enqueueTrainingSend = useCallback((text: string) => {
+    if (!text.trim()) return
+    trainingQueueRef.current.push(text)
+    setTrainingQueueTick(tick => tick + 1)
+  }, [])
+  useEffect(() => {
+    const onTrainingSend = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: string }>).detail?.text
+      if (text) enqueueTrainingSend(text)
+    }
+    window.addEventListener(TRAINING_SEND_EVENT, onTrainingSend)
+    return () => window.removeEventListener(TRAINING_SEND_EVENT, onTrainingSend)
+  }, [enqueueTrainingSend])
+  useEffect(() => {
+    if (isLoading || isAnalyzing || !messagesLoaded) return
+    const next = trainingQueueRef.current.shift()
+    if (!next) return
+    // 고정 응답 경로는 isLoading 을 바꾸지 않으므로, 끝나면 다음 항목을 위해 한 번 더 깨운다.
+    void sendMessageDirectly(next).finally(() => setTrainingQueueTick(tick => tick + 1))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sendMessageDirectly 는 렌더마다 새로 만들어지는 함수
+  }, [isLoading, isAnalyzing, messagesLoaded, trainingQueueTick])
+
   async function sendMessageDirectly(text: string, retryExistingMessage = false) {
     if (!text.trim() || isLoading || isAnalyzing || !project) return
     setIsIdle(false)
@@ -3756,6 +3786,17 @@ ${discussionSummary}
       requestMessages = [...messages, tempUserMsg]
 
       if (handleA21SheetArtifactRequest(text)) return
+      // 연수용: 양식 저장 알림 + 개입 금지면 AI 를 부르지 않고 고정 응답만 남긴다(프롬프트가 아니라 코드로 보장).
+      const previousUserTexts = messages.filter(m => m.role === 'user' && m.activityCode === currentActivity).map(m => m.content)
+      if (shouldReplyTrainingQuietly(proj, currentActivity, text, previousUserTexts)) {
+        const quietId = generateMessageId(proj.id, currentActivity)
+        addMessage({ id: quietId, role: 'assistant', content: TRAINING_QUIET_REPLY, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator', createdAt: Timestamp.now() })
+        saveMessage(proj.id, currentActivity, {
+          role: 'assistant', content: TRAINING_QUIET_REPLY, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
+          cycleNumber: proj.currentCycle ?? 1,
+        }, quietId).catch(console.error)
+        return
+      }
     }
 
     setIsLoading(true)
@@ -4582,6 +4623,19 @@ ${discussionSummary}
         )
       })()}
 
+      {/* TRAINING_BAR_SLOT — 연수 막대 자리(코덱스 TrainingModeBar). isTrainingActivity(proj, currentActivity) 일 때만 렌더 */}
+      {isTrainingActivity(proj, currentActivity) && (
+        <TrainingModeBar
+          project={proj}
+          activityCode={currentActivity}
+          content={proj.artifacts?.[currentActivity]?.content as Record<string, unknown> | undefined}
+          loaded={messagesLoaded}
+          isHost={isHost}
+          busy={isLoading || isAnalyzing}
+          onSend={enqueueTrainingSend}
+          onNext={nextCode => handleActivityAdvance(nextCode)}
+        />
+      )}
       {/* 메시지 목록 — chatFontScale로 메시지 영역만 독립 zoom */}
       <div className="relative flex-1 min-h-0">
         <div

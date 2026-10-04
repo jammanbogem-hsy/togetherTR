@@ -37,6 +37,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 import { PendingConfirmationBanner } from '@/components/collab/PendingConfirmationBanner'
+import { TrainingSettingsModal } from '@/components/training/TrainingSettingsModal'
 
 function hasMemberHost(project: Project): boolean {
   const members = project.memberUids ?? Object.keys(project.memberInfo ?? {})
@@ -530,6 +531,8 @@ export default function ProjectPage() {
   const [showPublish, setShowPublish] = useState(false)
   const [showOntology, setShowOntology] = useState(false)
   const [showInviteCode, setShowInviteCode] = useState(false)
+  const [showTrainingSettings, setShowTrainingSettings] = useState(false)
+  const closeTrainingSettings = useCallback(() => setShowTrainingSettings(false), [])
   const closeInviteCode = useCallback(() => setShowInviteCode(false), [])
   // 팀원 팝오버 위치 (portal에서 fixed 좌표로 렌더 — 좌측 사이드바의 overflow-hidden을 벗어나기 위함)
   const membersBtnRef = useRef<HTMLButtonElement>(null)
@@ -1163,6 +1166,10 @@ export default function ProjectPage() {
           <PanelToggle direction="right" onClick={() => layout.toggle('artifact')} label="산출물 패널 접기" className="mr-auto" />
           {project.demoRun && <DemoProjectToolbar />}
           {/* 구조도 버튼은 중앙 단계 섹션으로 이동됨 */}
+          {isHost && !project.demoRun && (
+            <MD3Button variant="text" size="xs" onClick={() => setShowTrainingSettings(true)}
+              aria-haspopup="dialog" aria-expanded={showTrainingSettings}>설정</MD3Button>
+          )}
           {project.stageReports && Object.keys(project.stageReports).length > 0 && (
             <button
               onClick={() => setShowReports(true)}
@@ -1217,6 +1224,9 @@ export default function ProjectPage() {
       </div>
 
       {!project.demoRun && pendingStageMove && <StageMoveModal />}
+      {showTrainingSettings && !project.demoRun && (
+        <TrainingSettingsModal key={project.id} project={project} onClose={closeTrainingSettings} />
+      )}
       {!project.demoRun && project.mode !== 'solo' && <PendingConfirmationBanner />}
 
       {showReports && (

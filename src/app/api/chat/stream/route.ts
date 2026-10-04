@@ -6,6 +6,7 @@ import { buildCurriculumContext } from '@/lib/curriculum/contextInject'
 import { buildAchievementLevelContext, collectDesignStandardCodes } from '@/lib/curriculum/achievementLevels'
 import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
 import { buildAllowedEvidenceCodesContext } from '@/lib/chat/evidenceCodeGate'
+import { isStepByStepActive } from '@/lib/training/trainingMode'
 import { buildA21DirectAnswer } from '@/lib/curriculum/a21DirectAnswer'
 import { buildProjectMaterialContext, searchProjectMaterials } from '@/lib/rag/search'
 import type { StageCode, ActivityCode, ActorType, Project } from '@/types'
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
       stage: StageCode
       activityCode: ActivityCode
       actorType: ActorType
-      project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands' | 'curriculumSheet'>
+      project: Pick<Project, 'title' | 'schoolLevel' | 'targetGradeGroup' | 'targetSubjects' | 'mode' | 'isA23Completed' | 'currentCycle' | 'previousCycleImprovements'> & Pick<Partial<Project>, 'teamGradeBands' | 'curriculumSheet' | 'trainingMode'>
       learnerProfileSummary?: string
       currentArtifact?: { title: string; content: Record<string, unknown>; status: string; version: number } | null
       confirmedArtifacts?: Record<string, { title: string; content: Record<string, unknown>; status?: string }>
@@ -73,7 +74,9 @@ export async function POST(request: Request) {
       currentArtifact ?? null,
       teamMembers,
       confirmedArtifacts,
-      activityStatus
+      activityStatus,
+      // 연수용: 이 활동 대화에서 '[단계별로 함께 진행]'이 켜져 있으면 정식 절차, '직접 적을게요'면 약식 복귀
+      { trainingStepByStep: isStepByStepActive(messages.filter(m => m.role === 'user').map(m => m.content)) },
     )
 
     // A단계 / Ds단계: 교육과정 온톨로지 컨텍스트 주입

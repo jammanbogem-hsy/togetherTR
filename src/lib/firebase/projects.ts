@@ -21,6 +21,7 @@ import type { MapPickLike } from '@/lib/curriculum/sheetGradeBands'
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 import { buildTeamGradeBandUpdate } from '@/lib/curriculum/teamGradeBandState'
 import { canFillRowDescription, type RowDescriptionUpdate } from '@/lib/curriculum/rowDescriptions'
+import { isTrainingActivity } from '@/lib/training/trainingMode'
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -497,7 +498,8 @@ export async function recordArtifactConfirmations(
   version: number,
   project: Project,
 ): Promise<void> {
-  if (project.mode === 'solo' || project.demoRun) return
+  // 연수용 활동은 부재 팀원 확인 카드(#28)를 만들지 않는다 — 기록자 한 명이 대신 입력하는 연수 현장
+  if (project.mode === 'solo' || project.demoRun || isTrainingActivity(project, activityCode)) return
   const cycle = project.currentCycle ?? 1
   const messagesSnap = await getDocs(collection(db, `projects/${projectId}/conversations/${activityCode}/messages`))
   const speakerUids = messagesSnap.docs

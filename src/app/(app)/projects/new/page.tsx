@@ -11,6 +11,7 @@ import type { GradeGroup, ProjectMode, SchoolLevel } from '@/types'
 import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { cn } from '@/lib/utils'
 import { BookOpen, ArrowLeft, Loader2, Copy, Check, ArrowRight } from 'lucide-react'
+import { TrainingModeFields } from '@/components/training/TrainingModeFields'
 
 const SCHOOL_LEVELS: { value: SchoolLevel; label: string }[] = [
   { value: '초등학교', label: '초등학교' },
@@ -43,6 +44,7 @@ export default function NewProjectPage() {
 
   const [title, setTitle] = useState('')
   const [mode, setMode] = useState<ProjectMode>('collaborative')
+  const [trainingMode, setTrainingMode] = useState({ enabled: false, coreFormal: true })
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>('초등학교')
   // 학년군은 복수 선택 — 1·3·5학년 담임이 한 팀인 경우가 흔하다.
   // targetGradeGroup(대표값)은 선택 순서와 무관하게 학년군 순서상 첫 번째를 쓴다(하위 호환).
@@ -100,6 +102,7 @@ export default function NewProjectPage() {
       const { id: projectId, inviteCode } = await createProject({
         title: title.trim(),
         mode,
+        ...(trainingMode.enabled ? { trainingMode } : {}),
         schoolLevel,
         targetGradeGroup: primaryGradeGroup,
         // 여러 학년군 팀은 학년군 전체를 저장하고 분석시트도 '다양한 학년군' 모드로 시작한다.
@@ -238,6 +241,10 @@ export default function NewProjectPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <TrainingModeFields value={trainingMode} onChange={setTrainingMode} disabled={isSubmitting} />
           </div>
 
           <div>
