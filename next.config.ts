@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
+// 빌드 도장 — 한 번의 빌드에서 클라이언트 번들과 서버가 같은 값을 갖는다. 열린 탭이 새 배포를 알아채는 데 쓴다.
+const BUILD_STAMP = process.env.NEXT_PUBLIC_BUILD_STAMP || new Date().toISOString();
+
 const nextConfig: NextConfig = {
   compress: true,
+  env: { NEXT_PUBLIC_BUILD_STAMP: BUILD_STAMP },
   poweredByHeader: false,
   // firebase-admin을 번들 외부화(실제 패키지명 런타임 require)로 고정.
   // 미지정 시 Turbopack이 해시 별칭(firebase-admin-<hash>)으로 외부화하는데,

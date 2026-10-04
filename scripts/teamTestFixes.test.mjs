@@ -245,6 +245,7 @@ test('15b: 부분 답 재시도는 같은 ID의 Firestore 문서와 로컬 메�
     parseTeamGradeBandsSignal: () => null, parseDiscussionSignal: () => null, parseActivityAdvance: () => null,
     parseActivityReturn: () => null, parseArtifactConfirm: text => ({ codes: [], cleanText: text }),
     parseArtifactUpdates: text => ({ updates: [], cleanText: text }), gateArtifactUpdates: (updates, confirmCodes) => ({ updates, confirmCodes, notices: [] }), appendSaveGateNotice: text => text,
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [], shouldReplyTrainingQuietly: () => false,
     parseHelpCard: text => ({ cleanText: text }),
     parseOptions: () => null, parseActionCard: () => null, Timestamp: { now: () => 1 },
     generateMessageId: () => { throw new Error('재시도에 새 ID를 만들면 안 된다') },
@@ -423,6 +424,7 @@ test('B: 다른 팀원이 재시도해도 사용자 메시지는 추가·저장�
     addMessage: message => additions.push(message), saveMessage: async (...args) => saves.push(args),
     handleA21SheetArtifactRequest: () => false,
     shouldReplyTrainingQuietly: () => false, TRAINING_QUIET_REPLY: '저장했습니다.',
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [],
     streamFromAPI: async request => { requests.push(request) }, console,
   })
   await send(original.content, true)
@@ -514,6 +516,7 @@ test('2: 실패 후 다른 팀원 메시지가 도착해도 재시도는 원래 
     setStreamingState: async () => {}, clearStreamingState: async () => {},
     setInterval: () => 1, clearInterval() {}, console: { error() {} },
     addMessage: value => additions.push(value), saveMessage: async value => saves.push(value),
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [],
     streamFromAPI: async request => { requests.push(request); throw new Error('failed') },
   }
   await loadChatFunction('sendMessageDirectly', bindings)(original.content, true)
@@ -3580,4 +3583,59 @@ test('T18: AI 도움·단계별 진행 요청도 교사 말풍선 대신 작은 
   assert.equal(training.trainingMessageChip('[답장: "규칙"]\n[AI 도움: 갈등 규칙 예시] 예시'), 'AI 도움 요청 · 갈등 규칙 예시')
   const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.match(panel, /data-testid=\{isSaveChip \? 'training-save-chip' : 'training-request-chip'\}/)
+})
+
+// ─── TASK-T4c: 환영 표시 보장·생성 타이밍·새 버전 감지 ─────────
+test('T19a: 연수용 약식 활동의 환영 메시지는 저장 내용과 무관하게 고정 첫 안내로 그린다(저장 데이터 불변)', () => {
+  const on = { trainingMode: { enabled: true, coreFormal: true } }
+  const general = { id: 'welcome-1-A-1-1', role: 'assistant', content: ACTIVITY_WELCOME['A-1-1'], activityCode: 'A-1-1' }
+  const before = structuredClone(general)
+  assert.equal(training.displayedMessageContent(on, general, []), training.buildTrainingWelcome('A-1-1'))
+  assert.deepEqual(general, before)
+  assert.equal(training.displayedMessageContent({}, general, []), general.content) // 연수용 꺼짐
+  assert.equal(training.displayedMessageContent(on, { ...general, id: 'welcome-1-T-1-2', activityCode: 'T-1-2' }, []), general.content) // 핵심 절차
+  assert.equal(training.displayedMessageContent(on, general, ['[단계별로 함께 진행]']), general.content) // 단계별 진행 중
+  assert.equal(training.displayedMessageContent(on, general, ['[단계별로 함께 진행]', '직접 적을게요']), training.buildTrainingWelcome('A-1-1'))
+  assert.equal(training.displayedMessageContent(on, { ...general, id: 'abc' }, []), general.content) // 환영이 아닌 메시지
+  assert.equal(training.displayedMessageContent(on, { ...general, role: 'user' }, []), general.content)
+  assert.equal(training.displayedMessageContent({ trainingMode: { enabled: true, coreFormal: false } }, { ...general, id: 'welcome-1-T-1-1', activityCode: 'T-1-1' }, []), training.buildTrainingWelcome('T-1-1'))
+  const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /content=\{displayedMessageContent\(proj, msg, trainingUserTexts\)\}/)
+  // AI 에게 보내는 대화 기록도 같은 내용(일반 절차로 끌려가지 않게)
+  assert.equal((panel.match(/content: displayedMessageContent\(proj, m, trainingUserTexts\)/g) ?? []).length, 2)
+})
+
+test('T19b: 생성 타이밍 — 환영 effect 는 프로젝트 스냅숏(started)을 받은 뒤에만 돌고, 그 스냅숏은 trainingMode 를 함께 담는다', () => {
+  // started 없는(미도착) 프로젝트로는 환영을 만들지 않는다
+  assert.equal(runWelcomeEffect({ project: { hostUid: 'host', mode: 'collaborative', currentCycle: 1, artifacts: {} }, currentActivity: 'A-1-1' }), null)
+  // 스냅숏이 도착한 상태면 단계 이동 직후 첫 실행에서도 연수용 안내
+  const snap = { started: true, hostUid: 'host', mode: 'collaborative', currentCycle: 1, artifacts: {}, currentStage: 'A', currentActivity: 'A-1-1', trainingMode: { enabled: true, coreFormal: true } }
+  assert.equal(runWelcomeEffect({ project: snap, currentActivity: 'A-1-1' }), training.buildTrainingWelcome('A-1-1'))
+  const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
+  assert.match(projects, /callback\(\{ id: snap\.id, \.\.\.snap\.data\(\) \} as Project\)/) // 문서 전체(trainingMode 포함)
+  const page = fs.readFileSync(new URL('../src/app/(app)/projects/[id]/page.tsx', import.meta.url), 'utf8')
+  assert.equal((page.match(/setProject\(p\)/g) ?? []).length, 1) // 프로젝트는 스냅숏으로만 바뀐다(부분 객체로 덮지 않음)
+  const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /useEffect\(\(\) => \{\n    if \(!project\?\.started\) return\n    if \(!messagesLoaded\) return/)
+})
+
+test('T19c: 새 버전 감지 — 빌드 도장이 서버와 다르면 작은 안내, 누르면 새로고침(자동 새로고침 없음)', async () => {
+  const v = await import('../src/lib/version/buildVersion.ts')
+  assert.equal(v.isNewBuildAvailable('2026-10-04T01', '2026-10-04T02'), true)
+  assert.equal(v.isNewBuildAvailable('2026-10-04T01', '2026-10-04T01'), false)
+  assert.equal(v.isNewBuildAvailable('', '2026-10-04T02'), false)
+  assert.equal(v.isNewBuildAvailable('a', undefined), false)
+  assert.equal(v.BUILD_CHECK_INTERVAL_MS, 300000)
+  const config = fs.readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8')
+  assert.match(config, /env: \{ NEXT_PUBLIC_BUILD_STAMP: BUILD_STAMP \}/)
+  const route = fs.readFileSync(new URL('../src/app/api/version/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /'Cache-Control': 'no-store, max-age=0'/)
+  assert.match(route, /export const dynamic = 'force-dynamic'/)
+  const banner = fs.readFileSync(new URL('../src/components/layout/UpdateAvailableBanner.tsx', import.meta.url), 'utf8')
+  assert.match(banner, /새 버전이 있어요 — 새로고침/)
+  assert.match(banner, /onClick=\{\(\) => window\.location\.reload\(\)\}/)
+  assert.equal((banner.match(/location\.reload/g) ?? []).length, 1)
+  assert.match(banner, /window\.addEventListener\('focus', check\)/)
+  const layout = fs.readFileSync(new URL('../src/app/layout.tsx', import.meta.url), 'utf8')
+  assert.match(layout, /<UpdateAvailableBanner \/>/)
 })

@@ -430,3 +430,23 @@ export function buildTrainingWelcome(code: ActivityCode): string {
     '토의한 결과를 오른쪽 양식에 옮겨 적고 저장하세요.',
   ].filter((line, index, lines) => line !== '' || (index > 0 && lines[index - 1] !== '')).join('\n')
 }
+
+/** 환영 메시지 표식 — ChatPanel 환영 effect 가 'welcome-주기-활동' ID 로 저장한다. */
+export function isWelcomeMessageId(id: string): boolean {
+  return id.startsWith('welcome-')
+}
+
+/**
+ * 화면에 그릴 환영 내용. 연수용 약식 활동의 환영 메시지는 저장된 내용과 무관하게 고정 첫 안내로 그린다
+ * (다른 탭·기기의 옛 코드가 일반 환영을 먼저 저장해도 화면은 연수용 안내 — 저장 데이터는 그대로).
+ * 일반 프로젝트·핵심 활동·단계별 진행 중이면 저장된 내용 그대로.
+ */
+export function displayedMessageContent(
+  project: TrainingProject,
+  message: { id?: string; role: string; content: string; activityCode?: string },
+  activityUserTexts: readonly string[],
+): string {
+  if (message.role !== 'assistant' || !message.activityCode || !message.id || !isWelcomeMessageId(message.id)) return message.content
+  if (!isTrainingActivity(project, message.activityCode) || isStepByStepActive(activityUserTexts)) return message.content
+  return buildTrainingWelcome(message.activityCode as ActivityCode)
+}

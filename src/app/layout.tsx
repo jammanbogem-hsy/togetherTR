@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
+import { UpdateAvailableBanner } from "@/components/layout/UpdateAvailableBanner";
 
 const notoSansKR = Noto_Sans_KR({
   variable: "--font-noto",
@@ -63,7 +64,11 @@ export default function RootLayout({
           }
         />
       </head>
-      <body className="min-h-full flex flex-col antialiased">{children}</body>
+      <body className="min-h-full flex flex-col antialiased">
+        {children}
+        {/* 새 버전 배포 감지 — 열린 탭이 옛 코드로 남지 않게 */}
+        <UpdateAvailableBanner />
+      </body>
     </html>
   );
 }

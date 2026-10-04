@@ -69,7 +69,7 @@ import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/st
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
 import { CHECKLIST_ALL_DONE_NOTE, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
-import { buildTrainingWelcome, isTrainingActivity, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
+import { buildTrainingWelcome, displayedMessageContent, isTrainingActivity, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { TrainingModeBar } from '@/components/training/TrainingModeBar'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -3749,6 +3749,8 @@ ${discussionSummary}
     })
   }, [isHost, proj.artifactProposal])
 
+  // 연수용: 단계별 진행 중인지 판단할 이 활동의 교사 발화(시간순) — 환영 표시 대체에 쓴다
+  const trainingUserTexts = messages.filter(m => m.role === 'user' && m.activityCode === currentActivity).map(m => m.content)
   const visibleMessages = useMemo(
     () => messages.filter(m => m.role !== 'system'),
     [messages]
@@ -3868,7 +3870,7 @@ ${discussionSummary}
     }, 800)
     try {
       await streamFromAPI(
-        requestMessages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
+        requestMessages.map(m => ({ role: m.role, content: displayedMessageContent(proj, m, trainingUserTexts), displayName: m.displayName })),
         (chunk) => { appendStreamingText(chunk); streamingAccumRef.current += chunk },
         async (fullText) => {
           if (await discardResponseAfterActivityChange(currentActivity)) return
@@ -4066,7 +4068,7 @@ ${discussionSummary}
     let responseMessageId: string | undefined
     try {
       await streamFromAPI(
-        [...messages, tempUserMsg].map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
+        [...messages, tempUserMsg].map(m => ({ role: m.role, content: displayedMessageContent(proj, m, trainingUserTexts), displayName: m.displayName })),
         (text) => {
           appendStreamingText(text)
           streamingAccumRef.current += text
@@ -4859,7 +4861,7 @@ ${discussionSummary}
             >
               <MessageBubble
                 role={msg.role as 'user' | 'assistant'}
-                content={msg.content}
+                content={displayedMessageContent(proj, msg, trainingUserTexts)}
                 activityType={msg.activityType}
                 senderName={senderName}
                 senderColor={senderColor}
