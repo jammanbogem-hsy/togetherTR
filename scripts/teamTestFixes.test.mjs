@@ -3639,3 +3639,67 @@ test('T19c: 새 버전 감지 — 빌드 도장이 서버와 다르면 작은 �
   const layout = fs.readFileSync(new URL('../src/app/layout.tsx', import.meta.url), 'utf8')
   assert.match(layout, /<UpdateAvailableBanner \/>/)
 })
+
+// ─── TASK-T10: 교사 메시지 유실 — AI 답하는 중 Enter·저장 실패 ─────────
+function t10Bindings(overrides = {}) {
+  const calls = { enqueued: [], inputs: [], added: [], saved: [], errors: [], streamed: 0 }
+  const bindings = {
+    input: '아 생각해 보니 모둠에서 기준을 정해 왔어요. 직접 적을게요.', project: { id: 'p' }, proj: { id: 'p', currentCycle: 1 },
+    sendBlockReason: null, isLoading: false, isTeamMode: false, isWaitingForChoice: false, replyTo: null,
+    currentActivity: 'A-1-1', userProfile: { uid: 'host', displayName: '홍성용' }, messages: [], isHost: true, lastAIMsg: null,
+    enqueueTrainingSend: text => calls.enqueued.push(text),
+    setInput: value => calls.inputs.push(typeof value === 'function' ? value('') : value),
+    setReplyTo() {}, setFlowNotice() {}, setPendingAdvance() {}, setPendingTeamDiscussion() {}, setIsIdle() {},
+    setChatError: value => calls.errors.push(value), setFailedChatRequest() {}, hasDeferredDecision: () => false,
+    generateMessageId: () => 'm1', Timestamp: { now: () => 1 },
+    addMessage: m => calls.added.push(m), saveMessage: async (...args) => { calls.saved.push(args) },
+    handleA21SheetArtifactRequest: () => false, closeOptionChoice: async () => {},
+    setIsLoading() {}, clearStreamingText() {}, streamingAccumRef: { current: '' }, streamingFlushRef: { current: null },
+    setStreamingState: async () => {}, clearStreamingState: async () => {}, setInterval: () => 1, clearInterval() {},
+    streamFromAPI: async () => { calls.streamed++ }, console: { error() {}, warn() {} },
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [],
+    ...overrides,
+  }
+  return { bindings, calls }
+}
+
+test('T20a: AI 가 답하는 중 Enter — 버리지 않고 대기열에 넣고(보내는 중) 입력창을 비운다', async () => {
+  const { bindings, calls } = t10Bindings({ isLoading: true })
+  await loadChatFunction('handleSend', bindings)()
+  assert.deepEqual(calls.enqueued, ['아 생각해 보니 모둠에서 기준을 정해 왔어요. 직접 적을게요.'])
+  assert.deepEqual(calls.inputs, [''])
+  assert.equal(calls.added.length, 0) // 대기열이 답 끝난 뒤 sendMessageDirectly 로 추가·저장
+  assert.equal(calls.streamed, 0)
+  // 준비 전(sendBlockReason)이면 입력을 그대로 둔다
+  const blocked = t10Bindings({ sendBlockReason: 'loading' })
+  await loadChatFunction('handleSend', blocked.bindings)()
+  assert.equal(blocked.calls.inputs.length + blocked.calls.enqueued.length, 0)
+  // 팀 채팅 중에는 AI 와 무관하게 바로 저장(기존 동작)
+  const team = t10Bindings({ isLoading: true, isTeamMode: true })
+  await loadChatFunction('handleSend', team.bindings)()
+  assert.equal(team.calls.added.length, 1)
+})
+
+test('T20b: 저장 실패 시 알리고 입력한 글을 입력창에 되돌린다(조용히 사라지지 않음)', async () => {
+  const { bindings, calls } = t10Bindings({ saveMessage: async () => { throw new Error('offline') } })
+  await loadChatFunction('handleSend', bindings)()
+  await new Promise(r => setTimeout(r, 0))
+  assert.equal(calls.added.length, 1)
+  assert.match(calls.errors.at(-1), /메시지를 저장하지 못했어요/)
+  assert.equal(calls.inputs.at(-1), '아 생각해 보니 모둠에서 기준을 정해 왔어요. 직접 적을게요.')
+})
+
+test('T20c: 대기열은 화면에 보내는 중으로 보이고 답이 끝나면 순서대로 보낸다 · 직접 적을게요로 약식 복귀', () => {
+  const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /queuedSends\.map\(\(text, index\) =>/)
+  assert.match(panel, /보내는 중…/)
+  assert.match(panel, /const next = trainingQueueRef\.current\.shift\(\)\n    if \(!next\) return\n    setQueuedSends\(\[\.\.\.trainingQueueRef\.current\]\)/)
+  const texts = ['[단계별로 함께 진행]', '아 생각해 보니 모둠에서 기준을 정해 왔어요. 직접 적을게요.']
+  assert.equal(training.isStepByStepActive(texts.slice(0, 1)), true)
+  assert.equal(training.isStepByStepActive(texts), false) // 교사 문장 속 '직접 적을게요'로 약식 복귀
+  const on = { title: 't', schoolLevel: '초등', targetGradeGroup: '초3-4', targetSubjects: [], mode: 'collaborative', isA23Completed: false, currentCycle: 1, trainingMode: { enabled: true, coreFormal: true } }
+  const back = buildSystemPrompt('A', 'A-1-1', on, '팀+AI', undefined, null, undefined, {}, undefined, { trainingStepByStep: training.isStepByStepActive(texts) })
+  assert.match(back, /연수용 약식 진행 규칙/)
+  const welcome = { id: 'welcome-1-A-1-1', role: 'assistant', content: '일반 환영', activityCode: 'A-1-1' }
+  assert.equal(training.displayedMessageContent(on, welcome, texts), training.buildTrainingWelcome('A-1-1'))
+})

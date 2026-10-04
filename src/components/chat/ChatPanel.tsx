@@ -3787,13 +3787,15 @@ ${discussionSummary}
     })
   }
 
-  // 연수용 화면(연수 막대 버튼·양식 저장 알림)이 보낸 메시지를 일반 전송 경로로 보낸다.
-  // AI 응답 중이거나 대화를 불러오기 전이면 버리지 않고 줄에 세워 두었다가 순서대로 보낸다(저장 알림 누락 방지).
+  // 보내기 대기열 — 연수용 화면(연수 막대 버튼·양식 저장 알림)과, AI 가 답하는 중에 교사가 친 메시지를 담는다.
+  // AI 응답 중이거나 대화를 불러오기 전이면 버리지 않고 줄에 세워 '보내는 중'으로 보여 주다가 순서대로 보낸다(#T10).
   const trainingQueueRef = useRef<string[]>([])
   const [trainingQueueTick, setTrainingQueueTick] = useState(0)
+  const [queuedSends, setQueuedSends] = useState<string[]>([])
   const enqueueTrainingSend = useCallback((text: string) => {
     if (!text.trim()) return
     trainingQueueRef.current.push(text)
+    setQueuedSends([...trainingQueueRef.current])
     setTrainingQueueTick(tick => tick + 1)
   }, [])
   useEffect(() => {
@@ -3808,6 +3810,7 @@ ${discussionSummary}
     if (isLoading || isAnalyzing || !messagesLoaded) return
     const next = trainingQueueRef.current.shift()
     if (!next) return
+    setQueuedSends([...trainingQueueRef.current])
     // 고정 응답 경로는 isLoading 을 바꾸지 않으므로, 끝나면 다음 항목을 위해 한 번 더 깨운다.
     void sendMessageDirectly(next).finally(() => setTrainingQueueTick(tick => tick + 1))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sendMessageDirectly 는 렌더마다 새로 만들어지는 함수
@@ -3842,7 +3845,12 @@ ${discussionSummary}
         userId: userProfile?.uid,
         displayName: senderDisplayName,
         cycleNumber: proj.currentCycle ?? 1,
-      }, directMessageId).catch(console.error)
+      }, directMessageId).catch(error => {
+        // 대기열에서 보낸 글도 저장 실패 시 알리고 입력창에 되돌려 둔다(#T10)
+        console.error('[sendMessageDirectly] save failed:', error)
+        setChatError('메시지를 저장하지 못했어요. 입력한 글을 입력창에 되돌려 두었으니 다시 보내 주세요.')
+        setInput(current => current.trim() ? current : text)
+      })
       requestMessages = [...messages, tempUserMsg]
 
       if (handleA21SheetArtifactRequest(text)) return
@@ -3987,9 +3995,19 @@ ${discussionSummary}
 
   // ─── 메시지 전송 ──────────────────────────────────────
   async function handleSend() {
-    if (!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice) || !project) return
+    if (!input.trim() || !project) return
     // 준비 전에는 보내지 않고 입력을 그대로 둔다 — 조용히 버리지 않는다(#26).
     if (sendBlockReason) return
+    // AI 가 답하는 중이면 버리지 않고 대기열에 넣어 '보내는 중'으로 보여 주고, 답이 끝나면 보낸다(#T10).
+    if (isLoading && !isTeamMode && !isWaitingForChoice) {
+      const queuedReply = replyTo
+        ? `[답장: "${(replyTo.content.replace(/\[.*?\]/g, '').replace(/[#*_~`>]/g, '').trim().split(/[.!?\n]/)[0]?.trim() || replyTo.content.slice(0, 60)).slice(0, 80)}"]\n`
+        : ''
+      enqueueTrainingSend(queuedReply + input.trim())
+      setInput('')
+      setReplyTo(null)
+      return
+    }
 
     // 답장 시: 인용 대상의 첫 문장만 간결하게 삽입
     const replyPrefix = replyTo
@@ -4036,7 +4054,12 @@ ${discussionSummary}
       displayName: senderDisplayName,
       replyTo: replyTo ?? undefined,
       cycleNumber: proj.currentCycle ?? 1,
-    }, userMsgId).catch(console.error)
+    }, userMsgId).catch(error => {
+      // 저장 실패를 조용히 넘기면 다음 스냅숏에서 메시지가 사라진다 — 알리고 입력한 글을 되돌려 둔다(#T10).
+      console.error('[handleSend] save failed:', error)
+      setChatError('메시지를 저장하지 못했어요. 입력한 글을 입력창에 되돌려 두었으니 다시 보내 주세요.')
+      setInput(current => current.trim() ? current : userMessage)
+    })
     setReplyTo(null)
 
     if (handleA21SheetArtifactRequest(userMessage)) return
@@ -5875,6 +5898,16 @@ ${discussionSummary}
             />
           )
         })()}
+
+        {/* 보내기 대기열 — AI 답이 끝나면 순서대로 보낸다(#T10) */}
+        {queuedSends.map((text, index) => (
+          <div key={`queued-${index}`} className="mb-2 flex justify-end" data-testid="queued-send">
+            <div className="max-w-[80%] rounded-2xl border border-dashed border-[#A0BCE8] bg-[#F1F6FE] px-3 py-2 text-[13px] text-[#3C4043]">
+              <span className="whitespace-pre-wrap">{text}</span>
+              <span className="ml-2 text-[11px] text-[#5F6368]">보내는 중…</span>
+            </div>
+          </div>
+        ))}
 
         {/* 스트리밍 - 내가 보낸 경우 (로컬) */}
         <StreamingBubble text={streamingText} isAnalysis={isAnalyzing} stage={ACTIVITY_META[currentActivity]?.stage} />
