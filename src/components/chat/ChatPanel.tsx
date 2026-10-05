@@ -1,5 +1,7 @@
 'use client'
 
+import { samePresenceEntry } from '@/lib/coedit/presenceThrottle'
+
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
@@ -1853,7 +1855,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -1875,7 +1877,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -1894,7 +1896,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -1913,7 +1915,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -1932,7 +1934,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -1951,7 +1953,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -1970,7 +1972,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -1989,7 +1991,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -2027,7 +2029,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -2046,7 +2048,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -2065,7 +2067,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })
@@ -2084,7 +2086,7 @@ function ChatPanelContent() {
         for (const k of nextKeys) {
           const a = prev[k]
           const b = next[k]
-          if (!a || a.cellKey !== b.cellKey || a.caretPos !== b.caretPos) return next
+          if (!samePresenceEntry(a, b)) return next
         }
         return prev
       })

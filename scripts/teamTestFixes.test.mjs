@@ -2921,7 +2921,7 @@ test('T6a: 모든 공동 편집 표의 주·보조·미리보기 머리글은 �
         const value = node.initializer.text
         assert.doesNotMatch(value, /text-white|bg-\[#1A73E8\]|border-\[#1557B0\]/, file)
         const elementTag = node.parent.parent.tagName?.getText(tree)
-        if (elementTag === 'input') {
+        if (elementTag === 'input' || elementTag === 'PresenceInput') {
           inputs++
           for (const expected of ['text-[#202124]', 'font-semibold', 'placeholder:text-[#5F6368]', 'bg-transparent', 'hover:bg-black/5', 'focus:bg-white', 'focus:border-[#0B57D0]']) assert.ok(value.split(' ').includes(expected), `${file}: ${expected}`)
         } else if (elementTag === 'button') {
