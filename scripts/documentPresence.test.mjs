@@ -195,3 +195,61 @@ test('R3h: 어댑터가 바뀌면(프로필 이름·색 갱신) 에디터도 새
   assert.equal(changes, 0)
   assert.equal(f.calls.writes.length, 0)
 })
+
+// ─── 본문 저장 예약: debounce → throttle (계속 타이핑해도 250ms마다 저장·원격 표시) ─────────
+async function loadFlushThrottle() {
+  const ts = (await import('typescript')).default
+  const vm = await import('node:vm')
+  const src = fs.readFileSync(new URL('../src/lib/coedit/firestore-document.ts', import.meta.url), 'utf8')
+  // 이 파일은 Firebase 초기화를 import 하므로, 실제 함수 코드만 떼어 실행한다(같은 코드 그대로)
+  const start = src.indexOf('export const DOCUMENT_FLUSH_THROTTLE_MS')
+  const end = src.indexOf('/** Transactional Yjs state merge')
+  const out = ts.transpileModule(`${src.slice(start, end)}\nexports.createFlushThrottle = createFlushThrottle\nexports.MS = DOCUMENT_FLUSH_THROTTLE_MS`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
+  const ctx = { exports: {}, setTimeout, clearTimeout }
+  vm.runInNewContext(out, ctx)
+  return ctx.exports
+}
+
+test('R3i: 1.2초 동안 50ms마다 입력해도(실제 타이머) 250ms마다 저장된다 — 예전 debounce 는 입력이 멈출 때까지 0회', async () => {
+  const { createFlushThrottle, MS } = await loadFlushThrottle()
+  assert.equal(MS, 250)
+  const flushes = []
+  const started = Date.now()
+  const throttle = createFlushThrottle(() => flushes.push(Date.now() - started))
+  // 예전 방식(입력마다 지우고 다시 예약)과 나란히 비교
+  let debounceTimer, debounced = 0
+  const oldSchedule = () => { if (debounceTimer) clearTimeout(debounceTimer); debounceTimer = setTimeout(() => { debounced++ }, 250) }
+  for (let t = 0; t < 1200; t += 50) {
+    throttle.schedule(); oldSchedule()
+    await new Promise(r => setTimeout(r, 50))
+  }
+  assert.ok(flushes.length >= 4, `throttle 저장 ${flushes.length}회`)
+  assert.ok(flushes[0] < 400, `첫 저장 ${flushes[0]}ms`)
+  for (let i = 1; i < flushes.length; i++) assert.ok(flushes[i] - flushes[i - 1] >= 200, '간격 유지')
+  assert.equal(debounced, 0) // 결함 재현: 계속 입력하면 한 번도 저장되지 않았다
+  clearTimeout(debounceTimer)
+  // 입력이 멈추면 마지막 예약 한 번으로 끝난다
+  const before = flushes.length
+  await new Promise(r => setTimeout(r, 300))
+  assert.ok(flushes.length - before <= 1)
+  assert.equal(throttle.scheduled, false)
+})
+
+test('R3j: 바로 저장(flush) 시작 때 예약을 지우면 다음 입력이 새로 예약하고, 같은 예약은 한 번만 실행', async () => {
+  const { createFlushThrottle } = await loadFlushThrottle()
+  let runs = 0
+  const throttle = createFlushThrottle(() => { runs++ }, 30)
+  throttle.schedule(); throttle.schedule(); throttle.schedule()
+  assert.equal(throttle.scheduled, true)
+  throttle.cancel() // flush() 시작
+  assert.equal(throttle.scheduled, false)
+  await new Promise(r => setTimeout(r, 50))
+  assert.equal(runs, 0)
+  throttle.schedule()
+  await new Promise(r => setTimeout(r, 50))
+  assert.equal(runs, 1)
+  // 실제 연결 코드도 이 throttle 을 쓴다(입력 → schedule, flush 시작·종료 → cancel)
+  const src = fs.readFileSync(new URL('../src/lib/coedit/firestore-document.ts', import.meta.url), 'utf8')
+  assert.equal((src.match(/throttle\.schedule\(\)/g) ?? []).length, 1)
+  assert.doesNotMatch(src, /if \(timer\) clearTimeout\(timer\)\n\s*timer = setTimeout/)
+})
