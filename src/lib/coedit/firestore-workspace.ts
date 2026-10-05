@@ -74,17 +74,19 @@ function assertAccess(project: ProjectData, uid: string, expectedCycle?: number)
   return cycle
 }
 
-function firestoreTransport(projectId: string): WorkspaceTransport {
-  const ref = doc(db, 'projects', projectId)
+export function firestoreTransport(projectId: string, sdk = { doc, onSnapshot, runTransaction, serverTimestamp }, database = db): WorkspaceTransport {
+  const ref = sdk.doc(database, 'projects', projectId)
   return {
-    transact: change => runTransaction(db, async tx => {
+    transact: change => sdk.runTransaction(database, async tx => {
       const snapshot = await tx.get(ref)
       if (!snapshot.exists()) throw new WorkspaceError('not-found', '프로젝트가 없습니다.')
       const result = change(snapshot.data())
-      if (Object.keys(result.updates).length) tx.update(ref, { ...result.updates, updatedAt: serverTimestamp() })
+      if (Object.keys(result.updates).length) tx.update(ref, { ...result.updates, updatedAt: sdk.serverTimestamp() })
       return result.value
     }),
-    subscribe: (next, error) => onSnapshot(ref, snapshot => {
+    subscribe: (next, error) => sdk.onSnapshot(ref, { includeMetadataChanges: true }, snapshot => {
+      // 캐시·미확정 쓰기는 서버 상태로 판정하지 않고, metadata-only ack까지 기다린다.
+      if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return
       if (snapshot.exists()) next(snapshot.data())
       else error(new WorkspaceError('not-found', '프로젝트가 없습니다.'))
     }, error),

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { setTimeout as wait } from 'node:timers/promises'
 import * as Y from 'yjs'
 import { seedWorkspace, workspaceToJSON, applyWorkspaceDiff, applyWorkspacePatch, getCellText, applyCellDelta, textDelta } from '../src/lib/coedit/workspace-crdt.ts'
-import { connectWorkspace, mergeWorkspaceTransaction, estimateProjectBytes, WORKSPACE_CRDT_FIELD, WORKSPACE_THROTTLE_MS } from '../src/lib/coedit/firestore-workspace.ts'
+import { connectWorkspace, firestoreTransport, mergeWorkspaceTransaction, estimateProjectBytes, WORKSPACE_CRDT_FIELD, WORKSPACE_THROTTLE_MS } from '../src/lib/coedit/firestore-workspace.ts'
 
 const json = () => ({ columns: [{ id: 'name', label: '활동', color: '#0B57D0' }, { id: 'note', label: '메모' }], rows: [{ id: 'r1', cells: { name: '폭염 지도', note: '인터뷰' } }, { id: 'r2', cells: { name: '그늘막', note: '' } }], blocks: [{ id: 'b1', type: 'paragraph', content: '첫 메모' }, { id: 'b2', type: 'table', content: '', table: { columns: [{ id: 'a', label: '자료' }], rows: [{ id: 's1', cells: { a: '사회 지도' } }] } }], review: '학생 질문', updatedAt: 1 })
 function replicas(count = 2) {
@@ -377,5 +377,111 @@ test('R1 provider: 손상되거나 알 수 없는 같은 주기 CRDT state를 le
     assert.equal(server.writes.length, 0)
     assert.deepEqual(server.data[WORKSPACE_CRDT_FIELD].teamRulesWorkspace, entry)
     await p.destroy()
+  }
+})
+
+// Production adapter를 그대로 쓰고 Firebase SDK의 I/O만 대체한다.
+function firestoreHarness(server) {
+  let listener, failure, options, stopped = false
+  const sdk = {
+    doc: () => ({ id: 'test' }),
+    serverTimestamp: () => 123,
+    async runTransaction(_db, change) {
+      if (server.offline) throw Object.assign(new Error('offline'), { code: 'unavailable' })
+      const updates = {}
+      const result = await change({
+        get: async () => ({ exists: () => true, data: () => structuredClone(server.data) }),
+        update: (_ref, values) => Object.assign(updates, values),
+      })
+      for (const [path, value] of Object.entries(updates)) {
+        const keys = path.split('.'); let target = server.data
+        for (const key of keys.slice(0, -1)) target = target[key] ??= {}
+        target[keys.at(-1)] = structuredClone(value)
+      }
+      return result
+    },
+    onSnapshot(_ref, listenOptions, next, error) {
+      options = listenOptions; listener = next; failure = error
+      return () => { stopped = true }
+    },
+  }
+  return {
+    transport: firestoreTransport('test', sdk, {}),
+    get options() { return options },
+    emit(data = server.data, metadata = {}, exists = true, metadataOnly = false) {
+      if (stopped || (metadataOnly && !options.includeMetadataChanges)) return
+      listener({ exists: () => exists, data: () => structuredClone(data), metadata: { fromCache: false, hasPendingWrites: false, ...metadata } })
+    },
+    fail(error) { failure(error) },
+  }
+}
+
+test('R1 Firestore adapter: ready 후 seed 없는 캐시 → pending → 동일 data의 metadata-only 서버 ack는 오류 없이 병합한다', async t => {
+  const server = new MemoryProject(), stale = structuredClone(server.data), harness = firestoreHarness(server), statuses = []
+  const p = server.connect('a', { transport: harness.transport, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
+  assert.equal(harness.options.includeMetadataChanges, true)
+  const before = p.getWorkspace()
+  // 과거 캐시가 프로젝트 자체를 찾지 못하거나 seed를 갖고 있지 않아도 권위 오류가 아니다.
+  harness.emit(stale, { fromCache: true }, false)
+  harness.emit(stale, { fromCache: true })
+  const remote = new Y.Doc(); t.after(() => remote.destroy())
+  Y.applyUpdate(remote, Y.encodeStateAsUpdate(p.ydoc))
+  applyWorkspacePatch(remote, { type: 'update-cell', rowId: 'r1', columnId: 'name', value: '서버 확정 기록' })
+  const result = mergeWorkspaceTransaction(server.data, { workspaceField: 'teamRulesWorkspace', initialWorkspace: json() }, 1, Y.encodeStateAsUpdate(remote))
+  const ack = { ...server.data, teamRulesWorkspace: result.value.workspace,
+    [WORKSPACE_CRDT_FIELD]: { teamRulesWorkspace: result.updates['coeditWorkspaceCrdt.teamRulesWorkspace'] } }
+  harness.emit(ack, { hasPendingWrites: true })
+  assert.deepEqual(p.getWorkspace(), before, 'pending 데이터를 원격 상태로 적용하지 않음')
+  harness.emit(ack, {}, true, true)
+  assert.equal(p.getWorkspace().rows[0].cells.name, '서버 확정 기록')
+  assert.equal(statuses.at(-1)[0], 'saved')
+  assert.equal(statuses.some(([status]) => status === 'error'), false)
+})
+
+test('R1 Firestore adapter: 캐시의 권한·주기 불일치는 건너뛰지만 확정된 서버의 seed 삭제·주기·권한 오류는 유지한다', async t => {
+  for (const kind of ['missing', 'cycle', 'permission']) {
+    const server = new MemoryProject(), harness = firestoreHarness(server), statuses = []
+    const p = server.connect('a', { transport: harness.transport, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
+    const invalid = structuredClone(server.data)
+    if (kind === 'missing') delete invalid[WORKSPACE_CRDT_FIELD].teamRulesWorkspace
+    if (kind === 'cycle') invalid.currentCycle = 2
+    if (kind === 'permission') { invalid.createdBy = 'other'; invalid.memberUids = [] }
+    harness.emit(invalid, { fromCache: true })
+    harness.emit(invalid, { hasPendingWrites: true })
+    assert.equal(statuses.at(-1)[0], 'saved')
+    harness.emit(invalid)
+    assert.equal(statuses.at(-1)[0], 'error', kind)
+    assert.match(statuses.at(-1)[1], kind === 'missing' ? /편집 상태/ : kind === 'cycle' ? /주기/ : /팀원/)
+  }
+})
+
+test('R1 Firestore adapter: 서버 문서 삭제·리스너 permission-denied·손상 state 오류를 감추지 않는다', async t => {
+  for (const kind of ['deleted', 'listener', 'corrupt']) {
+    const server = new MemoryProject(), harness = firestoreHarness(server), statuses = []
+    const p = server.connect('a', { transport: harness.transport, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
+    if (kind === 'deleted') harness.emit({}, {}, false)
+    if (kind === 'listener') harness.fail(Object.assign(new Error('permission denied'), { code: 'permission-denied' }))
+    if (kind === 'corrupt') {
+      const invalid = structuredClone(server.data)
+      invalid[WORKSPACE_CRDT_FIELD].teamRulesWorkspace.state = 'not-valid-!'
+      harness.emit(invalid)
+    }
+    assert.equal(statuses.at(-1)[0], 'error', kind)
+  }
+})
+
+test('R1 Firestore adapter: 정상 서버 snapshot도 용량 초과·저장 실패 상태와 미전송 입력을 덮지 않는다', async t => {
+  for (const kind of ['capacity', 'offline']) {
+    const server = new MemoryProject(), harness = firestoreHarness(server), statuses = [], storage = new MemoryStorage()
+    const p = server.connect('a', { transport: harness.transport, maxStateBytes: 5000, storage, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
+    const value = kind === 'capacity' ? '기록'.repeat(6000) : '아직 저장 못 한 입력'
+    p.applyPatch({ type: 'update-cell', rowId: 'r1', columnId: 'name', value })
+    if (kind === 'offline') server.offline = true
+    await assert.rejects(p.flush(), kind === 'capacity' ? /표 편집 용량/ : /offline/)
+    const last = statuses.at(-1)
+    harness.emit(server.data)
+    assert.deepEqual(statuses.at(-1), last, '정상 snapshot은 오류를 saved로 덮지 않음')
+    assert.equal(p.getWorkspace().rows[0].cells.name, value)
+    assert.equal(storage.length, 1)
   }
 })
