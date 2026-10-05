@@ -140,6 +140,7 @@ export function connectWorkspace(options: ConnectWorkspaceOptions) {
   let pending: Uint8Array | null = null, sending: Uint8Array | null = null
   let timer: ReturnType<typeof setTimeout> | undefined, retryTimer: ReturnType<typeof setTimeout> | undefined
   let inFlight: Promise<void> | null = null, initializing: Promise<void> | null = null, destroyPromise: Promise<void> | null = null
+  let verifyingSnapshot: Promise<void> | null = null
   let retries = 0, preserved: ProjectData = {}, unsubscribe = () => {}
   const recovered = new Map<string, string>(), listeners = new Set<() => void>()
   let resolveReady!: () => void, rejectReady!: (error: unknown) => void
@@ -186,6 +187,16 @@ export function connectWorkspace(options: ConnectWorkspaceOptions) {
   }
   ydoc.on('update', handleUpdate)
 
+  const verifySnapshot = () => {
+    // 서버 표시가 있는 알림도 seed transaction보다 오래된 상태일 수 있다.
+    // flush의 권위 transaction에서 재확인하고, 동시 알림은 같은 확인을 기다린다.
+    if (closing || verifyingSnapshot) return
+    verifyingSnapshot = Promise.resolve().then(() => {
+      if (!closing) return flush()
+    }).catch(() => { /* flush가 실제 서버 오류를 보고하고 입력을 보존한다. */ })
+      .finally(() => { verifyingSnapshot = null })
+  }
+
   async function initialize(): Promise<void> {
     if (closing || initialized) return
     if (initializing) return initializing
@@ -222,13 +233,16 @@ export function connectWorkspace(options: ConnectWorkspaceOptions) {
           try {
             assertAccess(project, uid, cycle)
             const current = object(project[WORKSPACE_CRDT_FIELD])[options.workspaceField] as StoredState | undefined
-            if (current?.cycle !== cycle || !current.state) throw new WorkspaceError('cycle-changed', '편집 상태가 바뀌었습니다. 창을 다시 열어 주세요.')
+            if (current?.version !== 1 || current.cycle !== cycle || !current.state) throw new WorkspaceError('cycle-changed', '편집 상태가 바뀌었습니다. 창을 다시 열어 주세요.')
             rememberExcluded(object(project[options.workspaceField]))
             try { Y.applyUpdate(ydoc, decodeWorkspaceState(current.state), remoteOrigin) }
             catch { throw new WorkspaceError('invalid-argument', '공동 편집 저장 상태를 읽지 못했습니다. 임시 기록을 보존했습니다.') }
             notify()
-          } catch (error) { report(error) }
-        }, report)
+          } catch { verifySnapshot() }
+        }, error => {
+          if (errorCode(error).replace(/^firestore\//, '') === 'not-found') verifySnapshot()
+          else report(error)
+        })
         backup(); resolveReady(); status(pending ? 'saving' : 'saved')
         if (pending) schedule()
       } catch (error) {
