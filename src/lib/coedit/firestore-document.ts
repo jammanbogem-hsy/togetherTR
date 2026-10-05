@@ -9,6 +9,27 @@ const FIELD = 'lessonDesignDirectionDocument'
 const encode = (data: Uint8Array) => btoa(Array.from(data, x => String.fromCharCode(x)).join(''))
 const decode = (data: string) => Uint8Array.from(atob(data), x => x.charCodeAt(0))
 export type DocumentStatus = 'connecting' | 'saved' | 'saving' | 'error'
+export const DOCUMENT_FLUSH_THROTTLE_MS = 250
+
+/**
+ * 본문 저장 예약 — throttle: 예약이 없을 때만 ms 뒤 실행을 잡는다(이미 잡혀 있으면 그대로 둠).
+ * 예전에는 입력마다 타이머를 지우고 다시 잡아(debounce) 계속 타이핑하면 저장·원격 표시가 멈췄다(#R3 검토).
+ */
+export function createFlushThrottle(run: () => void, ms = DOCUMENT_FLUSH_THROTTLE_MS) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return {
+    schedule() {
+      if (timer) return
+      timer = setTimeout(() => { timer = undefined; run() }, ms)
+    },
+    /** 바로 저장하기 직전에 부른다 — 잡혀 있던 예약을 지우고 다음 입력이 새로 예약할 수 있게 */
+    cancel() {
+      if (timer) clearTimeout(timer)
+      timer = undefined
+    },
+    get scheduled() { return timer !== undefined },
+  }
+}
 
 /** Transactional Yjs state merge; plain blocks are a compatibility projection,
  * not the source of truth. No overwrite of other workspace cells. */
@@ -20,7 +41,7 @@ export function connectDocument(projectId: string, onStatus: (status: DocumentSt
   let key = ''
   const recoveredKeys = new Map<string, string>()
   let pending: Uint8Array | null = null
-  let timer: ReturnType<typeof setTimeout> | undefined
+  const throttle = createFlushThrottle(() => { void flush().catch(() => {}) })
   let inFlight: Promise<void> | null = null
   let stopped = false
   let unsubscribe = () => {}
@@ -34,7 +55,7 @@ export function connectDocument(projectId: string, onStatus: (status: DocumentSt
   }
 
   async function flush(): Promise<void> {
-    if (timer) clearTimeout(timer)
+    throttle.cancel()
     if (inFlight) { await inFlight; if (pending) return flush(); return }
     if (!pending) return
     const sending = pending
@@ -123,8 +144,8 @@ export function connectDocument(projectId: string, onStatus: (status: DocumentSt
       pending = pending ? Y.mergeUpdates([pending, update]) : update
       onStatus('saving')
       try { backup() } catch { onStatus('error', '브라우저 임시 저장 공간이 부족합니다. 창을 닫지 말고 저장을 재시도하세요.') }
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => { void flush().catch(() => {}) }, 250)
+      // throttle: 계속 입력해도 250ms마다 저장(보내는 중이면 flush 가 기다렸다 이어서 보냄 — pending 은 합쳐 보존)
+      throttle.schedule()
     })
     unsubscribe = onSnapshot(ref, snap => {
       const data = snap.data()
@@ -140,7 +161,7 @@ export function connectDocument(projectId: string, onStatus: (status: DocumentSt
     destroy() {
       stopped = true
       unsubscribe()
-      if (timer) clearTimeout(timer)
+      throttle.cancel()
       void flush().catch(() => {}).finally(() => ydoc.destroy())
     },
   }

@@ -1,5 +1,9 @@
 'use client'
 
+import { sendWorkspaceArtifact } from './workspaceArtifactRequest'
+import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
+import { useRealtimeWorkspace, WorkspaceRealtimeStatus } from './useRealtimeWorkspace'
+
 import { displayActivityCode } from '@/types'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -19,6 +23,7 @@ import type { LearningActivityWorkspacePatch, LearningActivityPresenceEntry } fr
 import type { LearningActivitySuggestRequest, LearningActivitySuggestResult } from '@/app/api/learning-activity/suggest/route'
 import { cn } from '@/lib/utils'
 import { useWorkspaceSync } from './useWorkspaceSync'
+import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 import {
   AutoGrowTextarea,
   CaretOverlay,
@@ -35,6 +40,7 @@ interface Props {
   onClose: () => void
   workspace?: LearningActivityWorkspace
   artifactContent?: Record<string, unknown>
+  projectId?: string
   currentUid?: string
   currentUserName?: string
   currentUserColor?: string
@@ -423,12 +429,13 @@ export function LearningActivityWorkspaceModal({
   onClose,
   workspace: savedWorkspace,
   artifactContent,
+  projectId,
   currentUid,
   currentUserName,
   currentUserColor,
   presence,
   isHost,
-  onPatchSave,
+  onPatchSave: legacyPatchSave,
   onPresenceUpdate,
   onSendArtifact,
   projectTitle,
@@ -439,8 +446,10 @@ export function LearningActivityWorkspaceModal({
   drivingQuestion,
   evaluationPlan,
 }: Props) {
-  const [workspace, setWorkspace] = useState<LearningActivityWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
+  const [workspace, setLegacyWorkspace] = useState<LearningActivityWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
   const [saving, setSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
+  const [offerReflection, setOfferReflection] = useState(false)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -455,8 +464,14 @@ export function LearningActivityWorkspaceModal({
 
   // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
   const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const realtime = useRealtimeWorkspace({
+    open, projectId, workspaceField: 'learningActivityWorkspace', workspace, incoming: incomingWorkspace,
+    setWorkspace: setLegacyWorkspace, editingKey,
+  })
+  const setWorkspace = realtime.setWorkspace
+  const onPatchSave: Props['onPatchSave'] = realtime.enabled ? realtime.flush : legacyPatchSave
   const sync = useWorkspaceSync({
-    open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    open, incoming: incomingWorkspace, workspace, setWorkspace: setLegacyWorkspace, editingKey, external: realtime.enabled,
     // 서버 저장본이 비어 있으면(빈 초안·산출물에서 채워 연 표) 첫 변경은 화면 표 통째로 저장 (#T7b)
     remoteBlank: isBlankWorkspace(savedWorkspace),
     preserve: (next, current, key) => preserveEditingValue(next, current, key, pendingDeletionsRef.current),
@@ -489,10 +504,13 @@ export function LearningActivityWorkspaceModal({
     return () => { clearInterval(t) }
   }, [open, currentUid, currentUserName, currentUserColor, onPresenceUpdate])
 
-  const freshEditors = useMemo(() => {
+  // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
     // 시계 차이로 host entry가 stale 판정되는 케이스 대비 60초로 확장.
-    return Object.values(presence ?? {}).filter(entry => Date.now() - entry.updatedAt < 60000)
-  }, [presence])
+  const presenceNow = usePresenceClock()
+  const { fresh: freshEditors, away: awayEditors } = useMemo(
+    () => splitPresence(Object.values(presence ?? {}), presenceNow, 60000),
+    [presence, presenceNow],
+  )
 
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
     if (!onPresenceUpdate || !currentUid) return
@@ -589,6 +607,7 @@ export function LearningActivityWorkspaceModal({
         for (const id of deletedIds) pendingDeletionsRef.current.delete(id)
       }
       if (saved) sync.applySaved(normalizeWorkspace(saved))
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
     } catch (error) {
       console.error('[learningActivityWorkspace patch]', error)
       if (deletedIds?.length) {
@@ -599,16 +618,15 @@ export function LearningActivityWorkspaceModal({
   }
 
   async function handleSaveAll() {
-    if (!isHost) {
-      setMessage('초안 저장과 산출물 전송은 방장만 실행할 수 있습니다.')
-      return
-    }
+    if (saving || sending) return
     setSaving(true)
     try {
       const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as LearningActivityWorkspacePatch
       const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       if (saved) sync.applySaved(normalizeWorkspace(saved))
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
       setMessage('공동 편집 초안을 저장했습니다.')
+      setOfferReflection(isHost)
     } catch (error) {
       console.error('[learningActivityWorkspace save]', error)
       setMessage('저장하지 못했습니다. 다시 시도해주세요.')
@@ -976,16 +994,19 @@ export function LearningActivityWorkspaceModal({
   }
 
   async function sendArtifact() {
-    if (!isHost) return
+    if (saving || sending) return
     setSending(true)
     try {
-      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as LearningActivityWorkspacePatch
+      const latestWorkspace = await sync.settledLatest()
+      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: latestWorkspace, updatedBy: currentUserName }) as LearningActivityWorkspacePatch
       const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
-      const finalWorkspace = normalizeWorkspace(saved ?? workspace)
+      const finalWorkspace = normalizeWorkspace(saved ?? latestWorkspace)
       const structured = workspaceToArtifact(finalWorkspace)
-      await onSendArtifact(stripUndefinedDeep(structured) as Ds13Structured)
-      setMessage(`${displayActivityCode('Ds-1-3')} 산출물로 보냈습니다.`)
-      onClose()
+      await sendWorkspaceArtifact({ isHost, projectId, activityCode: 'Ds-1-3', currentUid, currentUserName, content: stripUndefinedDeep(structured) as Ds13Structured, onSendArtifact })
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
+      setOfferReflection(false)
+      setMessage(isHost ? `${displayActivityCode('Ds-1-3')} 산출물로 보냈습니다.` : '방장에게 반영을 요청했어요')
+      if (isHost) onClose()
     } catch (error) {
       console.error('[learningActivityWorkspace send]', error)
       const msg = error instanceof Error ? error.message : '알 수 없는 오류'
@@ -1003,7 +1024,8 @@ export function LearningActivityWorkspaceModal({
 
   return createPortal(
     <>
-    <div className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+    <div {...realtime.boundaryProps} className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+      <WorkspaceRealtimeStatus session={realtime} onClose={onClose} />
       <div
         className="bg-white w-full h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col"
         onClick={event => event.stopPropagation()}
@@ -1020,13 +1042,14 @@ export function LearningActivityWorkspaceModal({
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
-          {freshEditors.length > 0 && (
+          {(freshEditors.length > 0 || awayEditors.length > 0) && (
             <div className="hidden lg:flex items-center gap-1.5 mr-1">
               {freshEditors.slice(0, 4).map(entry => (
-                <span key={entry.uid} className="text-[13px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
+                <span key={entry.uid} title={presenceTitle(entry)} className="text-[13px] font-bold px-2.5 py-1 rounded-full border shadow-sm" style={presenceChipStyle(entry.color)}>
                   {entry.displayName || '팀원'}
                 </span>
               ))}
+              <PresenceAwayChips entries={awayEditors} />
             </div>
           )}
           <span className={cn(
@@ -1047,12 +1070,12 @@ export function LearningActivityWorkspaceModal({
           <button
             type="button"
             onClick={sendArtifact}
-            disabled={!isHost || sending}
-            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('Ds-1-3')} 산출물로 보냅니다` : '방장만 산출물로 보낼 수 있습니다'}
+            disabled={sending || saving}
+            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('Ds-1-3')} 산출물로 보냅니다` : '편집 내용을 방장에게 반영 요청합니다'}
             className="hidden sm:flex h-10 items-center gap-2 px-5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06327A] text-white text-[14px] font-medium shadow-[0_1px_2px_rgba(60,64,67,0.3),0_1px_3px_1px_rgba(60,64,67,0.15)] transition-colors disabled:opacity-40 disabled:shadow-none"
           >
             <PaperPlaneRight size={17} weight="fill" />
-            {sending ? '전송 중' : '산출물로 보내기'}
+            {sending ? '전송 중' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
           </button>
           <button
             type="button"
@@ -1093,7 +1116,7 @@ export function LearningActivityWorkspaceModal({
                       <label className="text-[15px] font-bold text-[#5F6368]">AI 점검</label>
                       <span className="text-[13px] text-[#9AA0A6]">학습 목표·평가 계획과의 정합성 및 흐름·실행 적절성</span>
                       {editors.map(ed => (
-                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={presenceTagStyle(ed.color)}>
                           {ed.displayName} 편집 중
                         </span>
                       ))}
@@ -1115,7 +1138,7 @@ export function LearningActivityWorkspaceModal({
                         }}
                         minRows={3}
                         placeholder="예: 제안한 활동 흐름은 탐구 질문·평가 계획에 정합적이며, 문제 이해→정보 탐색→분석→의사결정→산출물 제작→공유 및 수정 순서가 자연스럽게 이어진다."
-                        style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                        style={accentColor ? presenceAccentStyle(accentColor) : undefined}
                         className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[18px] leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                       <CaretOverlay
@@ -1196,12 +1219,13 @@ export function LearningActivityWorkspaceModal({
                                     <span
                                       key={ed.uid}
                                       className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                      style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                      style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                     >
                                       {ed.displayName}
                                     </span>
                                   ))}
                                   <AutoGrowTextarea
+                                    caretEditors={editors}
                                     value={getCell(row, column.id)}
                                     onChange={event => {
                                       setCellLocal(row.id, column.id, event.target.value)
@@ -1328,12 +1352,13 @@ export function LearningActivityWorkspaceModal({
                                           <span
                                             key={ed.uid}
                                             className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                            style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                            style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                           >
                                             {ed.displayName}
                                           </span>
                                         ))}
                                         <AutoGrowTextarea
+                                          caretEditors={editors}
                                           value={getCell(row, column.id)}
                                           onChange={event => {
                                             const nextTable = {
@@ -1742,20 +1767,20 @@ export function LearningActivityWorkspaceModal({
             <span className="hidden sm:inline-flex rounded-full bg-[#F8F9FA] px-3 py-2 text-[14px] font-bold text-[#5F6368]">
               자유 형식으로 작성해도 산출물로 인정됩니다
             </span>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="hidden sm:inline-flex items-center gap-1 text-[14px] font-bold text-[#5F6368]">
-                <CheckCircle size={17} weight="fill" className="text-[#9AA0A6]" />
-                {isHost ? '저장 가능' : '편집 중'}
-              </span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <WorkspaceSaveStatus lastSavedAt={Math.max(lastSavedAt ?? 0, savedWorkspace?.updatedAt ?? 0)} offerReflection={isHost && offerReflection} busy={saving || sending} onReflect={sendArtifact} />
+              <button type="button" onClick={sendArtifact} disabled={saving || sending} className="sm:hidden rounded-full bg-[#0B57D0] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+                {sending ? '전송 중' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
+              </button>
               <button
                 type="button"
                 onClick={handleSaveAll}
-                disabled={!isHost || saving}
-                title={isHost ? '현재 공동 초안을 저장합니다' : '초안 저장은 방장만 실행할 수 있습니다'}
+                disabled={saving || sending}
+                title="현재 공동 초안을 저장합니다"
                 className="flex items-center gap-1.5 rounded-full bg-[#111827] px-5 py-3 text-[15px] font-semibold text-white shadow-lg transition-colors hover:bg-[#1F2937] disabled:opacity-45"
               >
                 <FloppyDisk size={18} weight="bold" />
-                {saving ? '저장 중' : '저장하기'}
+                {saving ? '저장 중' : '초안 저장'}
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import type { Editor } from '@tiptap/core'
@@ -9,6 +9,12 @@ import Collaboration from '@tiptap/extension-collaboration'
 import type * as Y from 'yjs'
 import { documentExtensions } from '@/lib/coedit/document'
 import { connectDocument, type DocumentStatus } from '@/lib/coedit/firestore-document'
+import { Extension } from '@tiptap/core'
+import { yCursorPlugin } from '@tiptap/y-tiptap'
+import { FirestoreDocumentAwareness } from '@/lib/coedit/documentPresence'
+import { firestoreDocumentPresenceTransport } from '@/lib/coedit/documentPresenceFirestore'
+import { presenceInk, presenceTagStyle } from './presence'
+import { useProjectStore } from '@/store/project'
 
 interface Props {
   projectId: string
@@ -32,14 +38,41 @@ function slashAt(editor: Editor) {
   return match ? { from: from - text.length, to: from, query: match[1] } : null
 }
 
-function DocumentBody({ document }: { document: Y.Doc }) {
+/** 다른 사람 커서: 진한 사용자 색 세로선 + 흰 글자 이름표(대비 4.5:1) */
+export function buildDocumentCursor(user: { name: string; color: string }): HTMLElement {
+  const ink = presenceInk(user.color)
+  const cursor = document.createElement('span')
+  cursor.className = 'ProseMirror-yjs-cursor'
+  cursor.setAttribute('style', `position: relative; margin-left: -1px; margin-right: -1px; border-left: 2px solid ${ink}; word-break: normal; pointer-events: none;`)
+  const label = document.createElement('span')
+  const tag = presenceTagStyle(user.color)
+  label.setAttribute('style', `position: absolute; top: -1.45em; left: -2px; white-space: nowrap; font-size: 11px; font-weight: 700; line-height: 1.3; padding: 1px 6px; border-radius: 4px; user-select: none; background-color: ${tag.backgroundColor}; color: ${tag.color};`)
+  label.textContent = user.name
+  cursor.append('\u2060', label, '\u2060')
+  return cursor
+}
+
+export function documentSelectionAttrs(user: { color: string }) {
+  return { style: `background-color: ${presenceInk(user.color)}2E`, class: 'ProseMirror-yjs-selection' }
+}
+
+function DocumentBody({ document, awareness }: { document: Y.Doc; awareness: FirestoreDocumentAwareness | null }) {
   const [revision, setRevision] = useState(0)
   const [dismissed, setDismissed] = useState(false)
   const [selected, setSelected] = useState(0)
   const keyHandler = useRef<(event: KeyboardEvent) => boolean>(() => false)
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [...documentExtensions(), Collaboration.configure({ document })],
+    extensions: [
+      ...documentExtensions(),
+      Collaboration.configure({ document }),
+      // 다른 사람 작업 위치(구글 문서식) — y-tiptap 커서 플러그인에 Firestore 어댑터를 awareness 로 넘긴다(#R3)
+      ...(awareness ? [Extension.create({
+        name: 'documentPresence',
+        // 어댑터는 yCursorPlugin 이 쓰는 Awareness 메서드(getStates·getLocalState·setLocalStateField·on/off)만 같은 모양으로 갖춘다
+        addProseMirrorPlugins: () => [yCursorPlugin(awareness as unknown as Parameters<typeof yCursorPlugin>[0], { cursorBuilder: buildDocumentCursor, selectionBuilder: documentSelectionAttrs })],
+      })] : []),
+    ],
     onTransaction: ({ transaction }) => {
       setRevision(value => value + 1)
       if (transaction.docChanged) { setDismissed(false); setSelected(0) }
@@ -48,7 +81,27 @@ function DocumentBody({ document }: { document: Y.Doc }) {
       handleKeyDown: (_view, event) => keyHandler.current(event),
       attributes: { class: 'collaborative-document-body', role: 'textbox', 'aria-label': '공동 문서 본문', 'aria-multiline': 'true' },
     },
-  }, [document])
+  // awareness 가 바뀌면(프로필 이름·색 갱신) 에디터를 새 어댑터로 다시 만든다 — 지난 어댑터(destroy 됨)를 플러그인이 붙잡지 않게
+  }, [document, awareness])
+  // 한글 조합 중에는 원격 커서 갱신을 미뤘다가 조합이 끝나면 반영(조합 끊김 방지)
+  useEffect(() => {
+    if (!editor || !awareness) return
+    const dom = editor.view.dom
+    awareness.setComposingCheck(() => editor.view.composing)
+    // compositionend 순간에는 view.composing 이 아직 true 일 수 있어, 바로 한 번 + 다음 틱에 한 번 더 반영
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const onEnd = () => {
+      awareness.flushDeferred()
+      if (retry) clearTimeout(retry)
+      retry = setTimeout(() => { retry = undefined; awareness.flushDeferred() }, 0)
+    }
+    dom.addEventListener('compositionend', onEnd)
+    return () => {
+      if (retry) clearTimeout(retry)
+      dom.removeEventListener('compositionend', onEnd)
+      awareness.setComposingCheck(undefined)
+    }
+  }, [editor, awareness])
   const slash = editor ? slashAt(editor) : null
   const query = slash?.query
   const commands = insertCommands.filter(command => `${command.label} ${command.keywords}`.toLowerCase().includes((query ?? '').toLowerCase()))
@@ -131,6 +184,22 @@ function DocumentBody({ document }: { document: Y.Doc }) {
 
 export function CollaborativeDocument({ projectId, flushRef }: Props) {
   const [connection, setConnection] = useState<ReturnType<typeof connectDocument> | null>(null)
+  const userProfile = useProjectStore(state => state.userProfile)
+  const memberColor = useProjectStore(state => (userProfile?.uid ? state.project?.memberInfo?.[userProfile.uid]?.color : undefined))
+  const presenceUid = userProfile?.uid
+  const presenceName = userProfile?.displayName ?? '팀원'
+  const presenceColor = memberColor ?? userProfile?.color ?? '#1A73E8'
+  // 본문 작업 위치 공유 — 이 창이 열려 있는 동안만, 닫거나 페이지를 떠나면 내 위치 문서를 지운다
+  const awareness = useMemo(() => presenceUid
+    ? new FirestoreDocumentAwareness({ uid: presenceUid, displayName: presenceName, color: presenceColor }, firestoreDocumentPresenceTransport(projectId, presenceUid))
+    : null, [projectId, presenceUid, presenceName, presenceColor])
+  useEffect(() => {
+    if (!awareness) return
+    awareness.start()
+    const onPageHide = () => awareness.destroy()
+    window.addEventListener('pagehide', onPageHide)
+    return () => { window.removeEventListener('pagehide', onPageHide); awareness.destroy() }
+  }, [awareness])
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<DocumentStatus>('connecting')
   const [error, setError] = useState('')
@@ -160,7 +229,7 @@ export function CollaborativeDocument({ projectId, flushRef }: Props) {
       <span>{status === 'connecting' ? '문서 연결 중…' : status === 'saving' ? '변경 내용 저장 중…' : status === 'saved' ? '본문 자동 저장됨 · 동시 입력 병합' : `저장 확인 필요: ${error}`}</span>
       {status === 'error' && ready && <button type="button" className="document-tool" onClick={() => void connection?.flush().catch(() => {})}>저장 재시도</button>}
     </div>
-    {ready && connection && <DocumentBody document={connection.ydoc} />}
+    {ready && connection && <DocumentBody key={awareness ? 'with-presence' : 'plain'} document={connection.ydoc} awareness={awareness} />}
     <p className="text-xs text-[#9AA0A6] py-2">Enter로 새 문단 · Shift+Enter로 줄바꿈 · 여러 문단을 드래그해 함께 서식 적용 · 문단 시작에서 /로 삽입 메뉴</p>
   </section>
 }

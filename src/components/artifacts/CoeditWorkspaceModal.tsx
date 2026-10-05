@@ -1,7 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createDebouncedPatchQueue, mergeCoeditIncoming } from './useWorkspaceSync'
+import { createDebouncedPatchQueue, createPendingLedger, mergeCoeditIncoming } from './useWorkspaceSync'
+import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
+import { useRealtimeWorkspace, WorkspaceRealtimeStatus } from './useRealtimeWorkspace'
 import { createPortal } from 'react-dom'
 import { FloppyDisk, PaperPlaneRight, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
 import type {
@@ -13,7 +15,7 @@ import type {
 import type { CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import { AutoGrowTextarea } from './workspaceHelpers'
 import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
-import { Avatar } from '@/components/ui/Avatar'
+import { presenceAccentStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 
 // ─── DI·E 공동 편집 공용 모달 ────────────────────────────────────────
 // 기존 12개 모달은 활동마다 전체를 복제했지만(각 1300~1600줄), 신규 4종은
@@ -46,6 +48,7 @@ export interface CoeditSuggestContext {
 }
 
 interface Props {
+  projectId?: string
   open: boolean
   onClose: () => void
   config: CoeditModalConfig
@@ -74,6 +77,7 @@ export function findTableBlock(blocks: CoeditWorkspaceBlock[], blockId: string) 
 }
 
 export function CoeditWorkspaceModal({
+  projectId,
   open,
   onClose,
   config,
@@ -84,13 +88,18 @@ export function CoeditWorkspaceModal({
   currentUserColor,
   presence,
   isHost,
-  onPatchSave,
+  onPatchSave: legacyPatchSave,
   onPresenceUpdate,
   onSendArtifact,
   suggestContext,
 }: Props) {
   const [mounted, setMounted] = useState(false)
   const [sending, setSending] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
+  const [offerReflection, setOfferReflection] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [saveLedger] = useState(createPendingLedger)
   const [suggesting, setSuggesting] = useState(false)
   const [rationale, setRationale] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -101,18 +110,25 @@ export function CoeditWorkspaceModal({
   // 로컬 상태(낙관적 업데이트)가 필수다. prop을 그대로 렌더하면 Firestore 왕복을 기다리는 동안
   // 타이핑한 글자가 매 keystroke마다 옛 값으로 덮여 마지막 한 글자만 남는다.
   // 기존 12개 모달과 동일하게 "즉시 로컬 반영 → 원격 저장" 순서로 처리한다.
-  const [ws, setWs] = useState<CoeditWorkspace>(() => workspace ?? emptyWorkspace())
+  const [ws, setLegacyWs] = useState<CoeditWorkspace>(() => workspace ?? emptyWorkspace())
+  const latestWsRef = useRef(ws)
+  useEffect(() => { latestWsRef.current = ws }, [ws])
   // 지금 편집 중인 셀 — 원격 스냅샷이 이 셀만은 덮어쓰지 않도록 보호한다
   const editingKeyRef = useRef<string | null>(null)
   // 칸별 지연 저장(#T7): 칸마다 타이머를 따로 둬서 400ms 안에 다른 칸으로 옮겨도 앞 칸 저장이 취소되지 않는다.
   // 보내는 중인 칸도 응답이 올 때까지 원격 스냅샷이 덮지 않게 센다.
+  const workspaceField = ({ 'DI-1-1': 'materialDevWorkspace', 'DI-2-1': 'lessonRecordWorkspace', 'E-1-1': 'lessonReflectionWorkspace', 'E-2-1': 'collaborationReflectionWorkspace' } as const)[config.activityCode]
+  const realtime = useRealtimeWorkspace({ open, projectId, workspaceField, workspace: ws, incoming: workspace ?? ws, setWorkspace: setLegacyWs, editingKey: editingKeyRef.current })
+  const setWs = realtime.setWorkspace
+  const onPatchSave: Props['onPatchSave'] = realtime.enabled ? realtime.flush : legacyPatchSave
   const onPatchSaveRef = useRef(onPatchSave)
   useEffect(() => { onPatchSaveRef.current = onPatchSave })
   const inflightKeysRef = useRef(new Map<string, number>())
   const [cellQueue] = useState(() => createDebouncedPatchQueue<CoeditWorkspacePatch>((p, key) => {
     const inflight = inflightKeysRef.current
     inflight.set(key, (inflight.get(key) ?? 0) + 1)
-    return onPatchSaveRef.current(p)
+    return saveLedger.track(p, onPatchSaveRef.current(p))
+      .then(saved => { setLastSavedAt(saved?.updatedAt ?? Date.now()) })
       .catch(() => setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.'))
       .finally(() => {
         const left = (inflight.get(key) ?? 1) - 1
@@ -122,25 +138,25 @@ export function CoeditWorkspaceModal({
   }))
 
   useEffect(() => {
-    if (!workspace) return
+    if (!workspace || realtime.enabled) return
     // 편집 중 칸·대기 중 칸·보내는 중인 칸은 로컬 값을 지킨다(늦게 온 옛 스냅샷이 새 입력을 덮지 않게).
-    setWs(prev => mergeCoeditIncoming(workspace, prev, [
+    setLegacyWs(prev => mergeCoeditIncoming(workspace, prev, [
       ...cellQueue.keys(),
       ...inflightKeysRef.current.keys(),
       ...(editingKeyRef.current ? [editingKeyRef.current] : []),
     ]))
-  }, [workspace, cellQueue])
+  }, [workspace, cellQueue, realtime.enabled])
 
   // 닫힐 때(언마운트) 대기 중인 저장은 취소하지 않고 바로 보낸다 (마지막 타이핑 유실 방지)
   useEffect(() => () => { void cellQueue.flushAll() }, [cellQueue])
 
   // 최초 진입 시 기본 컬럼·보조 표를 한 번 저장해 둔다 (호스트만 — 동시 시드 충돌 방지)
   useEffect(() => {
-    if (!open || workspace || seededRef.current || !isHost) return
+    if (realtime.enabled || !open || workspace || seededRef.current || !isHost) return
     seededRef.current = true
     void onPatchSave({ type: 'replace-all', workspace: emptyWorkspace(), updatedBy: currentUid })
       .catch(() => { seededRef.current = false })
-  }, [open, workspace, isHost, emptyWorkspace, onPatchSave, currentUid])
+  }, [open, workspace, isHost, emptyWorkspace, onPatchSave, currentUid, realtime.enabled])
 
   // 모달을 닫으면 presence 해제 — 다른 팀원 화면에 유령 커서가 남지 않도록
   useEffect(() => {
@@ -148,37 +164,42 @@ export function CoeditWorkspaceModal({
     void onPresenceUpdate?.(null)
   }, [open, onPresenceUpdate])
 
-  const reportPresence = useCallback((cellKey: string) => {
+  // caretPos: 칸 안 커서 위치 — 다른 팀원 화면에 작업 위치(커서·이름)를 그린다(#R3). 저장은 모듈이 디바운스.
+  const reportPresence = useCallback((cellKey: string, caretPos?: number) => {
     if (!currentUid || !onPresenceUpdate) return
     void onPresenceUpdate({
       uid: currentUid,
       displayName: currentUserName ?? '팀원',
       color: currentUserColor ?? '#A0BCE8',
       cellKey,
+      ...(typeof caretPos === 'number' ? { caretPos } : {}),
       updatedAt: Date.now(),
     })
   }, [currentUid, currentUserName, currentUserColor, onPresenceUpdate])
 
   /** 구조 변경(줄 추가·삭제 등) — 로컬 즉시 반영 후 바로 저장. 대기 중인 칸 저장을 먼저 보내 순서를 지킨다. */
   const patch = useCallback(async (p: CoeditWorkspacePatch, next: CoeditWorkspace) => {
+    latestWsRef.current = next
     setWs(next)
     setError(null)
     try {
       await cellQueue.flushAll()
-      await onPatchSave(p)
+      const saved = await saveLedger.track(p, onPatchSave(p))
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
     } catch {
       setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.')
     }
-  }, [onPatchSave, cellQueue])
+  }, [onPatchSave, cellQueue, saveLedger, setWs])
 
   /** 셀 타이핑 — 로컬은 즉시, 원격 저장은 칸별 400ms 디바운스 (keystroke마다 쓰지 않는다) */
   const patchCellDebounced = useCallback((p: CoeditWorkspacePatch, next: CoeditWorkspace) => {
+    latestWsRef.current = next
     setWs(next)
     setError(null)
     // 주 표 칸은 칸 단위, 보조 표는 표 단위(upsert-block)로 대기한다 — 같은 키의 더 새 저장만 앞의 것을 대체한다.
     const key = p.type === 'update-cell' ? `main:${p.rowId}:${p.columnId}` : p.type === 'upsert-block' ? p.block.id : 'structure'
     cellQueue.schedule(key, p)
-  }, [cellQueue])
+  }, [cellQueue, setWs])
 
   const newRowId = () => `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
@@ -243,18 +264,47 @@ export function CoeditWorkspaceModal({
     }
   }
 
+  async function saveLatestDraft() {
+    await cellQueue.flushAll()
+    await saveLedger.settle()
+    const latest = latestWsRef.current
+    const saved = await saveLedger.track({ type: 'replace-all' }, onPatchSave({ type: 'replace-all', workspace: latest, updatedBy: currentUid }))
+    setLastSavedAt(saved?.updatedAt ?? Date.now())
+    return saved ?? latest
+  }
+
+  async function handleSaveAll() {
+    if (saving || sending) return
+    setSaving(true)
+    setError(null)
+    setNotice('')
+    try {
+      await saveLatestDraft()
+      setNotice('공동 편집 초안을 저장했습니다.')
+      setOfferReflection(isHost)
+    } catch {
+      setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleSendArtifact() {
+    if (saving || sending) return
     setSending(true)
     setError(null)
+    setNotice('')
     try {
-      const content = config.toArtifact(ws)
+      const content = config.toArtifact(await saveLatestDraft())
       const hasContent = Object.values(content).some(v => (v ?? '').trim())
       if (!hasContent) {
         setError('산출물로 보낼 내용이 없습니다. 표를 먼저 채워 주세요.')
         return
       }
       await onSendArtifact(content)
-      onClose()
+      setOfferReflection(false)
+      if (isHost) onClose()
+      else setNotice('방장에게 반영을 요청했어요')
     } catch {
       setError('산출물 저장에 실패했습니다. 다시 시도해 주세요.')
     } finally {
@@ -262,16 +312,17 @@ export function CoeditWorkspaceModal({
     }
   }
 
-  // 셀에 머무는 다른 팀원 표시
+  // 셀에 머무는 다른 팀원 표시 — 시계로 다시 계산해 신호가 끊긴 사람이 칸에 남지 않게(#R2)
+  const presenceNow = usePresenceClock()
   const editorsByCell = useMemo(() => {
     const map: Record<string, CoeditPresenceEntry[]> = {}
-    for (const p of Object.values(presence ?? {})) {
-      if (!p || p.uid === currentUid) continue
-      if (Date.now() - (p.updatedAt ?? 0) > 60_000) continue
+    const { fresh } = splitPresence(Object.values(presence ?? {}), presenceNow, 60_000)
+    for (const p of fresh) {
+      if (p.uid === currentUid) continue
       ;(map[p.cellKey] ??= []).push(p)
     }
     return map
-  }, [presence, currentUid])
+  }, [presence, currentUid, presenceNow])
 
   if (!open || !mounted) return null
 
@@ -322,17 +373,24 @@ export function CoeditWorkspaceModal({
                     return (
                       <td key={c.id} className="px-2 py-1.5 relative">
                         <AutoGrowTextarea
+                          caretEditors={others}
                           value={row.cells?.[c.id] ?? ''}
-                          onChange={e => onCell(row.id, c.id, e.target.value)}
-                          onFocus={() => { editingKeyRef.current = cellKey; reportPresence(cellKey) }}
+                          onChange={e => { onCell(row.id, c.id, e.target.value); reportPresence(cellKey, e.target.selectionStart ?? undefined) }}
+                          onFocus={e => { editingKeyRef.current = cellKey; reportPresence(cellKey, e.currentTarget.selectionStart ?? 0) }}
+                          onSelect={e => reportPresence(cellKey, e.currentTarget.selectionStart ?? 0)}
+                          onKeyUp={e => reportPresence(cellKey, e.currentTarget.selectionStart ?? 0)}
+                          onClick={e => reportPresence(cellKey, e.currentTarget.selectionStart ?? 0)}
                           onBlur={() => { if (editingKeyRef.current === cellKey) editingKeyRef.current = null }}
                           minRows={1}
+                          style={others[0] ? presenceAccentStyle(others[0].color) : undefined}
                           className="w-full min-h-[34px] rounded-md border border-transparent hover:bg-[#F7F7F5] focus:border-[#0B57D0] focus:bg-white focus:outline-none px-2 py-1.5 text-[14px] leading-[1.6] text-[#37352F] bg-transparent"
                         />
                         {others.length > 0 && (
-                          <span className="absolute -top-1 right-1 flex gap-0.5">
+                          <span className="absolute -top-2 right-1 z-10 flex gap-0.5">
                             {others.slice(0, 3).map(o => (
-                              <Avatar key={o.uid} name={o.displayName} color={o.color} size={18} />
+                              <span key={o.uid} title={presenceTitle(o)} className="whitespace-nowrap rounded-full px-1.5 py-[1px] text-[11px] font-bold shadow-sm" style={presenceTagStyle(o.color)}>
+                                {o.displayName || '팀원'}
+                              </span>
                             ))}
                           </span>
                         )}
@@ -370,7 +428,8 @@ export function CoeditWorkspaceModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={config.title}>
+    <div {...realtime.boundaryProps} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={config.title}>
+      <WorkspaceRealtimeStatus session={realtime} onClose={onClose} />
       <div className="w-full max-w-[1100px] max-h-[92vh] flex flex-col rounded-[28px] bg-white shadow-[0_8px_12px_6px_rgba(60,64,67,0.15),0_4px_4px_rgba(60,64,67,0.3)] overflow-hidden">
         {/* 헤더 */}
         <div className="flex items-start gap-3 px-7 py-4 border-b border-[#E9E9E7] bg-white">
@@ -484,10 +543,14 @@ export function CoeditWorkspaceModal({
         </div>
 
         {/* 푸터 */}
-        <div className="flex items-center gap-2 px-7 py-4 border-t border-[#E9E9E7] bg-white">
-          <span className="text-[13px] text-[#9B9A97] mr-auto">
-            입력은 자동 저장됩니다 · 팀원과 실시간으로 함께 편집할 수 있어요
-          </span>
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-7 py-4 border-t border-[#E9E9E7] bg-white">
+          <div className="mr-auto min-w-0">
+            <WorkspaceSaveStatus lastSavedAt={Math.max(lastSavedAt ?? 0, workspace?.updatedAt ?? 0)} offerReflection={isHost && offerReflection} busy={saving || sending} onReflect={handleSendArtifact} />
+            {notice && <p role="status" className="mt-1 text-sm text-[#137333]">{notice}</p>}
+          </div>
+          <MD3Button variant="tonal" tone="blue" onClick={handleSaveAll} disabled={saving || sending} icon={<FloppyDisk size={MD3_ICON.sm} />}>
+            {saving ? '저장 중…' : '초안 저장'}
+          </MD3Button>
           <MD3Button variant="text" tone="neutral" onClick={onClose}>
             닫기
           </MD3Button>
@@ -495,10 +558,10 @@ export function CoeditWorkspaceModal({
             variant="filled"
             tone="blue"
             onClick={handleSendArtifact}
-            disabled={sending}
+            disabled={sending || saving}
             icon={sending ? <FloppyDisk size={MD3_ICON.sm} /> : <PaperPlaneRight size={MD3_ICON.sm} weight="fill" />}
           >
-            {sending ? '보내는 중…' : isHost ? '산출물로 저장' : '방장에게 저장 제안'}
+            {sending ? '보내는 중…' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
           </MD3Button>
         </div>
       </div>

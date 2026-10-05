@@ -79,6 +79,7 @@ import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
 import { Avatar, AvatarChip } from '@/components/ui/Avatar'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
+import { remarkShortColumns } from '@/lib/markdown/tableColumnWidth'
 import {
   ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, ArrowDown, Chat,
   Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler, PencilSimple,
@@ -557,23 +558,68 @@ export interface MessageChecklistProps {
   onToggle: (index: number, checked: boolean) => void
 }
 
+const CHECKER_COLORS = ['#1A73E8', '#188038', '#E37400', '#A142F4', '#D93025', '#007B83', '#B06000', '#3949AB']
+
+/** 체크한 사람 이름 → 고정 색(같은 이름은 늘 같은 색) */
+function checkerColor(name: string): string {
+  let hash = 0
+  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0
+  return CHECKER_COLORS[hash % CHECKER_COLORS.length]
+}
+
+function checkedAtText(at: unknown): string {
+  const date = at && typeof at === 'object' && 'toDate' in at && typeof (at as { toDate: unknown }).toDate === 'function'
+    ? (at as { toDate: () => Date }).toDate()
+    : typeof at === 'number' ? new Date(at) : null
+  return date ? date.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+}
+
+/** 체크 칸 — 체크박스 + 체크한 사람 이름 첫 글자 원형 배지를 한 줄로. 전체 이름·시각은 마우스 올림/포커스 툴팁. */
 function ChecklistBox({ index, defaultChecked, checklist, dark }: { index: number; defaultChecked: boolean; checklist: MessageChecklistProps; dark: boolean }) {
   const saved = checklist.state?.[String(index)]
   const checked = saved ? saved.checked : defaultChecked
+  const by = checked ? saved?.by?.trim() : ''
+  const when = by ? checkedAtText(saved?.at) : ''
+  const label = by ? `${by}${when ? ` · ${when}` : ''} 확인` : ''
   return (
-    <span className="inline-flex items-center gap-1 align-middle" data-testid="message-checklist-item">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap align-middle" data-testid="message-checklist-item">
       <input
         type="checkbox"
         checked={checked}
         disabled={!checklist.canEdit}
         onChange={event => checklist.onToggle(index, event.target.checked)}
-        aria-label={`확인 항목 ${index + 1}`}
-        className={cn('h-4 w-4 cursor-pointer rounded accent-[#1A73E8] disabled:cursor-default', dark && 'accent-white')}
+        aria-label={`확인 항목 ${index + 1}${by ? ` — ${label}` : ''}`}
+        className={cn('h-4 w-4 shrink-0 cursor-pointer rounded accent-[#1A73E8] disabled:cursor-default', dark && 'accent-white')}
       />
-      {checked && saved?.by && <span className={cn('text-[10px] leading-none', dark ? 'text-white/70' : 'text-[#5F6368]')}>{saved.by}</span>}
+      {by && (
+        <span className="group relative inline-flex shrink-0" data-testid="checker-badge">
+          <span
+            tabIndex={0}
+            title={label}
+            aria-label={label}
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold leading-none text-white outline-none focus-visible:ring-2 focus-visible:ring-[#1A73E8]"
+            style={{ backgroundColor: checkerColor(by) }}
+          >
+            {Array.from(by)[0]}
+          </span>
+          <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[#202124] px-2 py-1 text-[11px] text-white shadow group-hover:block group-focus-within:block">
+            {label}
+          </span>
+        </span>
+      )}
     </span>
   )
 }
+
+/** remarkShortColumns 가 붙인 data-min-ch 가 있으면 nowrap + 최소 폭 스타일 */
+function shortCellStyle(node: unknown): React.CSSProperties | undefined {
+  const properties = (node as { properties?: Record<string, unknown> } | undefined)?.properties
+  const minCh = Number(properties?.dataMinCh ?? properties?.['data-min-ch'])
+  return minCh > 0 ? { minWidth: `${minCh}ch`, whiteSpace: 'nowrap', wordBreak: 'keep-all', overflowWrap: 'normal' } : undefined
+}
+
+// 채팅 표: 짧은 열(단계·팀 확인 등)은 줄바꿈 없이 최소 폭 — 보고서와 같은 규칙(lib/markdown/tableColumnWidth)
+const CHAT_REMARK_PLUGINS = [...REMARK_PLUGINS, remarkShortColumns]
 
 function MarkdownContent({ text, dark = false, standardTextMap, checklist }: { text: string; dark?: boolean; standardTextMap?: Record<string, string>; checklist?: MessageChecklistProps }) {
   // AI가 <br> 태그를 생성하는 경우 줄바꿈으로 치환
@@ -642,7 +688,7 @@ function MarkdownContent({ text, dark = false, standardTextMap, checklist }: { t
 
   return (
     <ReactMarkdown
-      remarkPlugins={REMARK_PLUGINS}
+      remarkPlugins={CHAT_REMARK_PLUGINS}
       components={{
         ...markdownHeadingComponents,
         p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
@@ -687,12 +733,22 @@ function MarkdownContent({ text, dark = false, standardTextMap, checklist }: { t
         ),
         tbody: ({ children }) => <tbody className="divide-y divide-[#F1F3F4]">{children}</tbody>,
         tr: ({ children }) => <tr className="hover:bg-[#F8F9FA]/50 transition-colors">{children}</tr>,
-        th: ({ children }) => (
-          <th className="px-3 py-2.5 text-left text-xs font-bold text-[#5F6368] uppercase tracking-wider border-b border-[#DADCE0] align-top">
+        th: ({ children, node }) => (
+          <th className="px-3 py-2.5 text-left text-xs font-bold text-[#5F6368] uppercase tracking-wider border-b border-[#DADCE0] align-top"
+              style={shortCellStyle(node)}>
             {children}
           </th>
         ),
-        td: ({ children }) => {
+        td: ({ children, node }) => {
+          // 짧은 열(단계·팀 확인 등)은 줄바꿈 없이 최소 폭 — 이름·코드가 글자 단위로 세로로 쪼개지지 않게
+          const short = shortCellStyle(node)
+          if (short) {
+            return (
+              <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed align-top" style={short}>
+                {children}
+              </td>
+            )
+          }
           // 셀은 기본적으로 wrap (break-words + word-break: keep-all로 한국어 자연 줄바꿈)
           // [성취기준 코드]만 whitespace-nowrap — 코드는 중간에 끊기면 안 되므로 코드 감지 시에도 셀 자체는 wrap
           if (standardTextMap) {
@@ -2595,13 +2651,16 @@ function ChatPanelContent() {
     // 선택지·절차 문구 정화 → 플레이스홀더 보강 — 신호 경로(applyArtifactUpdates)와 동일한 보호.
     // build*Structured의 chat-fallback 추출기도 정화된 ctx를 쓰도록 messages 원본 대신 ctxMsgs 전달.
     const ctxMsgs = sanitizeChatForExtraction(messages)
-    let enrichedSections: Record<string, string> = enrichArtifactSections(
-      sanitizeArtifactSections(pendingArtifactSave.sections),
-      ctxMsgs,
-    )
-    // 구조화된 산출물로 변환 (연수용 활동은 양식과 같은 섹션 키 원문 유지)
-    if (isTrainingActivity(proj, targetActivity)) {
-      // 원문 그대로 저장
+    // 팀원이 공동 편집 창에서 보낸 구조화 산출물(_schema 가 대상 활동과 같음)은 방장이 직접 보낸 것과 같게
+    // 그대로 저장한다 — 정화·보강·빌더를 거치면 표·manualWorkspace 가 문자열로 바뀌거나 사라진다(C2).
+    const proposedSections = pendingArtifactSave.sections as Record<string, unknown>
+    const isStructuredProposal = proposedSections?._schema === targetActivity
+    let enrichedSections: Record<string, string> = isStructuredProposal
+      ? proposedSections as Record<string, string>
+      : enrichArtifactSections(sanitizeArtifactSections(pendingArtifactSave.sections), ctxMsgs)
+    // 구조화된 산출물로 변환 (연수용 활동은 양식과 같은 섹션 키 원문 유지, 구조화 제안은 이미 구조화됨)
+    if (isStructuredProposal || isTrainingActivity(proj, targetActivity)) {
+      // 그대로 저장
     } else if (targetActivity === 'T-1-1') {
       enrichedSections = buildT11Structured(enrichedSections, ctxMsgs, soloT11Opts()) as unknown as Record<string, string>
     } else if (targetActivity === 'T-1-2') {
@@ -2621,7 +2680,8 @@ function ChatPanelContent() {
     } else if (targetActivity === 'A-2-3') {
       enrichedSections = buildA23Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     }
-    const merged = { ...baseContent, ...enrichedSections }
+    // 구조화 제안은 방장 직접 전송(onSendArtifact)처럼 내용 전체를 교체 — 옛 문자열 섹션이 표를 가리지 않게
+    const merged = isStructuredProposal ? { ...enrichedSections } : { ...baseContent, ...enrichedSections }
     const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[targetActivity]?.version ?? 0)) + 1
 
     // 우측 패널을 대상 활동으로 먼저 전환
@@ -5207,6 +5267,7 @@ ${discussionSummary}
 
         <TeamRulesWorkspaceModal
           open={showTeamRulesWorkspace}
+          projectId={projectId}
           onClose={() => setShowTeamRulesWorkspace(false)}
           workspace={proj.teamRulesWorkspace}
           artifactContent={proj.artifacts?.['T-2-2']?.content as Record<string, unknown> | undefined}
@@ -5229,6 +5290,7 @@ ${discussionSummary}
 
         <TeamScheduleWorkspaceModal
           open={showTeamScheduleWorkspace}
+          projectId={projectId}
           onClose={() => setShowTeamScheduleWorkspace(false)}
           workspace={proj.teamScheduleWorkspace}
           artifactContent={proj.artifacts?.['T-2-3']?.content as Record<string, unknown> | undefined}
@@ -5252,6 +5314,7 @@ ${discussionSummary}
 
         <TopicSelectionWorkspaceModal
           open={showTopicSelectionWorkspace}
+          projectId={projectId}
           onClose={() => setShowTopicSelectionWorkspace(false)}
           workspace={proj.topicSelectionWorkspace}
           artifactContent={proj.artifacts?.['A-1-2']?.content as Record<string, unknown> | undefined}
@@ -5273,6 +5336,7 @@ ${discussionSummary}
 
         <LearningActivityWorkspaceModal
           open={showLearningActivityWorkspace}
+          projectId={projectId}
           onClose={() => setShowLearningActivityWorkspace(false)}
           workspace={proj.learningActivityWorkspace}
           artifactContent={proj.artifacts?.['Ds-1-3']?.content as Record<string, unknown> | undefined}
@@ -5301,6 +5365,7 @@ ${discussionSummary}
 
         <ScaffoldingWorkspaceModal
           open={showScaffoldingWorkspace}
+          projectId={projectId}
           onClose={() => setShowScaffoldingWorkspace(false)}
           workspace={proj.scaffoldingWorkspace}
           artifactContent={proj.artifacts?.['Ds-2-2']?.content as Record<string, unknown> | undefined}
@@ -5331,6 +5396,7 @@ ${discussionSummary}
 
         {/* DI·E 공동 편집 세션 (가이드 20260804 §4·§5) — 공용 모달 + 활동별 설정 */}
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showMaterialDevWorkspace}
           onClose={() => setShowMaterialDevWorkspace(false)}
           config={MATERIAL_DEV_CONFIG}
@@ -5348,6 +5414,7 @@ ${discussionSummary}
         />
 
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showLessonRecordWorkspace}
           onClose={() => setShowLessonRecordWorkspace(false)}
           config={LESSON_RECORD_CONFIG}
@@ -5365,6 +5432,7 @@ ${discussionSummary}
         />
 
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showLessonReflectionWorkspace}
           onClose={() => setShowLessonReflectionWorkspace(false)}
           config={LESSON_REFLECTION_CONFIG}
@@ -5382,6 +5450,7 @@ ${discussionSummary}
         />
 
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showCollaborationReflectionWorkspace}
           onClose={() => setShowCollaborationReflectionWorkspace(false)}
           config={COLLABORATION_REFLECTION_CONFIG}
