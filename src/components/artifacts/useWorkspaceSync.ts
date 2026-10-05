@@ -121,8 +121,10 @@ export interface WorkspaceSync<W> {
   settledLatest(): Promise<W>
 }
 
-export function useWorkspaceSync<W>({ open, incoming, workspace, setWorkspace, editingKey, preserve, remoteBlank = false }: {
+export function useWorkspaceSync<W>({ open, incoming, workspace, setWorkspace, editingKey, preserve, remoteBlank = false, external = false }: {
   open: boolean
+  /** A Yjs connection owns incoming state; never replay a legacy projection into it. */
+  external?: boolean
   incoming: W
   /** 서버 저장본이 실질적으로 비어 있는지(isBlankWorkspace) */
   remoteBlank?: boolean
@@ -160,9 +162,9 @@ export function useWorkspaceSync<W>({ open, incoming, workspace, setWorkspace, e
 
   // 원격 스냅숏이 들어올 때만 반영한다. editingKey 변화(칸 이동·blur)로는 다시 돌지 않는다.
   useEffect(() => {
-    if (!open) return
+    if (!open || external) return
     setWorkspace(current => mergeIncoming(incoming, current))
-  }, [incoming, open, mergeIncoming, setWorkspace])
+  }, [incoming, open, external, mergeIncoming, setWorkspace])
 
   return {
     prepare: (patch, next) => {
@@ -176,7 +178,7 @@ export function useWorkspaceSync<W>({ open, incoming, workspace, setWorkspace, e
       for (const key of structuralKeysOfPatch(patch)) structural.add(key)
       return ledger.track(patch, promise)
     },
-    applySaved: saved => setWorkspace(current => mergeIncoming(saved, current)),
+    applySaved: saved => { if (!external) setWorkspace(current => mergeIncoming(saved, current)) },
     settledLatest: async () => {
       await ledger.settle()
       return latestRef.current

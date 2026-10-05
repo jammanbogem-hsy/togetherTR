@@ -2,6 +2,7 @@
 
 import { sendWorkspaceArtifact } from './workspaceArtifactRequest'
 import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
+import { useRealtimeWorkspace, WorkspaceRealtimeStatus } from './useRealtimeWorkspace'
 
 import { displayActivityCode } from '@/types'
 
@@ -22,6 +23,7 @@ import type { ScaffoldingWorkspacePatch, ScaffoldingPresenceEntry } from '@/lib/
 import type { ScaffoldingSuggestRequest, ScaffoldingSuggestResult } from '@/app/api/scaffolding/suggest/route'
 import { cn } from '@/lib/utils'
 import { useWorkspaceSync } from './useWorkspaceSync'
+import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 import {
   AutoGrowTextarea,
   CaretOverlay,
@@ -382,7 +384,7 @@ export function ScaffoldingWorkspaceModal({
   currentUserColor,
   presence,
   isHost,
-  onPatchSave,
+  onPatchSave: legacyPatchSave,
   onPresenceUpdate,
   onSendArtifact,
   projectTitle,
@@ -408,7 +410,7 @@ export function ScaffoldingWorkspaceModal({
     return { _schema: 'Ds-2-2', supportPlans, scaffolds, review: workspace.review.trim(), manualWorkspace: workspace }
   }
 
-  const [workspace, setWorkspace] = useState<ScaffoldingWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
+  const [workspace, setLegacyWorkspace] = useState<ScaffoldingWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
   const [saving, setSaving] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
   const [offerReflection, setOfferReflection] = useState(false)
@@ -426,8 +428,14 @@ export function ScaffoldingWorkspaceModal({
 
   // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
   const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const realtime = useRealtimeWorkspace({
+    open, projectId, workspaceField: 'scaffoldingWorkspace', workspace, incoming: incomingWorkspace,
+    setWorkspace: setLegacyWorkspace, editingKey,
+  })
+  const setWorkspace = realtime.setWorkspace
+  const onPatchSave: Props['onPatchSave'] = realtime.enabled ? realtime.flush : legacyPatchSave
   const sync = useWorkspaceSync({
-    open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    open, incoming: incomingWorkspace, workspace, setWorkspace: setLegacyWorkspace, editingKey, external: realtime.enabled,
     // 서버 저장본이 비어 있으면(빈 초안·산출물에서 채워 연 표) 첫 변경은 화면 표 통째로 저장 (#T7b)
     remoteBlank: isBlankWorkspace(savedWorkspace),
     preserve: (next, current, key) => preserveEditingValue(next, current, key, pendingDeletionsRef.current),
@@ -460,10 +468,13 @@ export function ScaffoldingWorkspaceModal({
     return () => { clearInterval(t) }
   }, [open, currentUid, currentUserName, currentUserColor, onPresenceUpdate])
 
-  const freshEditors = useMemo(() => {
+  // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
     // 시계 차이로 host entry가 stale 판정되는 케이스 대비 60초로 확장.
-    return Object.values(presence ?? {}).filter(entry => Date.now() - entry.updatedAt < 60000)
-  }, [presence])
+  const presenceNow = usePresenceClock()
+  const { fresh: freshEditors, away: awayEditors } = useMemo(
+    () => splitPresence(Object.values(presence ?? {}), presenceNow, 60000),
+    [presence, presenceNow],
+  )
 
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
     if (!onPresenceUpdate || !currentUid) return
@@ -960,7 +971,8 @@ export function ScaffoldingWorkspaceModal({
 
   return createPortal(
     <>
-    <div className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+    <div {...realtime.boundaryProps} className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+      <WorkspaceRealtimeStatus session={realtime} onClose={onClose} />
       <div
         className="bg-white w-full h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col"
         onClick={event => event.stopPropagation()}
@@ -977,13 +989,14 @@ export function ScaffoldingWorkspaceModal({
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
-          {freshEditors.length > 0 && (
+          {(freshEditors.length > 0 || awayEditors.length > 0) && (
             <div className="hidden lg:flex items-center gap-1.5 mr-1">
               {freshEditors.slice(0, 4).map(entry => (
-                <span key={entry.uid} className="text-[13px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
+                <span key={entry.uid} title={presenceTitle(entry)} className="text-[13px] font-bold px-2.5 py-1 rounded-full border shadow-sm" style={presenceChipStyle(entry.color)}>
                   {entry.displayName || '팀원'}
                 </span>
               ))}
+              <PresenceAwayChips entries={awayEditors} />
             </div>
           )}
           <span className={cn(
@@ -1050,7 +1063,7 @@ export function ScaffoldingWorkspaceModal({
                       <label className="text-[15px] font-bold text-[#5F6368]">AI 점검</label>
                       <span className="text-[13px] text-[#9AA0A6]">GRR 부합·개별화 충분성·제거 시점 명확성</span>
                       {editors.map(ed => (
-                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                        <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={presenceTagStyle(ed.color)}>
                           {ed.displayName} 편집 중
                         </span>
                       ))}
@@ -1072,7 +1085,7 @@ export function ScaffoldingWorkspaceModal({
                         }}
                         minRows={3}
                         placeholder="예: 제안한 스캐폴딩은 GRR 원칙에 부합하며, 정답 제공이 아닌 발판으로 설계되어 누적 차시 기준 단계적 철수가 명확하다. 학습 지원·다문화 학생에 대한 개별화도 충분하다."
-                        style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                        style={accentColor ? presenceAccentStyle(accentColor) : undefined}
                         className="relative w-full rounded-xl border border-[#E8EAED] bg-white px-4 py-3 text-[18px] leading-relaxed text-[#202124] placeholder:text-[#C4C7C5] focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                       />
                       <CaretOverlay
@@ -1153,12 +1166,13 @@ export function ScaffoldingWorkspaceModal({
                                     <span
                                       key={ed.uid}
                                       className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                      style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                      style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                     >
                                       {ed.displayName}
                                     </span>
                                   ))}
                                   <AutoGrowTextarea
+                                    caretEditors={editors}
                                     value={getCell(row, column.id)}
                                     onChange={event => {
                                       setCellLocal(row.id, column.id, event.target.value)
@@ -1285,12 +1299,13 @@ export function ScaffoldingWorkspaceModal({
                                           <span
                                             key={ed.uid}
                                             className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                            style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                            style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                           >
                                             {ed.displayName}
                                           </span>
                                         ))}
                                         <AutoGrowTextarea
+                                          caretEditors={editors}
                                           value={getCell(row, column.id)}
                                           onChange={event => {
                                             const nextTable = {

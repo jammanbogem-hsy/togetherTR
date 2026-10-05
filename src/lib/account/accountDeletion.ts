@@ -72,4 +72,5 @@ export const PRESENCE_COLLECTIONS = [
   'problemSituationWorkspacePresence', 'supportToolWorkspacePresence', 'roleDistributionPresence', 'teamRulesPresence',
   'teamSchedulePresence', 'topicSelectionPresence', 'learningActivityPresence', 'scaffoldingPresence',
   'materialDevPresence', 'lessonRecordPresence', 'lessonReflectionPresence', 'collaborationReflectionPresence',
+  'lessonDesignDirectionDocumentPresence',
 ] as const

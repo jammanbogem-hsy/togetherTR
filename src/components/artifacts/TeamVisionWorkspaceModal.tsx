@@ -2,6 +2,7 @@
 
 import { sendWorkspaceArtifact } from './workspaceArtifactRequest'
 import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
+import { useRealtimeWorkspace, WorkspaceRealtimeStatus } from './useRealtimeWorkspace'
 
 import { displayActivityCode } from '@/types'
 
@@ -34,6 +35,7 @@ import { Sparkle, ChatCircleDots } from '@phosphor-icons/react'
 import { CollaborativePromptModal } from './CollaborativePromptModal'
 import type { TeamVisionSuggestRequest, TeamVisionSuggestResult } from '@/app/api/team-vision/suggest/route'
 import { useWorkspaceSync } from './useWorkspaceSync'
+import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 
 interface PresenceEntry {
   uid: string
@@ -352,7 +354,7 @@ export function TeamVisionWorkspaceModal({
   currentUserColor,
   presence,
   isHost,
-  onPatchSave,
+  onPatchSave: legacyPatchSave,
   onPresenceUpdate,
   onSendArtifact,
   projectTitle,
@@ -362,7 +364,7 @@ export function TeamVisionWorkspaceModal({
   projectId,
   collaborativeMembers,
 }: Props) {
-  const [workspace, setWorkspace] = useState<TeamVisionWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
+  const [workspace, setLegacyWorkspace] = useState<TeamVisionWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
   const [keywordDraft, setKeywordDraft] = useState(() => normalizeWorkspace(savedWorkspace, artifactContent).coreKeywords.join(', '))
   const [saving, setSaving] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
@@ -382,8 +384,14 @@ export function TeamVisionWorkspaceModal({
 
   // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
   const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const realtime = useRealtimeWorkspace({
+    open, projectId, workspaceField: 'teamVisionWorkspace', workspace, incoming: incomingWorkspace,
+    setWorkspace: setLegacyWorkspace, editingKey,
+  })
+  const setWorkspace = realtime.setWorkspace
+  const onPatchSave: Props['onPatchSave'] = realtime.enabled ? realtime.flush : legacyPatchSave
   const sync = useWorkspaceSync({
-    open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    open, incoming: incomingWorkspace, workspace, setWorkspace: setLegacyWorkspace, editingKey, external: realtime.enabled,
     // 서버 저장본이 비어 있으면(빈 초안·산출물에서 채워 연 표) 첫 변경은 화면 표 통째로 저장 (#T7b)
     remoteBlank: isBlankWorkspace(savedWorkspace),
     preserve: (next, current, key) => preserveEditingValue(next, current, key),
@@ -422,10 +430,13 @@ export function TeamVisionWorkspaceModal({
     return () => { clearInterval(t) }
   }, [open, currentUid, currentUserName, currentUserColor, onPresenceUpdate])
 
-  const freshEditors = useMemo(() => {
+  // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
     // [2026-05-15] 시계 차이/네트워크 지연으로 host entry가 stale 판정되는 케이스 — 60초로 확장.
-    return Object.values(presence ?? {}).filter(entry => Date.now() - entry.updatedAt < 60000)
-  }, [presence])
+  const presenceNow = usePresenceClock()
+  const { fresh: freshEditors, away: awayEditors } = useMemo(
+    () => splitPresence(Object.values(presence ?? {}), presenceNow, 60000),
+    [presence, presenceNow],
+  )
 
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
     if (!onPresenceUpdate || !currentUid) return
@@ -875,7 +886,8 @@ export function TeamVisionWorkspaceModal({
 
   return createPortal(
     <>
-    <div className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+    <div {...realtime.boundaryProps} className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+      <WorkspaceRealtimeStatus session={realtime} onClose={onClose} />
       <div
         className="bg-white w-full max-w-[1480px] h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col"
         onClick={event => event.stopPropagation()}
@@ -892,13 +904,14 @@ export function TeamVisionWorkspaceModal({
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
-          {freshEditors.length > 0 && (
+          {(freshEditors.length > 0 || awayEditors.length > 0) && (
             <div className="hidden lg:flex items-center gap-1.5 mr-1">
               {freshEditors.slice(0, 4).map(entry => (
-                <span key={entry.uid} className="text-[13px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
+                <span key={entry.uid} title={presenceTitle(entry)} className="text-[13px] font-bold px-2.5 py-1 rounded-full border shadow-sm" style={presenceChipStyle(entry.color)}>
                   {entry.displayName || '팀원'}
                 </span>
               ))}
+              <PresenceAwayChips entries={awayEditors} />
             </div>
           )}
           <span className={cn(
@@ -963,7 +976,7 @@ export function TeamVisionWorkspaceModal({
                     {editors.length > 0 && (
                       <div className="flex flex-wrap items-center gap-1.5">
                         {editors.map(ed => (
-                          <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                          <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={presenceTagStyle(ed.color)}>
                             {ed.displayName} 편집 중
                           </span>
                         ))}
@@ -986,7 +999,7 @@ export function TeamVisionWorkspaceModal({
                         }}
                         minRows={2}
                         placeholder="팀 공통 비전 제목을 입력하세요"
-                        style={accentColor ? { border: `1px solid ${accentColor}`, boxShadow: `0 0 0 2px ${accentColor}33`, borderRadius: 8 } : undefined}
+                        style={accentColor ? { ...presenceAccentStyle(accentColor), borderWidth: 1, borderStyle: 'solid', borderRadius: 8 } : undefined}
                         className="relative w-full border-0 bg-transparent px-0 py-0 text-[44px] font-bold leading-tight text-[#202124] placeholder:text-[#C4C7C5] focus:outline-none"
                       />
                       <CaretOverlay
@@ -1006,7 +1019,7 @@ export function TeamVisionWorkspaceModal({
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <span className="text-[15px] font-bold text-[#5F6368]">핵심 키워드</span>
                     {editors.map(ed => (
-                      <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>
+                      <span key={ed.uid} className="px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={presenceTagStyle(ed.color)}>
                         {ed.displayName} 편집 중
                       </span>
                     ))}
@@ -1023,7 +1036,7 @@ export function TeamVisionWorkspaceModal({
                         updateMeta('coreKeywords', keywordsFromText(event.target.value))
                         blurField()
                       }}
-                      style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                      style={accentColor ? presenceAccentStyle(accentColor) : undefined}
                       className="min-w-[180px] flex-1 rounded-full border border-[#E8EAED] bg-[#F8F9FA] px-4 py-2 text-[16px] focus:outline-none focus:border-[#1A73E8] focus:bg-white"
                       placeholder="예: 협력, 탐구, 실제성"
                     />
@@ -1107,12 +1120,13 @@ export function TeamVisionWorkspaceModal({
                                     <span
                                       key={ed.uid}
                                       className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                      style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                      style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                     >
                                       {ed.displayName}
                                     </span>
                                   ))}
                                   <AutoGrowTextarea
+                                    caretEditors={cellEditors}
                                     value={getCell(row, column.id)}
                                     onChange={event => {
                                       setCellLocal(row.id, column.id, event.target.value)
@@ -1127,7 +1141,7 @@ export function TeamVisionWorkspaceModal({
                                       blurField()
                                     }}
                                     minRows={3}
-                                    style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                                    style={accentColor ? presenceAccentStyle(accentColor) : undefined}
                                     className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-[16px] leading-relaxed text-[#202124] hover:bg-[#F7F7F5] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                                   />
                                 </div>
@@ -1232,12 +1246,13 @@ export function TeamVisionWorkspaceModal({
                                           <span
                                             key={ed.uid}
                                             className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                            style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                            style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                           >
                                             {ed.displayName}
                                           </span>
                                         ))}
                                         <AutoGrowTextarea
+                                          caretEditors={cellEditors}
                                           value={getCell(row, column.id)}
                                           onChange={event => {
                                             const nextTable = {
@@ -1264,7 +1279,7 @@ export function TeamVisionWorkspaceModal({
                                             blurField()
                                           }}
                                           minRows={2}
-                                          style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                                          style={accentColor ? presenceAccentStyle(accentColor) : undefined}
                                           className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F7F7F5] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                                         />
                                       </div>

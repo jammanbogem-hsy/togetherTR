@@ -2,6 +2,7 @@
 
 import { sendWorkspaceArtifact } from './workspaceArtifactRequest'
 import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
+import { useRealtimeWorkspace, WorkspaceRealtimeStatus } from './useRealtimeWorkspace'
 
 import { displayActivityCode } from '@/types'
 
@@ -32,6 +33,7 @@ import {
 import { Sparkle } from '@phosphor-icons/react'
 import type { TeamRulesSuggestRequest, TeamRulesSuggestResult } from '@/app/api/team-rules/suggest/route'
 import { useWorkspaceSync } from './useWorkspaceSync'
+import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 
 interface Props {
   open: boolean
@@ -326,7 +328,7 @@ export function TeamRulesWorkspaceModal({
   currentUserColor,
   presence,
   isHost,
-  onPatchSave,
+  onPatchSave: legacyPatchSave,
   onPresenceUpdate,
   onSendArtifact,
   projectTitle,
@@ -337,7 +339,7 @@ export function TeamRulesWorkspaceModal({
   coreKeywords,
   existingRoles,
 }: Props) {
-  const [workspace, setWorkspace] = useState<TeamRulesWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
+  const [workspace, setLegacyWorkspace] = useState<TeamRulesWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
   const [saving, setSaving] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
   const [offerReflection, setOfferReflection] = useState(false)
@@ -354,8 +356,14 @@ export function TeamRulesWorkspaceModal({
 
   // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
   const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const realtime = useRealtimeWorkspace({
+    open, projectId, workspaceField: 'teamRulesWorkspace', workspace, incoming: incomingWorkspace,
+    setWorkspace: setLegacyWorkspace, editingKey,
+  })
+  const setWorkspace = realtime.setWorkspace
+  const onPatchSave: Props['onPatchSave'] = realtime.enabled ? realtime.flush : legacyPatchSave
   const sync = useWorkspaceSync({
-    open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    open, incoming: incomingWorkspace, workspace, setWorkspace: setLegacyWorkspace, editingKey, external: realtime.enabled,
     // 서버 저장본이 비어 있으면(빈 초안·산출물에서 채워 연 표) 첫 변경은 화면 표 통째로 저장 (#T7b)
     remoteBlank: isBlankWorkspace(savedWorkspace),
     preserve: (next, current, key) => preserveEditingValue(next, current, key),
@@ -388,9 +396,12 @@ export function TeamRulesWorkspaceModal({
     return () => { clearInterval(t) }
   }, [open, currentUid, currentUserName, currentUserColor, onPresenceUpdate])
 
-  const freshEditors = useMemo(() => {
-    return Object.values(presence ?? {}).filter(entry => Date.now() - entry.updatedAt < 60000)
-  }, [presence])
+  // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
+  const presenceNow = usePresenceClock()
+  const { fresh: freshEditors, away: awayEditors } = useMemo(
+    () => splitPresence(Object.values(presence ?? {}), presenceNow, 60000),
+    [presence, presenceNow],
+  )
 
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
     if (!onPresenceUpdate || !currentUid) return
@@ -848,7 +859,8 @@ export function TeamRulesWorkspaceModal({
 
   return createPortal(
     <>
-    <div className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+    <div {...realtime.boundaryProps} className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/55 p-3" onClick={onClose}>
+      <WorkspaceRealtimeStatus session={realtime} onClose={onClose} />
       <div
         className="bg-white w-full max-w-[1480px] h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col"
         onClick={event => event.stopPropagation()}
@@ -865,13 +877,14 @@ export function TeamRulesWorkspaceModal({
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
-          {freshEditors.length > 0 && (
+          {(freshEditors.length > 0 || awayEditors.length > 0) && (
             <div className="hidden lg:flex items-center gap-1.5 mr-1">
               {freshEditors.slice(0, 4).map(entry => (
-                <span key={entry.uid} className="text-[13px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
+                <span key={entry.uid} title={presenceTitle(entry)} className="text-[13px] font-bold px-2.5 py-1 rounded-full border shadow-sm" style={presenceChipStyle(entry.color)}>
                   {entry.displayName || '팀원'}
                 </span>
               ))}
+              <PresenceAwayChips entries={awayEditors} />
             </div>
           )}
           <span className={cn(
@@ -1013,12 +1026,13 @@ export function TeamRulesWorkspaceModal({
                                     <span
                                       key={ed.uid}
                                       className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                      style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                      style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                     >
                                       {ed.displayName}
                                     </span>
                                   ))}
                                   <AutoGrowTextarea
+                                    caretEditors={cellEditors}
                                     value={getCell(row, column.id)}
                                     onChange={event => {
                                       setCellLocal(row.id, column.id, event.target.value)
@@ -1033,7 +1047,7 @@ export function TeamRulesWorkspaceModal({
                                       blurField()
                                     }}
                                     minRows={2}
-                                    style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                                    style={accentColor ? presenceAccentStyle(accentColor) : undefined}
                                     className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F7F7F5] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                                   />
                                 </div>
@@ -1137,12 +1151,13 @@ export function TeamRulesWorkspaceModal({
                                           <span
                                             key={ed.uid}
                                             className="absolute -top-2.5 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm"
-                                            style={{ backgroundColor: ed.color, left: `${12 + idx * 60}px` }}
+                                            style={{ ...presenceTagStyle(ed.color), left: `${12 + idx * 60}px` }}
                                           >
                                             {ed.displayName}
                                           </span>
                                         ))}
                                         <AutoGrowTextarea
+                                          caretEditors={cellEditors}
                                           value={getCell(row, column.id)}
                                           onChange={event => {
                                             const nextTable = {
@@ -1169,7 +1184,7 @@ export function TeamRulesWorkspaceModal({
                                             blurField()
                                           }}
                                           minRows={2}
-                                          style={accentColor ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}33` } : undefined}
+                                          style={accentColor ? presenceAccentStyle(accentColor) : undefined}
                                           className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-[#202124] hover:bg-[#F7F7F5] focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                                         />
                                       </div>

@@ -2,6 +2,7 @@
 
 import { sendWorkspaceArtifact } from './workspaceArtifactRequest'
 import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
+import { useRealtimeWorkspace, WorkspaceRealtimeStatus } from './useRealtimeWorkspace'
 
 import { displayActivityCode } from '@/types'
 
@@ -42,6 +43,7 @@ import {
 } from './workspaceHelpers'
 import type { ProblemSituationSuggestRequest, ProblemSituationSuggestResult, ProblemSituationScenario } from '@/app/api/problem-situation/suggest/route'
 import { useWorkspaceSync } from './useWorkspaceSync'
+import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 
 interface PresenceEntry {
   uid: string
@@ -522,7 +524,7 @@ export function ProblemSituationWorkspaceModal({
   currentUserColor,
   presence,
   isHost,
-  onPatchSave,
+  onPatchSave: legacyPatchSave,
   onPresenceUpdate,
   onSendArtifact,
   projectTitle,
@@ -536,7 +538,7 @@ export function ProblemSituationWorkspaceModal({
   projectId,
   collaborativeMembers,
 }: Props) {
-  const [workspace, setWorkspace] = useState<ProblemSituationWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
+  const [workspace, setLegacyWorkspace] = useState<ProblemSituationWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
   const [saving, setSaving] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
   const [offerReflection, setOfferReflection] = useState(false)
@@ -554,8 +556,14 @@ export function ProblemSituationWorkspaceModal({
 
   // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
   const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const realtime = useRealtimeWorkspace({
+    open, projectId, workspaceField: 'problemSituationWorkspace', workspace, incoming: incomingWorkspace,
+    setWorkspace: setLegacyWorkspace, editingKey,
+  })
+  const setWorkspace = realtime.setWorkspace
+  const onPatchSave: Props['onPatchSave'] = realtime.enabled ? realtime.flush : legacyPatchSave
   const sync = useWorkspaceSync({
-    open, incoming: incomingWorkspace, workspace, setWorkspace, editingKey,
+    open, incoming: incomingWorkspace, workspace, setWorkspace: setLegacyWorkspace, editingKey, external: realtime.enabled,
     // 서버 저장본이 비어 있으면(빈 초안·산출물에서 채워 연 표) 첫 변경은 화면 표 통째로 저장 (#T7b)
     remoteBlank: isBlankWorkspace(savedWorkspace),
     preserve: (next, current, key) => preserveEditingValue(next, current, key),
@@ -587,9 +595,12 @@ export function ProblemSituationWorkspaceModal({
     return () => { clearInterval(t) }
   }, [open, currentUid, currentUserName, currentUserColor, onPresenceUpdate])
 
-  const freshEditors = useMemo(() => {
-    return Object.values(presence ?? {}).filter(entry => Date.now() - entry.updatedAt < 20000)
-  }, [presence])
+  // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
+  const presenceNow = usePresenceClock()
+  const { fresh: freshEditors, away: awayEditors } = useMemo(
+    () => splitPresence(Object.values(presence ?? {}), presenceNow, 20000),
+    [presence, presenceNow],
+  )
 
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
     if (!onPresenceUpdate || !currentUid) return
@@ -956,7 +967,8 @@ export function ProblemSituationWorkspaceModal({
 
   return createPortal(
     <>
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4">
+    <div {...realtime.boundaryProps} className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4">
+      <WorkspaceRealtimeStatus session={realtime} onClose={onClose} />
       <div className="bg-white w-full max-w-[1480px] h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col">
         {/* 헤더 */}
         <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3 border-b border-[#DADCE0] bg-white">
@@ -971,13 +983,14 @@ export function ProblemSituationWorkspaceModal({
             {SOURCE_LABEL[sourceMode]}
           </span>
           <div className="flex-1" />
-          {freshEditors.length > 0 && (
+          {(freshEditors.length > 0 || awayEditors.length > 0) && (
             <div className="hidden lg:flex items-center gap-1.5 mr-1">
               {freshEditors.slice(0, 4).map(entry => (
-                <span key={entry.uid} className="text-[13px] font-bold px-2.5 py-1 rounded-full border border-white shadow-sm" style={{ color: entry.color, backgroundColor: `${entry.color}18` }}>
+                <span key={entry.uid} title={presenceTitle(entry)} className="text-[13px] font-bold px-2.5 py-1 rounded-full border shadow-sm" style={presenceChipStyle(entry.color)}>
                   {entry.displayName || '팀원'}
                 </span>
               ))}
+              <PresenceAwayChips entries={awayEditors} />
             </div>
           )}
           <span className={cn(
@@ -1116,11 +1129,13 @@ export function ProblemSituationWorkspaceModal({
                               <td key={column.id} className="border-b border-r border-[#E9E9E7] bg-white p-2 align-top">
                                 <div className="relative">
                                   {editor && (
-                                    <span className="absolute -top-2.5 left-3 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={{ backgroundColor: editor.color }}>
+                                    <span className="absolute -top-2.5 left-3 z-10 px-2 py-0.5 rounded-full text-[12px] font-bold text-white shadow-sm" style={presenceTagStyle(editor.color)}>
                                       {editor.displayName}
                                     </span>
                                   )}
                                   <AutoGrowTextarea
+                                    caretEditors={editor ? [editor] : []}
+                                    style={editor ? presenceAccentStyle(editor.color) : undefined}
                                     value={getCell(row, column.id)}
                                     onChange={event => setCellLocal(row.id, column.id, event.target.value)}
                                     onFocus={() => focusField(cellKey)}

@@ -5396,6 +5396,7 @@ ${discussionSummary}
 
         {/* DI·E 공동 편집 세션 (가이드 20260804 §4·§5) — 공용 모달 + 활동별 설정 */}
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showMaterialDevWorkspace}
           onClose={() => setShowMaterialDevWorkspace(false)}
           config={MATERIAL_DEV_CONFIG}
@@ -5413,6 +5414,7 @@ ${discussionSummary}
         />
 
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showLessonRecordWorkspace}
           onClose={() => setShowLessonRecordWorkspace(false)}
           config={LESSON_RECORD_CONFIG}
@@ -5430,6 +5432,7 @@ ${discussionSummary}
         />
 
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showLessonReflectionWorkspace}
           onClose={() => setShowLessonReflectionWorkspace(false)}
           config={LESSON_REFLECTION_CONFIG}
@@ -5447,6 +5450,7 @@ ${discussionSummary}
         />
 
         <CoeditWorkspaceModal
+          projectId={projectId}
           open={showCollaborationReflectionWorkspace}
           onClose={() => setShowCollaborationReflectionWorkspace(false)}
           config={COLLABORATION_REFLECTION_CONFIG}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { presenceInk, presenceTagStyle } from './presence'
 
 // 공용 워크스페이스 헬퍼 — IGW(통합 수업목표)와 TVW(팀 공통 비전) 등 협업 모달이 공유.
 // 각 모달이 동일한 presence/문서 편집 패턴을 가지므로 중복 정의를 한 곳에서 관리.
@@ -12,8 +13,10 @@ import { cn } from '@/lib/utils'
 type AutoGrowTextareaProps = Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'rows'> & {
   value: string
   minRows?: number
+  /** 이 칸에서 편집 중인 다른 사람들 — 주면 글 위에 커서 위치·이름을 겹쳐 그린다(#R2). 넘기는 곳은 늘 넘겨야 구조가 안 바뀐다. */
+  caretEditors?: CaretOverlayEditor[]
 }
-export function AutoGrowTextarea({ value, className, minRows = 2, style, ...rest }: AutoGrowTextareaProps) {
+export function AutoGrowTextarea({ value, className, minRows = 2, style, caretEditors, ...rest }: AutoGrowTextareaProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     const el = ref.current
@@ -21,7 +24,7 @@ export function AutoGrowTextarea({ value, className, minRows = 2, style, ...rest
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }, [value])
-  return (
+  const textarea = (
     <textarea
       ref={ref}
       value={value}
@@ -30,6 +33,14 @@ export function AutoGrowTextarea({ value, className, minRows = 2, style, ...rest
       style={style}
       {...rest}
     />
+  )
+  if (!caretEditors) return textarea
+  // 같은 글꼴·여백 클래스로 겹쳐 그려 줄바꿈 위치를 맞춘다(글자는 투명, 커서·이름만 보임)
+  return (
+    <div className="relative">
+      {textarea}
+      <CaretOverlay text={value} editors={caretEditors} className={cn(className, '!m-0 !bg-transparent !text-transparent !shadow-none')} />
+    </div>
   )
 }
 
@@ -54,8 +65,8 @@ export function CaretOverlay({ text, editors, className }: { text: string; edito
     if (pos > cursor) elements.push(text.slice(cursor, pos))
     elements.push(
       <span key={`c-${ed.uid}`} className="relative inline-block align-baseline" style={{ width: 0, height: '1em' }}>
-        <span className="absolute left-0 top-[0.1em] block animate-pulse" style={{ width: '2px', height: '1.1em', backgroundColor: ed.color }} />
-        <span className="absolute -top-[1.4em] left-0 whitespace-nowrap rounded px-1.5 py-[1px] text-[10px] font-bold text-white shadow-sm" style={{ backgroundColor: ed.color }}>{ed.displayName}</span>
+        <span className="absolute left-0 top-[0.1em] block animate-pulse" style={{ width: '2px', height: '1.1em', backgroundColor: presenceInk(ed.color) }} />
+        <span className="absolute -top-[1.4em] left-0 whitespace-nowrap rounded px-1.5 py-[1px] text-[11px] font-bold shadow-sm" style={presenceTagStyle(ed.color)}>{ed.displayName}</span>
       </span>
     )
     cursor = pos
