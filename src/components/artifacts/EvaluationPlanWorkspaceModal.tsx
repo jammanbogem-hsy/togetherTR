@@ -24,6 +24,7 @@ import type { EvaluationPlanWorkspacePatch } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
 import {
   AutoGrowTextarea,
+  PresenceInput,
   CaretOverlay,
   parseChecklist,
   stringifyChecklist,
@@ -409,6 +410,24 @@ export function EvaluationPlanWorkspaceModal({
 
   function editorForCell(cellKey: string): PresenceEntry | undefined {
     return freshEditors.find(entry => entry.cellKey === cellKey && entry.uid !== currentUid)
+  }
+
+  // 커서 위치(selectionStart)를 함께 보내 다른 팀원 화면에 caret 을 그린다 — 칸만 보내면 caretPos 가 늘 비어 있었다(#R3).
+  function caretProps(cellKey: string) {
+    const track = (event: React.SyntheticEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      updatePresence(cellKey, event.currentTarget.selectionStart ?? 0)
+    }
+    return {
+      onFocus: (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => focusField(cellKey, event.currentTarget.selectionStart ?? 0),
+      onSelect: track,
+      onKeyUp: track,
+      onClick: track,
+    }
+  }
+
+  function caretEditorsFor(cellKey: string): PresenceEntry[] {
+    const editor = editorForCell(cellKey)
+    return editor ? [editor] : []
   }
 
   function setCellLocal(rowId: string, columnId: string, value: string) {
@@ -838,10 +857,14 @@ export function EvaluationPlanWorkspaceModal({
                         {workspace.columns.map(column => (
                           <th key={column.id} className="min-w-[150px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2">
                             <div className="flex items-center gap-1.5">
-                              <input
+                              <PresenceInput
+                                caretEditors={caretEditorsFor(`column:${column.id}`)}
                                 value={column.label}
-                                onChange={event => setColumnLabelLocal(column.id, event.target.value)}
-                                onFocus={() => focusField(`column:${column.id}`)}
+                                onChange={event => {
+                                  setColumnLabelLocal(column.id, event.target.value)
+                                  updatePresence(`column:${column.id}`, event.target.selectionStart ?? undefined)
+                                }}
+                                {...caretProps(`column:${column.id}`)}
                                 onBlur={event => {
                                   updateColumnLabel(column.id, event.target.value)
                                   blurField()
@@ -888,8 +911,11 @@ export function EvaluationPlanWorkspaceModal({
                                     caretEditors={editor ? [editor] : []}
                                     style={editor ? presenceAccentStyle(editor.color) : undefined}
                                     value={getCell(row, column.id)}
-                                    onChange={event => setCellLocal(row.id, column.id, event.target.value)}
-                                    onFocus={() => focusField(cellKey)}
+                                    onChange={event => {
+                                      setCellLocal(row.id, column.id, event.target.value)
+                                      updatePresence(cellKey, event.target.selectionStart ?? undefined)
+                                    }}
+                                    {...caretProps(cellKey)}
                                     onBlur={event => {
                                       updateCell(row.id, column.id, event.target.value)
                                       blurField()
@@ -957,6 +983,7 @@ export function EvaluationPlanWorkspaceModal({
                                     {table.columns.map(column => (
                                       <td key={column.id} className="border-b border-r border-[#E9E9E7] bg-white p-2 align-top">
                                         <AutoGrowTextarea
+                                          caretEditors={caretEditorsFor(`block-table:${block.id}:${row.id}:${column.id}`)}
                                           value={(row.cells?.[column.id] ?? '') as string}
                                           onChange={event => {
                                             const nextTable = {
@@ -966,8 +993,9 @@ export function EvaluationPlanWorkspaceModal({
                                                 : item),
                                             }
                                             setBlockTableLocal(block.id, nextTable)
+                                            updatePresence(`block-table:${block.id}:${row.id}:${column.id}`, event.target.selectionStart ?? undefined)
                                           }}
-                                          onFocus={() => focusField(`block-table:${block.id}:${row.id}:${column.id}`)}
+                                          {...caretProps(`block-table:${block.id}:${row.id}:${column.id}`)}
                                           onBlur={event => {
                                             const nextTable = {
                                               ...table,
@@ -1006,10 +1034,14 @@ export function EvaluationPlanWorkspaceModal({
                                     <button type="button" onClick={() => toggle(idx)} className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center text-[#1A73E8] hover:text-[#1557B0]" aria-label={it.checked ? '체크 해제' : '체크'}>
                                       {it.checked ? <CheckSquare size={20} weight="fill" /> : <Square size={20} weight="regular" />}
                                     </button>
-                                    <input
+                                    <PresenceInput
+                                      caretEditors={caretEditorsFor(`block:${block.id}:check:${idx}`)}
                                       value={it.text}
-                                      onChange={event => sl(items.map((x, i) => i === idx ? { ...x, text: event.target.value } : x))}
-                                      onFocus={() => focusField(`block:${block.id}`)}
+                                      onChange={event => {
+                                        sl(items.map((x, i) => i === idx ? { ...x, text: event.target.value } : x))
+                                        updatePresence(`block:${block.id}:check:${idx}`, event.target.selectionStart ?? undefined)
+                                      }}
+                                      {...caretProps(`block:${block.id}:check:${idx}`)}
                                       onBlur={event => {
                                         cm(items.map((x, i) => i === idx ? { ...x, text: event.target.value } : x))
                                         blurField()
@@ -1043,9 +1075,13 @@ export function EvaluationPlanWorkspaceModal({
                         ) : (
                           <AutoGrowTextarea
                             value={block.content}
-                            onChange={event => setBlockLocal({ ...block, content: event.target.value })}
+                            caretEditors={caretEditorsFor(`block:${block.id}`)}
+                            onChange={event => {
+                              setBlockLocal({ ...block, content: event.target.value })
+                              updatePresence(`block:${block.id}`, event.target.selectionStart ?? undefined)
+                            }}
                             data-block-input={block.id}
-                            onFocus={() => focusField(`block:${block.id}`)}
+                            {...caretProps(`block:${block.id}`)}
                             onBlur={event => {
                               updateBlock({ ...block, content: event.target.value })
                               blurField()

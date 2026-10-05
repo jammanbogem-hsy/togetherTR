@@ -44,6 +44,20 @@ export function AutoGrowTextarea({ value, className, minRows = 2, style, caretEd
   )
 }
 
+/** Single-line workspace fields use the same persistent cursor layer as paragraphs. */
+export function PresenceInput({ value, className, caretEditors, onScroll, ...rest }: React.InputHTMLAttributes<HTMLInputElement> & { caretEditors?: CaretOverlayEditor[] }) {
+  const [scrollLeft, setScrollLeft] = useState(0)
+  return (
+    <div className="relative min-w-0 flex-1">
+      <input {...rest} value={value} className={cn('w-full', className)} onScroll={event => {
+        setScrollLeft(event.currentTarget.scrollLeft)
+        onScroll?.(event)
+      }} />
+      <CaretOverlay text={String(value ?? '')} editors={caretEditors ?? []} className={cn(className, 'whitespace-pre')} scrollLeft={scrollLeft} />
+    </div>
+  )
+}
+
 // ─── CaretOverlay (구글 문서식) ───────────────────────────────────────
 // 다른 팀원의 caret 위치를 textarea 위 mirror div로 그려준다.
 // textarea와 동일 font/padding/line-height를 className으로 받아 wrap 위치가 일치해야 한다.
@@ -53,7 +67,7 @@ export type CaretOverlayEditor = {
   color: string
   caretPos?: number
 }
-export function CaretOverlay({ text, editors, className }: { text: string; editors: CaretOverlayEditor[]; className: string }) {
+export function CaretOverlay({ text, editors, className, scrollLeft = 0 }: { text: string; editors: CaretOverlayEditor[]; className: string; scrollLeft?: number }) {
   const sorted = editors
     .filter(e => typeof e.caretPos === 'number' && e.caretPos! >= 0)
     .sort((a, b) => (a.caretPos! - b.caretPos!))
@@ -65,16 +79,17 @@ export function CaretOverlay({ text, editors, className }: { text: string; edito
     if (pos > cursor) elements.push(text.slice(cursor, pos))
     elements.push(
       <span key={`c-${ed.uid}`} className="relative inline-block align-baseline" style={{ width: 0, height: '1em' }}>
-        <span className="absolute left-0 top-[0.1em] block animate-pulse" style={{ width: '2px', height: '1.1em', backgroundColor: presenceInk(ed.color) }} />
-        <span className="absolute -top-[1.4em] left-0 whitespace-nowrap rounded px-1.5 py-[1px] text-[11px] font-bold shadow-sm" style={presenceTagStyle(ed.color)}>{ed.displayName}</span>
+        <span data-remote-caret={ed.uid} className="absolute left-0 top-[0.1em] block" style={{ width: '3px', height: '1.1em', backgroundColor: presenceInk(ed.color) }} />
+        <span data-remote-caret-label={ed.uid} className="absolute -top-[1.4em] left-0 whitespace-nowrap rounded px-1.5 py-[1px] text-[11px] font-bold shadow-sm" style={presenceTagStyle(ed.color)}>{ed.displayName}</span>
       </span>
     )
     cursor = pos
   }
   if (cursor < text.length) elements.push(text.slice(cursor))
   return (
-    <div className={cn('pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-transparent', className)} aria-hidden>
-      {elements}
+    <div className={cn('pointer-events-none absolute inset-0 whitespace-pre-wrap break-words text-transparent', className)}
+      style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 30, color: 'transparent', backgroundColor: 'transparent', borderColor: 'transparent', boxShadow: 'none' }} aria-hidden>
+      <span style={scrollLeft ? { position: 'relative', left: -scrollLeft } : undefined}>{elements}</span>
     </div>
   )
 }

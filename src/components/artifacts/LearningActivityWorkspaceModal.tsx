@@ -26,6 +26,7 @@ import { useWorkspaceSync } from './useWorkspaceSync'
 import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 import {
   AutoGrowTextarea,
+  PresenceInput,
   CaretOverlay,
   parseChecklist,
   stringifyChecklist,
@@ -549,7 +550,7 @@ export function LearningActivityWorkspaceModal({
   }
 
   function trackCaret(cellKey: string) {
-    return (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    return (event: React.SyntheticEvent<HTMLTextAreaElement | HTMLInputElement>) => {
       updatePresence(cellKey, event.currentTarget.selectionStart ?? 0)
     }
   }
@@ -1180,14 +1181,18 @@ export function LearningActivityWorkspaceModal({
                         {workspace.columns.map(column => (
                           <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2.5">
                             <div className="flex items-center gap-1.5">
-                              <input
+                              <PresenceInput
+                                caretEditors={editorsForCell(`column:${column.id}`)}
+                                onSelect={trackCaret(`column:${column.id}`)}
+                                onKeyUp={trackCaret(`column:${column.id}`)}
+                                onClick={trackCaret(`column:${column.id}`)}
                                 value={column.label}
-                                onChange={event => setColumnLabelLocal(column.id, event.target.value)}
+                                onChange={event => { setColumnLabelLocal(column.id, event.target.value); updatePresence(`column:${column.id}`, event.currentTarget.selectionStart ?? 0) }}
                                 onBlur={event => {
                                   updateColumn(column.id, event.target.value)
                                   blurField()
                                 }}
-                                onFocus={() => focusField(`column:${column.id}`)}
+                                onFocus={event => focusField(`column:${column.id}`, event.currentTarget.selectionStart ?? 0)}
                                 className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[14px] font-semibold text-[#202124] placeholder:text-[#5F6368] hover:bg-black/5 focus:border-[#0B57D0] focus:bg-white focus:outline-none"
                               />
                               <button type="button" onClick={() => deleteColumn(column.id)} className="flex h-9 w-9 items-center justify-center rounded-md text-[#5F6368] transition-colors hover:bg-black/5 hover:text-[#C5221F]">
@@ -1310,7 +1315,11 @@ export function LearningActivityWorkspaceModal({
                               {table.columns.map(column => (
                                 <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2">
                                   <div className="flex items-center gap-1.5">
-                                    <input
+                                    <PresenceInput
+                                      caretEditors={editorsForCell(`block-table-column:${block.id}:${column.id}`)}
+                                      onSelect={trackCaret(`block-table-column:${block.id}:${column.id}`)}
+                                      onKeyUp={trackCaret(`block-table-column:${block.id}:${column.id}`)}
+                                      onClick={trackCaret(`block-table-column:${block.id}:${column.id}`)}
                                       value={column.label}
                                       onChange={event => {
                                         const nextTable = {
@@ -1318,8 +1327,9 @@ export function LearningActivityWorkspaceModal({
                                           columns: table.columns.map(item => item.id === column.id ? { ...item, label: event.target.value } : item),
                                         }
                                         setBlockTableLocal(block.id, nextTable)
+                                        updatePresence(`block-table-column:${block.id}:${column.id}`, event.currentTarget.selectionStart ?? 0)
                                       }}
-                                      onFocus={() => focusField(`block-table-column:${block.id}:${column.id}`)}
+                                      onFocus={event => focusField(`block-table-column:${block.id}:${column.id}`, event.currentTarget.selectionStart ?? 0)}
                                       onBlur={event => {
                                         const nextTable = {
                                           ...table,
@@ -1428,10 +1438,14 @@ export function LearningActivityWorkspaceModal({
                                 >
                                   {it.checked ? <CheckSquare size={20} weight="fill" /> : <Square size={20} weight="regular" />}
                                 </button>
-                                <input
+                                <PresenceInput
+                                  caretEditors={editorsForCell(`block:${block.id}:check:${idx}`)}
+                                  onSelect={trackCaret(`block:${block.id}:check:${idx}`)}
+                                  onKeyUp={trackCaret(`block:${block.id}:check:${idx}`)}
+                                  onClick={trackCaret(`block:${block.id}:check:${idx}`)}
                                   value={it.text}
-                                  onChange={event => setLocal(items.map((x, i) => i === idx ? { ...x, text: event.target.value } : x))}
-                                  onFocus={() => focusField(`block:${block.id}`)}
+                                  onChange={event => { setLocal(items.map((x, i) => i === idx ? { ...x, text: event.target.value } : x)); updatePresence(`block:${block.id}:check:${idx}`, event.currentTarget.selectionStart ?? 0) }}
+                                  onFocus={event => focusField(`block:${block.id}:check:${idx}`, event.currentTarget.selectionStart ?? 0)}
                                   onBlur={event => {
                                     commitItems(items.map((x, i) => i === idx ? { ...x, text: event.target.value } : x))
                                     blurField()
@@ -1473,10 +1487,14 @@ export function LearningActivityWorkspaceModal({
                       })()
                     ) : (
                       <AutoGrowTextarea
+                        caretEditors={editorsForCell(`block:${block.id}`)}
+                        onSelect={trackCaret(`block:${block.id}`)}
+                        onKeyUp={trackCaret(`block:${block.id}`)}
+                        onClick={trackCaret(`block:${block.id}`)}
                         value={block.content}
-                        onChange={event => setBlockLocal({ ...block, content: event.target.value })}
+                        onChange={event => { setBlockLocal({ ...block, content: event.target.value }); updatePresence(`block:${block.id}`, event.currentTarget.selectionStart ?? 0) }}
                         data-block-input={block.id}
-                        onFocus={() => focusField(`block:${block.id}`)}
+                        onFocus={event => focusField(`block:${block.id}`, event.currentTarget.selectionStart ?? 0)}
                         onBlur={event => {
                           updateBlock({ ...block, content: event.target.value })
                           blurField()

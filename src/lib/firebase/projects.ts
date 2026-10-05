@@ -24,6 +24,23 @@ import { canFillRowDescription, type RowDescriptionUpdate } from '@/lib/curricul
 import { isTrainingActivity } from '@/lib/training/trainingMode'
 import { serializeWorkspaceSave } from './serializeSave'
 import { messageDocPath } from '@/lib/chat/checklist'
+import { createPresenceThrottle } from '@/lib/coedit/presenceThrottle'
+
+
+// 모든 표 presence는 키별 250ms leading/trailing 송신과 삭제 순서를 공유한다.
+const sendPresence = createPresenceThrottle<object>()
+async function queueWorkspacePresence(projectId: string, uid: string, presenceCol: string, presence: object | null): Promise<void> {
+  return sendPresence(JSON.stringify([projectId, uid, presenceCol]), presence, async current => {
+    const ref = doc(db, 'projects', projectId, presenceCol, uid)
+    if (current) {
+      const clean = Object.fromEntries(Object.entries(current).filter(([, value]) => value !== undefined))
+      await setDoc(ref, clean)
+    } else await deleteDoc(ref)
+  }).catch(error => {
+    console.warn(`[${presenceCol}] presence flush failed:`, error)
+    if (presence === null) throw error
+  })
+}
 
 // ─── Firestore nested undefined 청소 ─────────────────
 // Firestore는 nested undefined를 거부 — `updateDoc` 직전에 객체·배열 트리 전체를 순회해 undefined 값 키를 제거한다.
@@ -1288,49 +1305,12 @@ export type TeamVisionPresenceEntry = {
   updatedAt: number
 }
 
-const TVW_PRESENCE_DEBOUNCE_MS = 300
-const tvwPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushTvwPresence(
-  projectId: string,
-  uid: string,
-  presence: TeamVisionPresenceEntry | null,
-): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'teamVisionPresence', uid)
-  if (presence) {
-    // Firestore는 undefined 필드를 거부 — caretPos 같은 optional이 비어 있으면 키 자체를 제거.
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setTeamVisionWorkspacePresence(
   projectId: string,
   uid: string,
   presence: TeamVisionPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = tvwPresenceTimers.get(key)
-  if (pending) {
-    clearTimeout(pending)
-    tvwPresenceTimers.delete(key)
-  }
-  if (presence === null) {
-    await flushTvwPresence(projectId, uid, null)
-    return
-  }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      tvwPresenceTimers.delete(key)
-      flushTvwPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setTeamVisionWorkspacePresence] flush failed:', err)
-        resolve()
-      })
-    }, TVW_PRESENCE_DEBOUNCE_MS)
-    tvwPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'teamVisionPresence', presence)
 }
 
 export function watchTeamVisionWorkspacePresence(
@@ -1568,57 +1548,14 @@ export type IntegratedGoalPresenceEntry = {
 }
 
 // 셀 focus 이동마다 setDoc이 즉시 호출되면 트래픽 폭주 + 다른 팀원의 watch onSnapshot 폭주.
-// 같은 uid의 연속 호출은 마지막 것만 실제 write (300ms window).
-// 단, presence=null(unfocus)은 즉시 — 다른 팀원 화면에서 cursor가 빠르게 사라져야 자연스럽다.
-const PRESENCE_DEBOUNCE_MS = 300
-const presenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushPresence(
-  projectId: string,
-  uid: string,
-  presence: IntegratedGoalPresenceEntry | null,
-): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'integratedGoalPresence', uid)
-  if (presence) {
-    // Firestore는 undefined 필드를 거부하므로 제거 후 write
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
+// 같은 uid의 첫 호출은 즉시, 연속 호출은 250ms 간격으로 최신 위치·heartbeat를 전송한다.
+// presence=null은 대기 입력을 취소하고 진행 중 쓰기 뒤에서 삭제한다.
 export async function setIntegratedGoalWorkspacePresence(
   projectId: string,
   uid: string,
   presence: IntegratedGoalPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  // pending timer가 있으면 일단 취소 (마지막 것만 적용)
-  const pending = presenceTimers.get(key)
-  if (pending) {
-    clearTimeout(pending)
-    presenceTimers.delete(key)
-  }
-
-  // unfocus(null)는 즉시 flush — 다른 팀원 화면에서 cursor가 빠르게 사라지도록.
-  if (presence === null) {
-    await flushPresence(projectId, uid, null)
-    return
-  }
-
-  // focus/move는 디바운스. 호출자는 await를 걸지만 실제 write는 trailing-edge에서만 일어난다.
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      presenceTimers.delete(key)
-      flushPresence(projectId, uid, presence).then(resolve, (err) => {
-        // 실패해도 resolve — presence는 best-effort, 호출자 흐름을 막지 않는다.
-        console.warn('[setIntegratedGoalWorkspacePresence] flush failed:', err)
-        resolve()
-      })
-    }, PRESENCE_DEBOUNCE_MS)
-    presenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'integratedGoalPresence', presence)
 }
 
 export function watchIntegratedGoalWorkspacePresence(
@@ -1723,48 +1660,12 @@ export type LessonDesignDirectionPresenceEntry = {
   updatedAt: number
 }
 
-const LDD_PRESENCE_DEBOUNCE_MS = 300
-const lddPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushLddPresence(
-  projectId: string,
-  uid: string,
-  presence: LessonDesignDirectionPresenceEntry | null,
-): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'lessonDesignDirectionPresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setLessonDesignDirectionWorkspacePresence(
   projectId: string,
   uid: string,
   presence: LessonDesignDirectionPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = lddPresenceTimers.get(key)
-  if (pending) {
-    clearTimeout(pending)
-    lddPresenceTimers.delete(key)
-  }
-  if (presence === null) {
-    await flushLddPresence(projectId, uid, null)
-    return
-  }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      lddPresenceTimers.delete(key)
-      flushLddPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setLessonDesignDirectionWorkspacePresence] flush failed:', err)
-        resolve()
-      })
-    }, LDD_PRESENCE_DEBOUNCE_MS)
-    lddPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'lessonDesignDirectionPresence', presence)
 }
 
 export function watchLessonDesignDirectionWorkspacePresence(
@@ -1862,48 +1763,12 @@ export type EvaluationPlanPresenceEntry = {
   updatedAt: number
 }
 
-const EVP_PRESENCE_DEBOUNCE_MS = 300
-const evpPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushEvpPresence(
-  projectId: string,
-  uid: string,
-  presence: EvaluationPlanPresenceEntry | null,
-): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'evaluationPlanPresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setEvaluationPlanWorkspacePresence(
   projectId: string,
   uid: string,
   presence: EvaluationPlanPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = evpPresenceTimers.get(key)
-  if (pending) {
-    clearTimeout(pending)
-    evpPresenceTimers.delete(key)
-  }
-  if (presence === null) {
-    await flushEvpPresence(projectId, uid, null)
-    return
-  }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      evpPresenceTimers.delete(key)
-      flushEvpPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setEvaluationPlanWorkspacePresence] flush failed:', err)
-        resolve()
-      })
-    }, EVP_PRESENCE_DEBOUNCE_MS)
-    evpPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'evaluationPlanPresence', presence)
 }
 
 export function watchEvaluationPlanWorkspacePresence(
@@ -1982,48 +1847,12 @@ export type ProblemSituationPresenceEntry = {
   updatedAt: number
 }
 
-const PSW_PRESENCE_DEBOUNCE_MS = 300
-const pswPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushPswPresence(
-  projectId: string,
-  uid: string,
-  presence: ProblemSituationPresenceEntry | null,
-): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'problemSituationWorkspacePresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setProblemSituationWorkspacePresence(
   projectId: string,
   uid: string,
   presence: ProblemSituationPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = pswPresenceTimers.get(key)
-  if (pending) {
-    clearTimeout(pending)
-    pswPresenceTimers.delete(key)
-  }
-  if (presence === null) {
-    await flushPswPresence(projectId, uid, null)
-    return
-  }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      pswPresenceTimers.delete(key)
-      flushPswPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setProblemSituationWorkspacePresence] flush failed:', err)
-        resolve()
-      })
-    }, PSW_PRESENCE_DEBOUNCE_MS)
-    pswPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'problemSituationWorkspacePresence', presence)
 }
 
 export function watchProblemSituationWorkspacePresence(
@@ -2107,48 +1936,12 @@ export type SupportToolPresenceEntry = {
   updatedAt: number
 }
 
-const STW_PRESENCE_DEBOUNCE_MS = 300
-const stwPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushStwPresence(
-  projectId: string,
-  uid: string,
-  presence: SupportToolPresenceEntry | null,
-): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'supportToolWorkspacePresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setSupportToolWorkspacePresence(
   projectId: string,
   uid: string,
   presence: SupportToolPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = stwPresenceTimers.get(key)
-  if (pending) {
-    clearTimeout(pending)
-    stwPresenceTimers.delete(key)
-  }
-  if (presence === null) {
-    await flushStwPresence(projectId, uid, null)
-    return
-  }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      stwPresenceTimers.delete(key)
-      flushStwPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setSupportToolWorkspacePresence] flush failed:', err)
-        resolve()
-      })
-    }, STW_PRESENCE_DEBOUNCE_MS)
-    stwPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'supportToolWorkspacePresence', presence)
 }
 
 export function watchSupportToolWorkspacePresence(
@@ -2248,48 +2041,12 @@ export type RoleDistributionPresenceEntry = {
   updatedAt: number
 }
 
-const RD_PRESENCE_DEBOUNCE_MS = 300
-const rdPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushRdPresence(
-  projectId: string,
-  uid: string,
-  presence: RoleDistributionPresenceEntry | null,
-): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'roleDistributionPresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setRoleDistributionWorkspacePresence(
   projectId: string,
   uid: string,
   presence: RoleDistributionPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = rdPresenceTimers.get(key)
-  if (pending) {
-    clearTimeout(pending)
-    rdPresenceTimers.delete(key)
-  }
-  if (presence === null) {
-    await flushRdPresence(projectId, uid, null)
-    return
-  }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      rdPresenceTimers.delete(key)
-      flushRdPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setRoleDistributionWorkspacePresence] flush failed:', err)
-        resolve()
-      })
-    }, RD_PRESENCE_DEBOUNCE_MS)
-    rdPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'roleDistributionPresence', presence)
 }
 
 export function watchRoleDistributionWorkspacePresence(
@@ -2383,37 +2140,12 @@ export type TeamRulesPresenceEntry = {
   updatedAt: number
 }
 
-const TR_PRESENCE_DEBOUNCE_MS = 300
-const trPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushTrPresence(projectId: string, uid: string, presence: TeamRulesPresenceEntry | null): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'teamRulesPresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setTeamRulesWorkspacePresence(
   projectId: string,
   uid: string,
   presence: TeamRulesPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = trPresenceTimers.get(key)
-  if (pending) { clearTimeout(pending); trPresenceTimers.delete(key) }
-  if (presence === null) { await flushTrPresence(projectId, uid, null); return }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      trPresenceTimers.delete(key)
-      flushTrPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setTeamRulesWorkspacePresence] flush failed:', err); resolve()
-      })
-    }, TR_PRESENCE_DEBOUNCE_MS)
-    trPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'teamRulesPresence', presence)
 }
 
 export function watchTeamRulesWorkspacePresence(
@@ -2490,37 +2222,12 @@ export type TeamSchedulePresenceEntry = {
   updatedAt: number
 }
 
-const TS_PRESENCE_DEBOUNCE_MS = 300
-const tsPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushTsPresence(projectId: string, uid: string, presence: TeamSchedulePresenceEntry | null): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'teamSchedulePresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setTeamScheduleWorkspacePresence(
   projectId: string,
   uid: string,
   presence: TeamSchedulePresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = tsPresenceTimers.get(key)
-  if (pending) { clearTimeout(pending); tsPresenceTimers.delete(key) }
-  if (presence === null) { await flushTsPresence(projectId, uid, null); return }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      tsPresenceTimers.delete(key)
-      flushTsPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setTeamScheduleWorkspacePresence] flush failed:', err); resolve()
-      })
-    }, TS_PRESENCE_DEBOUNCE_MS)
-    tsPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'teamSchedulePresence', presence)
 }
 
 export function watchTeamScheduleWorkspacePresence(
@@ -2716,37 +2423,12 @@ export type TopicSelectionPresenceEntry = {
   updatedAt: number
 }
 
-const TPS_PRESENCE_DEBOUNCE_MS = 300
-const tpsPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushTpsPresence(projectId: string, uid: string, presence: TopicSelectionPresenceEntry | null): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'topicSelectionPresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setTopicSelectionWorkspacePresence(
   projectId: string,
   uid: string,
   presence: TopicSelectionPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = tpsPresenceTimers.get(key)
-  if (pending) { clearTimeout(pending); tpsPresenceTimers.delete(key) }
-  if (presence === null) { await flushTpsPresence(projectId, uid, null); return }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      tpsPresenceTimers.delete(key)
-      flushTpsPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setTopicSelectionWorkspacePresence] flush failed:', err); resolve()
-      })
-    }, TPS_PRESENCE_DEBOUNCE_MS)
-    tpsPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'topicSelectionPresence', presence)
 }
 
 export function watchTopicSelectionWorkspacePresence(
@@ -2945,37 +2627,12 @@ export type LearningActivityPresenceEntry = {
   updatedAt: number
 }
 
-const LAW_PRESENCE_DEBOUNCE_MS = 300
-const lawPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushLawPresence(projectId: string, uid: string, presence: LearningActivityPresenceEntry | null): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'learningActivityPresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setLearningActivityWorkspacePresence(
   projectId: string,
   uid: string,
   presence: LearningActivityPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = lawPresenceTimers.get(key)
-  if (pending) { clearTimeout(pending); lawPresenceTimers.delete(key) }
-  if (presence === null) { await flushLawPresence(projectId, uid, null); return }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      lawPresenceTimers.delete(key)
-      flushLawPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setLearningActivityWorkspacePresence] flush failed:', err); resolve()
-      })
-    }, LAW_PRESENCE_DEBOUNCE_MS)
-    lawPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'learningActivityPresence', presence)
 }
 
 export function watchLearningActivityWorkspacePresence(
@@ -3166,37 +2823,12 @@ export type ScaffoldingPresenceEntry = {
   updatedAt: number
 }
 
-const SCF_PRESENCE_DEBOUNCE_MS = 300
-const scfPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-async function flushScfPresence(projectId: string, uid: string, presence: ScaffoldingPresenceEntry | null): Promise<void> {
-  const ref = doc(db, 'projects', projectId, 'scaffoldingPresence', uid)
-  if (presence) {
-    const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-    await setDoc(ref, clean)
-  } else {
-    await deleteDoc(ref)
-  }
-}
-
 export async function setScaffoldingWorkspacePresence(
   projectId: string,
   uid: string,
   presence: ScaffoldingPresenceEntry | null,
 ): Promise<void> {
-  const key = `${projectId}::${uid}`
-  const pending = scfPresenceTimers.get(key)
-  if (pending) { clearTimeout(pending); scfPresenceTimers.delete(key) }
-  if (presence === null) { await flushScfPresence(projectId, uid, null); return }
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      scfPresenceTimers.delete(key)
-      flushScfPresence(projectId, uid, presence).then(resolve, (err) => {
-        console.warn('[setScaffoldingWorkspacePresence] flush failed:', err); resolve()
-      })
-    }, SCF_PRESENCE_DEBOUNCE_MS)
-    scfPresenceTimers.set(key, timer)
-  })
+  return queueWorkspacePresence(projectId, uid, 'scaffoldingPresence', presence)
 }
 
 export function watchScaffoldingWorkspacePresence(
@@ -3781,8 +3413,6 @@ export type CoeditPresenceEntry = {
   updatedAt: number
 }
 
-const COEDIT_PRESENCE_DEBOUNCE_MS = 300
-const coeditPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 /**
  * 하나의 DI·E 워크스페이스에 대한 patch/presence 모듈을 생성한다.
@@ -3823,37 +3453,8 @@ function createCoeditWorkspaceModule<T extends CoeditWorkspace>(
     })
   }
 
-  async function flushPresence(projectId: string, uid: string, presence: CoeditPresenceEntry | null): Promise<void> {
-    const ref = doc(db, 'projects', projectId, presenceCol, uid)
-    if (presence) {
-      const clean = Object.fromEntries(Object.entries(presence).filter(([, v]) => v !== undefined))
-      await setDoc(ref, clean)
-    } else {
-      await deleteDoc(ref)
-    }
-  }
-
   async function setPresence(projectId: string, uid: string, presence: CoeditPresenceEntry | null): Promise<void> {
-    const key = `${presenceCol}::${projectId}::${uid}`
-    const pending = coeditPresenceTimers.get(key)
-    if (pending) {
-      clearTimeout(pending)
-      coeditPresenceTimers.delete(key)
-    }
-    if (presence === null) {
-      await flushPresence(projectId, uid, null)
-      return
-    }
-    return new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        coeditPresenceTimers.delete(key)
-        flushPresence(projectId, uid, presence).then(resolve, (err) => {
-          console.warn(`[${presenceCol}] presence flush failed:`, err)
-          resolve()
-        })
-      }, COEDIT_PRESENCE_DEBOUNCE_MS)
-      coeditPresenceTimers.set(key, timer)
-    })
+    return queueWorkspacePresence(projectId, uid, presenceCol, presence)
   }
 
   function watchPresence(
