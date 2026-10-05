@@ -387,10 +387,12 @@ function firestoreHarness(server) {
     doc: () => ({ id: 'test' }),
     serverTimestamp: () => 123,
     async runTransaction(_db, change) {
+      server.authorityReads = (server.authorityReads ?? 0) + 1
+      if (server.authorityHold) await server.authorityHold
       if (server.offline) throw Object.assign(new Error('offline'), { code: 'unavailable' })
       const updates = {}
       const result = await change({
-        get: async () => ({ exists: () => true, data: () => structuredClone(server.data) }),
+        get: async () => ({ exists: () => server.exists !== false, data: () => structuredClone(server.data) }),
         update: (_ref, values) => Object.assign(updates, values),
       })
       for (const [path, value] of Object.entries(updates)) {
@@ -439,19 +441,22 @@ test('R1 Firestore adapter: ready 후 seed 없는 캐시 → pending → 동일 
 })
 
 test('R1 Firestore adapter: 캐시의 권한·주기 불일치는 건너뛰지만 확정된 서버의 seed 삭제·주기·권한 오류는 유지한다', async t => {
-  for (const kind of ['missing', 'cycle', 'permission']) {
+  for (const kind of ['missing', 'cycle', 'permission', 'version']) {
     const server = new MemoryProject(), harness = firestoreHarness(server), statuses = []
     const p = server.connect('a', { transport: harness.transport, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
     const invalid = structuredClone(server.data)
     if (kind === 'missing') delete invalid[WORKSPACE_CRDT_FIELD].teamRulesWorkspace
     if (kind === 'cycle') invalid.currentCycle = 2
     if (kind === 'permission') { invalid.createdBy = 'other'; invalid.memberUids = [] }
+    if (kind === 'version') invalid[WORKSPACE_CRDT_FIELD].teamRulesWorkspace.version = 2
     harness.emit(invalid, { fromCache: true })
     harness.emit(invalid, { hasPendingWrites: true })
     assert.equal(statuses.at(-1)[0], 'saved')
+    server.data = invalid
     harness.emit(invalid)
+    await wait(0)
     assert.equal(statuses.at(-1)[0], 'error', kind)
-    assert.match(statuses.at(-1)[1], kind === 'missing' ? /편집 상태/ : kind === 'cycle' ? /주기/ : /팀원/)
+    assert.match(statuses.at(-1)[1], kind === 'missing' || kind === 'version' ? /편집 기준/ : kind === 'cycle' ? /주기/ : /팀원/)
   }
 })
 
@@ -459,14 +464,54 @@ test('R1 Firestore adapter: 서버 문서 삭제·리스너 permission-denied·�
   for (const kind of ['deleted', 'listener', 'corrupt']) {
     const server = new MemoryProject(), harness = firestoreHarness(server), statuses = []
     const p = server.connect('a', { transport: harness.transport, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
-    if (kind === 'deleted') harness.emit({}, {}, false)
+    if (kind === 'deleted') { server.exists = false; harness.emit({}, {}, false) }
     if (kind === 'listener') harness.fail(Object.assign(new Error('permission denied'), { code: 'permission-denied' }))
     if (kind === 'corrupt') {
       const invalid = structuredClone(server.data)
       invalid[WORKSPACE_CRDT_FIELD].teamRulesWorkspace.state = 'not-valid-!'
+      server.data = invalid
       harness.emit(invalid)
     }
+    await wait(0)
     assert.equal(statuses.at(-1)[0], 'error', kind)
+  }
+})
+
+test('R1 Firestore adapter: seed 직후 metadata false인 오래된 missing snapshot은 transaction으로 복구하고 중복 확인하지 않는다', async t => {
+  const server = new MemoryProject(), stale = structuredClone(server.data), harness = firestoreHarness(server), statuses = []
+  const p = server.connect('a', { transport: harness.transport, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
+  const before = p.getWorkspace(), reads = server.authorityReads
+  let release
+  server.authorityHold = new Promise(resolve => { release = resolve })
+  for (let i = 0; i < 5; i++) harness.emit(stale, { fromCache: false, hasPendingWrites: false })
+  await wait(0)
+  assert.equal(server.authorityReads, reads + 1, '같은 시점의 실패 알림은 한 transaction으로 확인')
+  assert.equal(statuses.some(([state]) => state === 'error'), false, '확인 전 false error를 보이지 않음')
+  release(); server.authorityHold = null
+  await wait(0)
+  assert.equal(statuses.at(-1)[0], 'saved')
+  assert.equal(statuses.some(([state]) => state === 'error'), false)
+  assert.deepEqual(p.getWorkspace(), before)
+  const freshReads = server.authorityReads
+  harness.emit(server.data)
+  await wait(0)
+  assert.equal(server.authorityReads, freshReads, '정상 snapshot은 추가 transaction을 만들지 않음')
+})
+
+test('R1 Firestore adapter: 오래된 주기·권한·손상 알림도 현재 서버가 valid면 false error 없이 복구한다', async t => {
+  for (const kind of ['cycle', 'permission', 'corrupt', 'version', 'deleted']) {
+    const server = new MemoryProject(), harness = firestoreHarness(server), statuses = []
+    const p = server.connect('a', { transport: harness.transport, onStatus: (...args) => statuses.push(args) }); connections(t, [p]); await p.ready
+    const stale = structuredClone(server.data)
+    if (kind === 'cycle') stale.currentCycle = 2
+    if (kind === 'permission') { stale.createdBy = 'other'; stale.memberUids = [] }
+    if (kind === 'corrupt') stale[WORKSPACE_CRDT_FIELD].teamRulesWorkspace.state = 'not-valid-!'
+    if (kind === 'version') stale[WORKSPACE_CRDT_FIELD].teamRulesWorkspace.version = 2
+    harness.emit(stale, {}, kind !== 'deleted')
+    await wait(0)
+    assert.equal(statuses.some(([state]) => state === 'error'), false, kind)
+    assert.equal(statuses.at(-1)[0], 'saved', kind)
+    assert.equal(p.getWorkspace().rows[0].cells.name, '폭염 지도')
   }
 })
 
