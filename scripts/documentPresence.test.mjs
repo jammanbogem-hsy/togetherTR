@@ -127,7 +127,9 @@ test('R3e: 본문 에디터 연결 — y-tiptap 커서 플러그인·진한 이�
   assert.match(rules, /allow create, update, delete: if isMember\(pid\) && request\.auth\.uid == uid && presenceCol\.matches\('\.\*Presence'\)/)
   const coedit = fs.readFileSync(new URL('../src/components/artifacts/CoeditWorkspaceModal.tsx', import.meta.url), 'utf8')
   assert.match(coedit, /caretEditors=\{others\}/)
-  assert.match(coedit, /onSelect=\{e => reportPresence\(cellKey, e\.currentTarget\.selectionStart \?\? 0\)\}/)
+  const selectHandler = coedit.match(/onSelect=\{([^\n]+)\}/)?.[1] ?? ''
+  assert.match(selectHandler, /if \(realtime\.shouldSendPresence\(e\.currentTarget\)\)/)
+  assert.match(selectHandler, /reportPresence\(cellKey, e\.currentTarget\.selectionStart \?\? 0\)/)
   assert.match(coedit, /\.\.\.\(typeof caretPos === 'number' \? \{ caretPos \} : \{\}\)/)
 })
 

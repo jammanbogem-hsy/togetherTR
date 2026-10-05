@@ -22,6 +22,7 @@ function sharedFields(file) {
           tag: node.tagName.getText(),
           line: source.getLineAndCharacterOfPosition(node.getStart()).line + 1,
           caretKey: spread ? spread.expression.arguments[0].getText() : null,
+          fieldKey: attrs.find(a => ts.isJsxSpreadAttribute(a) && a.expression.getText().startsWith('realtime.fieldProps('))?.expression.arguments[0].getText(),
           editorsText: named('caretEditors')?.initializer?.getText() ?? null,
           changeText: named('onChange')?.initializer?.getText() ?? '',
           hasBareFocus: !!named('onFocus'),
@@ -46,6 +47,7 @@ for (const name of MODALS) {
       assert.equal(f.hasBareFocus, false, `${where} onFocus overrides caretProps`)
       assert.ok(f.editorsText, `${where} missing caretEditors`)
       const key = f.caretKey
+      assert.equal(f.fieldKey, key, `${where} DOM selection field matches presence field`)
       assert.ok(
         f.editorsText.includes(key) || f.editorsText === '{editor ? [editor] : []}',
         `${where} caretEditors is not keyed by ${key}`,
@@ -79,6 +81,9 @@ for (const name of ['TeamVision', 'IntegratedGoal', 'RoleDistribution', 'TeamRul
           const where = `${name}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
           assert.notEqual(node.tagName.getText(), 'input', `${where}: needs a cursor layer`)
           assert.match(focus, /selectionStart/, `${where}: focus position`)
+          const field = node.attributes.properties.find(a => ts.isJsxSpreadAttribute(a) && a.expression.getText().startsWith('realtime.fieldProps('))
+          assert.ok(field, `${where}: DOM selection field`)
+          assert.ok(focus.includes(`focusField(${field.expression.arguments[0].getText()},`), `${where}: same selection key`)
           for (const event of ['onSelect', 'onKeyUp', 'onClick']) assert.ok(named(event), `${where}: ${event}`)
           assert.match(named('onChange')?.getText() ?? '', /updatePresence\(/, `${where}: typing position`)
           assert.ok(named('caretEditors') || node.parent.getText().includes('<CaretOverlay'), `${where}: remote cursor`)

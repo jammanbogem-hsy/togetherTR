@@ -25,17 +25,28 @@ import { isTrainingActivity } from '@/lib/training/trainingMode'
 import { serializeWorkspaceSave } from './serializeSave'
 import { messageDocPath } from '@/lib/chat/checklist'
 import { createPresenceThrottle } from '@/lib/coedit/presenceThrottle'
+import { createPresenceSessionId, decidePresenceWrite, type OwnedPresence } from '@/lib/coedit/presenceOwner'
 
 
 // 모든 표 presence는 키별 250ms leading/trailing 송신과 삭제 순서를 공유한다.
 const sendPresence = createPresenceThrottle<object>()
+// 탭마다 다른 id — 같은 계정의 여러 탭이 uid 문서 하나를 두고 서로 덮지 않게 소유를 가린다(#R4-C).
+const PRESENCE_SESSION_ID = createPresenceSessionId()
 async function queueWorkspacePresence(projectId: string, uid: string, presenceCol: string, presence: object | null): Promise<void> {
-  return sendPresence(JSON.stringify([projectId, uid, presenceCol]), presence, async current => {
+  const stamped = presence ? { ...presence, sessionId: PRESENCE_SESSION_ID } : null
+  return sendPresence(JSON.stringify([projectId, uid, presenceCol]), stamped, async current => {
     const ref = doc(db, 'projects', projectId, presenceCol, uid)
-    if (current) {
-      const clean = Object.fromEntries(Object.entries(current).filter(([, value]) => value !== undefined))
-      await setDoc(ref, clean)
-    } else await deleteDoc(ref)
+    const clean = current
+      ? Object.fromEntries(Object.entries(current).filter(([, value]) => value !== undefined))
+      : null
+    // 읽고 쓰기를 원자적으로: 다른 탭이 최근 입력으로 가진 문서를 idle heartbeat·닫기가 덮거나 지우지 않는다.
+    await runTransaction(db, async transaction => {
+      const snap = await transaction.get(ref)
+      const existing = snap.exists() ? snap.data() as OwnedPresence : null
+      const decision = decidePresenceWrite(existing, clean as OwnedPresence | null, PRESENCE_SESSION_ID, Date.now())
+      if (decision === 'set' && clean) transaction.set(ref, clean)
+      else if (decision === 'delete') transaction.delete(ref)
+    })
   }).catch(error => {
     console.warn(`[${presenceCol}] presence flush failed:`, error)
     if (presence === null) throw error
@@ -1302,6 +1313,12 @@ export type TeamVisionPresenceEntry = {
   cellKey: string
   /** textarea selectionStart — 다른 팀원 화면에 구글 문서식 caret 표시용 (IGW와 동일 패턴) */
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -1544,6 +1561,12 @@ export type IntegratedGoalPresenceEntry = {
   cellKey: string
   /** textarea selectionStart — 다른 팀원 화면에 구글 문서식 caret 표시용 */
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -1657,6 +1680,12 @@ export type LessonDesignDirectionPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -1760,6 +1789,12 @@ export type EvaluationPlanPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -1844,6 +1879,12 @@ export type ProblemSituationPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -1933,6 +1974,12 @@ export type SupportToolPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -2038,6 +2085,12 @@ export type RoleDistributionPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -2137,6 +2190,12 @@ export type TeamRulesPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -2219,6 +2278,12 @@ export type TeamSchedulePresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -2420,6 +2485,12 @@ export type TopicSelectionPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -2624,6 +2695,12 @@ export type LearningActivityPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -2820,6 +2897,12 @@ export type ScaffoldingPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 
@@ -3410,6 +3493,12 @@ export type CoeditPresenceEntry = {
   color: string
   cellKey: string
   caretPos?: number
+  /** Y.RelativePosition JSON for caretPos — survives teammates' edits before the caret (#R4). */
+  relativeCaret?: string
+  /** Wall-clock time of the last real caret event; heartbeats repeat it. Decides tab ownership (#R4-C). */
+  interactionAt?: number
+  /** Per-tab id stamped by the send wrapper. */
+  sessionId?: string
   updatedAt: number
 }
 

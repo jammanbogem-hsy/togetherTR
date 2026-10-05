@@ -2099,6 +2099,7 @@ function ChatPanelContent() {
   const projectId = project?.id
   const projectArtifacts = project?.artifacts
   const projectMemberInfo = project?.memberInfo
+  const presenceColor = userProfile?.uid ? projectMemberInfo?.[userProfile.uid]?.color : undefined
   const projectHostUid = project?.hostUid
   const projectCreatedBy = project?.createdBy
 
@@ -2109,13 +2110,13 @@ function ChatPanelContent() {
 
   const handleIntegratedGoalPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setIntegratedGoalWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   const handleIntegratedGoalSendArtifact = useCallback(async (content: A22Structured) => {
     if (!projectId) return
@@ -2964,13 +2965,13 @@ ${discussionSummary}
 
   const handleTeamVisionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setTeamVisionWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   // T-1-2 핸들러
   const handleLessonDesignDirectionWorkspacePatch = useCallback(async (patch: LessonDesignDirectionWorkspacePatch) => {
@@ -2980,13 +2981,13 @@ ${discussionSummary}
 
   const handleLessonDesignDirectionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setLessonDesignDirectionWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   // T-2-1 역할 배분 핸들러 — LDD와 동일 패턴
   const handleRoleDistributionWorkspacePatch = useCallback(async (patch: RoleDistributionWorkspacePatch) => {
@@ -2996,13 +2997,13 @@ ${discussionSummary}
 
   const handleRoleDistributionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setRoleDistributionWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   // T-2-2 팀 규칙 핸들러
   const handleTeamRulesWorkspacePatch = useCallback(async (patch: TeamRulesWorkspacePatch) => {
@@ -3012,13 +3013,13 @@ ${discussionSummary}
 
   const handleTeamRulesPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setTeamRulesWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   async function handleTeamRulesSendArtifact(content: T22Structured) {
     if (!project?.id || !isHost) return
@@ -3059,13 +3060,13 @@ ${discussionSummary}
 
   const handleTeamSchedulePresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setTeamScheduleWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   async function handleTeamScheduleSendArtifact(content: T23Structured) {
     if (!project?.id || !isHost) return
@@ -3106,13 +3107,13 @@ ${discussionSummary}
 
   const handleTopicSelectionPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setTopicSelectionWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   async function handleTopicSelectionSendArtifact(content: A12Structured) {
     if (!project?.id || !isHost) return
@@ -3153,13 +3154,13 @@ ${discussionSummary}
 
   const handleLearningActivityPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setLearningActivityWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   async function handleLearningActivitySendArtifact(content: Ds13Structured) {
     if (!project?.id || !isHost) return
@@ -3200,13 +3201,13 @@ ${discussionSummary}
 
   const handleScaffoldingPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setScaffoldingWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   // ── DI·E 공동 편집 세션 핸들러 (가이드 20260804 §4·§5) ──
   // 4종이 동일한 shape을 쓰므로 patch/presence/저장을 팩토리로 묶는다.
@@ -3292,13 +3293,13 @@ ${discussionSummary}
   const makeCoeditPresenceHandler = useCallback((code: 'DI-1-1' | 'DI-2-1' | 'E-1-1' | 'E-2-1') =>
     async (entry: CoeditPresenceEntry | null) => {
       if (!projectId || !userProfile?.uid) return
-      const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+      const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
       await coeditModules[code].setPresence(
         projectId,
         userProfile.uid,
         entry ? { ...entry, color } : null,
       ).catch(console.error)
-    }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color, coeditModules])
+    }, [projectId, presenceColor, userProfile?.uid, userProfile?.color, coeditModules])
 
   const makeCoeditSendHandler = useCallback((code: 'DI-1-1' | 'DI-2-1' | 'E-1-1' | 'E-2-1') =>
     async (content: Record<string, string>) => {
@@ -3448,13 +3449,13 @@ ${discussionSummary}
 
   const handleEvaluationPlanPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setEvaluationPlanWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   async function handleEvaluationPlanSendArtifact(content: Ds11Structured) {
     if (!project?.id || !isHost) return
@@ -3495,13 +3496,13 @@ ${discussionSummary}
 
   const handleProblemSituationPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setProblemSituationWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   async function handleProblemSituationSendArtifact(content: Ds12Structured) {
     if (!project?.id || !isHost) return
@@ -3541,13 +3542,13 @@ ${discussionSummary}
 
   const handleSupportToolPresence = useCallback(async (entry: { uid: string; displayName: string; color: string; cellKey: string; caretPos?: number; updatedAt: number } | null) => {
     if (!projectId || !userProfile?.uid) return
-    const color = projectMemberInfo?.[userProfile.uid]?.color ?? userProfile.color ?? entry?.color ?? '#1A73E8'
+    const color = presenceColor ?? userProfile.color ?? entry?.color ?? '#1A73E8'
     await setSupportToolWorkspacePresence(
       projectId,
       userProfile.uid,
       entry ? { ...entry, color } : null,
     ).catch(console.error)
-  }, [projectId, projectMemberInfo, userProfile?.uid, userProfile?.color])
+  }, [projectId, presenceColor, userProfile?.uid, userProfile?.color])
 
   async function handleSupportToolSendArtifact(content: Ds21Structured) {
     if (!project?.id || !isHost) return

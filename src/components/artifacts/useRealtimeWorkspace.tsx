@@ -4,11 +4,18 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatc
 import * as Y from 'yjs'
 import { useProjectStore } from '@/store/project'
 import { connectWorkspace } from '@/lib/coedit/firestore-workspace'
-import { applyWorkspaceDiff, getCellText, workspaceToJSON } from '@/lib/coedit/workspace-crdt'
+import { applyWorkspaceDiff, workspaceToJSON } from '@/lib/coedit/workspace-crdt'
+import {
+  captureWorkspaceSelection, resolveWorkspaceSelection, encodeWorkspaceCaret,
+  resolveWorkspaceCaretLocation, resolveWorkspacePresenceCaret, workspaceFieldValue,
+  resolveWorkspaceCaret, createSelectionRestoreGuard, type WorkspaceSelection, type SelectionDirection,
+} from '@/lib/coedit/workspaceCursor'
 
 type Status = 'connecting' | 'saved' | 'saving' | 'offline' | 'error'
 type Connection = ReturnType<typeof connectWorkspace>
 type TextInput = HTMLInputElement | HTMLTextAreaElement
+const textInput = (element: EventTarget | null): element is TextInput =>
+  (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) && element.selectionStart !== null
 const FROM_PROVIDER = Symbol('workspace-provider')
 const FROM_VIEW = Symbol('workspace-view')
 
@@ -41,17 +48,81 @@ export function useRealtimeWorkspace<W extends object>({ open, projectId, worksp
   const queuedRef = useRef<Uint8Array[]>([])
   const completeCompositionRef = useRef<() => void>(() => {})
   const readyRef = useRef(false)
-  const selectionRef = useRef<{ input: TextInput; start: number; end: number } | null>(null)
+  const selectionRef = useRef<{ input: TextInput; fieldKey: string; relative: WorkspaceSelection | null; start: number; end: number; direction: SelectionDirection } | null>(null)
+  const activeFieldRef = useRef<{ input: TextInput; fieldKey: string } | null>(null)
+  const selectionGuardRef = useRef(createSelectionRestoreGuard())
   const excluded = excludeKeys.join(',')
   useLayoutEffect(() => { incomingRef.current = incoming; editingRef.current = editingKey })
 
+  const selectionTarget = useCallback(() => {
+    const last = activeFieldRef.current
+    const focused = (last?.input.ownerDocument ?? document).activeElement
+    if (textInput(focused) && focused.isConnected) {
+      const fieldKey = focused.dataset.workspaceField ?? (last?.input === focused ? last.fieldKey : undefined)
+      if (fieldKey) return { input: focused, fieldKey }
+    }
+    // 비활성 iframe은 activeElement가 BODY여도 마지막 입력란의 선택을 유지한다.
+    return last?.input.isConnected ? last : null
+  }, [])
+
   useLayoutEffect(() => {
     const selection = selectionRef.current
+    if (composingRef.current) return
     selectionRef.current = null
-    if (selection?.input === document.activeElement) {
-      selection.input.setSelectionRange(selection.start, selection.end)
+    const target = selectionTarget()
+    if (selection && target?.input === selection.input && target.fieldKey === selection.fieldKey) {
+      const view = viewRef.current
+      const resolved = selection.relative && view ? resolveWorkspaceSelection(view, selection.relative) : null
+      if (selection.relative && (!view || !resolved || resolveWorkspaceCaret(view, selection.fieldKey, selection.relative.start) === null)) return
+      const start = resolved?.start ?? selection.start, end = resolved?.end ?? selection.end
+      // Mark before setSelectionRange: some browsers emit select synchronously.
+      selectionGuardRef.current.mark(selection.input, start, end)
+      selection.input.setSelectionRange(start, end, resolved?.direction ?? selection.direction)
+      selectionGuardRef.current.mark(selection.input, selection.input.selectionStart ?? start, selection.input.selectionEnd ?? end)
     }
-  }, [workspace])
+  }, [workspace, selectionTarget])
+
+  const captureSelection = useCallback((fieldKey: string, input: TextInput) => {
+    if (!textInput(input) || !input.isConnected) return
+    activeFieldRef.current = { input, fieldKey }
+    const view = viewRef.current
+    const start = input.selectionStart!, end = input.selectionEnd ?? start
+    const direction = input.selectionDirection ?? 'none'
+    const relative = view ? captureWorkspaceSelection(view, fieldKey, start, end, direction) : null
+    selectionRef.current = { input, fieldKey, relative, start, end, direction }
+  }, [])
+
+  const shouldSendPresence = useCallback((input: TextInput) => selectionGuardRef.current.shouldSend(input), [])
+  const encodeCaret = useCallback((fieldKey: string, offset: number): string | undefined => {
+    const view = viewRef.current
+    return view ? encodeWorkspaceCaret(view, fieldKey, offset) ?? undefined : undefined
+  }, [])
+  const resolveCaret = useCallback((fieldKey: string, relativeCaret?: string, fallbackOffset?: number): number | undefined =>
+    resolveWorkspacePresenceCaret(viewRef.current, fieldKey, relativeCaret, fallbackOffset), [])
+  const resolveCaretLocation = useCallback((fieldKey: string, encoded: string) =>
+    viewRef.current ? resolveWorkspaceCaretLocation(viewRef.current, fieldKey, encoded) : null, [])
+  const fieldProps = useCallback((fieldKey: string) => ({ 'data-workspace-field': fieldKey }), [])
+
+  const inputField = (input: TextInput): string | undefined => input.dataset.workspaceField
+    ?? (activeFieldRef.current?.input === input ? activeFieldRef.current.fieldKey : undefined)
+    ?? editingRef.current ?? undefined
+  const captureEvent = (target: EventTarget | null) => {
+    if (!textInput(target) || !shouldSendPresence(target)) return
+    const key = inputField(target)
+    if (!key) return
+    const view = viewRef.current, pending = selectionRef.current
+    // Several updates may precede React's commit. DOM still has the old value:
+    // retain its original relative selection instead of anchoring that old offset twice.
+    if (pending?.input === target && pending.fieldKey === key && view && workspaceFieldValue(view, key) !== target.value) return
+    captureSelection(key, target)
+  }
+  const userInputEvent = (target: EventTarget | null) => {
+    if (!textInput(target)) return
+    selectionGuardRef.current.clear(target)
+    selectionRef.current = null
+    const key = inputField(target)
+    if (key) activeFieldRef.current = { input: target, fieldKey: key }
+  }
 
   useEffect(() => {
     if (!enabled || !open || !projectId) return
@@ -61,6 +132,8 @@ export function useRealtimeWorkspace<W extends object>({ open, projectId, worksp
     readyRef.current = false
     composingRef.current = false
     queuedRef.current = []
+    selectionRef.current = null
+    activeFieldRef.current = null
     const provider = connectWorkspace({
       projectId, workspaceField, cycle, initialWorkspace: incomingRef.current,
       excludeKeys: excludedFields,
@@ -86,27 +159,13 @@ export function useRealtimeWorkspace<W extends object>({ open, projectId, worksp
         latestRef.current = next
         setRawWorkspace(next)
       }
-      const selectedText = () => {
-        const key = editingRef.current
-        if (!key) return undefined
-        const parts = key.split(':')
-        if (parts[0] === 'block-table' && parts.length === 4) return getCellText(view, parts[2], parts[3], parts[1])
-        if (parts[0] === 'main' && parts.length === 3) return getCellText(view, parts[1], parts[2])
-        if (parts.length === 2 && !['meta', 'column', 'block'].includes(parts[0])) return getCellText(view, parts[0], parts[1])
-        return undefined
-      }
       const receive = (update: Uint8Array) => {
-        const input = document.activeElement
-        const text = selectedText()
-        const canSelect = (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) && input.selectionStart !== null && text
-        const start = canSelect ? Y.createRelativePositionFromTypeIndex(text, Math.min(input.selectionStart!, text.length)) : null
-        const end = canSelect ? Y.createRelativePositionFromTypeIndex(text, Math.min(input.selectionEnd!, text.length)) : null
-        Y.applyUpdate(view, update, FROM_PROVIDER)
-        if (start && end && canSelect) {
-          const a = Y.createAbsolutePositionFromRelativePosition(start, view)
-          const b = Y.createAbsolutePositionFromRelativePosition(end, view)
-          if (a && b) selectionRef.current = { input, start: a.index, end: b.index }
+        const target = selectionTarget()
+        if (target) {
+          const { input, fieldKey } = target
+          if (!(selectionRef.current?.input === input && selectionRef.current.fieldKey === fieldKey)) captureSelection(fieldKey, input)
         }
+        Y.applyUpdate(view, update, FROM_PROVIDER)
         publish()
       }
       const forward = (update: Uint8Array, origin: unknown) => {
@@ -144,6 +203,8 @@ export function useRealtimeWorkspace<W extends object>({ open, projectId, worksp
     return () => {
       active = false
       readyRef.current = false
+      selectionRef.current = null
+      activeFieldRef.current = null
       unsubscribe()
       completeCompositionRef.current = () => {}
       window.removeEventListener('pagehide', flushOnLeave)
@@ -153,7 +214,7 @@ export function useRealtimeWorkspace<W extends object>({ open, projectId, worksp
       connectionRef.current = null
       void Promise.resolve(provider.destroy()).catch(() => {}).finally(() => view?.destroy())
     }
-  }, [enabled, open, projectId, workspaceField, cycle, excluded, setRawWorkspace])
+  }, [enabled, open, projectId, workspaceField, cycle, excluded, setRawWorkspace, captureSelection, selectionTarget])
 
   useEffect(() => {
     if (!enabled || !open || status === 'saved') return
@@ -176,7 +237,13 @@ export function useRealtimeWorkspace<W extends object>({ open, projectId, worksp
     if (!readyRef.current || !view) return
     const before = typeof update === 'function' ? latestRef.current : workspace
     const next = typeof update === 'function' ? (update as (current: W) => W)(before) : update
+    selectionRef.current = null
     applyWorkspaceDiff(view, before, next, { excludeKeys })
+    const input = document.activeElement
+    if (textInput(input)) {
+      const key = inputField(input)
+      if (key && !composingRef.current) captureSelection(key, input)
+    }
     const projected = { ...next, ...workspaceToJSON<W>(view) }
     latestRef.current = projected
     setRawWorkspace(projected)
@@ -193,7 +260,14 @@ export function useRealtimeWorkspace<W extends object>({ open, projectId, worksp
 
   return {
     enabled, ready: !enabled || ready, status, error, setWorkspace, flush,
+    encodeCaret, resolveCaret, resolveCaretLocation, captureSelection, shouldSendPresence, fieldProps,
     boundaryProps: enabled ? {
+      onFocusCapture: (event: { target: EventTarget | null }) => { userInputEvent(event.target); captureEvent(event.target) },
+      onSelectCapture: (event: { target: EventTarget | null }) => captureEvent(event.target),
+      onBeforeInputCapture: (event: { target: EventTarget | null }) => userInputEvent(event.target),
+      onInputCapture: (event: { target: EventTarget | null }) => userInputEvent(event.target),
+      onPointerDownCapture: (event: { target: EventTarget | null }) => userInputEvent(event.target),
+      onKeyDownCapture: (event: { target: EventTarget | null }) => userInputEvent(event.target),
       onCompositionStartCapture: () => { composingRef.current = true },
       onCompositionEndCapture: () => { setTimeout(() => completeCompositionRef.current(), 0) },
       onBlurCapture: () => { if (composingRef.current) setTimeout(() => completeCompositionRef.current(), 0) },

@@ -22,6 +22,7 @@ import type { Ds22Structured } from '@/lib/artifacts/schemas'
 import type { ScaffoldingWorkspacePatch, ScaffoldingPresenceEntry } from '@/lib/firebase/projects'
 import type { ScaffoldingSuggestRequest, ScaffoldingSuggestResult } from '@/app/api/scaffolding/suggest/route'
 import { cn } from '@/lib/utils'
+import { resolveWorkspacePresence, shouldReportWorkspaceCaret } from './workspacePresence'
 import { useWorkspaceSync } from './useWorkspaceSync'
 import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 import {
@@ -443,7 +444,7 @@ export function ScaffoldingWorkspaceModal({
   })
 
   // 마지막으로 송신한 presence를 추적해 heartbeat에서 동일 cellKey/caretPos로 갱신.
-  const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number }>({ cellKey: 'modal:idle' })
+  const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number; relativeCaret?: string; interactionAt?: number }>({ cellKey: 'modal:idle' })
 
   // 모달이 열려 있는 동안 idle presence 유지 + 10초 heartbeat.
   useEffect(() => {
@@ -461,6 +462,8 @@ export function ScaffoldingWorkspaceModal({
         color: currentUserColor ?? '#1A73E8',
         cellKey: last.cellKey,
         caretPos: last.caretPos,
+        relativeCaret: last.relativeCaret,
+        interactionAt: last.interactionAt,
         updatedAt: Date.now(),
       })
     }
@@ -472,12 +475,15 @@ export function ScaffoldingWorkspaceModal({
   // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
     // 시계 차이로 host entry가 stale 판정되는 케이스 대비 60초로 확장.
   const presenceNow = usePresenceClock()
-  const { fresh: freshEditors, away: awayEditors } = useMemo(
+  const { fresh: receivedEditors, away: awayEditors } = useMemo(
     () => splitPresence(Object.values(presence ?? {}), presenceNow, 60000),
     [presence, presenceNow],
   )
 
+  const freshEditors = resolveWorkspacePresence(receivedEditors, realtime)
+
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
+    if (typeof caretPos === 'number' && !shouldReportWorkspaceCaret(realtime)) return
     if (!onPresenceUpdate || !currentUid) return
     if (cellKey === null) {
       // blur: 마지막 활성 셀을 유지해 모든 동시 접속자의 chip이 계속 보이도록 한다.
@@ -488,17 +494,23 @@ export function ScaffoldingWorkspaceModal({
         color: currentUserColor ?? '#1A73E8',
         cellKey: last.cellKey,
         caretPos: last.caretPos,
+        relativeCaret: last.relativeCaret,
+        interactionAt: last.interactionAt,
         updatedAt: Date.now(),
       })
       return
     }
-    lastPresenceRef.current = { cellKey, caretPos }
+    const relativeCaret = typeof caretPos === 'number' ? realtime.encodeCaret(cellKey, caretPos) : undefined
+    const interactionAt = Math.max(Date.now(), (lastPresenceRef.current.interactionAt ?? 0) + 1)
+    lastPresenceRef.current = { cellKey, caretPos, relativeCaret, interactionAt }
     onPresenceUpdate({
       uid: currentUid,
       displayName: currentUserName ?? '나',
       color: currentUserColor ?? '#1A73E8',
       cellKey,
       caretPos,
+      relativeCaret,
+      interactionAt,
       updatedAt: Date.now(),
     })
   }
@@ -515,6 +527,7 @@ export function ScaffoldingWorkspaceModal({
 
   function trackCaret(cellKey: string) {
     return (event: React.SyntheticEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+      if (!realtime.shouldSendPresence(event.currentTarget)) return
       updatePresence(cellKey, event.currentTarget.selectionStart ?? 0)
     }
   }
@@ -1071,6 +1084,7 @@ export function ScaffoldingWorkspaceModal({
                     </div>
                     <div className="relative">
                       <AutoGrowTextarea
+                        {...realtime.fieldProps(cellKey)}
                         value={workspace.review}
                         onChange={event => {
                           setMetaLocal(event.target.value)
@@ -1129,6 +1143,7 @@ export function ScaffoldingWorkspaceModal({
                           <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <PresenceInput
+                                {...realtime.fieldProps(`column:${column.id}`)}
                                 caretEditors={editorsForCell(`column:${column.id}`)}
                                 onSelect={trackCaret(`column:${column.id}`)}
                                 onKeyUp={trackCaret(`column:${column.id}`)}
@@ -1177,6 +1192,7 @@ export function ScaffoldingWorkspaceModal({
                                     </span>
                                   ))}
                                   <AutoGrowTextarea
+                                    {...realtime.fieldProps(cellKey)}
                                     caretEditors={editors}
                                     value={getCell(row, column.id)}
                                     onChange={event => {
@@ -1263,6 +1279,7 @@ export function ScaffoldingWorkspaceModal({
                                 <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2">
                                   <div className="flex items-center gap-1.5">
                                     <PresenceInput
+                                      {...realtime.fieldProps(`block-table-column:${block.id}:${column.id}`)}
                                       caretEditors={editorsForCell(`block-table-column:${block.id}:${column.id}`)}
                                       onSelect={trackCaret(`block-table-column:${block.id}:${column.id}`)}
                                       onKeyUp={trackCaret(`block-table-column:${block.id}:${column.id}`)}
@@ -1315,6 +1332,7 @@ export function ScaffoldingWorkspaceModal({
                                           </span>
                                         ))}
                                         <AutoGrowTextarea
+                                          {...realtime.fieldProps(cellKey)}
                                           caretEditors={editors}
                                           value={getCell(row, column.id)}
                                           onChange={event => {
@@ -1386,6 +1404,7 @@ export function ScaffoldingWorkspaceModal({
                                   {it.checked ? <CheckSquare size={20} weight="fill" /> : <Square size={20} weight="regular" />}
                                 </button>
                                 <PresenceInput
+                                  {...realtime.fieldProps(`block:${block.id}:check:${idx}`)}
                                   caretEditors={editorsForCell(`block:${block.id}:check:${idx}`)}
                                   onSelect={trackCaret(`block:${block.id}:check:${idx}`)}
                                   onKeyUp={trackCaret(`block:${block.id}:check:${idx}`)}
@@ -1434,6 +1453,7 @@ export function ScaffoldingWorkspaceModal({
                       })()
                     ) : (
                       <AutoGrowTextarea
+                        {...realtime.fieldProps(`block:${block.id}`)}
                         caretEditors={editorsForCell(`block:${block.id}`)}
                         onSelect={trackCaret(`block:${block.id}`)}
                         onKeyUp={trackCaret(`block:${block.id}`)}
