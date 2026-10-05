@@ -2650,7 +2650,8 @@ const trainingUiBindings = {
   ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES,
   SOLO_HIDDEN_ACTIVITIES: ['T-2-1', 'T-2-2', 'T-2-3', 'E-2-1'],
   useState: value => [typeof value === 'function' ? value() : value, () => {}],
-  MD3Button: trainingUiButton, CheckCircle: () => null, ArrowRight: () => null, Question: () => null,
+  useEffect: () => {}, useId: () => 'training-bar-help', useRef: value => ({ current: value }),
+  MD3Button: trainingUiButton, CheckCircle: () => null, ArrowRight: () => null, Question: () => null, X: () => null,
   StageAnalysisModal: () => null,
 }
 const { TrainingModeFields } = loadArtifactTsx('../src/components/training/TrainingModeFields.tsx', {}, ['TrainingModeFields'])
@@ -3037,6 +3038,86 @@ test('T8a: 필수 칸이 없는 연수 막대는 0/0 상태를 생략하고 불�
   assert.doesNotMatch(html, /필수 칸|0\/0|role="status"/)
   assert.match(html, /연수용 모드/)
   assert.match(renderToStaticMarkup(React.createElement(EmptyRequiredBar, { ...props, loaded: false })), /내용을 불러오는 중/)
+})
+
+// ─── TASK-T11: 연수 막대 도움말 — hover·키보드·모바일·Esc ───
+const trainingBarHelpText = [
+  '이 활동에서 꼭 채울 칸을 몇 개 채웠는지 보여 줘요. 다 못 채워도 다음 활동으로 넘어갈 수 있어요.',
+  '이 활동에서 막히기 쉬운 일 하나만 AI가 도와줘요. 다른 질문은 덧붙이지 않아요.',
+  '이 활동만 AI가 단계마다 묻고 이끌어 주는 방식으로 바꿔요. 채팅에 "직접 적을게요"라고 쓰면 다시 간단히 옮겨 적는 방식으로 돌아와요.',
+  '다음 활동으로 넘어가요. 방장만 누를 수 있고, 비어 있는 칸은 나중에 돌아와 채울 수 있어요.',
+  '도움이 필요 없으면 채팅에 "개입하지 마세요"라고 쓰면 AI가 조언하지 않아요.',
+]
+
+test('T11a: 필수 칸·AI 도움·단계별 진행·다음 활동은 지정한 문구의 title을 갖고, 도움말 버튼은 비방장·처리 중에도 열린다', () => {
+  const element = TrainingModeBar({ project: trainingUiProject, activityCode: 'Ds-1-1', loaded: true, isHost: false, busy: true, onSend: () => {}, onNext: () => {} })
+  const status = trainingUiElements(element, 'span').find(node => node.props.role === 'status')
+  assert.equal(status.props.title, trainingBarHelpText[0])
+  const actions = trainingUiElements(element, trainingUiButton)
+  for (const button of actions.slice(0, -2)) assert.equal(button.props.title, trainingBarHelpText[1])
+  assert.equal(actions.at(-2).props.title, trainingBarHelpText[2])
+  assert.equal(actions.at(-1).props.title, trainingBarHelpText[3])
+  assert.equal(actions.at(-1).props.disabled, true)
+  const trigger = trainingUiElements(element, 'button').find(node => node.props['aria-label'] === '연수 막대 도움말')
+  assert.equal(trigger.props.type, 'button') // Enter·Space·터치 click은 native button 동작을 사용한다.
+  assert.equal(trigger.props.disabled, undefined)
+  assert.equal(trigger.props['aria-expanded'], false)
+  assert.equal(trigger.props['aria-controls'], 'training-bar-help')
+  assert.equal(trigger.props['aria-haspopup'], 'dialog')
+  assert.doesNotMatch(renderToStaticMarkup(element), /role="dialog"/)
+})
+
+test('T11b: 도움말은 클릭으로 열리고 4개 설명·개입 금지 안내를 보여 주며 Esc·닫기·바깥 클릭으로 닫힌다', () => {
+  const states = [], refs = [], effects = [], listeners = new Map()
+  let stateIndex = 0, refIndex = 0, triggerFocus = 0, closeFocus = 0
+  class FakeNode {}
+  const inside = new FakeNode(), outside = new FakeNode()
+  const { TrainingModeBar: HelpBar } = loadArtifactTsx('../src/components/training/TrainingModeBar.tsx', {
+    ...trainingUiBindings, Node: FakeNode,
+    document: { addEventListener: (key, listener) => listeners.set(key, listener), removeEventListener: (key, listener) => { if (listeners.get(key) === listener) listeners.delete(key) } },
+    useState: initial => { const index = stateIndex++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value }] },
+    useRef: initial => { const index = refIndex++; return refs[index] ??= { current: initial } },
+    useEffect: callback => effects.push(callback),
+  }, ['TrainingModeBar'])
+  const props = { project: trainingUiProject, activityCode: 'Ds-1-1', loaded: true, isHost: true, busy: false, onSend: () => { throw Error('도움말은 채팅을 보내지 않음') }, onNext: () => { throw Error('도움말은 이동하지 않음') } }
+  const render = () => { stateIndex = 0; refIndex = 0; return HelpBar(props) }
+  const trigger = element => trainingUiElements(element, 'button').find(node => node.props['aria-label'] === '연수 막대 도움말')
+  const open = () => {
+    trigger(render()).props.onClick()
+    const element = render()
+    refs[0].current = { focus: () => triggerFocus++, contains: () => false }
+    refs[1].current = { focus: () => closeFocus++ }
+    refs[2].current = { contains: target => target === inside }
+    return { element, cleanup: effects.at(-1)() }
+  }
+  let opened = open()
+  assert.equal(trigger(opened.element).props['aria-expanded'], true)
+  const panel = trainingUiElements(opened.element, 'div').find(node => node.props.role === 'dialog')
+  assert.equal(panel.props.id, trigger(opened.element).props['aria-controls'])
+  assert.equal(trainingUiElements(panel, 'p').length, 5)
+  for (const text of trainingBarHelpText) assert.ok(renderToStaticMarkup(panel).includes(text.replaceAll('"', '&quot;')), text)
+  assert.equal(closeFocus, 1)
+  listeners.get('keydown')({ key: 'Enter' })
+  assert.equal(trigger(render()).props['aria-expanded'], true)
+  let prevented = false, stopped = false
+  listeners.get('keydown')({ key: 'Escape', preventDefault: () => { prevented = true }, stopPropagation: () => { stopped = true } })
+  assert.equal(prevented && stopped, true)
+  assert.equal(triggerFocus, 1)
+  assert.equal(trigger(render()).props['aria-expanded'], false)
+  opened.cleanup()
+  assert.equal(listeners.size, 0)
+  opened = open()
+  const close = trainingUiElements(opened.element, 'button').find(node => node.props['aria-label'] === '도움말 닫기')
+  close.props.onClick()
+  assert.equal(triggerFocus, 2)
+  assert.equal(trigger(render()).props['aria-expanded'], false)
+  opened.cleanup()
+  opened = open()
+  listeners.get('pointerdown')({ target: inside })
+  assert.equal(trigger(render()).props['aria-expanded'], true)
+  listeners.get('pointerdown')({ target: outside })
+  assert.equal(trigger(render()).props['aria-expanded'], false)
+  opened.cleanup()
 })
 
 // ─── TASK-T5: 한국어 양식 재표시·입력 원문·개입 금지 체크 ───
