@@ -53,6 +53,33 @@ export function getAdminDb(): Firestore | null {
   return cached ?? null
 }
 
+/** 관리자 Auth(ID 토큰 검증·계정 삭제) — getAdminDb 와 같은 앱·같은 createRequire 런타임 로드. 불가하면 null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAdminAuth(): any | null {
+  if (!getAdminDb()) return null
+  try {
+    const { getApps } = loadAdmin('app')
+    return loadAdmin('auth').getAuth(getApps()[0])
+  } catch (e) {
+    warnOnce(e)
+    return null
+  }
+}
+
+/** 관리자 Storage 기본 버킷(업로드 자료 삭제) — 불가하면 null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAdminBucket(): any | null {
+  if (!getAdminDb()) return null
+  try {
+    const { getApps } = loadAdmin('app')
+    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    return loadAdmin('storage').getStorage(getApps()[0]).bucket(bucketName || undefined)
+  } catch (e) {
+    warnOnce(e)
+    return null
+  }
+}
+
 /** FieldValue(serverTimestamp/delete) — admin SDK가 로드된 경우에만 사용 가능.
  *  getAdminDb()가 null이 아닐 때만 호출할 것. */
 export function getFieldValue(): typeof FieldValueNS {

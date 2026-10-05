@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createDebouncedPatchQueue, mergeCoeditIncoming } from './useWorkspaceSync'
+import { createDebouncedPatchQueue, createPendingLedger, mergeCoeditIncoming } from './useWorkspaceSync'
+import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
 import { createPortal } from 'react-dom'
 import { FloppyDisk, PaperPlaneRight, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
 import type {
@@ -91,6 +92,11 @@ export function CoeditWorkspaceModal({
 }: Props) {
   const [mounted, setMounted] = useState(false)
   const [sending, setSending] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
+  const [offerReflection, setOfferReflection] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [saveLedger] = useState(createPendingLedger)
   const [suggesting, setSuggesting] = useState(false)
   const [rationale, setRationale] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -102,6 +108,8 @@ export function CoeditWorkspaceModal({
   // 타이핑한 글자가 매 keystroke마다 옛 값으로 덮여 마지막 한 글자만 남는다.
   // 기존 12개 모달과 동일하게 "즉시 로컬 반영 → 원격 저장" 순서로 처리한다.
   const [ws, setWs] = useState<CoeditWorkspace>(() => workspace ?? emptyWorkspace())
+  const latestWsRef = useRef(ws)
+  useEffect(() => { latestWsRef.current = ws }, [ws])
   // 지금 편집 중인 셀 — 원격 스냅샷이 이 셀만은 덮어쓰지 않도록 보호한다
   const editingKeyRef = useRef<string | null>(null)
   // 칸별 지연 저장(#T7): 칸마다 타이머를 따로 둬서 400ms 안에 다른 칸으로 옮겨도 앞 칸 저장이 취소되지 않는다.
@@ -112,7 +120,8 @@ export function CoeditWorkspaceModal({
   const [cellQueue] = useState(() => createDebouncedPatchQueue<CoeditWorkspacePatch>((p, key) => {
     const inflight = inflightKeysRef.current
     inflight.set(key, (inflight.get(key) ?? 0) + 1)
-    return onPatchSaveRef.current(p)
+    return saveLedger.track(p, onPatchSaveRef.current(p))
+      .then(saved => { setLastSavedAt(saved?.updatedAt ?? Date.now()) })
       .catch(() => setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.'))
       .finally(() => {
         const left = (inflight.get(key) ?? 1) - 1
@@ -161,18 +170,21 @@ export function CoeditWorkspaceModal({
 
   /** 구조 변경(줄 추가·삭제 등) — 로컬 즉시 반영 후 바로 저장. 대기 중인 칸 저장을 먼저 보내 순서를 지킨다. */
   const patch = useCallback(async (p: CoeditWorkspacePatch, next: CoeditWorkspace) => {
+    latestWsRef.current = next
     setWs(next)
     setError(null)
     try {
       await cellQueue.flushAll()
-      await onPatchSave(p)
+      const saved = await saveLedger.track(p, onPatchSave(p))
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
     } catch {
       setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.')
     }
-  }, [onPatchSave, cellQueue])
+  }, [onPatchSave, cellQueue, saveLedger])
 
   /** 셀 타이핑 — 로컬은 즉시, 원격 저장은 칸별 400ms 디바운스 (keystroke마다 쓰지 않는다) */
   const patchCellDebounced = useCallback((p: CoeditWorkspacePatch, next: CoeditWorkspace) => {
+    latestWsRef.current = next
     setWs(next)
     setError(null)
     // 주 표 칸은 칸 단위, 보조 표는 표 단위(upsert-block)로 대기한다 — 같은 키의 더 새 저장만 앞의 것을 대체한다.
@@ -243,18 +255,47 @@ export function CoeditWorkspaceModal({
     }
   }
 
+  async function saveLatestDraft() {
+    await cellQueue.flushAll()
+    await saveLedger.settle()
+    const latest = latestWsRef.current
+    const saved = await saveLedger.track({ type: 'replace-all' }, onPatchSave({ type: 'replace-all', workspace: latest, updatedBy: currentUid }))
+    setLastSavedAt(saved?.updatedAt ?? Date.now())
+    return saved ?? latest
+  }
+
+  async function handleSaveAll() {
+    if (saving || sending) return
+    setSaving(true)
+    setError(null)
+    setNotice('')
+    try {
+      await saveLatestDraft()
+      setNotice('공동 편집 초안을 저장했습니다.')
+      setOfferReflection(isHost)
+    } catch {
+      setError('저장에 실패했습니다. 네트워크를 확인하고 다시 시도해 주세요.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleSendArtifact() {
+    if (saving || sending) return
     setSending(true)
     setError(null)
+    setNotice('')
     try {
-      const content = config.toArtifact(ws)
+      const content = config.toArtifact(await saveLatestDraft())
       const hasContent = Object.values(content).some(v => (v ?? '').trim())
       if (!hasContent) {
         setError('산출물로 보낼 내용이 없습니다. 표를 먼저 채워 주세요.')
         return
       }
       await onSendArtifact(content)
-      onClose()
+      setOfferReflection(false)
+      if (isHost) onClose()
+      else setNotice('방장에게 반영을 요청했어요')
     } catch {
       setError('산출물 저장에 실패했습니다. 다시 시도해 주세요.')
     } finally {
@@ -484,10 +525,14 @@ export function CoeditWorkspaceModal({
         </div>
 
         {/* 푸터 */}
-        <div className="flex items-center gap-2 px-7 py-4 border-t border-[#E9E9E7] bg-white">
-          <span className="text-[13px] text-[#9B9A97] mr-auto">
-            입력은 자동 저장됩니다 · 팀원과 실시간으로 함께 편집할 수 있어요
-          </span>
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-7 py-4 border-t border-[#E9E9E7] bg-white">
+          <div className="mr-auto min-w-0">
+            <WorkspaceSaveStatus lastSavedAt={Math.max(lastSavedAt ?? 0, workspace?.updatedAt ?? 0)} offerReflection={isHost && offerReflection} busy={saving || sending} onReflect={handleSendArtifact} />
+            {notice && <p role="status" className="mt-1 text-sm text-[#137333]">{notice}</p>}
+          </div>
+          <MD3Button variant="tonal" tone="blue" onClick={handleSaveAll} disabled={saving || sending} icon={<FloppyDisk size={MD3_ICON.sm} />}>
+            {saving ? '저장 중…' : '초안 저장'}
+          </MD3Button>
           <MD3Button variant="text" tone="neutral" onClick={onClose}>
             닫기
           </MD3Button>
@@ -495,10 +540,10 @@ export function CoeditWorkspaceModal({
             variant="filled"
             tone="blue"
             onClick={handleSendArtifact}
-            disabled={sending}
+            disabled={sending || saving}
             icon={sending ? <FloppyDisk size={MD3_ICON.sm} /> : <PaperPlaneRight size={MD3_ICON.sm} weight="fill" />}
           >
-            {sending ? '보내는 중…' : isHost ? '산출물로 저장' : '방장에게 저장 제안'}
+            {sending ? '보내는 중…' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
           </MD3Button>
         </div>
       </div>

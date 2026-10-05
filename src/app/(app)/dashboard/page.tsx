@@ -10,7 +10,9 @@ import type { Project } from '@/types'
 import { FOLDER_COLORS, FolderCard, ProjectCard } from '@/components/dashboard/DashboardCards'
 import { cn } from '@/lib/utils'
 import { Plus, BookOpen, Loader2, LogOut, UserPlus, Play, FolderPlus, Folder, ArrowLeft, Network } from 'lucide-react'
-import { signOut } from '@/lib/auth'
+import { clearLocalProfile, signOut } from '@/lib/auth'
+import { ACCOUNT_DELETION_COPY } from '@/lib/privacy/consent'
+import { AccountDeletionModal } from '@/components/privacy/AccountDeletionModal'
 
 
 export default function DashboardPage() {
@@ -21,6 +23,7 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [hiddenIds, setHiddenIds] = useState<string[]>([])
+  const [showAccountDeletion, setShowAccountDeletion] = useState(false)
 
   // 폴더
   const [folders, setFolders] = useState<DashboardFolder[]>([])
@@ -55,6 +58,13 @@ export default function DashboardPage() {
     await signOut()
     setUserProfile(null)
     router.replace('/login')
+  }
+
+  async function handleAccountDeleted() {
+    try { await signOut() } catch { /* 서버에서 삭제된 계정은 다시 삭제하지 않고 로컬 세션을 정리한다. */ }
+    try { clearLocalProfile() } catch { /* 저장소가 막혀도 완료 안내로 이동한다. */ }
+    setUserProfile(null)
+    window.location.replace('/login?accountDeleted=1')
   }
 
   function handleFolderSubmit() {
@@ -129,6 +139,10 @@ export default function DashboardPage() {
                   title="로그아웃"
                 >
                   <LogOut className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={() => setShowAccountDeletion(true)}
+                  className="rounded-full px-3 py-2 text-xs font-medium text-[#5F6368] hover:bg-[#FADCD9] hover:text-[#C5221F] focus-visible:outline-2 focus-visible:outline-[#0B57D0]">
+                  {ACCOUNT_DELETION_COPY.menuLabel}
                 </button>
               </div>
             )}
@@ -374,6 +388,8 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {showAccountDeletion && <AccountDeletionModal onClose={() => setShowAccountDeletion(false)} onDeleted={handleAccountDeleted} />}
 
       {/* 프로젝트 삭제 확인 모달 */}
       {deleteTarget && (

@@ -2884,7 +2884,7 @@ test('T13: ChatPanel — 연수용 환영 분기·저장 알림 칩·연수용 �
   assert.match(panel, /let welcome = isTrainingActivity\(proj, currentActivity\)\n      \? buildTrainingWelcome\(currentActivity\)/)
   assert.match(panel, /const trainingChip = msg\.role === 'user' \? trainingMessageChip\(msg\.content, msg\.displayName\) : null/)
   assert.match(panel, /if \(isTrainingActivity\(proj, targetAct\)\) \{\n      \/\/ 원문 그대로 저장\n    \} else if \(targetAct === 'T-1-1'\)/)
-  assert.match(panel, /if \(isTrainingActivity\(proj, targetActivity\)\) \{\n      \/\/ 원문 그대로 저장\n    \} else if \(targetActivity === 'T-1-1'\)/)
+  assert.match(panel, /if \(isStructuredProposal \|\| isTrainingActivity\(proj, targetActivity\)\) \{\n      \/\/ 그대로 저장\n    \} else if \(targetActivity === 'T-1-1'\)/)
 })
 
 test('T14: 개입 금지 중 체크를 다시 켠 저장(" 이번 저장만 조언해 주세요")은 그 1회만 AI, 상태는 quiet 유지', () => {
@@ -3118,6 +3118,417 @@ test('T11b: 도움말은 클릭으로 열리고 4개 설명·개입 금지 안�
   listeners.get('pointerdown')({ target: outside })
   assert.equal(trigger(render()).props['aria-expanded'], false)
   opened.cleanup()
+})
+
+// ─── TASK-C2: 공동 편집 초안은 함께 저장, 산출물은 방장 반영 또는 요청 ───
+const c2ModalNames = ['TeamVision', 'LessonDesignDirection', 'RoleDistribution', 'TeamRules', 'TeamSchedule', 'TopicSelection', 'IntegratedGoal', 'EvaluationPlan', 'ProblemSituation', 'LearningActivity', 'SupportTool', 'Scaffolding']
+function c2ModalTree(name) {
+  const text = fs.readFileSync(new URL(`../src/components/artifacts/${name}WorkspaceModal.tsx`, import.meta.url), 'utf8')
+  return ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+}
+function c2ModalBindings(isHost, overrides = {}) {
+  const calls = [], latest = { rows: [{ id: 'r', cells: { name: '방금 고친 내용' } }], updatedAt: 1234 }
+  const state = {}
+  return {
+    calls, latest, state, bindings: {
+      isHost, saving: false, sending: false, projectId: 'team', currentUid: 'member', currentUserName: '잠만보', workspace: { rows: [] }, documentFlushRef: { current: async () => {} }, artifactContent: {},
+      sync: { settledLatest: async () => { calls.push('settled'); return latest }, track: async (_p, promise) => promise, applySaved: saved => { state.saved = saved } },
+      onPatchSave: async patch => { calls.push(patch); return patch.workspace },
+      setSaving: value => { state.saving = value }, setSending: value => { state.sending = value },
+      setMessage: value => { state.message = value }, setLastSavedAt: value => { state.time = value }, setOfferReflection: value => { state.offer = value },
+      stripUndefinedDeep: value => value, normalizeWorkspace: value => value, displayActivityCode,
+      workspaceToArtifact: ws => ({ _schema: 'T-2-1', roles: ws.rows }), workspaceToA22Structured: ws => ({ _schema: 'A-2-2', subjectGoals: ws.rows }),
+      sendWorkspaceArtifact: async request => { state.request = request }, onSendArtifact: async () => {},
+      onClose: () => { state.closed = true }, Date, Error, console: { error() {} }, ...overrides,
+    },
+  }
+}
+
+test('C2b: 12개 창에서 팀원도 대기 중 입력 저장 후 최신 표를 초안 저장하며, 산출물 반영은 자동으로 하지 않는다', async () => {
+  for (const name of c2ModalNames) for (const host of [false, true]) {
+    const h = c2ModalBindings(host)
+    await loadChatFunction('handleSaveAll', h.bindings, c2ModalTree(name))()
+    assert.equal(h.calls[0], 'settled', name)
+    assert.equal(h.calls[1].type, 'replace-all', name)
+    assert.equal(h.calls[1].workspace, h.latest, name)
+    assert.equal(h.state.saved, h.latest, name)
+    assert.equal(h.state.offer, host, name)
+    assert.equal(h.state.time, 1234, name)
+    assert.equal(h.state.saving, false, name)
+    assert.equal(h.state.request, undefined, name)
+  }
+})
+
+test('C2c: 12개 창은 팀원 반영 요청 후 열린 상태로 안내하고, 방장 전송은 기존처럼 닫는다', async () => {
+  for (const name of c2ModalNames) for (const host of [false, true]) {
+    const h = c2ModalBindings(host)
+    await loadChatFunction('sendArtifact', h.bindings, c2ModalTree(name))()
+    assert.equal(h.calls[0], 'settled', name)
+    assert.equal(h.state.request.isHost, host, name)
+    assert.equal(h.state.request.projectId, 'team', name)
+    assert.equal(h.state.request.currentUid, 'member', name)
+    assert.deepEqual(h.state.request.content.roles ?? h.state.request.content.subjectGoals, h.latest.rows, name)
+    assert.equal(h.state.closed === true, host, name)
+    if (!host) assert.equal(h.state.message, '방장에게 반영을 요청했어요', name)
+    assert.equal(h.state.sending, false, name)
+  }
+})
+
+test('C2j: 저장 함수가 응답값을 주지 않아도 최신 초안을 전송하고, 초안 저장 실패 시 제안·성공 안내를 하지 않는다', async () => {
+  for (const name of c2ModalNames) {
+    const h = c2ModalBindings(false, { onPatchSave: async () => undefined })
+    await loadChatFunction('sendArtifact', h.bindings, c2ModalTree(name))()
+    assert.deepEqual(h.state.request.content.roles ?? h.state.request.content.subjectGoals, h.latest.rows, name)
+    const failed = c2ModalBindings(false, { onPatchSave: async () => { throw new Error('offline') } })
+    await loadChatFunction('sendArtifact', failed.bindings, c2ModalTree(name))()
+    assert.equal(failed.state.request, undefined, name)
+    assert.match(failed.state.message, /보내지 못했습니다: offline/, name)
+    assert.equal(failed.state.closed, undefined, name)
+    assert.equal(failed.state.sending, false, name)
+  }
+})
+
+test('C2d: 방장 직접 전송과 팀원 제안은 서로 배타적이고 제안에 구조화 표·manualWorkspace가 보존된다', async () => {
+  const proposals = [], direct = []
+  const { sendWorkspaceArtifact } = loadArtifactTsx('../src/components/artifacts/workspaceArtifactRequest.ts', {
+    '@/lib/firebase/projects': { proposeArtifactToHost: async (...args) => { proposals.push(args) } }, Error,
+  })
+  const content = { _schema: 'T-2-1', roles: [{ teacherName: '잠만보', role: '사회 자료' }], manualWorkspace: { rows: [{ id: 'r', cells: { extra: '추가 기록' } }] } }
+  const request = { projectId: 'team', activityCode: 'T-2-1', currentUid: 'member', currentUserName: '잠만보', content, onSendArtifact: async value => { direct.push(value) } }
+  await sendWorkspaceArtifact({ ...request, isHost: true })
+  assert.equal(direct[0], content)
+  assert.equal(proposals.length, 0)
+  await sendWorkspaceArtifact({ ...request, isHost: false })
+  assert.equal(proposals[0][2], content)
+  assert.deepEqual(proposals[0].slice(0, 2), ['team', 'T-2-1'])
+  assert.deepEqual(proposals[0].slice(3), ['member', '잠만보'])
+  assert.equal(direct.length, 1)
+  await assert.rejects(sendWorkspaceArtifact({ ...request, projectId: undefined, isHost: false }), /프로젝트와 로그인/)
+  assert.equal(proposals.length, 1)
+})
+
+test('C2e: 모든 창의 팀원 초안 버튼은 권한으로 잠기지 않고 모바일에서도 반영 요청을 할 수 있다', () => {
+  for (const name of c2ModalNames) {
+    const source = c2ModalTree(name).text
+    assert.doesNotMatch(source, /disabled=\{!isHost \|\| (?:saving|sending)\}|초안 저장과 산출물 전송은 방장만/)
+    assert.match(source, /'초안 저장'/)
+    assert.match(source, /'방장에게 반영 요청'/)
+    assert.match(source, /sm:hidden[^\n]+\n\s*\{sending \? '전송 중' : isHost \? '산출물로 보내기' : '방장에게 반영 요청'\}/)
+    assert.match(source, /<WorkspaceSaveStatus[^>]+savedWorkspace\?\.updatedAt/)
+  }
+})
+
+test('C2f: 범용 창은 지연·진행 중 저장을 모두 기다린 뒤 최신 초안을 저장한다', async () => {
+  const sourceTree = c2ModalTree('Coedit'), calls = [], latest = { rows: [{ id: 'r', cells: { value: '최신 입력' } }], blocks: [] }
+  const latestWsRef = { current: { rows: [] } }
+  const saveLatestDraft = loadChatFunction('saveLatestDraft', {
+    latestWsRef, currentUid: 'member', Date,
+    cellQueue: { flushAll: async () => { calls.push('flush'); latestWsRef.current = latest } },
+    saveLedger: { settle: async () => { calls.push('settle') }, track: async (_p, promise) => promise },
+    onPatchSave: async patch => { calls.push(patch); return { ...patch.workspace, updatedAt: 4321 } },
+    setLastSavedAt: value => { calls.push(value) },
+  }, sourceTree)
+  const saved = await saveLatestDraft()
+  assert.deepEqual(calls.slice(0, 2), ['flush', 'settle'])
+  assert.equal(calls[2].workspace, latest)
+  assert.equal(calls[2].updatedBy, 'member')
+  assert.equal(calls[3], 4321)
+  assert.equal(saved.updatedAt, 4321)
+  for (const host of [false, true]) {
+    const h = c2ModalBindings(host, { saveLatestDraft: async () => saved, setError: value => { calls.push(value) }, setNotice: value => { calls.push(value) } })
+    await loadChatFunction('handleSaveAll', h.bindings, sourceTree)()
+    assert.equal(h.state.offer, host)
+    assert.equal(h.state.saving, false)
+  }
+})
+
+test('C2g: 범용 창 팀원 제안도 최신 저장본을 보내며 팀원에게 요청 완료를 표시한다', async () => {
+  const sourceTree = c2ModalTree('Coedit')
+  for (const host of [false, true]) {
+    const saved = { rows: ['최신 기록'] }, notices = [], sent = []
+    const h = c2ModalBindings(host, { saveLatestDraft: async () => saved, config: { toArtifact: ws => ({ '실행 기록': ws.rows[0] }) }, setError: value => { assert.equal(value, null) }, setNotice: value => notices.push(value), onSendArtifact: async value => { sent.push(value) } })
+    await loadChatFunction('handleSendArtifact', h.bindings, sourceTree)()
+    assert.equal(sent[0]['실행 기록'], '최신 기록')
+    assert.equal(h.state.closed === true, host)
+    if (!host) assert.equal(notices.at(-1), '방장에게 반영을 요청했어요')
+  }
+})
+
+test('C2h: 구조화 반영 요청의 미리보기는 한국어 표이며 원문 데이터·추가 블록을 바꾸지 않는다', () => {
+  const { trainingFormText } = loadArtifactTsx('../src/components/training/trainingFormText.ts', {})
+  const { ArtifactSaveProposal } = loadArtifactTsx('../src/components/chat/ArtifactSaveProposal.tsx', {
+    'react-markdown': { __esModule: true, default: ReactMarkdown }, '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
+    '@phosphor-icons/react': { CheckSquare: () => null, X: () => null }, '@/types': { ACTIVITY_META },
+    '@/components/training/trainingFormText': { trainingFormText },
+  })
+  const sections = { _schema: 'T-2-1', roles: [{ teacherName: '잠만보', role: '사회 자료' }], manualWorkspace: { blocks: [{ content: '추가 메모' }] } }
+  const before = structuredClone(sections)
+  const html = renderToStaticMarkup(React.createElement(ArtifactSaveProposal, { title: '역할 배분', sections, onAccept() {}, onDecline() {} }))
+  assert.match(html, /교사명|팀 내 역할/)
+  assert.match(html, /잠만보/)
+  assert.doesNotMatch(html, /\[object Object\]|manualWorkspace|teacherName/)
+  assert.deepEqual(sections, before)
+})
+
+test('C2i: 저장 상태는 마지막 확인 시각을 보여 주고 방장 초안 저장 후에만 선택적으로 반영을 안내한다', () => {
+  const { WorkspaceSaveStatus } = loadArtifactTsx('../src/components/artifacts/WorkspaceSaveStatus.tsx', { Date })
+  const props = { lastSavedAt: 1234, busy: false, onReflect() {} }
+  const normal = renderToStaticMarkup(React.createElement(WorkspaceSaveStatus, { ...props, offerReflection: false }))
+  assert.match(normal, /입력은 자동 저장돼요.*마지막 저장/)
+  assert.doesNotMatch(normal, /산출물에도 반영할까요/)
+  const offered = renderToStaticMarkup(React.createElement(WorkspaceSaveStatus, { ...props, offerReflection: true }))
+  assert.match(offered, /산출물에도 반영할까요/)
+  assert.match(offered, /산출물로 보내기/)
+})
+
+// ─── TASK-P2: 동의 게이트·탈퇴 확인 화면·ID 토큰 API 연결 ───
+const privacyCopy = await import('../src/lib/privacy/consentContent.ts')
+const { ConsentTable } = loadArtifactTsx('../src/components/privacy/ConsentTable.tsx', {}, ['ConsentTable'])
+const privacyButton = trainingUiButton
+function privacyUiHarness(file, functionName, bindings = {}) {
+  const states = [], refs = []
+  let stateIndex = 0, refIndex = 0
+  const { [functionName]: Component } = loadArtifactTsx(file, {
+    ...privacyCopy, Error, ConsentTable, MD3Button: privacyButton, ShieldCheck: () => null,
+    useRef: initial => { const index = refIndex++; return refs[index] ??= { current: initial } },
+    useEffect: () => {}, useRouter: () => ({ replace: () => {} }),
+    useState: initial => { const index = stateIndex++; if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value }] },
+    ...bindings,
+  }, [functionName])
+  return { render(props) { stateIndex = 0; refIndex = 0; return Component(props) }, states, refs }
+}
+
+test('P2a: 동의 화면은 두 필수 체크 후에만 저장 가능하며, 자세히 보기 표·거부 권리·보유 기간을 원본 문구로 표시한다', () => {
+  const ui = privacyUiHarness('../src/components/privacy/PrivacyConsentGate.tsx', 'PrivacyConsentGate')
+  const props = { profile: { uid: 'member', displayName: '교사' } }
+  let element = ui.render(props)
+  const inputs = () => trainingUiElements(element, 'input')
+  const agree = () => trainingUiElements(element, privacyButton).at(-1)
+  assert.equal(inputs().length, 2)
+  assert.ok(inputs().every(input => input.props.type === 'checkbox' && input.props.checked === false))
+  assert.equal(agree().props.disabled, true)
+  inputs()[0].props.onChange({ target: { checked: true } })
+  element = ui.render(props)
+  assert.equal(agree().props.disabled, true)
+  inputs()[1].props.onChange({ target: { checked: true } })
+  element = ui.render(props)
+  assert.equal(agree().props.disabled, false)
+  const html = renderToStaticMarkup(element)
+  assert.ok(html.includes(privacyCopy.CONSENT_COPY.intro))
+  assert.ok(html.includes(privacyCopy.CONSENT_COPY.retention.replaceAll("'", '&#x27;')))
+  assert.ok(html.includes(privacyCopy.CONSENT_COPY.refusal))
+  const details = trainingUiElements(element, 'details')[0]
+  assert.equal(details.props.open, undefined)
+  assert.match(html, /<summary[^>]*>자세한 내용 보기/)
+  for (const table of [privacyCopy.CONSENT_COLLECTION_TABLE, privacyCopy.CONSENT_OVERSEAS_TABLE]) {
+    for (const column of table.columns) assert.ok(html.includes(column), column)
+    for (const row of table.rows) for (const text of row) assert.ok(html.includes(text), text)
+  }
+})
+
+test('P2b: 동의 저장은 성공 후에만 현재 프로필을 갱신하고, 실패하면 체크를 유지한 채 다시 시도·중복 요청 방어', async () => {
+  let profile = { uid: 'member', displayName: '기존 이름', schoolName: '학교' }, calls = 0, resolveSave, fail = true
+  const ui = privacyUiHarness('../src/components/privacy/PrivacyConsentGate.tsx', 'PrivacyConsentGate', {
+    useProjectStore: { getState: () => ({ userProfile: profile, setUserProfile: value => { profile = value } }) },
+    saveLocalProfile: () => { throw Error('storage blocked') },
+    recordConsent: async uid => { calls++; assert.equal(uid, 'member'); if (fail) throw Error('permission'); return await new Promise(resolve => { resolveSave = resolve }) },
+  })
+  const props = { profile }
+  let element = ui.render(props)
+  for (const checkbox of trainingUiElements(element, 'input')) checkbox.props.onChange({ target: { checked: true } })
+  element = ui.render(props)
+  await trainingUiElements(element, privacyButton).at(-1).props.onClick()
+  assert.equal(profile.privacyConsent, undefined)
+  element = ui.render(props)
+  assert.match(renderToStaticMarkup(element), /role="alert"/)
+  assert.ok(renderToStaticMarkup(element).includes(privacyCopy.CONSENT_UI_COPY.saveError))
+  assert.equal(trainingUiElements(element, privacyButton).at(-1).props.children, privacyCopy.CONSENT_UI_COPY.retry)
+  assert.ok(trainingUiElements(element, 'input').every(input => input.props.checked))
+  fail = false
+  const submit = trainingUiElements(element, privacyButton).at(-1).props.onClick
+  const first = submit()
+  await submit()
+  assert.equal(calls, 2)
+  element = ui.render(props)
+  assert.ok(trainingUiElements(element, privacyButton).every(button => button.props.disabled))
+  const record = { version: privacyCopy.PRIVACY_CONSENT_VERSION, items: ['collect', 'overseas'], agreedAt: 'server time' }
+  resolveSave(record)
+  await first
+  assert.deepEqual(profile.privacyConsent, record)
+  assert.equal(profile.schoolName, '학교')
+  assert.equal(privacyCopy.needsConsent(profile), false)
+})
+
+test('P2c: 계정 전환 중 끝난 동의 저장은 다른 회원을 바꾸지 않고, 거부하면 로그아웃 후 로그인 화면으로 간다', async () => {
+  let current = { uid: 'member' }, resolveSave
+  const events = []
+  const ui = privacyUiHarness('../src/components/privacy/PrivacyConsentGate.tsx', 'PrivacyConsentGate', {
+    useProjectStore: { getState: () => ({ userProfile: current, setUserProfile: value => { current = value; events.push('clear') } }) },
+    recordConsent: () => new Promise(resolve => { resolveSave = resolve }), saveLocalProfile: () => { throw Error('다른 계정 갱신 금지') },
+    signOut: async () => events.push('signOut'), useRouter: () => ({ replace: path => events.push(path) }),
+  })
+  const props = { profile: current }
+  let element = ui.render(props)
+  for (const checkbox of trainingUiElements(element, 'input')) checkbox.props.onChange({ target: { checked: true } })
+  element = ui.render(props)
+  const save = trainingUiElements(element, privacyButton).at(-1).props.onClick()
+  current = { uid: 'other-member' }
+  resolveSave({ version: privacyCopy.PRIVACY_CONSENT_VERSION, items: ['collect', 'overseas'] })
+  await save
+  assert.deepEqual(current, { uid: 'other-member' })
+  assert.equal(events.length, 0)
+  await trainingUiElements(ui.render(props), privacyButton)[0].props.onClick()
+  assert.deepEqual(events, ['signOut', 'clear', '/login'])
+})
+
+test('P2c-1: 거부 로그아웃 실패는 저장 실패와 다른 안내를 보여 주고 앱 진입·프로필 해제를 하지 않는다', async () => {
+  const ui = privacyUiHarness('../src/components/privacy/PrivacyConsentGate.tsx', 'PrivacyConsentGate', {
+    signOut: async () => { throw Error('offline') },
+    useProjectStore: { getState: () => { throw Error('로그아웃 전 프로필 변경 금지') } },
+    useRouter: () => ({ replace: () => { throw Error('로그아웃 전 이동 금지') } }),
+  })
+  const props = { profile: { uid: 'member' } }
+  await trainingUiElements(ui.render(props), privacyButton)[0].props.onClick()
+  const html = renderToStaticMarkup(ui.render(props))
+  assert.ok(html.includes(privacyCopy.CONSENT_UI_COPY.declineError))
+  assert.ok(!html.includes(privacyCopy.CONSENT_UI_COPY.saveError))
+})
+
+test('P2d: 앱 layout에서만 동의가 없거나 오래된 회원을 막고, 현재 동의 회원의 앱은 유지하며 로그인·공개 보고서에는 게이트가 없다', () => {
+  let profile = { uid: 'member' }
+  const { default: AppLayout } = loadArtifactTsx('../src/app/(app)/layout.tsx', {
+    needsConsent: privacyCopy.needsConsent, PrivacyConsentGate: () => null,
+    useProjectStore: () => ({ userProfile: profile, setUserProfile: () => {} }),
+    useRouter: () => ({}), useEffect: () => {},
+  }, ['AppLayout'])
+  const child = React.createElement('p', null, '앱 내부')
+  assert.equal(AppLayout({ children: child }).props.profile.uid, 'member')
+  profile = { uid: 'member', privacyConsent: { version: 'old', items: ['collect', 'overseas'] } }
+  assert.equal(AppLayout({ children: child }).props.profile.uid, 'member')
+  profile = { uid: 'member', privacyConsent: { version: privacyCopy.PRIVACY_CONSENT_VERSION, items: ['collect', 'overseas'] } }
+  assert.match(renderToStaticMarkup(AppLayout({ children: child })), /앱 내부/)
+  profile = null
+  assert.equal(AppLayout({ children: child }), null)
+  for (const file of ['../src/app/layout.tsx', '../src/app/(auth)/login/page.tsx', '../src/app/public/reports/[projectId]/page.tsx']) {
+    assert.doesNotMatch(fs.readFileSync(new URL(file, import.meta.url), 'utf8'), /PrivacyConsentGate|needsConsent\(/)
+  }
+})
+
+test('P2e: 탈퇴 확인은 네 가지 처리 안내·정확한 탈퇴 입력·진행 잠금·실패 원인 표시·완료 콜백을 지킨다', async () => {
+  let calls = 0, completed = 0, resolveDelete, failure = 'admin-unavailable'
+  const ui = privacyUiHarness('../src/components/privacy/AccountDeletionModal.tsx', 'AccountDeletionModal', {
+    deleteCurrentAccount: async confirm => { calls++; assert.equal(confirm, privacyCopy.ACCOUNT_DELETION_COPY.confirmWord); if (failure) throw Error(failure); return await new Promise(resolve => { resolveDelete = resolve }) },
+  })
+  const props = { onClose: () => {}, onDeleted: async () => { completed++ } }
+  let element = ui.render(props)
+  const submit = () => trainingUiElements(element, privacyButton).at(-1)
+  assert.equal(submit().props.disabled, true)
+  assert.equal(trainingUiElements(element, 'li').length, 4)
+  const html = renderToStaticMarkup(element)
+  for (const line of privacyCopy.ACCOUNT_DELETION_COPY.steps) assert.ok(html.includes(line), line)
+  assert.equal(element.type, 'dialog')
+  const input = () => trainingUiElements(element, 'input')[0]
+  input().props.onChange({ target: { value: '탈퇴하기' } })
+  element = ui.render(props)
+  assert.equal(submit().props.disabled, true)
+  await submit().props.onClick()
+  assert.equal(calls, 0)
+  input().props.onChange({ target: { value: '탈퇴' } })
+  element = ui.render(props)
+  assert.equal(submit().props.disabled, false)
+  await submit().props.onClick()
+  element = ui.render(props)
+  assert.ok(renderToStaticMarkup(element).includes(privacyCopy.ACCOUNT_DELETION_ERROR_COPY['admin-unavailable']))
+  assert.equal(completed, 0)
+  failure = ''
+  const first = submit().props.onClick()
+  await submit().props.onClick()
+  assert.equal(calls, 2)
+  element = ui.render(props)
+  assert.equal(input().props.disabled, true)
+  assert.ok(trainingUiElements(element, privacyButton).every(button => button.props.disabled))
+  assert.match(renderToStaticMarkup(element), /role="status"/)
+  resolveDelete({ ok: true })
+  await first
+  assert.equal(completed, 1)
+})
+
+test('P2e-1: native 탈퇴 dialog는 마운트 시 열리고 해제 시 닫히며, 처리 중에는 Esc 취소를 막는다', async () => {
+  const effects = []
+  let closes = 0, shown = 0, hidden = 0, resolveDelete
+  const ui = privacyUiHarness('../src/components/privacy/AccountDeletionModal.tsx', 'AccountDeletionModal', {
+    useEffect: callback => effects.push(callback),
+    deleteCurrentAccount: () => new Promise(resolve => { resolveDelete = resolve }),
+  })
+  const props = { onClose: () => closes++, onDeleted: () => {} }
+  let element = ui.render(props)
+  ui.refs[1].current = { showModal: () => shown++, close: () => hidden++ }
+  const cleanup = effects[0]()
+  assert.equal(shown, 1)
+  let prevented = false
+  element.props.onCancel({ preventDefault: () => { prevented = true } })
+  assert.equal(prevented, true)
+  assert.equal(closes, 1)
+  trainingUiElements(element, 'input')[0].props.onChange({ target: { value: '탈퇴' } })
+  element = ui.render(props)
+  const saving = trainingUiElements(element, privacyButton).at(-1).props.onClick()
+  ui.render(props).props.onCancel({ preventDefault: () => {} })
+  assert.equal(closes, 1)
+  resolveDelete({ ok: true })
+  await saving
+  cleanup()
+  assert.equal(hidden, 1)
+})
+
+test('P2f: 탈퇴 API 클라이언트는 갱신한 ID 토큰과 확인 본문만 보내고 실패·비로그인 시 완료하지 않는다', async () => {
+  const source = fs.readFileSync(new URL('../src/lib/privacy/deleteAccountClient.ts', import.meta.url), 'utf8')
+  const sourceTree = ts.createSourceFile('deleteAccountClient.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  let fetches = 0, response = { ok: true, json: async () => ({ ok: true, authDeleted: true }) }
+  const auth = { currentUser: { getIdToken: async force => { assert.equal(force, true); return 'test-id-token' } } }
+  const request = loadChatFunction('deleteCurrentAccount', {
+    auth, ACCOUNT_DELETE_ENDPOINT: privacyCopy.ACCOUNT_DELETE_ENDPOINT, ACCOUNT_DELETION_COPY: privacyCopy.ACCOUNT_DELETION_COPY,
+    fetch: async (endpoint, options) => {
+      fetches++
+      assert.equal(endpoint, '/api/account/delete')
+      assert.equal(options.method, 'POST')
+      assert.deepEqual(JSON.parse(options.body), { confirm: '탈퇴' })
+      assert.equal(options.headers.Authorization, 'Bearer test-id-token')
+      assert.equal(options.headers['Content-Type'], 'application/json')
+      return response
+    },
+  }, sourceTree)
+  assert.equal((await request('탈퇴')).authDeleted, true)
+  await assert.rejects(request('탈퇴하기'), /confirm-required/)
+  assert.equal(fetches, 1)
+  response = { ok: false, json: async () => ({ ok: false, error: 'partial-failure' }) }
+  await assert.rejects(request('탈퇴'), /partial-failure/)
+  response = { ok: true, json: async () => ({ ok: false, error: 'admin-unavailable' }) }
+  await assert.rejects(request('탈퇴'), /admin-unavailable/)
+  response = { ok: false, json: async () => { throw Error('non-json') } }
+  await assert.rejects(request('탈퇴'), /partial-failure/)
+  auth.currentUser = null
+  await assert.rejects(request('탈퇴'), /unauthenticated/)
+  assert.equal(fetches, 4)
+})
+
+test('P2g: 대시보드 탈퇴 메뉴 연결·성공 후 로그아웃/캐시 정리/첫 화면 안내, 로그아웃 실패도 서버 삭제를 재시도하지 않는다', async () => {
+  const source = fs.readFileSync(new URL('../src/app/(app)/dashboard/page.tsx', import.meta.url), 'utf8')
+  assert.match(source, /ACCOUNT_DELETION_COPY\.menuLabel/)
+  assert.match(source, /AccountDeletionModal onClose=.*onDeleted=\{handleAccountDeleted\}/)
+  const sourceTree = ts.createSourceFile('Dashboard.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  for (const fail of [false, true]) {
+    const events = []
+    const finish = loadChatFunction('handleAccountDeleted', {
+      signOut: async () => { events.push('signOut'); if (fail) throw Error('already deleted') },
+      clearLocalProfile: () => events.push('clearCache'), setUserProfile: value => { assert.equal(value, null); events.push('clearProfile') },
+      window: { location: { replace: path => events.push(path) } },
+    }, sourceTree)
+    await finish()
+    assert.deepEqual(events, ['signOut', 'clearCache', 'clearProfile', '/login?accountDeleted=1'])
+  }
+  const login = fs.readFileSync(new URL('../src/app/(auth)/login/page.tsx', import.meta.url), 'utf8')
+  assert.match(login, /params\.accountDeleted === '1'/)
+  assert.match(login, /ACCOUNT_DELETION_COPY\.done/)
 })
 
 // ─── TASK-T5: 한국어 양식 재표시·입력 원문·개입 금지 체크 ───
@@ -3396,6 +3807,7 @@ test('T15: 칸 분류는 원본 분류표(사용자 제공)와 같고, 19개 활
 })
 
 // ─── TASK-T9: AI 답변 속 체크리스트를 실제로 누를 수 있게 ─────────
+const tableWidthLib = await import('../src/lib/markdown/tableColumnWidth.ts')
 const checklistLib = await import('../src/lib/chat/checklist.ts')
 const tChecklistText = [
   '아래 체크리스트로 점검해 볼까요?',
@@ -3463,14 +3875,16 @@ test('T16d: 렌더 — 진짜 체크박스, 저장 상태·체크한 사람 이�
     markdownHeadingComponents: {}, HighlightedStrong: ({ children }) => React.createElement('strong', null, children),
     INTERNAL_ACTIVITY_CODE_RE: /$^/g, displayActivityCode: c => c, splitGuideLines: () => null,
     childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
-  }, ['MarkdownContent', 'ChecklistBox'])
+    CHAT_REMARK_PLUGINS: [...REMARK_PLUGINS, tableWidthLib.remarkShortColumns],
+    CHECKER_COLORS: ['#1A73E8', '#188038'],
+  }, ['MarkdownContent', 'ChecklistBox', 'shortCellStyle', 'checkerColor', 'checkedAtText'])
   const state = { 0: { checked: true, by: '캔바1' }, 4: { checked: false, by: '홍성용' } }
   const html = renderToStaticMarkup(React.createElement(MarkdownContent, { text: tChecklistText, checklist: { state, canEdit: true, onToggle() {} } }))
   const boxes = [...html.matchAll(/<input type="checkbox"[^>]*>/g)].map(m => m[0])
   assert.equal(boxes.length, 6)
   assert.deepEqual(boxes.map(b => b.includes('checked=""')), [true, false, true, false, false, false])
   assert.ok(boxes.every(b => !b.includes('disabled=""')))
-  assert.match(html, /<span[^>]*>캔바1<\/span>/)
+  assert.match(html, /title="캔바1 확인"[^>]*>캔<\/span>/) // 이름 첫 글자 배지 + 전체 이름 툴팁
   assert.doesNotMatch(html, /홍성용/) // 해제한 칸은 이름 숨김
   assert.doesNotMatch(html, /⟦체크/)
   const readOnly = renderToStaticMarkup(React.createElement(MarkdownContent, { text: tChecklistText, checklist: { state, canEdit: false, onToggle() {} } }))
@@ -3783,4 +4197,144 @@ test('T20c: 대기열은 화면에 보내는 중으로 보이고 답이 끝나�
   assert.match(back, /연수용 약식 진행 규칙/)
   const welcome = { id: 'welcome-1-A-1-1', role: 'assistant', content: '일반 환영', activityCode: 'A-1-1' }
   assert.equal(training.displayedMessageContent(on, welcome, texts), training.buildTrainingWelcome('A-1-1'))
+})
+
+// ─── TASK-P1: 가입 동의·회원 탈퇴 ─────────
+const consentLib = await import('../src/lib/privacy/consentContent.ts')
+const deletionLib = await import('../src/lib/account/accountDeletion.ts')
+
+test('P1a: 동의 문구는 명세와 같고, 버전·필수 항목이 맞아야 동의 완료', () => {
+  const spec = fs.readFileSync(new URL('../docs/privacy-consent-spec.md', import.meta.url), 'utf8')
+  const c = consentLib.CONSENT_COPY
+  for (const text of [c.intro, c.items[0].body, c.items[1].body, c.refusal]) assert.ok(spec.includes(text), text.slice(0, 20))
+  assert.equal(c.title, '개인정보 동의')
+  assert.equal(c.agreeButton, '동의하고 계속하기')
+  assert.match(c.retention, /회원 탈퇴 시까지/)
+  assert.match(c.retention, /팀 프로젝트에 남긴 대화와 산출물은 팀의 공동 기록으로 남습니다\./)
+  const v = consentLib.PRIVACY_CONSENT_VERSION
+  assert.equal(consentLib.needsConsent(null), true)
+  assert.equal(consentLib.needsConsent({}), true)
+  assert.equal(consentLib.needsConsent({ privacyConsent: { version: 'old', items: ['collect', 'overseas'] } }), true)
+  assert.equal(consentLib.needsConsent({ privacyConsent: { version: v, items: ['collect'] } }), true)
+  assert.equal(consentLib.needsConsent({ privacyConsent: { version: v, items: ['collect', 'overseas'], agreedAt: 1 } }), false)
+  const overseas = consentLib.CONSENT_OVERSEAS_TABLE.rows.map(r => `${r[0]}|${r[1]}`)
+  assert.deepEqual(overseas, ['OpenAI|미국', 'Anthropic|미국', 'TypeSafe AI, Inc.(Jev 판정 서비스)|미국'])
+  assert.equal(consentLib.ACCOUNT_DELETION_COPY.confirmWord, '탈퇴')
+  assert.equal(consentLib.ACCOUNT_DELETION_COPY.steps.length, 4)
+  const consentSrc = fs.readFileSync(new URL('../src/lib/privacy/consent.ts', import.meta.url), 'utf8')
+  assert.match(consentSrc, /setDoc\(doc\(db, 'users', uid\), \{ privacyConsent: record \}, \{ merge: true \}\)/)
+  assert.match(consentSrc, /agreedAt: serverTimestamp\(\)/)
+})
+
+test('P1b: 탈퇴 계획 — 나만 남은 프로젝트 삭제, 방장이면 가장 먼저 참여한 팀원에게 이전, 팀원이면 나가기', () => {
+  const me = 'u-me'
+  const projects = [
+    { id: 'solo', createdBy: me, hostUid: me, memberUids: [me] },
+    { id: 'legacy-solo', createdBy: me }, // memberUids 없는 옛 개인 프로젝트
+    { id: 'team-host', createdBy: me, hostUid: me, memberUids: [me, 'b', 'c'], memberInfo: { b: { joinedAt: 300 }, c: { joinedAt: 200 } } },
+    { id: 'team-host-nojoin', createdBy: me, memberUids: [me, 'x', 'y'] },
+    { id: 'team-member', createdBy: 'h', hostUid: 'h', memberUids: ['h', me] },
+    { id: 'created-not-host', createdBy: me, hostUid: 'h2', memberUids: [me, 'h2'] },
+    { id: 'other', createdBy: 'z', memberUids: ['z'] },
+    { id: 'solo', createdBy: me, hostUid: me, memberUids: [me] }, // 세 조회 중복
+  ]
+  const plan = deletionLib.planAccountDeletion(projects, me)
+  assert.deepEqual(JSON.parse(JSON.stringify(plan)), [
+    { projectId: 'solo', action: 'delete' },
+    { projectId: 'legacy-solo', action: 'delete' },
+    { projectId: 'team-host', action: 'transfer', newHostUid: 'c', reassignCreatedBy: true },
+    { projectId: 'team-host-nojoin', action: 'transfer', newHostUid: 'x', reassignCreatedBy: true },
+    { projectId: 'team-member', action: 'leave', reassignCreatedByTo: null },
+    { projectId: 'created-not-host', action: 'leave', reassignCreatedByTo: 'h2' },
+  ])
+  // 재시도 안전: 계획대로 처리된 상태라면 다시 계획해도 할 일이 없다
+  const after = [
+    { id: 'team-host', createdBy: 'c', hostUid: 'c', memberUids: ['b', 'c'] },
+    { id: 'team-member', createdBy: 'h', hostUid: 'h', memberUids: ['h'] },
+    { id: 'created-not-host', createdBy: 'h2', hostUid: 'h2', memberUids: ['h2'] },
+  ]
+  assert.equal(deletionLib.planAccountDeletion(after, me).length, 0)
+  assert.deepEqual([...deletionLib.memberRemovalFieldPaths(me)], [`memberInfo.${me}`, `artifactConfirmations.${me}`])
+})
+
+test('P1c: 탈퇴 API — 본인 ID 토큰 검증·확인 단어·관리자 SDK 런타임 로드·멱등 처리', () => {
+  const route = fs.readFileSync(new URL('../src/app/api/account/delete/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /auth\.verifyIdToken\(token\)\)\.uid/)
+  assert.match(route, /if \(body\.confirm !== '탈퇴'\) return json\(\{ \.\.\.result, error: 'confirm-required' \}, 400\)/)
+  assert.match(route, /error: 'unauthenticated' \}, 401/)
+  assert.match(route, /error: 'admin-unavailable' \}, 503/)
+  assert.match(route, /error: 'partial-failure' \}, 500/)
+  assert.match(route, /await db\.recursiveDelete\(ref\)/)
+  assert.match(route, /code !== 'auth\/user-not-found'/)
+  assert.match(route, /where\('memberUids', 'array-contains', uid\)[\s\S]*where\('createdBy', '==', uid\)[\s\S]*where\('hostUid', '==', uid\)/)
+  assert.doesNotMatch(route, /from 'firebase-admin/) // 정적 import 금지(admin.ts createRequire 규칙)
+  const admin = fs.readFileSync(new URL('../src/lib/firebase/admin.ts', import.meta.url), 'utf8')
+  assert.match(admin, /loadAdmin\('auth'\)\.getAuth\(getApps\(\)\[0\]\)/)
+  assert.match(admin, /loadAdmin\('storage'\)\.getStorage\(getApps\(\)\[0\]\)/)
+})
+
+test('P1d: 탈퇴 실패 코드마다 화면 안내 문구가 있고, API 가 돌려주는 코드와 일치', () => {
+  const route = fs.readFileSync(new URL('../src/app/api/account/delete/route.ts', import.meta.url), 'utf8')
+  const codes = [...route.matchAll(/error: '([a-z-]+)'/g)].map(m => m[1])
+  assert.ok(codes.length >= 4)
+  for (const code of codes) assert.ok(consentLib.ACCOUNT_DELETION_ERROR_COPY[code], code)
+  assert.ok(consentLib.ACCOUNT_DELETION_ERROR_COPY['requires-recent-login'])
+  assert.match(consentLib.CONSENT_UI_COPY.declineError, /로그아웃하지 못했습니다/)
+  assert.notEqual(consentLib.CONSENT_UI_COPY.declineError, consentLib.CONSENT_UI_COPY.saveError)
+})
+
+// ─── TASK-C1: 체크리스트 표 — 이름 세로 쪼개짐·단계 열 줄바꿈 ─────────
+test('C1: 체크 칸은 체크박스+첫 글자 배지 한 줄, 짧은 열(단계·팀 확인)은 nowrap + 최소 폭(보고서와 같은 규칙)', () => {
+  assert.equal(tableWidthLib.textWidth('T-3 역할 배분'), 13)
+  assert.equal(tableWidthLib.shortColumnMinCh(['단계', 'T-3 역할 배분', 'T-1 비전 설정']), 17)
+  assert.equal(tableWidthLib.shortColumnMinCh(['핵심 점검 항목', '우리 팀이 지향하는 협력적 수업설계의 궁극적 목적과 핵심 가치가 하나의 명확한 문장으로 기술되었는가?']), null)
+  const { MarkdownContent } = loadArtifactTsx('../src/components/chat/ChatPanel.tsx', {
+    'react-markdown': { __esModule: true, default: ReactMarkdown },
+    REMARK_PLUGINS, ReactMarkdown, cn: (...c) => c.filter(Boolean).join(' '),
+    markdownHeadingComponents: {}, HighlightedStrong: ({ children }) => React.createElement('strong', null, children),
+    INTERNAL_ACTIVITY_CODE_RE: /$^/g, displayActivityCode: c => c, splitGuideLines: () => null,
+    childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
+    CHAT_REMARK_PLUGINS: [...REMARK_PLUGINS, tableWidthLib.remarkShortColumns], CHECKER_COLORS: ['#1A73E8', '#188038'],
+  }, ['MarkdownContent', 'ChecklistBox', 'shortCellStyle', 'checkerColor', 'checkedAtText'])
+  const text = '| 단계 | 핵심 점검 항목 | AI 분석 | 팀 확인 |\n|---|---|---|---|\n| T-3 역할 배분 | 팀원 각자의 강점, 관심사, 현재 업무 여력을 충분히 고려하여 균형 있게 역할을 배분하였는가? 그리고 기록하였는가? | ✅ | ☐ |'
+  const html = renderToStaticMarkup(React.createElement(MarkdownContent, { text, checklist: { state: { 0: { checked: true, by: '홍성용', at: { toDate: () => new Date(2026, 9, 5, 9, 30) } } }, canEdit: true, onToggle() {} } }))
+  const cells = [...html.matchAll(/<td[^>]*>/g)].map(m => m[0])
+  assert.match(cells[0], /min-width:17ch;white-space:nowrap/) // 단계 열
+  assert.doesNotMatch(cells[1], /white-space:nowrap/) // 긴 설명 열은 줄바꿈 유지
+  assert.match(cells[3], /white-space:nowrap/) // 팀 확인 열
+  assert.match(html, /<span class="inline-flex items-center gap-1 whitespace-nowrap align-middle"/)
+  assert.match(html, /title="홍성용 · [^"]+ 확인"[^>]*>홍<\/span>/) // 첫 글자 배지 + 전체 이름·시각
+  assert.match(html, /role="tooltip"[^>]*>홍성용 · /) // 마우스 올림·포커스 툴팁
+  assert.match(html, /tabindex="0"/)
+})
+
+// ─── TASK-C2(우측): 팀원 공동 편집 구조화 제안 수락 — 방장 직접 전송과 같게 그대로 저장 ─────────
+test('C2a: _schema 가 대상 활동과 같은 제안은 정화·빌더 없이 내용 전체 교체, 문자열 제안은 기존 흐름', () => {
+  const run = (sections, activityCode) => {
+    const writes = [], enriched = []
+    const accept = loadChatFunction('handleAcceptArtifactSave', {
+      pendingArtifactSave: { sections, activityCode, proposerName: '캔바1' }, currentActivity: activityCode, ACTIVITY_META,
+      currentArtifact: null, project: { id: 'p', artifacts: { [activityCode]: { content: { '평가 계획': '옛 문자열 표', 메모: '옛' }, version: 2 } } }, proj: { id: 'p' },
+      messages: [], sanitizeChatForExtraction: m => m,
+      enrichArtifactSections: value => { enriched.push(value); return value }, sanitizeArtifactSections: value => value,
+      isTrainingActivity: () => false, soloT11Opts: () => ({}), buildT21Structured: value => ({ _schema: 'T-2-1', built: value }),
+      setViewingActivity() {}, setCurrentArtifact() {}, userProfile: { uid: 'host' }, Timestamp: { now: () => 1 },
+      setProjectArtifact: async (...args) => writes.push(args), clearArtifactProposal: async () => {}, setPendingArtifactSave() {},
+      console,
+    })
+    accept()
+    return { writes, enriched }
+  }
+  const structured = { _schema: 'Ds-1-1', rubric: [{ checkpoint: '결과물', item: '표현함' }], manualWorkspace: { rows: [{ id: 'r1' }] } }
+  const a = run(structured, 'Ds-1-1')
+  assert.equal(a.enriched.length, 0)
+  assert.equal(JSON.stringify(a.writes[0][2].content), JSON.stringify(structured)) // 옛 문자열 섹션 없이 그대로
+  assert.equal(a.writes[0][2].version, 3)
+  const roles = { _schema: 'T-2-1', roles: [{ teacherName: '캔바1' }], manualWorkspace: { rows: [] } }
+  assert.equal(JSON.stringify(run(roles, 'T-2-1').writes[0][2].content), JSON.stringify(roles)) // 빌더도 건너뜀
+  const plain = run({ '평가 계획': '| 새 | 표 |' }, 'Ds-1-1')
+  assert.equal(plain.enriched.length, 1)
+  assert.equal(plain.writes[0][2].content['메모'], '옛') // 문자열 제안은 기존처럼 병합
+  const other = run({ _schema: 'T-2-1', roles: [] }, 'Ds-1-1') // 스키마가 다른 활동이면 기존 흐름
+  assert.equal(other.enriched.length, 1)
 })

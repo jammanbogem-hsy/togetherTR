@@ -3,15 +3,21 @@
 import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { CheckSquare, X } from '@phosphor-icons/react'
+import { trainingFormText } from '@/components/training/trainingFormText'
+import { type ActivityCode, ACTIVITY_META } from '@/types'
 
 interface Props {
   title: string
-  sections: Record<string, string>
+  sections: Record<string, unknown>
   onAccept: () => void
   onDecline: () => void
 }
 
 export function ArtifactSaveProposal({ title, sections, onAccept, onDecline }: Props) {
+  const schema = typeof sections._schema === 'string' && Object.hasOwn(ACTIVITY_META, sections._schema) ? sections._schema as ActivityCode : undefined
+  const preview = schema
+    ? { '공동 편집 초안': trainingFormText(Object.fromEntries(Object.entries(sections).filter(([key]) => !key.startsWith('_') && key !== 'manualWorkspace')), schema) }
+    : Object.fromEntries(Object.entries(sections).filter(([key]) => !key.startsWith('_') && key !== 'manualWorkspace').map(([key, value]) => [key, typeof value === 'string' ? value : trainingFormText(value, 'T-2-1')]))
   return (
     <div className="mx-0 my-3 border border-[#AECBFA] bg-[#E8F0FE] rounded-2xl p-4">
       <div className="flex items-start justify-between gap-2 mb-3">
@@ -31,7 +37,7 @@ export function ArtifactSaveProposal({ title, sections, onAccept, onDecline }: P
 
       {/* 미리보기 */}
       <div className="bg-white rounded-xl border border-[#AECBFA] px-3 py-2 mb-3 space-y-3 max-h-48 overflow-y-auto">
-        {Object.entries(sections).map(([key, value]) => (
+        {Object.entries(preview).map(([key, value]) => (
           <div key={key}>
             <p className="text-[10px] font-bold text-[#1A73E8] uppercase tracking-wide mb-1">{key}</p>
             <div className="text-xs text-[#202124] leading-relaxed prose prose-xs max-w-none

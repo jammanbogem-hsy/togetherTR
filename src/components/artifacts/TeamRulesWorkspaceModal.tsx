@@ -1,5 +1,8 @@
 'use client'
 
+import { sendWorkspaceArtifact } from './workspaceArtifactRequest'
+import { WorkspaceSaveStatus } from './WorkspaceSaveStatus'
+
 import { displayActivityCode } from '@/types'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -35,6 +38,7 @@ interface Props {
   onClose: () => void
   workspace?: TeamRulesWorkspace
   artifactContent?: Record<string, unknown>
+  projectId?: string
   currentUid?: string
   currentUserName?: string
   currentUserColor?: string
@@ -316,6 +320,7 @@ export function TeamRulesWorkspaceModal({
   onClose,
   workspace: savedWorkspace,
   artifactContent,
+  projectId,
   currentUid,
   currentUserName,
   currentUserColor,
@@ -334,6 +339,8 @@ export function TeamRulesWorkspaceModal({
 }: Props) {
   const [workspace, setWorkspace] = useState<TeamRulesWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
   const [saving, setSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
+  const [offerReflection, setOfferReflection] = useState(false)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
   // AI 제안 받기 — 사용자 추가 프롬프트 없이 팀 채팅·기존 행만으로 한 번에 제안
@@ -468,6 +475,7 @@ export function TeamRulesWorkspaceModal({
       const cleanPatch = stripUndefinedDeep(sync.prepare(patch, next)) as TeamRulesWorkspacePatch
       const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       if (saved) sync.applySaved(normalizeWorkspace(saved))
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
     } catch (error) {
       console.error('[teamRulesWorkspace patch]', error)
       setMessage('저장하지 못했습니다. 다시 시도해주세요.')
@@ -475,16 +483,15 @@ export function TeamRulesWorkspaceModal({
   }
 
   async function handleSaveAll() {
-    if (!isHost) {
-      setMessage('초안 저장과 산출물 전송은 방장만 실행할 수 있습니다.')
-      return
-    }
+    if (saving || sending) return
     setSaving(true)
     try {
       const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as TeamRulesWorkspacePatch
       const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
       if (saved) sync.applySaved(normalizeWorkspace(saved))
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
       setMessage('공동 편집 초안을 저장했습니다.')
+      setOfferReflection(isHost)
     } catch (error) {
       console.error('[teamRulesWorkspace save]', error)
       setMessage('저장하지 못했습니다. 다시 시도해주세요.')
@@ -811,16 +818,19 @@ export function TeamRulesWorkspaceModal({
   }
 
   async function sendArtifact() {
-    if (!isHost) return
+    if (saving || sending) return
     setSending(true)
     try {
-      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: await sync.settledLatest(), updatedBy: currentUserName }) as TeamRulesWorkspacePatch
+      const latestWorkspace = await sync.settledLatest()
+      const cleanPatch = stripUndefinedDeep({ type: 'replace-all', workspace: latestWorkspace, updatedBy: currentUserName }) as TeamRulesWorkspacePatch
       const saved = await sync.track(cleanPatch, onPatchSave(cleanPatch))
-      const finalWorkspace = normalizeWorkspace(saved ?? workspace)
+      const finalWorkspace = normalizeWorkspace(saved ?? latestWorkspace)
       const structured = workspaceToArtifact(finalWorkspace)
-      await onSendArtifact(stripUndefinedDeep(structured) as T22Structured)
-      setMessage(`${displayActivityCode('T-2-2')} 산출물로 보냈습니다.`)
-      onClose()
+      await sendWorkspaceArtifact({ isHost, projectId, activityCode: 'T-2-2', currentUid, currentUserName, content: stripUndefinedDeep(structured) as T22Structured, onSendArtifact })
+      setLastSavedAt(saved?.updatedAt ?? Date.now())
+      setOfferReflection(false)
+      setMessage(isHost ? `${displayActivityCode('T-2-2')} 산출물로 보냈습니다.` : '방장에게 반영을 요청했어요')
+      if (isHost) onClose()
     } catch (error) {
       console.error('[teamRulesWorkspace send]', error)
       const msg = error instanceof Error ? error.message : '알 수 없는 오류'
@@ -882,12 +892,12 @@ export function TeamRulesWorkspaceModal({
           <button
             type="button"
             onClick={sendArtifact}
-            disabled={!isHost || sending}
-            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('T-2-2')} 산출물로 보냅니다` : '방장만 산출물로 보낼 수 있습니다'}
+            disabled={sending || saving}
+            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('T-2-2')} 산출물로 보냅니다` : '편집 내용을 방장에게 반영 요청합니다'}
             className="hidden sm:flex h-10 items-center gap-2 px-5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06327A] text-white text-[14px] font-medium shadow-[0_1px_2px_rgba(60,64,67,0.3),0_1px_3px_1px_rgba(60,64,67,0.15)] transition-colors disabled:opacity-40 disabled:shadow-none"
           >
             <PaperPlaneRight size={17} weight="fill" />
-            {sending ? '전송 중' : '산출물로 보내기'}
+            {sending ? '전송 중' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
           </button>
           <button
             type="button"
@@ -1494,20 +1504,20 @@ export function TeamRulesWorkspaceModal({
         <div className="flex-shrink-0 border-t border-[#E8EAED] bg-white px-5 py-3">
           <div className="mx-auto flex max-w-[980px] items-center gap-3">
             <span className="hidden sm:inline-flex rounded-full bg-[#F8F9FA] px-3 py-2 text-[14px] font-bold text-[#5F6368]">마크다운 없이 직접 편집</span>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="hidden sm:inline-flex items-center gap-1 text-[14px] font-bold text-[#5F6368]">
-                <CheckCircle size={17} weight="fill" className="text-[#9AA0A6]" />
-                {isHost ? '저장 가능' : '편집 중'}
-              </span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <WorkspaceSaveStatus lastSavedAt={Math.max(lastSavedAt ?? 0, savedWorkspace?.updatedAt ?? 0)} offerReflection={isHost && offerReflection} busy={saving || sending} onReflect={sendArtifact} />
+              <button type="button" onClick={sendArtifact} disabled={saving || sending} className="sm:hidden rounded-full bg-[#0B57D0] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+                {sending ? '전송 중' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
+              </button>
               <button
                 type="button"
                 onClick={handleSaveAll}
-                disabled={!isHost || saving}
-                title={isHost ? '현재 공동 초안을 저장합니다' : '초안 저장은 방장만 실행할 수 있습니다'}
+                disabled={saving || sending}
+                title="현재 공동 초안을 저장합니다"
                 className="flex items-center gap-1.5 rounded-full bg-[#111827] px-5 py-3 text-[15px] font-semibold text-white shadow-lg transition-colors hover:bg-[#1F2937] disabled:opacity-45"
               >
                 <FloppyDisk size={18} weight="bold" />
-                {saving ? '저장 중' : '저장하기'}
+                {saving ? '저장 중' : '초안 저장'}
               </button>
             </div>
           </div>

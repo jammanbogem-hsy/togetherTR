@@ -20,6 +20,8 @@ export interface UserProfile {
   schoolLevel?: '초등' | '중등' | '고등'
   schoolName?: string
   grade?: string
+  /** 개인정보 동의 기록(src/lib/privacy/consent.ts) — 없거나 버전이 다르면 동의 화면 */
+  privacyConsent?: { version: string; agreedAt: unknown; items: Array<'collect' | 'overseas'> }
 }
 
 // PCCS 파스텔톤 (p톤 — 彩度 낮고 明度 높음, 색상환 균등 배치)
