@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import ts from 'typescript'
 import { createPresenceThrottle, samePresenceEntry, PRESENCE_THROTTLE_MS } from '../src/lib/coedit/presenceThrottle.ts'
+import * as presenceOwner from '../src/lib/coedit/presenceOwner.ts'
 
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
 const entry = (updatedAt, caretPos = 3) => ({ uid: 'a', displayName: '사회 교사', color: '#A0BCE8', cellKey: 'r1:c1', caretPos, updatedAt })
@@ -103,14 +104,22 @@ test('presence: write 실패도 호출 Promise를 종료하고 다음 heartbeat�
 function loadProjects(writes) {
   const source = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
+  // Presence writes go through a transaction (#R4-C); this mock applies them to an in-memory store.
+  const store = new Map()
   const firestore = {
     doc: (_db, ...segments) => segments.join('/'),
     setDoc: async (path, value) => { writes.push({ path, value }) },
     deleteDoc: async path => { writes.push({ path, value: null }) },
+    runTransaction: async (_db, fn) => fn({
+      get: async path => ({ exists: () => store.has(path), data: () => store.get(path) }),
+      set: (path, value) => { store.set(path, value); writes.push({ path, value }) },
+      delete: path => { store.delete(path); writes.push({ path, value: null }) },
+    }),
   }
   const context = { exports: {}, console, Date, setTimeout, clearTimeout, require(name) {
     if (name === 'firebase/firestore') return firestore
     if (name === '@/lib/coedit/presenceThrottle') return { createPresenceThrottle }
+    if (name === '@/lib/coedit/presenceOwner') return presenceOwner
     return {}
   } }
   vm.runInNewContext(compiled, context)

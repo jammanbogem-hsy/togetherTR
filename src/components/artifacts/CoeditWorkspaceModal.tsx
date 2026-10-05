@@ -16,6 +16,7 @@ import type { CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/p
 import { AutoGrowTextarea } from './workspaceHelpers'
 import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
 import { presenceAccentStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
+import { resolveWorkspacePresence, shouldReportWorkspaceCaret } from './workspacePresence'
 
 // ─── DI·E 공동 편집 공용 모달 ────────────────────────────────────────
 // 기존 12개 모달은 활동마다 전체를 복제했지만(각 1300~1600줄), 신규 4종은
@@ -164,18 +165,36 @@ export function CoeditWorkspaceModal({
     void onPresenceUpdate?.(null)
   }, [open, onPresenceUpdate])
 
-  // caretPos: 칸 안 커서 위치 — 다른 팀원 화면에 작업 위치(커서·이름)를 그린다(#R3). 저장은 모듈이 디바운스.
+  const lastPresenceRef = useRef<CoeditPresenceEntry | null>(null)
+  const encodeCaret = realtime.encodeCaret
+  const shouldSendPresence = realtime.shouldSendPresence
+  const realtimeEnabled = realtime.enabled
+  // Preserve the relative anchor in heartbeats; only real input claims this tab's position.
   const reportPresence = useCallback((cellKey: string, caretPos?: number) => {
     if (!currentUid || !onPresenceUpdate) return
-    void onPresenceUpdate({
+    if (!shouldReportWorkspaceCaret({ enabled: realtimeEnabled, shouldSendPresence })) return
+    const relativeCaret = typeof caretPos === 'number' ? encodeCaret(cellKey, caretPos) : undefined
+    const entry: CoeditPresenceEntry = {
       uid: currentUid,
       displayName: currentUserName ?? '팀원',
       color: currentUserColor ?? '#A0BCE8',
       cellKey,
       ...(typeof caretPos === 'number' ? { caretPos } : {}),
+      ...(relativeCaret ? { relativeCaret } : {}),
+      interactionAt: Math.max(Date.now(), (lastPresenceRef.current?.interactionAt ?? 0) + 1),
       updatedAt: Date.now(),
-    })
-  }, [currentUid, currentUserName, currentUserColor, onPresenceUpdate])
+    }
+    lastPresenceRef.current = entry
+    void onPresenceUpdate(entry)
+  }, [currentUid, currentUserName, currentUserColor, onPresenceUpdate, encodeCaret, realtimeEnabled, shouldSendPresence])
+
+  useEffect(() => {
+    if (!open || !onPresenceUpdate) return
+    const timer = setInterval(() => {
+      if (lastPresenceRef.current) void onPresenceUpdate({ ...lastPresenceRef.current, updatedAt: Date.now() })
+    }, 10_000)
+    return () => clearInterval(timer)
+  }, [open, onPresenceUpdate])
 
   /** 구조 변경(줄 추가·삭제 등) — 로컬 즉시 반영 후 바로 저장. 대기 중인 칸 저장을 먼저 보내 순서를 지킨다. */
   const patch = useCallback(async (p: CoeditWorkspacePatch, next: CoeditWorkspace) => {
@@ -317,12 +336,12 @@ export function CoeditWorkspaceModal({
   const editorsByCell = useMemo(() => {
     const map: Record<string, CoeditPresenceEntry[]> = {}
     const { fresh } = splitPresence(Object.values(presence ?? {}), presenceNow, 60_000)
-    for (const p of fresh) {
+    for (const p of resolveWorkspacePresence(fresh, realtime)) {
       if (p.uid === currentUid) continue
       ;(map[p.cellKey] ??= []).push(p)
     }
     return map
-  }, [presence, currentUid, presenceNow])
+  }, [presence, currentUid, presenceNow, realtime])
 
   if (!open || !mounted) return null
 
@@ -374,10 +393,11 @@ export function CoeditWorkspaceModal({
                       <td key={c.id} className="px-2 py-1.5 relative">
                         <AutoGrowTextarea
                           caretEditors={others}
+                          {...realtime.fieldProps(cellKey)}
                           value={row.cells?.[c.id] ?? ''}
                           onChange={e => { onCell(row.id, c.id, e.target.value); reportPresence(cellKey, e.target.selectionStart ?? undefined) }}
                           onFocus={e => { editingKeyRef.current = cellKey; reportPresence(cellKey, e.currentTarget.selectionStart ?? 0) }}
-                          onSelect={e => reportPresence(cellKey, e.currentTarget.selectionStart ?? 0)}
+                          onSelect={e => { if (realtime.shouldSendPresence(e.currentTarget)) reportPresence(cellKey, e.currentTarget.selectionStart ?? 0) }}
                           onKeyUp={e => reportPresence(cellKey, e.currentTarget.selectionStart ?? 0)}
                           onClick={e => reportPresence(cellKey, e.currentTarget.selectionStart ?? 0)}
                           onBlur={() => { if (editingKeyRef.current === cellKey) editingKeyRef.current = null }}

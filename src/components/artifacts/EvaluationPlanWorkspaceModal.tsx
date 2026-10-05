@@ -22,6 +22,7 @@ import type {
 import type { Ds11Structured, Ds11RubricRow } from '@/lib/artifacts/schemas'
 import type { EvaluationPlanWorkspacePatch } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
+import { resolveWorkspacePresence, shouldReportWorkspaceCaret } from './workspacePresence'
 import {
   AutoGrowTextarea,
   PresenceInput,
@@ -43,6 +44,9 @@ interface PresenceEntry {
   color: string
   cellKey: string
   caretPos?: number
+  relativeCaret?: string
+  interactionAt?: number
+  sessionId?: string
   updatedAt: number
 }
 
@@ -342,7 +346,7 @@ export function EvaluationPlanWorkspaceModal({
   })
 
   // 마지막 송신 presence 추적 + heartbeat
-  const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number }>({ cellKey: 'modal:idle' })
+  const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number; relativeCaret?: string; interactionAt?: number }>({ cellKey: 'modal:idle' })
 
   useEffect(() => {
     if (!open) {
@@ -359,6 +363,8 @@ export function EvaluationPlanWorkspaceModal({
         color: currentUserColor ?? '#1A73E8',
         cellKey: last.cellKey,
         caretPos: last.caretPos,
+        relativeCaret: last.relativeCaret,
+        interactionAt: last.interactionAt,
         updatedAt: Date.now(),
       })
     }
@@ -369,31 +375,39 @@ export function EvaluationPlanWorkspaceModal({
 
   // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
   const presenceNow = usePresenceClock()
-  const { fresh: freshEditors, away: awayEditors } = useMemo(
+  const { fresh: receivedEditors, away: awayEditors } = useMemo(
     () => splitPresence(Object.values(presence ?? {}), presenceNow, 20000),
     [presence, presenceNow],
   )
 
+  const freshEditors = resolveWorkspacePresence(receivedEditors, realtime)
+
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
+    if (typeof caretPos === 'number' && !shouldReportWorkspaceCaret(realtime)) return
     if (!onPresenceUpdate || !currentUid) return
     if (cellKey === null) {
-      lastPresenceRef.current = { cellKey: 'modal:idle' }
+      lastPresenceRef.current = { cellKey: 'modal:idle', interactionAt: lastPresenceRef.current.interactionAt }
       onPresenceUpdate({
         uid: currentUid,
         displayName: currentUserName ?? '나',
         color: currentUserColor ?? '#1A73E8',
         cellKey: 'modal:idle',
+        interactionAt: lastPresenceRef.current.interactionAt,
         updatedAt: Date.now(),
       })
       return
     }
-    lastPresenceRef.current = { cellKey, caretPos }
+    const relativeCaret = typeof caretPos === 'number' ? realtime.encodeCaret(cellKey, caretPos) : undefined
+    const interactionAt = Math.max(Date.now(), (lastPresenceRef.current.interactionAt ?? 0) + 1)
+    lastPresenceRef.current = { cellKey, caretPos, relativeCaret, interactionAt }
     onPresenceUpdate({
       uid: currentUid,
       displayName: currentUserName ?? '나',
       color: currentUserColor ?? '#1A73E8',
       cellKey,
       caretPos,
+      relativeCaret,
+      interactionAt,
       updatedAt: Date.now(),
     })
   }
@@ -415,6 +429,7 @@ export function EvaluationPlanWorkspaceModal({
   // 커서 위치(selectionStart)를 함께 보내 다른 팀원 화면에 caret 을 그린다 — 칸만 보내면 caretPos 가 늘 비어 있었다(#R3).
   function caretProps(cellKey: string) {
     const track = (event: React.SyntheticEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (!realtime.shouldSendPresence(event.currentTarget)) return
       updatePresence(cellKey, event.currentTarget.selectionStart ?? 0)
     }
     return {
@@ -858,6 +873,7 @@ export function EvaluationPlanWorkspaceModal({
                           <th key={column.id} className="min-w-[150px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2">
                             <div className="flex items-center gap-1.5">
                               <PresenceInput
+                                {...realtime.fieldProps(`column:${column.id}`)}
                                 caretEditors={caretEditorsFor(`column:${column.id}`)}
                                 value={column.label}
                                 onChange={event => {
@@ -908,6 +924,7 @@ export function EvaluationPlanWorkspaceModal({
                                     </span>
                                   )}
                                   <AutoGrowTextarea
+                                    {...realtime.fieldProps(cellKey)}
                                     caretEditors={editor ? [editor] : []}
                                     style={editor ? presenceAccentStyle(editor.color) : undefined}
                                     value={getCell(row, column.id)}
@@ -983,6 +1000,7 @@ export function EvaluationPlanWorkspaceModal({
                                     {table.columns.map(column => (
                                       <td key={column.id} className="border-b border-r border-[#E9E9E7] bg-white p-2 align-top">
                                         <AutoGrowTextarea
+                                          {...realtime.fieldProps(`block-table:${block.id}:${row.id}:${column.id}`)}
                                           caretEditors={caretEditorsFor(`block-table:${block.id}:${row.id}:${column.id}`)}
                                           value={(row.cells?.[column.id] ?? '') as string}
                                           onChange={event => {
@@ -1035,6 +1053,7 @@ export function EvaluationPlanWorkspaceModal({
                                       {it.checked ? <CheckSquare size={20} weight="fill" /> : <Square size={20} weight="regular" />}
                                     </button>
                                     <PresenceInput
+                                      {...realtime.fieldProps(`block:${block.id}:check:${idx}`)}
                                       caretEditors={caretEditorsFor(`block:${block.id}:check:${idx}`)}
                                       value={it.text}
                                       onChange={event => {
@@ -1074,6 +1093,7 @@ export function EvaluationPlanWorkspaceModal({
                           })()
                         ) : (
                           <AutoGrowTextarea
+                            {...realtime.fieldProps(`block:${block.id}`)}
                             value={block.content}
                             caretEditors={caretEditorsFor(`block:${block.id}`)}
                             onChange={event => {

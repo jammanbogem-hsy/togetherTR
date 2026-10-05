@@ -21,6 +21,7 @@ import type {
 import type { T11Structured } from '@/lib/artifacts/schemas'
 import type { TeamVisionWorkspacePatch } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
+import { resolveWorkspacePresence, shouldReportWorkspaceCaret } from './workspacePresence'
 import {
   AutoGrowTextarea,
   PresenceInput,
@@ -45,6 +46,9 @@ interface PresenceEntry {
   cellKey: string
   /** textarea selectionStart — 다른 팀원의 caret 위치 시각화용 */
   caretPos?: number
+  relativeCaret?: string
+  interactionAt?: number
+  sessionId?: string
   updatedAt: number
 }
 
@@ -404,7 +408,7 @@ export function TeamVisionWorkspaceModal({
   }, [incomingWorkspace, open])
 
   // 마지막으로 송신한 presence를 추적해 heartbeat에서 동일 cellKey/caretPos로 갱신.
-  const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number }>({ cellKey: 'modal:idle' })
+  const lastPresenceRef = useRef<{ cellKey: string; caretPos?: number; relativeCaret?: string; interactionAt?: number }>({ cellKey: 'modal:idle' })
 
   // 모달이 열려 있는 동안 idle presence 유지 + 10초 heartbeat.
   // 모달을 열어둔 팀원 전원이 헤더 chip에 계속 표시되며, focus가 아니어도 "참여 중" 표시 유지.
@@ -423,6 +427,8 @@ export function TeamVisionWorkspaceModal({
         color: currentUserColor ?? '#1A73E8',
         cellKey: last.cellKey,
         caretPos: last.caretPos,
+        relativeCaret: last.relativeCaret,
+        interactionAt: last.interactionAt,
         updatedAt: Date.now(),
       })
     }
@@ -434,12 +440,15 @@ export function TeamVisionWorkspaceModal({
   // 참여자 표시: 시계로 다시 계산해 신호가 끊긴 사람이 남지 않게 하고, 잠시 비운 사람은 흐리게(#R2)
     // [2026-05-15] 시계 차이/네트워크 지연으로 host entry가 stale 판정되는 케이스 — 60초로 확장.
   const presenceNow = usePresenceClock()
-  const { fresh: freshEditors, away: awayEditors } = useMemo(
+  const { fresh: receivedEditors, away: awayEditors } = useMemo(
     () => splitPresence(Object.values(presence ?? {}), presenceNow, 60000),
     [presence, presenceNow],
   )
 
+  const freshEditors = resolveWorkspacePresence(receivedEditors, realtime)
+
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
+    if (typeof caretPos === 'number' && !shouldReportWorkspaceCaret(realtime)) return
     if (!onPresenceUpdate || !currentUid) return
     if (cellKey === null) {
       // blur: cellKey를 'modal:idle'로 즉시 바꾸면 다른 사용자 화면에서 셀 chip이 사라져
@@ -453,17 +462,23 @@ export function TeamVisionWorkspaceModal({
         color: currentUserColor ?? '#1A73E8',
         cellKey: last.cellKey,
         caretPos: last.caretPos,
+        relativeCaret: last.relativeCaret,
+        interactionAt: last.interactionAt,
         updatedAt: Date.now(),
       })
       return
     }
-    lastPresenceRef.current = { cellKey, caretPos }
+    const relativeCaret = typeof caretPos === 'number' ? realtime.encodeCaret(cellKey, caretPos) : undefined
+    const interactionAt = Math.max(Date.now(), (lastPresenceRef.current.interactionAt ?? 0) + 1)
+    lastPresenceRef.current = { cellKey, caretPos, relativeCaret, interactionAt }
     onPresenceUpdate({
       uid: currentUid,
       displayName: currentUserName ?? '나',
       color: currentUserColor ?? '#1A73E8',
       cellKey,
       caretPos,
+      relativeCaret,
+      interactionAt,
       updatedAt: Date.now(),
     })
   }
@@ -481,6 +496,7 @@ export function TeamVisionWorkspaceModal({
   // textarea select/keyup/click 이벤트에서 selectionStart를 caretPos로 전달.
   function trackCaret(cellKey: string) {
     return (event: React.SyntheticEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+      if (!realtime.shouldSendPresence(event.currentTarget)) return
       updatePresence(cellKey, event.currentTarget.selectionStart ?? 0)
     }
   }
@@ -985,6 +1001,7 @@ export function TeamVisionWorkspaceModal({
                     )}
                     <div className="relative">
                       <AutoGrowTextarea
+                        {...realtime.fieldProps(cellKey)}
                         value={workspace.teamVision}
                         onChange={event => {
                           setMetaLocal('teamVision', event.target.value)
@@ -1025,6 +1042,7 @@ export function TeamVisionWorkspaceModal({
                       </span>
                     ))}
                     <PresenceInput
+                      {...realtime.fieldProps(cellKey)}
                       caretEditors={editorsForCell(cellKey)}
                       onKeyUp={trackCaret(cellKey)}
                       onClick={trackCaret(cellKey)}
@@ -1085,6 +1103,7 @@ export function TeamVisionWorkspaceModal({
                           <th key={column.id} className="min-w-[190px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <PresenceInput
+                                {...realtime.fieldProps(`column:${column.id}`)}
                                 caretEditors={editorsForCell(`column:${column.id}`)}
                                 onSelect={trackCaret(`column:${column.id}`)}
                                 onKeyUp={trackCaret(`column:${column.id}`)}
@@ -1134,6 +1153,7 @@ export function TeamVisionWorkspaceModal({
                                     </span>
                                   ))}
                                   <AutoGrowTextarea
+                                    {...realtime.fieldProps(cellKey)}
                                     caretEditors={cellEditors}
                                     value={getCell(row, column.id)}
                                     onChange={event => {
@@ -1212,6 +1232,7 @@ export function TeamVisionWorkspaceModal({
                                 <th key={column.id} className="min-w-[180px] border-b border-r border-[#E9E9E7] bg-[#F7F7F5] px-2 py-2">
                                   <div className="flex items-center gap-1.5">
                                     <PresenceInput
+                                      {...realtime.fieldProps(`block-table-column:${block.id}:${column.id}`)}
                                       caretEditors={editorsForCell(`block-table-column:${block.id}:${column.id}`)}
                                       onSelect={trackCaret(`block-table-column:${block.id}:${column.id}`)}
                                       onKeyUp={trackCaret(`block-table-column:${block.id}:${column.id}`)}
@@ -1265,6 +1286,7 @@ export function TeamVisionWorkspaceModal({
                                           </span>
                                         ))}
                                         <AutoGrowTextarea
+                                          {...realtime.fieldProps(cellKey)}
                                           caretEditors={cellEditors}
                                           value={getCell(row, column.id)}
                                           onChange={event => {
@@ -1334,6 +1356,7 @@ export function TeamVisionWorkspaceModal({
                                   {it.checked ? <CheckSquare size={20} weight="fill" /> : <Square size={20} weight="regular" />}
                                 </button>
                                 <PresenceInput
+                                  {...realtime.fieldProps(`block:${block.id}:check:${idx}`)}
                                   caretEditors={editorsForCell(`block:${block.id}:check:${idx}`)}
                                   onSelect={trackCaret(`block:${block.id}:check:${idx}`)}
                                   onKeyUp={trackCaret(`block:${block.id}:check:${idx}`)}
@@ -1382,6 +1405,7 @@ export function TeamVisionWorkspaceModal({
                       })()
                     ) : (
                       <AutoGrowTextarea
+                        {...realtime.fieldProps(`block:${block.id}`)}
                         caretEditors={editorsForCell(`block:${block.id}`)}
                         onSelect={trackCaret(`block:${block.id}`)}
                         onKeyUp={trackCaret(`block:${block.id}`)}

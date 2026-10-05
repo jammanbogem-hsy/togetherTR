@@ -1,0 +1,22 @@
+// The existing bundler supplies the production CSS, TypeScript loader and fake Firebase config.
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '..')
+let source = fs.readFileSync(path.join(__dirname,'verify-realtime-browser.cjs'),'utf8')
+const match = source.match(/const fixtures = (\{[^\n]+\})/)
+const fixtures = JSON.parse(match[1])
+fixtures['entry.tsx'] = fs.readFileSync(path.join(__dirname,'fixtures/cursor-browser.tsx.txt'),'utf8')
+fixtures['provider.ts'] = fixtures['provider.ts']
+  .replace(/export const initial = [^\n]+/, `export const initial = {columns:[{id:'activity',label:'활동'}],rows:[{id:'r1',cells:{activity:'함께 만드는 수업'}}],blocks:[{id:'p1',type:'paragraph',content:'가나다라마바사 아자차카타파하',color:'#FFFFFF'},{id:'c1',type:'checklist',content:'- [ ] 첫 확인 항목\\n- [ ] 둘째 확인 항목',color:'#FFFFFF'}],updatedAt:1}`)
+  .replace(/let project: any = [^\n]+/, `const shared = (window.parent as any).__cursorStore ??= {project:{id:'browser-test',trainingMode:{enabled:true},currentCycle:1,memberUids:['test'],teamScheduleWorkspace:initial},queue:Promise.resolve(),listeners:new Set()}`)
+  .replace('let queue = Promise.resolve()','')
+  .replace('const listeners = new Set<(p: any) => void>()','')
+  .replace(/\bproject\[/g,'shared.project[')
+  .replace(/structuredClone\(project\)/g,'structuredClone(shared.project)')
+  .replace(/\bqueue\.then/g,'shared.queue.then')
+  .replace(/\bqueue = result/g,'shared.queue = result')
+  .replace(/\blisteners\./g,'shared.listeners.')
+source=source.replace(match[0],'const fixtures = '+JSON.stringify(fixtures)).replace("'tcid-realtime-browser'","'tcid-cursor-motion-browser'")
+// Keep the app's real CSS; generic textarea sizing would invalidate cursor geometry.
+source=source.replace(/textarea\{font:18px\/1.6 Arial;width:95%;height:120px;padding:10px;box-sizing:border-box\}/,'')
+new Function('require','__dirname','__filename',source)(require,__dirname,__filename)

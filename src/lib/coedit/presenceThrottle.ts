@@ -2,13 +2,14 @@ export const PRESENCE_THROTTLE_MS = 250
 
 type PresenceEntry = {
   uid?: string; displayName?: string; color?: string; cellKey?: string
-  caretPos?: number; updatedAt?: number
+  caretPos?: number; relativeCaret?: string; interactionAt?: number; sessionId?: string; updatedAt?: number
 }
 
 /** 같은 위치라도 heartbeat·이름·색이 바뀌면 구독 상태를 갱신한다. */
 export function samePresenceEntry(a: PresenceEntry | undefined, b: PresenceEntry): boolean {
   return !!a && a.uid === b.uid && a.displayName === b.displayName && a.color === b.color
-    && a.cellKey === b.cellKey && a.caretPos === b.caretPos && a.updatedAt === b.updatedAt
+    && a.cellKey === b.cellKey && a.caretPos === b.caretPos && a.relativeCaret === b.relativeCaret
+    && a.interactionAt === b.interactionAt && a.sessionId === b.sessionId && a.updatedAt === b.updatedAt
 }
 
 /** 키별 leading + 최신 trailing 송신. 삭제는 대기 입력을 취소하고 진행 중 쓰기 뒤에 실행한다. */

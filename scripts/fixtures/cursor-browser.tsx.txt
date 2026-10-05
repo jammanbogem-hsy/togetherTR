@@ -1,0 +1,29 @@
+import React, { useCallback, useEffect, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import { TeamScheduleWorkspaceModal } from '@/components/artifacts/TeamScheduleWorkspaceModal'
+import { useProjectStore } from '@/store/project'
+import { initial } from '/tmp/astra-browser-provider'
+
+const peer = new URLSearchParams(location.search).get('peer') ?? 'A'
+const hub = (window.parent as any).__cursorHub ??= { presence: {}, listeners: new Set(), events: [] }
+useProjectStore.setState({ project: {id:'browser-test',trainingMode:{enabled:true},currentCycle:1} as any })
+function Peer() {
+  const [presence, setPresence] = useState<Record<string, any>>(hub.presence)
+  useEffect(() => { hub.listeners.add(setPresence); return () => { hub.listeners.delete(setPresence) } }, [])
+  const send = useCallback((entry: any) => {
+    hub.events.push({peer,cell:entry?.cellKey,pos:entry?.caretPos,time:Date.now()})
+    if(hub.events.length>100) hub.events.shift()
+    setTimeout(() => {
+      hub.presence = {...hub.presence,[peer]:entry}
+      if(!entry) delete hub.presence[peer]
+      hub.listeners.forEach((fn:any)=>fn(hub.presence))
+    },80)
+  }, [])
+  return <TeamScheduleWorkspaceModal open onClose={() => {}} projectId="browser-test" workspace={initial as any} currentUid={peer} currentUserName={peer} currentUserColor={peer === 'A' ? '#AAE5D9' : '#F6C4A5'} presence={presence} onPresenceUpdate={send} isHost={false} onPatchSave={async () => {throw new Error('unexpected legacy save')}} onSendArtifact={async () => {}} />
+}
+function App() {
+  const [events,setEvents]=useState('')
+  useEffect(()=> {if(location.search)return; const t=setInterval(()=>setEvents(JSON.stringify(hub.events.slice(-20),null,2)),250);return()=>clearInterval(t)},[])
+  return location.search ? <Peer /> : <><h1>커서 위치와 입력 보존 검증</h1><p>서로 다른 Y.Doc·실제 공동 편집 창과 메모리 저장 연결입니다. 운영 데이터에 접근하지 않습니다.</p><div style={{display:'flex',gap:12}}>{['A','B'].map(id=><iframe key={id} title={`${id} 편집 화면`} src={`?peer=${id}`} style={{width:'50%',height:750,border:'1px solid #ddd'}}/>)}</div><pre id="presence-events">{events}</pre></>
+}
+createRoot(document.getElementById('root')!).render(<App />)
