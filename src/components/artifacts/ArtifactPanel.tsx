@@ -1,5 +1,10 @@
 'use client'
 
+import { ModalLoading } from '@/components/ui/ModalLoading'
+import dynamic from 'next/dynamic'
+const CumulativeReportModal = dynamic(() => import('@/components/modals/CumulativeReportModal').then(module => module.CumulativeReportModal), { ssr: false, loading: ModalLoading })
+
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
@@ -21,7 +26,7 @@ import { cn } from '@/lib/utils'
 import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, Trash, type Icon } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
 import { AlignmentMatrixCard } from '@/components/curriculum/AlignmentMatrixCard'
-import { CumulativeReportModal } from '@/components/modals/CumulativeReportModal'
+
 // 스펙 §1-2 — 단계 컬러 단일 출처. 로컬 선언 제거하고 공통 모듈 참조.
 // 기존 corner 0.10 → 0.11 통일 (team-lead-2 결정, 시각 차이 미미).
 import { STAGE_COLOR } from '@/lib/ui/stageColors'

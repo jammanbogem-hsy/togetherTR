@@ -121,6 +121,7 @@ test('rendered tutorial is read-only, shows simulated approval and material tabl
     'react/jsx-runtime': jsxRuntime,
     'react-markdown': ReactMarkdown,
     'remark-gfm': remarkGfm,
+    '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS: [[remarkGfm, { singleTilde: false }]] },
     'firebase/firestore': {},
     '@/lib/firebase/config': {},
     '@/lib/firebase/projects': { watchMessages: () => { throw new Error('SSR must not subscribe or mutate') } },

@@ -1,10 +1,15 @@
 'use client'
 
+import { ModalLoading } from '@/components/ui/ModalLoading'
+import dynamic from 'next/dynamic'
+const StageAnalysisModal = dynamic(() => import('@/components/modals/StageAnalysisModal').then(module => module.StageAnalysisModal), { ssr: false, loading: ModalLoading })
+
+
 import { useEffect, useId, useRef, useState } from 'react'
 import { CheckCircle, ArrowRight, Question, X } from '@phosphor-icons/react'
 import { ACTIVITY_META, STAGES, SOLO_HIDDEN_ACTIVITIES, type ActivityCode, type Project } from '@/types'
 import { TRAINING_ACTIVITIES, TRAINING_STEP_BY_STEP, formatTrainingHelpRequest, isTrainingActivity, trainingStatus } from '@/lib/training/trainingMode'
-import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
+
 import { MD3Button } from '@/components/ui/MD3Button'
 import { trainingFormValues } from './trainingFormState'
 import { isSoloProject } from '@/lib/project/projectMode'

@@ -1,7 +1,19 @@
 'use client'
 
+import { ModalLoading } from '@/components/ui/ModalLoading'
+const StageMoveModal = nextDynamic(() => import('@/components/modals/StageMoveModal').then(module => module.StageMoveModal), { ssr: false, loading: ModalLoading })
+const StageAnalysisModal = nextDynamic(() => import('@/components/modals/StageAnalysisModal').then(module => module.StageAnalysisModal), { ssr: false, loading: ModalLoading })
+const StageReportsModal = nextDynamic(() => import('@/components/modals/StageReportsModal').then(module => module.StageReportsModal), { ssr: false, loading: ModalLoading })
+const PublishModal = nextDynamic(() => import('@/components/modals/PublishModal').then(module => module.PublishModal), { ssr: false, loading: ModalLoading })
+const ProjectOntologyModal = nextDynamic(() => import('@/components/ontology/ProjectOntologyModal').then(module => module.ProjectOntologyModal), { ssr: false, loading: ModalLoading })
+const ProjectMaterialsModal = nextDynamic(() => import('@/components/materials/ProjectMaterialsModal').then(module => module.ProjectMaterialsModal), { ssr: false, loading: ModalLoading })
+const TrainingSettingsModal = nextDynamic(() => import('@/components/training/TrainingSettingsModal').then(module => module.TrainingSettingsModal), { ssr: false, loading: ModalLoading })
+
+
 export const dynamic = 'force-dynamic'
 
+import { NavigationStatus } from '@/components/performance/NavigationStatus'
+import nextDynamic from 'next/dynamic'
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useRouter } from 'next/navigation'
@@ -21,12 +33,12 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { DemoProjectToolbar } from '@/components/demo/DemoObserverPanels'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { ArtifactPanel, CollapsedArtifactStrip } from '@/components/artifacts/ArtifactPanel'
-import { StageMoveModal } from '@/components/modals/StageMoveModal'
-import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
-import { StageReportsModal } from '@/components/modals/StageReportsModal'
-import { PublishModal } from '@/components/modals/PublishModal'
-import { ProjectOntologyModal } from '@/components/ontology/ProjectOntologyModal'
-import { ProjectMaterialsModal } from '@/components/materials/ProjectMaterialsModal'
+
+
+
+
+
+
 import { setAnalysisOpen } from '@/lib/firebase/projects'
 import { cn } from '@/lib/utils'
 import { STAGE_COLOR, STAGE_LABELS } from '@/lib/ui/stageColors'
@@ -37,7 +49,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 import { PendingConfirmationBanner } from '@/components/collab/PendingConfirmationBanner'
-import { TrainingSettingsModal } from '@/components/training/TrainingSettingsModal'
+
 import { MemberRemovalButton } from '@/components/members/MemberRemovalButton'
 import { isSoloProject } from '@/lib/project/projectMode'
 
@@ -1225,6 +1237,7 @@ export default function ProjectPage() {
         )}
       </div>
 
+      <NavigationStatus />
       {!project.demoRun && pendingStageMove && <StageMoveModal />}
       {showTrainingSettings && !project.demoRun && (
         <TrainingSettingsModal key={project.id} project={project} onClose={closeTrainingSettings} />
@@ -1243,22 +1256,22 @@ export default function ProjectPage() {
         />
       )}
 
-      <PublishModal
+      {(showPublish) && <PublishModal
         open={showPublish}
         onClose={() => setShowPublish(false)}
         project={project}
         projectId={projectId}
         uid={uid}
-      />
+      />}
 
-      <ProjectOntologyModal
+      {(showOntology) && <ProjectOntologyModal
         open={showOntology}
         onClose={() => setShowOntology(false)}
         project={project}
         onOpenActivity={(code) => {
           setViewingActivity(code)
         }}
-      />
+      />}
 
       {/* 팀원 팝오버 — createPortal로 body에 렌더해 좌측 사이드바 overflow-hidden 탈출 */}
       {showMembers && membersPopoverPos && typeof document !== 'undefined' && createPortal(

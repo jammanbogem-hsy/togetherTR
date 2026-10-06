@@ -1,5 +1,12 @@
 'use client'
 
+import { ModalLoading } from '@/components/ui/ModalLoading'
+import dynamic from 'next/dynamic'
+const StageAnalysisModal = dynamic(() => import('@/components/modals/StageAnalysisModal').then(module => module.StageAnalysisModal), { ssr: false, loading: ModalLoading })
+
+
+import { navigateOptimistically } from '@/lib/activity/optimisticNavigation'
+import { startInteraction, finishAfterPaint } from '@/lib/performance/interactionMetrics'
 import { useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, SOLO_HIDDEN_ACTIVITIES, type ActivityCode, type StageStatus, displayActivityCode } from '@/types'
@@ -11,7 +18,7 @@ import {
   UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy,
   CheckCircle, Warning, Clock, Shield, Star, CaretRight, ChartBar, Crown, ArrowBendUpLeft, type Icon,
 } from '@phosphor-icons/react'
-import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
+
 import { TrainingStepGuide } from '@/components/training/TrainingStepGuide'
 import { isSoloProject } from '@/lib/project/projectMode'
 
@@ -350,7 +357,7 @@ function Tooltip({ text, children }: { text: string; children: React.ReactNode }
 }
 
 export function ActivitySidebar() {
-  const { project, activityStatus, currentActivity, viewingActivity, setViewingActivity, setCurrentActivity, userProfile } = useProjectStore()
+  const { project, activityStatus, currentActivity, viewingActivity, setViewingActivity, userProfile } = useProjectStore()
   const [showAnalysis, setShowAnalysis] = useState(false)
   if (!project) return null
 
@@ -378,12 +385,12 @@ export function ActivitySidebar() {
     if (isHost) {
       // 방장: Firestore 업데이트 + 로컬 동기화
       if (code === currentActivity) return
-      setCurrentActivity(code)
-      setViewingActivity(code)
-      setProjectActivity(project!.id, code).catch(console.error)
+      void navigateOptimistically({ projectId: project!.id, activity: code, persist: () => setProjectActivity(project!.id, code) })
     } else {
       // 팀원: 로컬 탐색만 (Firestore 변경 없음)
+      const finish = startInteraction('activity-navigation')
       setViewingActivity(code)
+      finishAfterPaint(finish)
     }
   }
 

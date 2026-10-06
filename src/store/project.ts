@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import type { PendingNavigation } from '@/lib/activity/optimisticNavigation'
+import { reconcileMessages } from '@/lib/chat/reconcileMessages'
 import type { Project, StageCode, ActivityCode, Message, Artifact, StageStatus, KeyNote } from '@/types'
 import type { UserProfile } from '@/lib/auth'
 
@@ -19,6 +21,9 @@ interface ProjectStore {
   // 현재 사용자
   userProfile: UserProfile | null
   setUserProfile: (p: UserProfile | null) => void
+
+  pendingNavigation: PendingNavigation | null
+  navigationError: string | null
 
   // 현재 프로젝트
   project: Project | null
@@ -100,11 +105,14 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   userProfile: null,
   setUserProfile: (p) => set({ userProfile: p }),
 
+  pendingNavigation: null,
+  navigationError: null,
   project: null,
   setProject: (p) => set((state) => {
     const legacy = p?.keyNotes ?? []
     return {
-      project: p ? { ...p, keyNotes: mergeKeyNotes(legacy, state.keyNotesSub) } : null,
+      project: p ? { ...p, ...(state.pendingNavigation?.projectId === p.id ? state.pendingNavigation.target : {}), keyNotes: mergeKeyNotes(legacy, state.keyNotesSub) } : null,
+      ...(p?.id !== state.project?.id ? { pendingNavigation: null, navigationError: null } : {}),
       keyNotesLegacy: legacy,
       pendingStageMove: p?.currentStage === state.pendingStageMove ? null : state.pendingStageMove,
     }
@@ -154,9 +162,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   replaceMessage: (id, content, fields) => set((state) => ({
     messages: state.messages.map(m => m.id === id ? { ...m, ...fields, content } : m),
   })),
-  setMessages: (msgs) => set({
-    messages: Array.from(new Map(msgs.map(m => [m.id, m])).values()),
-  }),
+  setMessages: (msgs) => set(state => ({ messages: reconcileMessages(state.messages, msgs) })),
   messagesLoaded: false,
   messagesLoadedByFallback: false,
   setMessagesLoaded: (v, byFallback = false) => set({ messagesLoaded: v, messagesLoadedByFallback: v && byFallback }),
@@ -197,6 +203,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setChatInputRequest: (text) => set({ chatInputRequest: text }),
 
   resetProjectState: () => set({
+    pendingNavigation: null,
+    navigationError: null,
     project: null,
     keyNotesLegacy: [],
     keyNotesSub: [],

@@ -33,6 +33,6 @@ test('채팅은 키워드 자동저장 없이 공통 전송 및 빈 토의 복�
   const chat = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.doesNotMatch(chat, /tryStructuredFallbackSave/)
   assert.match(chat, /discussionContributions\(messages, teamDiscussionStartIdx\)/)
-  assert.match(chat, /await sendMessageDirectly\(`\$\{label\}/)
-  assert.match(chat, /현재 활동을 유지합니다/)
+  assert.match(chat, /await sendMessageDirectly(?:Stable)?\(`\$\{label\}/)
+  assert.match(fs.readFileSync(new URL('../src/lib/activity/optimisticNavigation.ts', import.meta.url), 'utf8'), /마지막으로 저장된 활동으로 돌아왔습니다/)
 })

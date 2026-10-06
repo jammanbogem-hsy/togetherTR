@@ -1,6 +1,12 @@
 'use client'
 
+import { ModalLoading } from '@/components/ui/ModalLoading'
+import dynamic from 'next/dynamic'
+const StageAnalysisModal = dynamic(() => import('@/components/modals/StageAnalysisModal').then(module => module.StageAnalysisModal), { ssr: false, loading: ModalLoading })
+
+
 import { useEffect, useRef, useState } from 'react'
+import { navigateOptimistically } from '@/lib/activity/optimisticNavigation'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, SOLO_HIDDEN_ACTIVITIES, type StageCode } from '@/types'
 import {
@@ -14,7 +20,7 @@ import { resolveStageMoveTargetActivity } from '@/lib/activity/navigationDecisio
 import { auth } from '@/lib/firebase/config'
 import { cn } from '@/lib/utils'
 import { ArrowRight, X, Warning, ChartBar } from '@phosphor-icons/react'
-import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
+
 import { setAnalysisOpen } from '@/lib/firebase/projects'
 import { isEffectivelyDone } from '@/lib/activity/completion'
 import {
@@ -58,7 +64,6 @@ export function StageMoveModal() {
     pendingReturnActivity,
     setPendingStageMove,
     activityStatus,
-    setCurrentActivity,
     userProfile,
   } = useProjectStore()
 
@@ -242,7 +247,11 @@ export function StageMoveModal() {
       initiatedBy,
     }
 
-    try {
+    setPendingStageMove(null)
+    setEToTMoveChoice(null)
+    await navigateOptimistically({ projectId: project.id, activity: firstActivity, kind: 'stage-navigation',
+      patch: isStartingNewCycle ? { currentCycle: completedCycle + 1, cycleCount: completedCycle + 1, isECompleted: true, cycleStartT11Version: project.artifacts?.['T-1-1']?.version ?? 0 } : undefined,
+      persist: async () => {
       if (!(project.memberUids ?? []).includes(initiatedBy)) {
         await withTimeout(ensureProjectMemberUid(project.id, initiatedBy, userProfile ? {
           displayName: userProfile.displayName,
@@ -253,9 +262,10 @@ export function StageMoveModal() {
 
       if (direction !== 'forward') {
         // 이전 단계로 이동: returnToActivity + currentStage 업데이트
-        await withTimeout(returnToActivity(project.id, firstActivity, toStage), 'returnToActivity')
-        // 같은 단계 되돌아가기(handleActivityReturn)와 같게 '다시 진행 중'으로 표시한다.
-        if (isActivityReturn) await withTimeout(setActivityStatus(project.id, firstActivity, 'active_return'), 'setActivityStatus')
+        await Promise.all([
+          withTimeout(returnToActivity(project.id, firstActivity, toStage), 'returnToActivity'),
+          ...(isActivityReturn ? [withTimeout(setActivityStatus(project.id, firstActivity, 'active_return'), 'setActivityStatus')] : []),
+        ])
       } else {
         // 다음 단계로 이동: 현재 스테이지 activities + 다음 스테이지 activities 합쳐서 advance
         const currentStageInfo = STAGES.find(s => s.code === fromStage)!
@@ -272,30 +282,13 @@ export function StageMoveModal() {
           toStage
         ), 'advanceActivity')
       }
-      await withTimeout(logStageTransition(project.id, transitionLogPayload), 'logStageTransition')
-    } catch (err) {
-      console.error('[StageMoveModal] handleConfirm failed:', err)
-      const msg = err instanceof Error ? err.message : String(err)
-      setSubmitError(
-        msg.includes('timeout')
-          ? '저장 응답이 30초 이상 지연됩니다. 개발 서버 HMR 재컴파일이 길어진 경우가 많습니다 — 브라우저를 하드 새로고침(⌘+Shift+R)한 뒤 다시 시도해 주세요.'
-          : `단계 이동 저장에 실패했습니다 (${msg.slice(0, 80)}). 잠시 후 다시 시도해 주세요.`
-      )
-      submittingRef.current = false
-      setSubmitting(false)
-      return
-    }
-
-    // 로컬 상태도 즉시 반영. 메시지 목록은 비우지 않는다(#33): 위 await 동안 프로젝트 스냅샷이
-    // 먼저 새 활동을 알려 page.tsx 동기화·구독이 이미 대화를 받아 두었을 수 있고, 여기서 setMessages([])로
-    // 지우면 활동 코드가 같아 구독이 다시 돌지 않아 대화가 비어 보인다. 활동이 실제로 바뀌는 경우의 초기화는
-    // store.setCurrentActivity 가 이미 한다.
-    setCurrentActivity(firstActivity)
-    setPendingStageMove(null)
-    setEToTMoveChoice(null)
+      // 새 주기는 이 함수가 currentCycle까지 변경하므로 필수 저장으로 취급한다.
+      // 일반 이동 이력은 화면 표시와 저장 성공 판정을 기다리게 하지 않는다.
+      if (direction === 'cycle') await withTimeout(logStageTransition(project.id, transitionLogPayload), 'logStageTransition')
+      else void logStageTransition(project.id, transitionLogPayload).catch(error => console.warn('[stage-transition log]', error))
+    } })
     submittingRef.current = false
     setSubmitting(false)
-
   }
 
   function handleCancel() {

@@ -6,7 +6,8 @@
 //    완료 판정·보고서·주기 전환 파서가 같은 키를 읽는다.
 
 import type { CoeditWorkspace } from '@/types'
-import { columnToList, findTableBlock, tableToMarkdown, type CoeditModalConfig } from './CoeditWorkspaceModal'
+import type { CoeditModalConfig } from './CoeditWorkspaceModal'
+import { columnToList, findTableBlock, tableToMarkdown } from '@/lib/artifacts/coeditSerialize'
 
 /** DI-1-1 자료 탐색·개발 — 자료 워크스루 보드 (가이드 p56~57) */
 export const MATERIAL_DEV_CONFIG: CoeditModalConfig = {

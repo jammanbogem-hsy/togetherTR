@@ -1,3 +1,10 @@
+import type { CoeditWorkspaceBlock } from '@/types'
+
+export function findTableBlock(blocks: CoeditWorkspaceBlock[], blockId: string) {
+  const block = blocks.find(block => block.id === blockId)
+  return block?.table
+}
+
 // DI·E 공동 편집 워크스페이스의 순수 변환 함수.
 // React·Firebase 의존이 없어야 단위 테스트가 가능하므로 별도 모듈로 분리한다.
 // (scripts/coeditSerialize.test.mjs가 이 파일을 직접 import 한다)

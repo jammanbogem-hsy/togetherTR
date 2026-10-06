@@ -1,5 +1,27 @@
 'use client'
 
+import { ModalLoading } from '@/components/ui/ModalLoading'
+const StandardsFinderModal = dynamic(() => import('./StandardsFinderModal').then(module => module.StandardsFinderModal), { ssr: false, loading: ModalLoading })
+const CoreIdeaFinderModal = dynamic(() => import('./CoreIdeaFinderModal').then(module => module.CoreIdeaFinderModal), { ssr: false, loading: ModalLoading })
+const CurriculumWorkspaceModal = dynamic(() => import('./CurriculumWorkspaceModal').then(module => module.CurriculumWorkspaceModal), { ssr: false, loading: ModalLoading })
+const TeamVisionWorkspaceModal = dynamic(() => import('@/components/artifacts/TeamVisionWorkspaceModal').then(module => module.TeamVisionWorkspaceModal), { ssr: false, loading: ModalLoading })
+const LessonDesignDirectionWorkspaceModal = dynamic(() => import('@/components/artifacts/LessonDesignDirectionWorkspaceModal').then(module => module.LessonDesignDirectionWorkspaceModal), { ssr: false, loading: ModalLoading })
+const EvaluationPlanWorkspaceModal = dynamic(() => import('@/components/artifacts/EvaluationPlanWorkspaceModal').then(module => module.EvaluationPlanWorkspaceModal), { ssr: false, loading: ModalLoading })
+const ProblemSituationWorkspaceModal = dynamic(() => import('@/components/artifacts/ProblemSituationWorkspaceModal').then(module => module.ProblemSituationWorkspaceModal), { ssr: false, loading: ModalLoading })
+const SupportToolWorkspaceModal = dynamic(() => import('@/components/artifacts/SupportToolWorkspaceModal').then(module => module.SupportToolWorkspaceModal), { ssr: false, loading: ModalLoading })
+const IntegratedGoalWorkspaceModal = dynamic(() => import('@/components/artifacts/IntegratedGoalWorkspaceModal').then(module => module.IntegratedGoalWorkspaceModal), { ssr: false, loading: ModalLoading })
+const CoeditWorkspaceModal = dynamic(() => import('@/components/artifacts/CoeditWorkspaceModal').then(module => module.CoeditWorkspaceModal), { ssr: false, loading: ModalLoading })
+const RoleDistributionWorkspaceModal = dynamic(() => import('@/components/artifacts/RoleDistributionWorkspaceModal').then(module => module.RoleDistributionWorkspaceModal), { ssr: false, loading: ModalLoading })
+const TeamRulesWorkspaceModal = dynamic(() => import('@/components/artifacts/TeamRulesWorkspaceModal').then(module => module.TeamRulesWorkspaceModal), { ssr: false, loading: ModalLoading })
+const TeamScheduleWorkspaceModal = dynamic(() => import('@/components/artifacts/TeamScheduleWorkspaceModal').then(module => module.TeamScheduleWorkspaceModal), { ssr: false, loading: ModalLoading })
+const TopicSelectionWorkspaceModal = dynamic(() => import('@/components/artifacts/TopicSelectionWorkspaceModal').then(module => module.TopicSelectionWorkspaceModal), { ssr: false, loading: ModalLoading })
+const LearningActivityWorkspaceModal = dynamic(() => import('@/components/artifacts/LearningActivityWorkspaceModal').then(module => module.LearningActivityWorkspaceModal), { ssr: false, loading: ModalLoading })
+const ScaffoldingWorkspaceModal = dynamic(() => import('@/components/artifacts/ScaffoldingWorkspaceModal').then(module => module.ScaffoldingWorkspaceModal), { ssr: false, loading: ModalLoading })
+
+
+import { navigateOptimistically } from '@/lib/activity/optimisticNavigation'
+import { createChatDraft } from '@/lib/chat/chatDraft'
+import { ChatDraftBoundary, MessageList, useStableCallback, markChatInput } from './ChatRenderBoundary'
 import { samePresenceEntry } from '@/lib/coedit/presenceThrottle'
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
@@ -24,25 +46,25 @@ import { ActionCard as ActionCardComponent } from './ActionCard'
 import { useChatFontScale } from '@/components/accessibility/FontScaleControl'
 import { ChatPanelHeader } from '@/components/chat/ChatPanelHeader'
 import { useProblemSituationOpen } from './useProblemSituationOpen'
-import { StandardsFinderModal } from './StandardsFinderModal'
-import { CoreIdeaFinderModal } from './CoreIdeaFinderModal'
+
+
 import { KeyNotesModal, MessageContextMenu } from './KeyNotesModal'
-import { CurriculumWorkspaceModal } from './CurriculumWorkspaceModal'
-import { TeamVisionWorkspaceModal } from '@/components/artifacts/TeamVisionWorkspaceModal'
-import { LessonDesignDirectionWorkspaceModal } from '@/components/artifacts/LessonDesignDirectionWorkspaceModal'
-import { EvaluationPlanWorkspaceModal } from '@/components/artifacts/EvaluationPlanWorkspaceModal'
-import { ProblemSituationWorkspaceModal } from '@/components/artifacts/ProblemSituationWorkspaceModal'
+
+
+
+
+
 import { WorkshopErrorBoundary } from '@/components/problem-situation/WorkshopErrorBoundary'
-import { SupportToolWorkspaceModal } from '@/components/artifacts/SupportToolWorkspaceModal'
-import { IntegratedGoalWorkspaceModal } from '@/components/artifacts/IntegratedGoalWorkspaceModal'
-import { CoeditWorkspaceModal, type CoeditSuggestContext } from '@/components/artifacts/CoeditWorkspaceModal'
+
+
+import { type CoeditSuggestContext } from '@/components/artifacts/CoeditWorkspaceModal'
 import { MATERIAL_DEV_CONFIG, LESSON_RECORD_CONFIG, LESSON_REFLECTION_CONFIG, COLLABORATION_REFLECTION_CONFIG } from '@/components/artifacts/coeditConfigs'
-import { RoleDistributionWorkspaceModal } from '@/components/artifacts/RoleDistributionWorkspaceModal'
-import { TeamRulesWorkspaceModal } from '@/components/artifacts/TeamRulesWorkspaceModal'
-import { TeamScheduleWorkspaceModal } from '@/components/artifacts/TeamScheduleWorkspaceModal'
-import { TopicSelectionWorkspaceModal } from '@/components/artifacts/TopicSelectionWorkspaceModal'
-import { LearningActivityWorkspaceModal } from '@/components/artifacts/LearningActivityWorkspaceModal'
-import { ScaffoldingWorkspaceModal } from '@/components/artifacts/ScaffoldingWorkspaceModal'
+
+
+
+
+
+
 import type { T11Structured, T12Structured, T21Structured, T22Structured, T23Structured, A12Structured, A22Structured, Ds11Structured, Ds12Structured, Ds13Structured, Ds21Structured, Ds22Structured } from '@/lib/artifacts/schemas'
 import {
   SANITIZE_EXEMPT_KEYS,
@@ -343,7 +365,7 @@ function OptionsMessage({
       <div className="max-w-[min(88%,46rem)] flex flex-col gap-3 flex-1">
         {pre && (
           <div className="bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
-            <MarkdownContent text={pre} />
+            <MemoMarkdownContent text={pre} />
           </div>
         )}
 
@@ -453,7 +475,7 @@ function OptionsMessage({
 
         {post && (
           <div className="bg-[#EAF2FF] text-[#1a2e5a] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4] text-sm leading-relaxed">
-            <MarkdownContent text={post} />
+            <MemoMarkdownContent text={post} />
           </div>
         )}
       </div>
@@ -1097,7 +1119,7 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
         >
           {isUser && !simulated
             ? <span className="whitespace-pre-wrap">{content}</span>
-            : <MarkdownContent text={content} standardTextMap={standardTextMap} checklist={isUser ? undefined : checklist} />
+            : <MemoMarkdownContent text={content} standardTextMap={standardTextMap} checklist={isUser ? undefined : checklist} />
           }
           {checklistDone && (
             <p className="mt-2 rounded-lg bg-white/70 px-3 py-1.5 text-[12px] font-medium text-[#137333]" data-testid="checklist-all-done" role="status">
@@ -1109,6 +1131,9 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
     </ContextMenuWrapper>
   )
 }
+
+const MemoMarkdownContent = React.memo(MarkdownContent)
+const MemoMessageBubble = React.memo(MessageBubble)
 
 // ─── AI 분석 결과 버블 ────────────────────────────────
 function AnalysisBubble({ text }: { text: string }) {
@@ -1122,7 +1147,7 @@ function AnalysisBubble({ text }: { text: string }) {
           <span className="text-xs font-bold text-[#00695C]">팀 토의 분석 결과</span>
         </div>
         <div className="text-sm text-[#004D40] leading-relaxed">
-          <MarkdownContent text={text} />
+          <MemoMarkdownContent text={text} />
         </div>
       </div>
     </article>
@@ -1143,7 +1168,7 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
             <span className="text-xs font-bold text-[#00695C]">팀 토의 분석 중...</span>
           </div>
           <div className="text-sm text-[#004D40] leading-relaxed">
-            <MarkdownContent text={text} />
+            <MemoMarkdownContent text={text} />
             <span className="inline-block w-1 h-4 bg-[#00897B] animate-pulse ml-0.5 align-middle" />
           </div>
         </div>
@@ -1156,7 +1181,7 @@ function StreamingBubble({ text, isAnalysis, stage }: { text: string; isAnalysis
       <Avatar className="chat-avatar-animated self-start" ai size={40} />
       <div className="w-fit max-w-[min(88%,46rem)] px-4 py-2.5 rounded-2xl rounded-tl-none border-l-[3px] text-sm leading-relaxed"
         style={{ backgroundColor: s.bg, color: s.text, borderColor: s.border }}>
-        <MarkdownContent text={text} />
+        <MemoMarkdownContent text={text} />
         <span className="inline-block w-1 h-4 animate-pulse ml-0.5 align-middle" style={{ backgroundColor: s.border }} />
       </div>
     </article>
@@ -1296,7 +1321,7 @@ function ChatPanelContent() {
   const chatFontScale = useChatFontScale()
   const {
     project: projectState, messages, streamingText, messagesLoaded, messagesLoadedByFallback,
-    currentActivity, setCurrentActivity, appendStreamingText, clearStreamingText, addMessage, replaceMessage,
+    currentActivity, appendStreamingText, clearStreamingText, addMessage, replaceMessage,
     discussionMode, setDiscussionMode,
     pendingTeamDiscussion, setPendingTeamDiscussion,
     teamDiscussionStartIdx, setTeamDiscussionStartIdx,
@@ -1305,11 +1330,12 @@ function ChatPanelContent() {
     setViewingActivity,
     userProfile,
     setPendingStageMove,
-    chatInputRequest, setChatInputRequest,
+    chatInputRequest, setChatInputRequest, pendingNavigation,
   } = useProjectStore()
   const project = projectState!
 
-  const [input, setInput] = useState('')
+  const chatDraft = useMemo(createChatDraft, [])
+  const { setInput, setSlashQuery, setSlashCmdIdx } = chatDraft
 
   // 외부(ArtifactPanel 등)에서 "이 문구 채팅에 채워 주세요" 요청하면 수신·소비
   useEffect(() => {
@@ -1323,7 +1349,7 @@ function ChatPanelContent() {
         if (el) { el.selectionStart = el.value.length; el.selectionEnd = el.value.length }
       }, 30)
     }
-  }, [chatInputRequest, setChatInputRequest])
+  }, [chatInputRequest, setChatInputRequest, setInput])
   const [isLoading, setIsLoading] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isIdle, setIsIdle] = useState(false)
@@ -1401,8 +1427,6 @@ function ChatPanelContent() {
   }>(null)
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null)
   const [replyTo, setReplyTo] = useState<{ id: string; content: string; senderName?: string } | null>(null)
-  const [slashQuery, setSlashQuery] = useState<string | null>(null)
-  const [slashCmdIdx, setSlashCmdIdx] = useState(0)
   const [remoteStreamingText, setRemoteStreamingText] = useState('')
   const [isRemoteLoading, setIsRemoteLoading] = useState(false) // 다른 팀원이 AI 요청 중
   // HELP_CARD: 마지막 AI 응답에 대한 도움 메시지 (messageId → helpMessage)
@@ -1814,6 +1838,10 @@ function ChatPanelContent() {
     if (!viewport) return
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
   }, [])
+
+  const handleMessageListCommit = useCallback(() => {
+    if (shouldFollowLatestRef.current) scrollToLatestAIResponse()
+  }, [scrollToLatestAIResponse])
 
   const handleMessagesScroll = useCallback(() => {
     const viewport = messagesViewportRef.current
@@ -2433,9 +2461,8 @@ function ChatPanelContent() {
       const currentIdx = allActivities.indexOf(currentActivity)
       const nextIdx = allActivities.indexOf(nextActivity)
       if (nextIdx <= currentIdx) return
-      try { await advanceActivity(proj.id, allActivities, currentActivity, nextActivity) }
-      catch { setChatError('다음 활동으로 이동하지 못했습니다. 현재 활동을 유지합니다. 다시 시도해 주세요.'); return }
-      setCurrentActivity(nextActivity)
+      await navigateOptimistically({ projectId: proj.id, activity: nextActivity,
+        persist: () => advanceActivity(proj.id, allActivities, currentActivity, nextActivity) })
     } else {
       // 크로스 스테이지: StageMoveModal을 통해 이동 (단계 분석 기회 제공)
       setPendingStageMove(nextStageInfo.code as import('@/types').StageCode)
@@ -2454,16 +2481,9 @@ function ChatPanelContent() {
       setPendingStageMove(targetStage, code)
       return
     }
-    try {
-      await returnToActivity(proj.id, code, targetStage)
-      await setActivityStatus(proj.id, code, 'active_return')
-    } catch (err) {
-      console.error(err)
-      setChatError('이전 활동으로 돌아가지 못했습니다. 다시 시도해주세요.')
-      return
-    }
-    setCurrentActivity(code)
-    setViewingActivity(code)
+    await navigateOptimistically({ projectId: proj.id, activity: code, persist: () => Promise.all([
+      returnToActivity(proj.id, code, targetStage), setActivityStatus(proj.id, code, 'active_return'),
+    ]) })
   }
 
   function getNextActivityCode(code: ActivityCode): ActivityCode | null {
@@ -2625,7 +2645,7 @@ function ChatPanelContent() {
   // messages를 dep에 포함: stale closure 방지 + Firestore 재응답 시 재평가
   useEffect(() => {
     if (!project?.started) return
-    if (!messagesLoaded) return
+    if (!messagesLoaded || pendingNavigation) return
     // 개인 설계는 축약 환영 메시지 우선, 없으면 팀판으로 폴백 (협력 모드는 기존 그대로)
     // 연수용 약식 활동은 일반 환영 대신 trainingMode 정의로 만든 짧은 고정 안내(AI 없음)
     let welcome = isTrainingActivity(proj, currentActivity)
@@ -2654,7 +2674,7 @@ function ChatPanelContent() {
     })) return
     showWelcomeMessage(welcome)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentActivity, project?.started, messagesLoaded, messagesLoadedByFallback, messages])
+  }, [currentActivity, project?.started, messagesLoaded, messagesLoadedByFallback, messages, pendingNavigation])
 
   // ─── 산출물 저장 수락 ────────────────────────────────
   function handleAcceptArtifactSave() {
@@ -2947,7 +2967,7 @@ ${discussionSummary}
 
   const isTeamMode = discussionMode === 'team_discussion'
   // 페이지 이동 직후 준비 전에는 전송만 막고 입력은 지킨다(#26).
-  const sendBlockReason = chatSendBlockReason({
+  const sendBlockReason = pendingNavigation ? '활동 이동을 저장하고 있어요' : chatSendBlockReason({
     hasProject: !!projectState,
     hasUser: !!userProfile,
     messagesLoaded,
@@ -3826,7 +3846,7 @@ ${discussionSummary}
   }, [isHost, proj.artifactProposal])
 
   // 연수용: 단계별 진행 중인지 판단할 이 활동의 교사 발화(시간순) — 환영 표시 대체에 쓴다
-  const trainingUserTexts = messages.filter(m => m.role === 'user' && m.activityCode === currentActivity).map(m => m.content)
+  const trainingUserTexts = useMemo(() => messages.filter(m => m.role === 'user' && m.activityCode === currentActivity).map(m => m.content), [messages, currentActivity])
   const visibleMessages = useMemo(
     () => messages.filter(m => m.role !== 'system'),
     [messages]
@@ -4086,6 +4106,7 @@ ${discussionSummary}
   }
 
   async function handleSend() {
+    const { input } = chatDraft.getSnapshot()
     if (!input.trim() || !project) return
     // 준비 전에는 보내지 않고 입력을 그대로 둔다 — 조용히 버리지 않는다(#26).
     if (sendBlockReason) return
@@ -4299,7 +4320,7 @@ ${discussionSummary}
 
   // ─── 슬래시 커맨드 필터링 ──────────────────────────
   // 팀원(!isHost)은 hostOnly=false 인 커맨드만 사용 가능. 현재는 /브리핑 단 하나.
-  const filteredSlashCmds = slashQuery !== null
+  function filterSlashCommands(slashQuery: string | null) { return slashQuery !== null
     ? SLASH_COMMANDS.filter(cmd => {
         if (cmd.hostOnly && !isHost) return false
         return slashQuery === '' ||
@@ -4307,9 +4328,11 @@ ${discussionSummary}
           cmd.keywords.some(k => k.includes(slashQuery))
       })
     : []
+  }
 
   // ─── 슬래시 커맨드 실행 ─────────────────────────────
   async function executeSlashCommand(cmdId: SlashCommandId) {
+    const { input } = chatDraft.getSnapshot()
     // 끝에 붙은 `/커맨드` 구문 제거. 앞부분 텍스트·공백은 보존 → 같은 메시지에서 추가 / 입력 가능.
     const cleanInput = input.replace(/(?:^|\s)\/([\w가-힣]*)$/, '').trimEnd()
     setInput(cleanInput)
@@ -4360,6 +4383,8 @@ ${discussionSummary}
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    const { slashQuery, slashCmdIdx } = chatDraft.getSnapshot()
+    const filteredSlashCmds = filterSlashCommands(slashQuery)
     // 슬래시 커맨드 메뉴 키 핸들링
     if (slashQuery !== null && filteredSlashCmds.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -4417,6 +4442,275 @@ ${discussionSummary}
     void handleEndDiscussion()
   }
 
+  const handleActionCardClickStable = useStableCallback(handleActionCardClick)
+  const handleRestartOptionDiscussionStable = useStableCallback(handleRestartOptionDiscussion)
+  const sendMessageDirectlyStable = useStableCallback(sendMessageDirectly)
+  const toggleChecklistItemStable = useStableCallback(toggleChecklistItem)
+  const pushGraphSelectionStateStable = useStableCallback(pushGraphSelectionState)
+  const renderMessage = useCallback((msg: Message) => {
+          if (msg.role === 'system') return null
+
+          // 연수용 화면 버튼 메시지(양식 저장 알림·AI 도움 요청·단계별 진행 요청)는 교사 말풍선이 아니라 작은 칩으로(저장 데이터 형식은 그대로)
+          const trainingChip = msg.role === 'user' ? trainingMessageChip(msg.content, msg.displayName) : null
+          if (trainingChip) {
+            const isSaveChip = !!trainingSaveNoticeChip(msg.content)
+            return (
+              <div key={msg.id} className="flex justify-center py-1" data-testid={isSaveChip ? 'training-save-chip' : 'training-request-chip'}>
+                <span className={cn('rounded-full px-3 py-1 text-[12px] font-medium', isSaveChip ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#E8F0FE] text-[#0B57D0]')}>
+                  {isSaveChip ? '✓ ' : ''}{trainingChip}
+                </span>
+              </div>
+            )
+          }
+
+          // 분석 결과 메시지 (토의 종료 후)
+          // P0-phil3 (Task #32): AnalysisBubble 포맷은 유지하면서 msg.actionCard가 있으면 ActionCard 3버튼을 바로 아래 렌더.
+          //   (공통 L3047 분기는 MessageBubble 경로라 AnalysisBubble 포맷이 사라지므로, 이 분기 내부에서 처리.)
+          if (msg.activityType === '성찰' && msg.role === 'assistant') {
+            const stage = ACTIVITY_META[msg.activityCode]?.stage
+            const isSelected = msg.actionCardState === 'selected' || msg.actionCardState === 'skipped'
+            const selectedLabel = msg.actionCard
+              ? (msg.actionCardSelection === 'primary' ? msg.actionCard.primary :
+                 msg.actionCardSelection === 'secondary' ? (msg.actionCard.secondary ?? undefined) :
+                 msg.actionCardSelection === 'skip' ? msg.actionCard.skip :
+                 undefined)
+              : undefined
+            return (
+              <ContextMenuWrapper key={msg.id} onReply={() => setReplyTo({ id: msg.id, content: msg.content, senderName: 'AI' })}>
+                <AnalysisBubble text={msg.content} />
+                {msg.actionCard && stage && (
+                  <ActionCardComponent
+                    card={msg.actionCard}
+                    stage={stage}
+                    isHost={isHost}
+                    isSelected={isSelected}
+                    selectedLabel={selectedLabel}
+                    onPrimary={() => handleActionCardClickStable(msg, 'primary', msg.actionCard!.primary)}
+                    onSecondary={msg.actionCard.secondary
+                      ? () => handleActionCardClickStable(msg, 'secondary', msg.actionCard!.secondary!)
+                      : undefined}
+                    onSkip={() => handleActionCardClickStable(msg, 'skip', msg.actionCard!.skip)}
+                  />
+                )}
+              </ContextMenuWrapper>
+            )
+          }
+
+          // AI 메시지에서 A안/B안/C안 선택지 파싱
+          if (msg.role === 'assistant') {
+            const parsed = parseOptions(msg.content)
+            if (parsed) {
+              return (
+                <ContextMenuWrapper key={msg.id} onReply={() => setReplyTo({ id: msg.id, content: msg.content, senderName: 'AI' })}>
+                <OptionsMessage
+                  key={msg.id}
+                  messageId={msg.id}
+                  {...parsed}
+                  votes={proj.optionVotes?.[msg.id] ?? {}}
+                  memberInfo={
+                    proj.memberInfo ?? {}
+                  }
+                  currentUid={userProfile?.uid ?? ''}
+                  isHost={isHost}
+                  isClosed={proj.closedOptionMessages?.[msg.id] === true || msg.id !== lastAIMsg?.id || isLoading || isAnalyzing}
+                  onDiscuss={() => handleRestartOptionDiscussionStable(msg.id)}
+                  onSelect={async (label, content) => {
+                    if (isLoading || isAnalyzing || !isHost || msg.id !== lastAIMsg?.id) return
+                    try { await closeOptionChoice(proj.id, msg.id) }
+                    catch (error) {
+                      setChatError('선택을 기록하지 못했습니다. 다시 시도해 주세요.')
+                      throw error
+                    }
+                    setInput('')
+                    await sendMessageDirectlyStable(`${label}을 선택하겠습니다. "${content}"`)
+                  }}
+                />
+                </ContextMenuWrapper>
+              )
+            }
+          }
+
+          // 발신자 정보 결정
+          const isSelf = msg.role === 'user' && msg.userId === userProfile?.uid
+          let senderName: string | undefined
+          let senderColor: string | undefined
+          let senderEmoji: string | undefined
+
+          if (msg.role === 'user') {
+            if (isSelf) {
+              senderName = userProfile?.displayName
+              senderColor = userProfile?.color
+              senderEmoji = userProfile?.displayName?.[0] || '?'
+            } else {
+              const info = msg.userId ? project.memberInfo?.[msg.userId] : undefined
+              senderName = info?.displayName ?? msg.userId?.slice(0, 6) ?? '팀원'
+              senderColor = info?.color ?? '#6B7280'
+              senderEmoji = info?.displayName?.[0] || '?'
+            }
+          }
+
+          // AI 메시지에 성취기준 코드가 2개 이상 포함됐는지 감지
+          // — "[6사03-01]" 형태 코드가 2개 이상이면 (표/번호목록/불릿 모두 포함)
+          const msgStdCodes = msg.role === 'assistant'
+            ? (msg.content.match(/\[\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2}\]/g) ?? []).map(s => s.slice(1, -1))
+            : []
+          const hasStandardsTable = msgStdCodes.length >= 2
+
+          // A-2-1: 산출물 저장 버튼 표시 조건
+          // — A-2-1 AI 메시지에 핵심아이디어+성취기준 분석표가 있고 방장인 경우
+          const isA21TableMsg = msg.role === 'assistant' && msg.activityCode === 'A-2-1' && !!extractA21TableForSave(msg.content)
+          const a21ArtifactSaved = !!(proj.artifacts?.['A-2-1'])
+
+          // A-2-1: 성취기준 코드 → 내용 툴팁 맵 (graphSavedData 기반)
+          const stdTooltipMap: Record<string, string> | undefined =
+            msg.role === 'assistant' && msg.activityCode === 'A-2-1' && proj.graphSavedData
+              ? (() => {
+                  const map: Record<string, string> = {}
+                  const gd = proj.graphSavedData!
+                  if (gd.centerNode) map[gd.centerNode.label] = gd.centerNode.text
+                  gd.selectedStandards.forEach(s => { map[s.label] = s.text })
+                  return map
+                })()
+              : undefined
+
+          return (
+            <div
+              key={msg.id}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setCtxMenu({
+                  x: e.clientX, y: e.clientY,
+                  message: {
+                    id: msg.id,
+                    content: msg.content,
+                    role: msg.role as 'user' | 'assistant',
+                    senderName: msg.role === 'user' ? senderName : undefined,
+                    activityCode: msg.activityCode,
+                  },
+                })
+              }}
+            >
+              <MemoMessageBubble
+                role={msg.role as 'user' | 'assistant'}
+                content={displayedMessageContent(proj, msg, trainingUserTexts)}
+                activityType={msg.activityType}
+                senderName={senderName}
+                senderColor={senderColor}
+                senderEmoji={senderEmoji}
+                isSelf={isSelf}
+                replyTo={msg.replyTo}
+                stage={ACTIVITY_META[msg.activityCode]?.stage}
+                standardTextMap={stdTooltipMap}
+                checklist={msg.role === 'assistant' ? {
+                  state: msg.checklistState,
+                  canEdit: !!userProfile,
+                  onToggle: (index, checked) => toggleChecklistItemStable(msg, index, checked),
+                } : undefined}
+                onReply={() => setReplyTo({
+                  id: msg.id,
+                  content: msg.content,
+                  senderName: msg.role === 'user' ? senderName : 'AI',
+                })}
+              />
+              {/* 성취기준 코드가 2개 이상인 AI 메시지 → 지식 그래프 반영 + 산출물 저장 버튼 */}
+              {(hasStandardsTable && GRAPH_ACTIVITIES.includes(currentActivity) && isHost) || (isA21TableMsg && isHost) ? (
+                <div className="flex justify-start pl-10 -mt-1 mb-2 gap-2 flex-wrap">
+                  {hasStandardsTable && GRAPH_ACTIVITIES.includes(currentActivity) && isHost && (
+                    <button
+                      onClick={() => {
+                        // 이 메시지의 성취기준 코드만 그래프에 전달 — 완전 초기화
+                        setActiveGraphCodes(msgStdCodes.map(code => ({ code, addedBy: 'AI 추천' })))
+                        setSheetPreferredCenterCode('')
+                        setPinnedStandards([])  // 이전 수동 추가 초기화
+                        pinnedStandardsRef.current = []
+                        setCheckedGraphStandardIds([])  // 이전 토글 초기화
+                        checkedGraphStandardIdsRef.current = []
+                        setWorkspaceInitialView('graph')
+                        setShowWorkspace(true)
+                        setShowGraphPanel(true)
+                        stableGraphKeywordRef.current = ' '
+                        setStableGraphKeyword(' ')
+                        if (isHost) {
+                          setGraphOpen(proj.id, true, ' ', 'graph').catch(console.error)
+                          pushGraphSelectionStateStable([], [])
+                        }
+                      }}
+                      className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-xl border-2 border-[#7B1FA2] text-[#7B1FA2] bg-[#F3E5F5] hover:bg-[#E8CEF0] transition-colors shadow-sm"
+                    >
+                      <TreeStructure size={13} weight="fill" />
+                      성취기준 {msgStdCodes.length}개를 지식 그래프에 반영하기
+                    </button>
+                  )}
+                  {isA21TableMsg && isHost && (
+                    a21ArtifactSaved ? (
+                      <button
+                        onClick={() => {
+                          const proposal = extractA21TableForSave(msg.content)
+                          if (proposal) setPendingArtifactSave({ ...proposal, activityCode: 'A-2-1' })
+                        }}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-[#81C995] text-[#1E8C3A] bg-[#E6F4EA] hover:bg-[#CEEAD6] transition-colors shadow-sm"
+                      >
+                        <CheckCircle size={12} weight="fill" />
+                        산출물 저장됨 · 다시 저장
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const proposal = extractA21TableForSave(msg.content)
+                          if (proposal) setPendingArtifactSave({ ...proposal, activityCode: 'A-2-1' })
+                        }}
+                        className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full border border-[#AECBFA] text-[#1A73E8] bg-[#E8F0FE] hover:bg-[#C9DAF8] transition-colors shadow-sm"
+                      >
+                        <CheckCircle size={12} weight="fill" />
+                        산출물에 저장
+                      </button>
+                    )
+                  )}
+                </div>
+              ) : null}
+              {/* HELP_CARD 렌더링 */}
+              {msg.role === 'assistant' && helpCardMap[msg.id] && (
+                <HelpCard
+                  message={helpCardMap[msg.id]}
+                  onSearchStandards={() => sendMessageDirectlyStable('현재 활동에 맞는 성취기준을 찾아주세요')}
+                  onShowExample={() => sendMessageDirectlyStable('현재 활동의 다른 팀 사례나 예시를 보여주세요')}
+                  onShowGuide={() => sendMessageDirectlyStable('현재 위치와 앞으로 해야 할 일을 안내해주세요')}
+                  onStartTeamDiscussion={() => {
+                    requestTeamDiscussion(proj.id, currentActivity, userProfile?.uid ?? '', userProfile?.displayName ?? '').catch(console.error)
+                  }}
+                />
+              )}
+              {/* ACTION_CARD 렌더링 — Phase 1-b (flow-integrator) + Phase 1-c (ux-frontend-reviewer) */}
+              {msg.role === 'assistant' && msg.actionCard && (() => {
+                const stage = ACTIVITY_META[msg.activityCode]?.stage
+                if (!stage) return null
+                const isSelected = msg.actionCardState === 'selected' || msg.actionCardState === 'skipped'
+                const selectedLabel =
+                  msg.actionCardSelection === 'primary' ? msg.actionCard.primary :
+                  msg.actionCardSelection === 'secondary' ? (msg.actionCard.secondary ?? undefined) :
+                  msg.actionCardSelection === 'skip' ? msg.actionCard.skip :
+                  undefined
+                return (
+                  <ActionCardComponent
+                    card={msg.actionCard}
+                    stage={stage}
+                    isHost={isHost}
+                    isSelected={isSelected}
+                    selectedLabel={selectedLabel}
+                    onPrimary={() => handleActionCardClickStable(msg, 'primary', msg.actionCard!.primary)}
+                    onSecondary={msg.actionCard.secondary
+                      ? () => handleActionCardClickStable(msg, 'secondary', msg.actionCard!.secondary!)
+                      : undefined}
+                    onSkip={() => handleActionCardClickStable(msg, 'skip', msg.actionCard!.skip)}
+                  />
+                )
+              })()}
+            </div>
+          )
+
+  }, [proj, project.memberInfo, userProfile, currentActivity, lastAIMsg?.id, isLoading, isAnalyzing, isHost,
+    trainingUserTexts, helpCardMap, setInput, setPendingArtifactSave, handleActionCardClickStable, handleRestartOptionDiscussionStable,
+    sendMessageDirectlyStable, toggleChecklistItemStable, pushGraphSelectionStateStable])
   const cornerColor = STAGE_CORNER[project?.currentStage ?? 'T']
 
   return (
@@ -4835,283 +5129,21 @@ ${discussionSummary}
           </div>
         )}
 
-        {visibleMessages.map((msg) => {
-          if (msg.role === 'system') return null
-
-          // 연수용 화면 버튼 메시지(양식 저장 알림·AI 도움 요청·단계별 진행 요청)는 교사 말풍선이 아니라 작은 칩으로(저장 데이터 형식은 그대로)
-          const trainingChip = msg.role === 'user' ? trainingMessageChip(msg.content, msg.displayName) : null
-          if (trainingChip) {
-            const isSaveChip = !!trainingSaveNoticeChip(msg.content)
-            return (
-              <div key={msg.id} className="flex justify-center py-1" data-testid={isSaveChip ? 'training-save-chip' : 'training-request-chip'}>
-                <span className={cn('rounded-full px-3 py-1 text-[12px] font-medium', isSaveChip ? 'bg-[#E6F4EA] text-[#137333]' : 'bg-[#E8F0FE] text-[#0B57D0]')}>
-                  {isSaveChip ? '✓ ' : ''}{trainingChip}
-                </span>
-              </div>
-            )
-          }
-
-          // 분석 결과 메시지 (토의 종료 후)
-          // P0-phil3 (Task #32): AnalysisBubble 포맷은 유지하면서 msg.actionCard가 있으면 ActionCard 3버튼을 바로 아래 렌더.
-          //   (공통 L3047 분기는 MessageBubble 경로라 AnalysisBubble 포맷이 사라지므로, 이 분기 내부에서 처리.)
-          if (msg.activityType === '성찰' && msg.role === 'assistant') {
-            const stage = ACTIVITY_META[msg.activityCode]?.stage
-            const isSelected = msg.actionCardState === 'selected' || msg.actionCardState === 'skipped'
-            const selectedLabel = msg.actionCard
-              ? (msg.actionCardSelection === 'primary' ? msg.actionCard.primary :
-                 msg.actionCardSelection === 'secondary' ? (msg.actionCard.secondary ?? undefined) :
-                 msg.actionCardSelection === 'skip' ? msg.actionCard.skip :
-                 undefined)
-              : undefined
-            return (
-              <ContextMenuWrapper key={msg.id} onReply={() => setReplyTo({ id: msg.id, content: msg.content, senderName: 'AI' })}>
-                <AnalysisBubble text={msg.content} />
-                {msg.actionCard && stage && (
-                  <ActionCardComponent
-                    card={msg.actionCard}
-                    stage={stage}
-                    isHost={isHost}
-                    isSelected={isSelected}
-                    selectedLabel={selectedLabel}
-                    onPrimary={() => handleActionCardClick(msg, 'primary', msg.actionCard!.primary)}
-                    onSecondary={msg.actionCard.secondary
-                      ? () => handleActionCardClick(msg, 'secondary', msg.actionCard!.secondary!)
-                      : undefined}
-                    onSkip={() => handleActionCardClick(msg, 'skip', msg.actionCard!.skip)}
-                  />
-                )}
-              </ContextMenuWrapper>
-            )
-          }
-
-          // AI 메시지에서 A안/B안/C안 선택지 파싱
-          if (msg.role === 'assistant') {
-            const parsed = parseOptions(msg.content)
-            if (parsed) {
-              return (
-                <ContextMenuWrapper key={msg.id} onReply={() => setReplyTo({ id: msg.id, content: msg.content, senderName: 'AI' })}>
-                <OptionsMessage
-                  key={msg.id}
-                  messageId={msg.id}
-                  {...parsed}
-                  votes={proj.optionVotes?.[msg.id] ?? {}}
-                  memberInfo={
-                    Object.fromEntries(
-                      Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => [uid, info])
-                    )
-                  }
-                  currentUid={userProfile?.uid ?? ''}
-                  isHost={isHost}
-                  isClosed={proj.closedOptionMessages?.[msg.id] === true || msg.id !== lastAIMsg?.id || isLoading || isAnalyzing}
-                  onDiscuss={() => handleRestartOptionDiscussion(msg.id)}
-                  onSelect={async (label, content) => {
-                    if (isLoading || isAnalyzing || !isHost || msg.id !== lastAIMsg?.id) return
-                    try { await closeOptionChoice(proj.id, msg.id) }
-                    catch (error) {
-                      setChatError('선택을 기록하지 못했습니다. 다시 시도해 주세요.')
-                      throw error
-                    }
-                    setInput('')
-                    await sendMessageDirectly(`${label}을 선택하겠습니다. "${content}"`)
-                  }}
-                />
-                </ContextMenuWrapper>
-              )
-            }
-          }
-
-          // 발신자 정보 결정
-          const isSelf = msg.role === 'user' && msg.userId === userProfile?.uid
-          let senderName: string | undefined
-          let senderColor: string | undefined
-          let senderEmoji: string | undefined
-
-          if (msg.role === 'user') {
-            if (isSelf) {
-              senderName = userProfile?.displayName
-              senderColor = userProfile?.color
-              senderEmoji = userProfile?.displayName?.[0] || '?'
-            } else {
-              const info = msg.userId ? project.memberInfo?.[msg.userId] : undefined
-              senderName = info?.displayName ?? msg.userId?.slice(0, 6) ?? '팀원'
-              senderColor = info?.color ?? '#6B7280'
-              senderEmoji = info?.displayName?.[0] || '?'
-            }
-          }
-
-          // AI 메시지에 성취기준 코드가 2개 이상 포함됐는지 감지
-          // — "[6사03-01]" 형태 코드가 2개 이상이면 (표/번호목록/불릿 모두 포함)
-          const msgStdCodes = msg.role === 'assistant'
-            ? (msg.content.match(/\[\d[가-힣]{1,3}[\d가-힣]*\d{2}-\d{2}\]/g) ?? []).map(s => s.slice(1, -1))
-            : []
-          const hasStandardsTable = msgStdCodes.length >= 2
-
-          // A-2-1: 산출물 저장 버튼 표시 조건
-          // — A-2-1 AI 메시지에 핵심아이디어+성취기준 분석표가 있고 방장인 경우
-          const isA21TableMsg = msg.role === 'assistant' && msg.activityCode === 'A-2-1' && !!extractA21TableForSave(msg.content)
-          const a21ArtifactSaved = !!(proj.artifacts?.['A-2-1'])
-
-          // A-2-1: 성취기준 코드 → 내용 툴팁 맵 (graphSavedData 기반)
-          const stdTooltipMap: Record<string, string> | undefined =
-            msg.role === 'assistant' && msg.activityCode === 'A-2-1' && proj.graphSavedData
-              ? (() => {
-                  const map: Record<string, string> = {}
-                  const gd = proj.graphSavedData!
-                  if (gd.centerNode) map[gd.centerNode.label] = gd.centerNode.text
-                  gd.selectedStandards.forEach(s => { map[s.label] = s.text })
-                  return map
-                })()
-              : undefined
-
-          return (
-            <div
-              key={msg.id}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setCtxMenu({
-                  x: e.clientX, y: e.clientY,
-                  message: {
-                    id: msg.id,
-                    content: msg.content,
-                    role: msg.role as 'user' | 'assistant',
-                    senderName: msg.role === 'user' ? senderName : undefined,
-                    activityCode: msg.activityCode,
-                  },
-                })
-              }}
-            >
-              <MessageBubble
-                role={msg.role as 'user' | 'assistant'}
-                content={displayedMessageContent(proj, msg, trainingUserTexts)}
-                activityType={msg.activityType}
-                senderName={senderName}
-                senderColor={senderColor}
-                senderEmoji={senderEmoji}
-                isSelf={isSelf}
-                replyTo={msg.replyTo}
-                stage={ACTIVITY_META[msg.activityCode]?.stage}
-                standardTextMap={stdTooltipMap}
-                checklist={msg.role === 'assistant' ? {
-                  state: msg.checklistState,
-                  canEdit: !!userProfile,
-                  onToggle: (index, checked) => toggleChecklistItem(msg, index, checked),
-                } : undefined}
-                onReply={() => setReplyTo({
-                  id: msg.id,
-                  content: msg.content,
-                  senderName: msg.role === 'user' ? senderName : 'AI',
-                })}
-              />
-              {/* 성취기준 코드가 2개 이상인 AI 메시지 → 지식 그래프 반영 + 산출물 저장 버튼 */}
-              {(hasStandardsTable && GRAPH_ACTIVITIES.includes(currentActivity) && isHost) || (isA21TableMsg && isHost) ? (
-                <div className="flex justify-start pl-10 -mt-1 mb-2 gap-2 flex-wrap">
-                  {hasStandardsTable && GRAPH_ACTIVITIES.includes(currentActivity) && isHost && (
-                    <button
-                      onClick={() => {
-                        // 이 메시지의 성취기준 코드만 그래프에 전달 — 완전 초기화
-                        setActiveGraphCodes(msgStdCodes.map(code => ({ code, addedBy: 'AI 추천' })))
-                        setSheetPreferredCenterCode('')
-                        setPinnedStandards([])  // 이전 수동 추가 초기화
-                        pinnedStandardsRef.current = []
-                        setCheckedGraphStandardIds([])  // 이전 토글 초기화
-                        checkedGraphStandardIdsRef.current = []
-                        setWorkspaceInitialView('graph')
-                        setShowWorkspace(true)
-                        setShowGraphPanel(true)
-                        stableGraphKeywordRef.current = ' '
-                        setStableGraphKeyword(' ')
-                        if (isHost) {
-                          setGraphOpen(proj.id, true, ' ', 'graph').catch(console.error)
-                          pushGraphSelectionState([], [])
-                        }
-                      }}
-                      className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-xl border-2 border-[#7B1FA2] text-[#7B1FA2] bg-[#F3E5F5] hover:bg-[#E8CEF0] transition-colors shadow-sm"
-                    >
-                      <TreeStructure size={13} weight="fill" />
-                      성취기준 {msgStdCodes.length}개를 지식 그래프에 반영하기
-                    </button>
-                  )}
-                  {isA21TableMsg && isHost && (
-                    a21ArtifactSaved ? (
-                      <button
-                        onClick={() => {
-                          const proposal = extractA21TableForSave(msg.content)
-                          if (proposal) setPendingArtifactSave({ ...proposal, activityCode: 'A-2-1' })
-                        }}
-                        className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-[#81C995] text-[#1E8C3A] bg-[#E6F4EA] hover:bg-[#CEEAD6] transition-colors shadow-sm"
-                      >
-                        <CheckCircle size={12} weight="fill" />
-                        산출물 저장됨 · 다시 저장
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          const proposal = extractA21TableForSave(msg.content)
-                          if (proposal) setPendingArtifactSave({ ...proposal, activityCode: 'A-2-1' })
-                        }}
-                        className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full border border-[#AECBFA] text-[#1A73E8] bg-[#E8F0FE] hover:bg-[#C9DAF8] transition-colors shadow-sm"
-                      >
-                        <CheckCircle size={12} weight="fill" />
-                        산출물에 저장
-                      </button>
-                    )
-                  )}
-                </div>
-              ) : null}
-              {/* HELP_CARD 렌더링 */}
-              {msg.role === 'assistant' && helpCardMap[msg.id] && (
-                <HelpCard
-                  message={helpCardMap[msg.id]}
-                  onSearchStandards={() => sendMessageDirectly('현재 활동에 맞는 성취기준을 찾아주세요')}
-                  onShowExample={() => sendMessageDirectly('현재 활동의 다른 팀 사례나 예시를 보여주세요')}
-                  onShowGuide={() => sendMessageDirectly('현재 위치와 앞으로 해야 할 일을 안내해주세요')}
-                  onStartTeamDiscussion={() => {
-                    requestTeamDiscussion(proj.id, currentActivity, userProfile?.uid ?? '', userProfile?.displayName ?? '').catch(console.error)
-                  }}
-                />
-              )}
-              {/* ACTION_CARD 렌더링 — Phase 1-b (flow-integrator) + Phase 1-c (ux-frontend-reviewer) */}
-              {msg.role === 'assistant' && msg.actionCard && (() => {
-                const stage = ACTIVITY_META[msg.activityCode]?.stage
-                if (!stage) return null
-                const isSelected = msg.actionCardState === 'selected' || msg.actionCardState === 'skipped'
-                const selectedLabel =
-                  msg.actionCardSelection === 'primary' ? msg.actionCard.primary :
-                  msg.actionCardSelection === 'secondary' ? (msg.actionCard.secondary ?? undefined) :
-                  msg.actionCardSelection === 'skip' ? msg.actionCard.skip :
-                  undefined
-                return (
-                  <ActionCardComponent
-                    card={msg.actionCard}
-                    stage={stage}
-                    isHost={isHost}
-                    isSelected={isSelected}
-                    selectedLabel={selectedLabel}
-                    onPrimary={() => handleActionCardClick(msg, 'primary', msg.actionCard!.primary)}
-                    onSecondary={msg.actionCard.secondary
-                      ? () => handleActionCardClick(msg, 'secondary', msg.actionCard!.secondary!)
-                      : undefined}
-                    onSkip={() => handleActionCardClick(msg, 'skip', msg.actionCard!.skip)}
-                  />
-                )
-              })()}
-            </div>
-          )
-        })}
+        <MessageList key={currentActivity} messages={visibleMessages} renderMessage={renderMessage} onCommit={handleMessageListCommit} />
 
         {/* 성취기준 찾기 모달 */}
-        <StandardsFinderModal
+        {(showStandardsBrowser) && <StandardsFinderModal
           open={showStandardsBrowser}
           onClose={() => setShowStandardsBrowser(false)}
           onInsert={(md) => setInput(prev => (prev ? prev + '\n\n' : '') + md)}
-        />
+        />}
 
         {/* 핵심아이디어 찾기 모달 */}
-        <CoreIdeaFinderModal
+        {(showCoreIdeaBrowser) && <CoreIdeaFinderModal
           open={showCoreIdeaBrowser}
           onClose={() => setShowCoreIdeaBrowser(false)}
           onInsert={(md) => setInput(prev => (prev ? prev + '\n\n' : '') + md)}
-        />
+        />}
 
         {/* 중요 노트 모달 — 불러오기 버튼은 `@노트#N` 짧은 토큰만 삽입.
             실제 노트 내용은 서버에서 시스템 프롬프트의 "팀 중요 노트" 블록으로 AI에 전달되므로
@@ -5133,7 +5165,7 @@ ${discussionSummary}
           }}
         />
 
-        <TeamVisionWorkspaceModal
+        {(showTeamVisionWorkspace) && <TeamVisionWorkspaceModal
           open={showTeamVisionWorkspace}
           onClose={() => setShowTeamVisionWorkspace(false)}
           workspace={proj.teamVisionWorkspace}
@@ -5154,9 +5186,9 @@ ${discussionSummary}
             .map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
-        />
+        />}
 
-        <LessonDesignDirectionWorkspaceModal
+        {(showLessonDesignDirectionWorkspace) && <LessonDesignDirectionWorkspaceModal
           open={showLessonDesignDirectionWorkspace}
           onClose={() => setShowLessonDesignDirectionWorkspace(false)}
           workspace={proj.lessonDesignDirectionWorkspace}
@@ -5177,9 +5209,9 @@ ${discussionSummary}
           chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
-        />
+        />}
 
-        <EvaluationPlanWorkspaceModal
+        {(showEvaluationPlanWorkspace) && <EvaluationPlanWorkspaceModal
           open={showEvaluationPlanWorkspace}
           onClose={() => setShowEvaluationPlanWorkspace(false)}
           workspace={proj.evaluationPlanWorkspace}
@@ -5206,9 +5238,9 @@ ${discussionSummary}
           chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
-        />
+        />}
 
-        <ProblemSituationWorkspaceModal
+        {(showProblemSituationWorkspace) && <ProblemSituationWorkspaceModal
           open={showProblemSituationWorkspace}
           onClose={() => setShowProblemSituationWorkspace(false)}
           workspace={proj.problemSituationWorkspace}
@@ -5239,9 +5271,9 @@ ${discussionSummary}
           chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
-        />
+        />}
 
-        <SupportToolWorkspaceModal
+        {(showSupportToolWorkspace) && <SupportToolWorkspaceModal
           open={showSupportToolWorkspace}
           onClose={() => setShowSupportToolWorkspace(false)}
           workspace={proj.supportToolWorkspace}
@@ -5277,9 +5309,9 @@ ${discussionSummary}
           chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
-        />
+        />}
 
-        <RoleDistributionWorkspaceModal
+        {(showRoleDistributionWorkspace) && <RoleDistributionWorkspaceModal
           open={showRoleDistributionWorkspace}
           onClose={() => setShowRoleDistributionWorkspace(false)}
           workspace={proj.roleDistributionWorkspace}
@@ -5301,9 +5333,9 @@ ${discussionSummary}
           coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
-        />
+        />}
 
-        <TeamRulesWorkspaceModal
+        {(showTeamRulesWorkspace) && <TeamRulesWorkspaceModal
           open={showTeamRulesWorkspace}
           projectId={projectId}
           onClose={() => setShowTeamRulesWorkspace(false)}
@@ -5324,9 +5356,9 @@ ${discussionSummary}
           teamVision={(proj.artifacts?.['T-1-1']?.content as { teamVision?: string } | undefined)?.teamVision ?? proj.teamVisionWorkspace?.teamVision}
           coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
           existingRoles={(proj.artifacts?.['T-2-1']?.content as { roles?: Array<{ teacherName?: string; role?: string }> } | undefined)?.roles}
-        />
+        />}
 
-        <TeamScheduleWorkspaceModal
+        {(showTeamScheduleWorkspace) && <TeamScheduleWorkspaceModal
           open={showTeamScheduleWorkspace}
           projectId={projectId}
           onClose={() => setShowTeamScheduleWorkspace(false)}
@@ -5348,9 +5380,9 @@ ${discussionSummary}
           coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
           existingRoles={(proj.artifacts?.['T-2-1']?.content as { roles?: Array<{ teacherName?: string; role?: string }> } | undefined)?.roles}
           existingRules={(proj.artifacts?.['T-2-2']?.content as { rules?: Array<{ category?: string; name?: string }> } | undefined)?.rules}
-        />
+        />}
 
-        <TopicSelectionWorkspaceModal
+        {(showTopicSelectionWorkspace) && <TopicSelectionWorkspaceModal
           open={showTopicSelectionWorkspace}
           projectId={projectId}
           onClose={() => setShowTopicSelectionWorkspace(false)}
@@ -5370,9 +5402,9 @@ ${discussionSummary}
           chatMessages={messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName }))}
           teamVision={(proj.artifacts?.['T-1-1']?.content as { teamVision?: string } | undefined)?.teamVision ?? proj.teamVisionWorkspace?.teamVision}
           coreKeywords={(proj.artifacts?.['T-1-1']?.content as { coreKeywords?: string[] } | undefined)?.coreKeywords ?? proj.teamVisionWorkspace?.coreKeywords}
-        />
+        />}
 
-        <LearningActivityWorkspaceModal
+        {(showLearningActivityWorkspace) && <LearningActivityWorkspaceModal
           open={showLearningActivityWorkspace}
           projectId={projectId}
           onClose={() => setShowLearningActivityWorkspace(false)}
@@ -5399,9 +5431,9 @@ ${discussionSummary}
             if (!c?.rubric?.length) return undefined
             return c.rubric.map(r => [r.item, r.method].filter(Boolean).join(' · ')).filter(Boolean).join('\n')
           })()}
-        />
+        />}
 
-        <ScaffoldingWorkspaceModal
+        {(showScaffoldingWorkspace) && <ScaffoldingWorkspaceModal
           open={showScaffoldingWorkspace}
           projectId={projectId}
           onClose={() => setShowScaffoldingWorkspace(false)}
@@ -5430,10 +5462,10 @@ ${discussionSummary}
             const v = c['학습자 프로필'] ?? c['commonProfile']
             return typeof v === 'string' ? v : v ? JSON.stringify(v).slice(0, 800) : undefined
           })()}
-        />
+        />}
 
         {/* DI·E 공동 편집 세션 (가이드 20260804 §4·§5) — 공용 모달 + 활동별 설정 */}
-        <CoeditWorkspaceModal
+        {(showMaterialDevWorkspace) && <CoeditWorkspaceModal
           projectId={projectId}
           open={showMaterialDevWorkspace}
           onClose={() => setShowMaterialDevWorkspace(false)}
@@ -5449,9 +5481,9 @@ ${discussionSummary}
           onPresenceUpdate={makeCoeditPresenceHandler('DI-1-1')}
           onSendArtifact={makeCoeditSendHandler('DI-1-1')}
           suggestContext={makeCoeditSuggestContext('DI-1-1')}
-        />
+        />}
 
-        <CoeditWorkspaceModal
+        {(showLessonRecordWorkspace) && <CoeditWorkspaceModal
           projectId={projectId}
           open={showLessonRecordWorkspace}
           onClose={() => setShowLessonRecordWorkspace(false)}
@@ -5467,9 +5499,9 @@ ${discussionSummary}
           onPresenceUpdate={makeCoeditPresenceHandler('DI-2-1')}
           onSendArtifact={makeCoeditSendHandler('DI-2-1')}
           suggestContext={makeCoeditSuggestContext('DI-2-1')}
-        />
+        />}
 
-        <CoeditWorkspaceModal
+        {(showLessonReflectionWorkspace) && <CoeditWorkspaceModal
           projectId={projectId}
           open={showLessonReflectionWorkspace}
           onClose={() => setShowLessonReflectionWorkspace(false)}
@@ -5485,9 +5517,9 @@ ${discussionSummary}
           onPresenceUpdate={makeCoeditPresenceHandler('E-1-1')}
           onSendArtifact={makeCoeditSendHandler('E-1-1')}
           suggestContext={makeCoeditSuggestContext('E-1-1')}
-        />
+        />}
 
-        <CoeditWorkspaceModal
+        {(showCollaborationReflectionWorkspace) && <CoeditWorkspaceModal
           projectId={projectId}
           open={showCollaborationReflectionWorkspace}
           onClose={() => setShowCollaborationReflectionWorkspace(false)}
@@ -5503,9 +5535,9 @@ ${discussionSummary}
           onPresenceUpdate={makeCoeditPresenceHandler('E-2-1')}
           onSendArtifact={makeCoeditSendHandler('E-2-1')}
           suggestContext={makeCoeditSuggestContext('E-2-1')}
-        />
+        />}
 
-        <IntegratedGoalWorkspaceModal
+        {(showIntegratedGoalWorkspace) && <IntegratedGoalWorkspaceModal
           open={showIntegratedGoalWorkspace}
           onClose={() => setShowIntegratedGoalWorkspace(false)}
           workspace={proj.integratedGoalWorkspace}
@@ -5552,10 +5584,10 @@ ${discussionSummary}
           })()}
           projectId={proj.id}
           collaborativeMembers={Object.entries(proj.memberInfo ?? {}).map(([uid, info]) => ({ uid, displayName: info.displayName || '팀원', color: info.color }))}
-        />
+        />}
 
         {/* 교육과정 분석 워크스페이스 — 분석시트 ↔ 지식그래프 통합 모달 */}
-        <CurriculumWorkspaceModal
+        {(showWorkspace) && <CurriculumWorkspaceModal
           key={`curriculum-workspace-${workspaceInitialView}`}
           open={showWorkspace}
           initialView={workspaceInitialView}
@@ -5712,7 +5744,7 @@ ${discussionSummary}
               </>
             )
           }}
-        />
+        />}
 
         {/* @노트 툴팁 — createPortal로 body에 렌더링 (overflow 부모 회피) */}
         {noteTooltip && typeof document !== 'undefined' && createPortal(
@@ -6167,6 +6199,9 @@ ${discussionSummary}
           </div>
         )}
 
+        <ChatDraftBoundary draft={chatDraft}>{({ input, slashQuery, slashCmdIdx }) => {
+          const filteredSlashCmds = filterSlashCommands(slashQuery)
+          return <>
         {/* 슬래시 커맨드 팔레트 */}
         {slashQuery !== null && filteredSlashCmds.length > 0 && (
           <div className="mb-2 bg-white rounded-2xl shadow-md border border-[#DADCE0] overflow-hidden">
@@ -6240,6 +6275,7 @@ ${discussionSummary}
                 data-chat-input=""
                 value={input}
                 onChange={(e) => {
+                  markChatInput()
                   const val = e.target.value
                   setInput(val)
                   // @노트 토큰이 없어지면 툴팁 닫기
@@ -6331,6 +6367,8 @@ ${discussionSummary}
             }
           </button>
         </div>
+          </>
+        }}</ChatDraftBoundary>
       </div>
 
     </div>

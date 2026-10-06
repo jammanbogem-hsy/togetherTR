@@ -563,7 +563,7 @@ test('7: 주제 선정 기준 산출물이 없을 때만 A-2 환영 문구를 �
     const project = { started: true, hostUid: 'host', mode: 'collaborative', artifacts: hasCriteria ? { 'A-1-1': { content: { '주제 선정 기준': '실생활 연결' } } } : {} }
     let shown
     const context = {
-      exports: {}, project, proj: project, currentActivity: 'A-1-2', messagesLoaded: true, messages: [],
+      exports: {}, pendingNavigation: null, project, proj: project, currentActivity: 'A-1-2', messagesLoaded: true, messages: [],
       userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage, messagesLoadedByFallback: false, ...MODE_HELPERS,
       isTrainingActivity: () => false, buildTrainingWelcome: () => '',
       showWelcomeMessage: text => { shown = text },
@@ -936,7 +936,7 @@ test('29: 단계를 넘는 되돌아가기는 요청된 활동으로, 새 주기
   assert.match(chatSource, /setPendingStageMove\(targetStage, code\)/)
   const modal = fs.readFileSync(new URL('../src/components/modals/StageMoveModal.tsx', import.meta.url), 'utf8')
   assert.match(modal, /returnActivity: pendingReturnActivity/)
-  assert.match(modal, /if \(isActivityReturn\) await withTimeout\(setActivityStatus\(project\.id, firstActivity, 'active_return'\)/)
+  assert.match(modal, /isActivityReturn \? \[withTimeout\(setActivityStatus\(project\.id, firstActivity, 'active_return'\)/)
   const store = fs.readFileSync(new URL('../src/store/project.ts', import.meta.url), 'utf8')
   // 다른 경로(단계 바·분석 창 등)로 창을 열면 이전 되돌아가기 대상이 남지 않는다.
   assert.match(store, /const nextReturn = stage \? returnActivity : null/)
@@ -3790,7 +3790,7 @@ function runWelcomeEffect({ project, currentActivity }) {
   }).outputText
   let shown = null
   const context = {
-    exports: {}, project, proj: project, currentActivity, messagesLoaded: true, messages: [], messagesLoadedByFallback: false,
+    exports: {}, pendingNavigation: null, project, proj: project, currentActivity, messagesLoaded: true, messages: [], messagesLoadedByFallback: false,
     userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage: () => true, ...MODE_HELPERS,
     isTrainingActivity: training.isTrainingActivity, buildTrainingWelcome: training.buildTrainingWelcome,
     showWelcomeMessage: text => { shown = text },
@@ -3819,10 +3819,10 @@ test('T17: 연수용 비핵심 활동은 어떤 경로로 들어가도 고정 �
     page: fs.readFileSync(new URL('../src/app/(app)/projects/[id]/page.tsx', import.meta.url), 'utf8'),
     chat: fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8'),
   }
-  assert.match(sources.sidebar, /setCurrentActivity\(code\)/)
-  assert.match(sources.stageMove, /setCurrentActivity\(firstActivity\)/)
+  assert.match(sources.sidebar, /navigateOptimistically\(\{ projectId: project!?\.id, activity: code/)
+  assert.match(sources.stageMove, /navigateOptimistically\(\{ projectId: project.id, activity: firstActivity/)
   assert.match(sources.page, /setCurrentActivity\(project\.currentActivity\)/)
-  assert.match(sources.chat, /setCurrentActivity\(nextActivity\)/)
+  assert.match(sources.chat, /navigateOptimistically\(\{ projectId: proj\.id, activity: nextActivity/)
   for (const [name, src] of Object.entries(sources)) {
     if (name !== 'chat') assert.doesNotMatch(src, /ACTIVITY_WELCOME|welcome-\$\{/, name)
   }
@@ -3873,7 +3873,7 @@ test('T19b: 생성 타이밍 — 환영 effect 는 프로젝트 스냅숏(starte
   const page = fs.readFileSync(new URL('../src/app/(app)/projects/[id]/page.tsx', import.meta.url), 'utf8')
   assert.equal((page.match(/setProject\(p\)/g) ?? []).length, 1) // 프로젝트는 스냅숏으로만 바뀐다(부분 객체로 덮지 않음)
   const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
-  assert.match(panel, /useEffect\(\(\) => \{\n    if \(!project\?\.started\) return\n    if \(!messagesLoaded\) return/)
+  assert.match(panel, /useEffect\(\(\) => \{\n    if \(!project\?\.started\) return\n    if \(!messagesLoaded \|\| pendingNavigation\) return/)
 })
 
 test('T19c: 새 버전 감지 — 빌드 도장이 서버와 다르면 작은 안내, 누르면 새로고침(자동 새로고침 없음)', async () => {
@@ -3917,6 +3917,7 @@ function t10Bindings(overrides = {}) {
     displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [],
     ...overrides,
   }
+  bindings.chatDraft = { getSnapshot: () => ({ input: bindings.input }) }
   return { bindings, calls }
 }
 
