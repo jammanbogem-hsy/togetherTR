@@ -13,6 +13,7 @@ import {
 } from '@phosphor-icons/react'
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
 import { TrainingStepGuide } from '@/components/training/TrainingStepGuide'
+import { isSoloProject } from '@/lib/project/projectMode'
 
 const STAGE_ICON_MAP: Record<string, Icon> = {
   T:  UsersThree,
@@ -360,7 +361,7 @@ export function ActivitySidebar() {
   const guide = STAGE_GUIDE[currentStage]
   const color = STAGE_COLOR[currentStage]
   // solo는 협력 전용 활동을 사이드바에서 감춘다. 표시·진행률·단계전환 판정 모두 이 목록을 기준으로 한다.
-  const isSolo = project.mode === 'solo'
+  const isSolo = isSoloProject(project)
   const visibleActivities = isSolo
     ? currentStageInfo.activities.filter(a => !SOLO_HIDDEN_ACTIVITIES.includes(a))
     : currentStageInfo.activities

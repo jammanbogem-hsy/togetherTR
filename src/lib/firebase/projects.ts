@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query,
-  where, orderBy, limit, serverTimestamp, onSnapshot, type Unsubscribe, arrayUnion, deleteField,
+  where, orderBy, limit, serverTimestamp, onSnapshot, type Unsubscribe, arrayUnion, arrayRemove, deleteField,
   runTransaction, type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { auth, db } from './config'
@@ -22,6 +22,9 @@ import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collab
 import { buildTeamGradeBandUpdate } from '@/lib/curriculum/teamGradeBandState'
 import { canFillRowDescription, type RowDescriptionUpdate } from '@/lib/curriculum/rowDescriptions'
 import { isTrainingActivity } from '@/lib/training/trainingMode'
+import { effectiveProjectMode, isSoloProject, needsProjectModeSync } from '@/lib/project/projectMode'
+import { MEMBER_PRESENCE_COLLECTIONS, planMemberRemoval } from '@/lib/project/memberAdmin'
+import { nextArtifactUpdatedAt } from '@/lib/artifacts/artifactUpdatedAt'
 import { serializeWorkspaceSave } from './serializeSave'
 import { messageDocPath } from '@/lib/chat/checklist'
 import { createPresenceThrottle } from '@/lib/coedit/presenceThrottle'
@@ -230,7 +233,8 @@ export async function joinProject(
   // 신규 가입자인 경우에만 inviteCode 일치를 강제한다.
   if (!isAlreadyMember) {
     // 개인 설계 프로젝트는 초대 참여를 받지 않는다 (2원화 — 협력 프로젝트만 팀 참여 가능).
-    if (data.mode === 'solo') {
+    // 단 2원화 전에 팀원이 들어와 저장값만 solo 인 레거시 방(멤버 2명 이상)은 협력 방으로 보고 참여를 허용한다.
+    if (isSoloProject(data)) {
       throw new Error('solo-project')
     }
     if (!inviteCode || data.inviteCode !== inviteCode) {
@@ -263,6 +267,46 @@ export async function ensureProjectMemberUid(
   }
   await updateDoc(doc(db, 'projects', projectId), updates)
   addJoinedProjectId(projectId)
+}
+
+/**
+ * 저장값이 solo 인데 팀원이 2명 이상인 레거시 방을 방장이 열면 mode 를 한 번 'collaborative' 로 맞춘다.
+ * 화면·프롬프트는 이미 effectiveProjectMode 로 판단하므로, 실패해도(권한·오프라인) 동작은 같다.
+ */
+export async function syncProjectModeIfNeeded(project: Project | null | undefined, uid: string | null | undefined): Promise<boolean> {
+  if (!project?.id || !needsProjectModeSync(project, uid)) return false
+  await updateDoc(doc(db, 'projects', project.id), {
+    mode: 'collaborative',
+    modeChanges: arrayUnion({ from: 'solo', to: 'collaborative', reason: 'legacy-team', byUid: uid, at: Date.now() }),
+    updatedAt: serverTimestamp(),
+  })
+  return true
+}
+
+/**
+ * 방장이 팀원을 방에서 내보낸다. memberUids·memberInfo·확인 대기(artifactConfirmations) 항목만 지우고,
+ * 그 팀원이 남긴 대화·산출물은 그대로 둔다. 결과는 memberRemovals 에 기록한다.
+ * 실패는 Error(message = MemberAdminError 코드). 남의 presence 문서는 규칙상 본인만 지울 수 있어
+ * 거부되면 'partial' — 화면 표시는 시간이 지나면 사라진다.
+ */
+export async function removeMember(projectId: string, byUid: string, targetUid: string): Promise<{ presenceCleanup: 'done' | 'partial' }> {
+  const ref = doc(db, 'projects', projectId)
+  await runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref)
+    const plan = planMemberRemoval(snap.exists() ? snap.data() as Project : null, byUid, targetUid)
+    if (!plan.ok) throw new Error(plan.error)
+    const updates: Record<string, unknown> = {
+      memberUids: arrayRemove(targetUid),
+      memberRemovals: arrayUnion({ uid: targetUid, displayName: plan.target.displayName, byUid, at: Date.now() }),
+      updatedAt: serverTimestamp(),
+    }
+    for (const path of plan.deleteFieldPaths) updates[path] = deleteField()
+    transaction.update(ref, updates)
+  })
+  const results = await Promise.allSettled(
+    MEMBER_PRESENCE_COLLECTIONS.map(name => deleteDoc(doc(db, 'projects', projectId, name, targetUid))),
+  )
+  return { presenceCleanup: results.every(result => result.status === 'fulfilled') ? 'done' : 'partial' }
 }
 
 // ─── 로비 채팅 (대기실 채팅) ─────────────────────────
@@ -498,9 +542,11 @@ export async function setProjectArtifact(
   // Firestore는 nested undefined까지 거부 — top-level의 confirmedBy/revisionNote 같은 optional 필드뿐 아니라
   // content.manualWorkspace.blocks[].table, versions[].savedBy 등 깊은 곳까지 모두 청소해야 한다.
   // versions 합친 결과 전체를 한 번에 deep clean (versions[].savedBy === undefined 같은 케이스가 reject 원인).
+  // R1: 실제로 바뀐 저장만 시각을 새로 찍는다(같은 내용 재저장은 기존 시각 유지, 없으면 필드 생략).
+  const artifactUpdatedAt = nextArtifactUpdatedAt(current, normalized, Date.now())
   const baseMerged: Record<string, unknown> = trimmedVersions.length > 0
-    ? { ...normalized, versions: trimmedVersions }
-    : { ...normalized }
+    ? { ...normalized, versions: trimmedVersions, updatedAt: artifactUpdatedAt }
+    : { ...normalized, updatedAt: artifactUpdatedAt }
   const mergedArtifact = stripUndefinedDeep(baseMerged) as Record<string, unknown>
   const updates: Record<string, unknown> = {
     [`artifacts.${activityCode}`]: mergedArtifact,
@@ -529,7 +575,7 @@ export async function recordArtifactConfirmations(
   project: Project,
 ): Promise<void> {
   // 연수용 활동은 부재 팀원 확인 카드(#28)를 만들지 않는다 — 기록자 한 명이 대신 입력하는 연수 현장
-  if (project.mode === 'solo' || project.demoRun || isTrainingActivity(project, activityCode)) return
+  if (isSoloProject(project) || project.demoRun || isTrainingActivity(project, activityCode)) return
   const cycle = project.currentCycle ?? 1
   const messagesSnap = await getDocs(collection(db, `projects/${projectId}/conversations/${activityCode}/messages`))
   const speakerUids = messagesSnap.docs
@@ -537,7 +583,7 @@ export async function recordArtifactConfirmations(
     .filter(message => message.role === 'user' && message.userId && (message.cycleNumber ?? 1) === cycle)
     .map(message => message.userId as string)
   const pending = computePendingConfirmations({
-    mode: project.mode,
+    mode: effectiveProjectMode(project),
     demoRun: !!project.demoRun,
     hostUid: project.hostUid,
     createdBy: project.createdBy,

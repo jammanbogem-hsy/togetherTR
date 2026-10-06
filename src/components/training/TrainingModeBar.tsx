@@ -7,6 +7,7 @@ import { TRAINING_ACTIVITIES, TRAINING_STEP_BY_STEP, formatTrainingHelpRequest, 
 import { StageAnalysisModal } from '@/components/modals/StageAnalysisModal'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { trainingFormValues } from './trainingFormState'
+import { isSoloProject } from '@/lib/project/projectMode'
 
 export interface TrainingModeBarProps {
   project: Project
@@ -57,7 +58,7 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
   if (!isTrainingActivity(project, activityCode)) return null
   const status = trainingStatus(activityCode, trainingFormValues(activityCode, content))
   const activities = STAGES.flatMap(stage => stage.activities)
-    .filter(code => project.mode !== 'solo' || !SOLO_HIDDEN_ACTIVITIES.includes(code))
+    .filter(code => !isSoloProject(project) || !SOLO_HIDDEN_ACTIVITIES.includes(code))
   const activityIndex = activities.indexOf(activityCode)
   const next = activityIndex >= 0 ? activities[activityIndex + 1] : undefined
   const blocked = !loaded || busy

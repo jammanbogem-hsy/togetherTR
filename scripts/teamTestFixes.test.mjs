@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
 import * as phosphorIcons from '@phosphor-icons/react'
 import { STAGE_COLOR } from '../src/lib/ui/stageColors.ts'
+import * as stageReportState from '../src/lib/report/stageReportState.ts'
 import { REPORT_DASHBOARD_CSS, REPORT_PRINT_CSS, REPORT_ICON_TONES, reportStageColors } from '../src/components/modals/reportDashboardStyles.ts'
 import { cleanReportMarkdown } from '../src/lib/markdown/reportDisplay.ts'
 import { buildReportPrintDocument, cloneReportForPrint, REPORT_PRINT_WINDOW_CSS } from '../src/components/modals/printReport.ts'
@@ -35,6 +36,10 @@ import { applyArtifactSignalBatch, artifactContentEquals } from '../src/lib/chat
 import { findDroppedTableRows, userAskedToDeleteRows } from '../src/lib/chat/tableRowGuard.ts'
 import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction } from '../src/lib/artifacts/schemas.ts'
 
+// TASK-M1: 저장값만 solo 인 팀원 있는 방은 협력 방 — ChatPanel 함수들이 쓰는 판정·명령 해석을 하네스 기본값으로 넣는다.
+const { effectiveProjectMode, isSoloProject } = await import('../src/lib/project/projectMode.ts')
+const { classifyMemberCommand } = await import('../src/lib/project/memberAdmin.ts')
+const MODE_HELPERS = { effectiveProjectMode, isSoloProject, classifyMemberCommand }
 const chat = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
 const tree = ts.createSourceFile('ChatPanel.tsx', chat, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 function loadChatFunction(name, bindings, sourceTree = tree) {
@@ -48,7 +53,7 @@ function loadChatFunction(name, bindings, sourceTree = tree) {
   const source = ts.transpileModule(`exports.fn = ${found.getText(sourceTree).replace(/^export\s+/, '')}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText
-  const context = { exports: {}, ...bindings }
+  const context = { exports: {}, ...MODE_HELPERS, setMemberCommand: () => {}, ...bindings }
   vm.runInNewContext(source, context)
   return context.exports.fn
 }
@@ -559,7 +564,7 @@ test('7: 주제 선정 기준 산출물이 없을 때만 A-2 환영 문구를 �
     let shown
     const context = {
       exports: {}, project, proj: project, currentActivity: 'A-1-2', messagesLoaded: true, messages: [],
-      userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage, messagesLoadedByFallback: false,
+      userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage, messagesLoadedByFallback: false, ...MODE_HELPERS,
       isTrainingActivity: () => false, buildTrainingWelcome: () => '',
       showWelcomeMessage: text => { shown = text },
     }
@@ -821,7 +826,9 @@ test('28a: 이 활동에서 말하지 않은 비방장 팀원만 확인 대기�
   assert.deepEqual(Object.keys(pending), ['canva'])
   assert.deepEqual(pending.canva, { status: 'pending', version: 2, since: 100, displayName: '캔바1' })
   assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, speakerUids: ['host', 'jam', 'canva'], activityCode: 'T-2-1', version: 2, now: 100 }), {})
-  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, mode: 'solo', speakerUids: [], activityCode: 'T-2-1', version: 2, now: 100 }), {})
+  // 저장값만 solo 인 팀원 있는 레거시 방은 협력 방으로 본다(TASK-M1). 1명뿐인 개인 방만 제외.
+  assert.deepEqual(Object.keys(task022.computePendingConfirmations({ ...task022Team, mode: 'solo', speakerUids: ['host'], activityCode: 'T-2-1', version: 2, now: 100 })).sort(), ['canva', 'jam'])
+  assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, mode: 'solo', memberUids: ['host'], memberInfo: { host: task022Team.memberInfo.host }, speakerUids: [], activityCode: 'T-2-1', version: 2, now: 100 }), {})
   assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, demoRun: true, speakerUids: [], activityCode: 'T-2-1', version: 2, now: 100 }), {})
   assert.deepEqual(task022.computePendingConfirmations({ ...task022Team, memberUids: ['host'], speakerUids: [], activityCode: 'T-2-1', version: 2, now: 100 }), {})
   // memberUids 가 없으면 memberInfo 키로 팀을 판단한다.
@@ -1441,6 +1448,10 @@ function reportModalFixture(name, selected = false, isHost = true, content, pdfB
     '@/types': { STAGES, ACTIVITY_META },
     '@/components/ui/MD3Button': { MD3Button: props => { callbacks.push(props); return React.createElement(MD3Button, props) } },
     './ReportMarkdown': { ReportMarkdown, ReportHero },
+    '@/lib/report/stageReportState': stageReportState,
+    '@/lib/report/generateStageReport': { generateStageReport: async () => '' },
+    './StageAnalysisModal': { StageAnalysisModal: () => null },
+    '@/components/members/MemberActionDialog': { MemberActionDialog: () => null },
     './printReport': { printReport() {} },
     './downloadReportPdf': { downloadReportPdf() {} },
     '@phosphor-icons/react': new Proxy({}, { get: () => () => null }),
@@ -1466,13 +1477,14 @@ test('034b: 생성·저장 보고서 모달은 16px 모바일 여백·폭 제한
     assert.doesNotMatch(html, /<div class="hidden" aria-hidden="true">|material-symbols/)
     assert.equal(callbacks.filter(b => b.variant === 'outlined').length, 2)
     assert.equal(callbacks.filter(b => b.variant === 'tonal').length, 1)
-    assert.doesNotMatch(html, /단계로 이동|다시 생성|morph-btn/)
+    assert.doesNotMatch(html, /단계로 이동|morph-btn/)
+    assert.equal(callbacks.some(button => button.children === '다시 생성' || button.children === '보고서 만들기'), false)
   }
   const host = reportModalFixture('StageAnalysisModal')
   assert.match(host.html, /단계로 이동/)
   assert.ok(host.callbacks.some(b => b.variant === 'filled'))
   const list = reportModalFixture('StageReportsModal')
-  assert.match(list.html, /저장된 단계 보고서/)
+  assert.match(list.html, /단계 보고서/)
   assert.match(list.html, /설계\(Ds\) 단계/)
 })
 
@@ -2638,7 +2650,7 @@ test('T9: ChatPanel·저장 흐름 — 이벤트 수신, 개입 금지 저장은
   assert.doesNotMatch(quiet, /streamFromAPI/)
   assert.match(panel, /trainingMode: proj\.trainingMode,/)
   const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
-  assert.match(projects, /if \(project\.mode === 'solo' \|\| project\.demoRun \|\| isTrainingActivity\(project, activityCode\)\) return/)
+  assert.match(projects, /if \(isSoloProject\(project\) \|\| project\.demoRun \|\| isTrainingActivity\(project, activityCode\)\) return/)
 })
 
 // ─── TASK-T2: 연수용 생성·설정·양식·채팅 막대 ───
@@ -2647,7 +2659,7 @@ const trainingUi = await import('../src/lib/training/trainingMode.ts')
 const trainingUiProject = { id: 'training-ui', title: '연수', mode: 'collaborative', createdBy: 'host', hostUid: 'host', currentStage: 'T', trainingMode: { enabled: true, coreFormal: true } }
 const trainingUiButton = ({ children, icon, trailing, variant: _variant, size: _size, ...props }) => React.createElement('button', props, icon, children, trailing)
 const trainingUiBindings = {
-  ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES,
+  ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES, isSoloProject,
   SOLO_HIDDEN_ACTIVITIES: ['T-2-1', 'T-2-2', 'T-2-3', 'E-2-1'],
   useState: value => [typeof value === 'function' ? value() : value, () => {}],
   useEffect: () => {}, useId: () => 'training-bar-help', useRef: value => ({ current: value }),
@@ -3779,7 +3791,7 @@ function runWelcomeEffect({ project, currentActivity }) {
   let shown = null
   const context = {
     exports: {}, project, proj: project, currentActivity, messagesLoaded: true, messages: [], messagesLoadedByFallback: false,
-    userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage: () => true,
+    userProfile: { uid: 'host' }, ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME, shouldCreateWelcomeMessage: () => true, ...MODE_HELPERS,
     isTrainingActivity: training.isTrainingActivity, buildTrainingWelcome: training.buildTrainingWelcome,
     showWelcomeMessage: text => { shown = text },
   }

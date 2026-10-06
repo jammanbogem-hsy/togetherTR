@@ -11,7 +11,7 @@ import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
-import { saveMessage, saveMessageIfAbsent, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
+import { removeMember, syncProjectModeIfNeeded, saveMessage, saveMessageIfAbsent, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch, CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
@@ -99,6 +99,9 @@ import { chatSendBlockReason } from '@/lib/chat/sendReadiness'
 import { sanitizeAssistantText } from '@/lib/chat/sanitizeAssistantText'
 import { shouldCreateWelcomeMessage } from '@/lib/activity/navigationDecisions'
 import { validateRequiredSections } from '@/lib/activity/completion'
+import { effectiveProjectMode, isSoloProject, needsProjectModeSync } from '@/lib/project/projectMode'
+import { classifyMemberCommand, MEMBER_ADMIN_ERROR_COPY, type MemberAdminError, type MemberRef } from '@/lib/project/memberAdmin'
+import { MemberCommandPanel, type MemberCommandState } from './MemberCommandPanel'
 
 const KnowledgeGraphViewer = dynamic(
   () => import('@/components/knowledge-graph/KnowledgeGraphViewer'),
@@ -1325,6 +1328,15 @@ function ChatPanelContent() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isIdle, setIsIdle] = useState(false)
   const [flowNotice, setFlowNotice] = useState<string | null>(null)
+  // 채팅 '팀원 내보내기' 명령 — 방장 화면 로컬 카드, 저장하지 않음
+  const [memberCommand, setMemberCommand] = useState<MemberCommandState | null>(null)
+  const modeSyncedRef = useRef<string | null>(null)
+  // 저장값만 solo 인 팀원 있는 레거시 방을 방장이 열면 mode 를 한 번 맞춘다(화면은 이미 effectiveProjectMode 기준)
+  useEffect(() => {
+    if (!project?.id || modeSyncedRef.current === project.id || !needsProjectModeSync(project, userProfile?.uid)) return
+    modeSyncedRef.current = project.id
+    void syncProjectModeIfNeeded(project, userProfile?.uid).catch(error => console.warn('[mode-sync] failed:', error))
+  }, [project, userProfile?.uid])
   useEffect(() => { setIsIdle(false) }, [discussionMode])
   const [chatError, setChatError] = useState<string | null>(null)
   const [failedChatRequest, setFailedChatRequest] = useState<{
@@ -1533,7 +1545,7 @@ function ChatPanelContent() {
   // 개인 설계(solo)에서만 T-1-1 빌더에 1인 파싱 경로를 연다.
   // 협력 모드에서는 undefined를 넘겨 팀 파싱 동작을 그대로 유지한다.
   function soloT11Opts(): { teacherName?: string } | undefined {
-    return proj.mode === 'solo' ? { teacherName: userProfile?.displayName } : undefined
+    return isSoloProject(proj) ? { teacherName: userProfile?.displayName } : undefined
   }
 
 
@@ -1630,7 +1642,7 @@ function ChatPanelContent() {
     // AI가 실제 변경을 입력한 경우에만 안내하고, manual 저장은 제외한다.
     if (origin === 'ai') flashCoeditHint(targetAct)
     // 협업 모드에서 팀원 → 방장에게 저장 제안으로 전달 (직접 저장 금지)
-    if (project?.mode === 'collaborative' && !isHost) {
+    if (effectiveProjectMode(project) === 'collaborative' && !isHost) {
       await proposeArtifactToHost(
         proj.id, targetActivity, sections,
         userProfile?.uid ?? '', userProfile?.displayName ?? '팀원',
@@ -1776,7 +1788,7 @@ function ChatPanelContent() {
       const unchanged = await applyArtifactUpdates(sections, activityCode as ActivityCode, latestText, 'ai', confirm)
       onlyConfirmedNoops = onlyConfirmedNoops && unchanged
     }
-    if (!isHost && project.mode === 'collaborative') {
+    if (!isHost && effectiveProjectMode(project) === 'collaborative') {
       for (const update of updates) {
         await commitUpdate(update.activityCode || currentActivity, update.sections)
       }
@@ -2178,7 +2190,7 @@ function ChatPanelContent() {
   const teamLeaderUid = proj.hostUid ?? proj.createdBy
   const teamMembersList = proj.memberInfo
     ? Object.entries(proj.memberInfo).map(([uid, m]) => (
-        proj.mode !== 'solo' && uid === teamLeaderUid && m.displayName
+        !isSoloProject(proj) && uid === teamLeaderUid && m.displayName
           ? `${m.displayName}(팀장)`
           : m.displayName
       )).join(', ')
@@ -2262,7 +2274,8 @@ function ChatPanelContent() {
           // 여러 학년 담임이 한 팀인 경우 — 학년군별 성취기준·활동 수준 판단의 근거
           teamGradeBands: proj.teamGradeBands,
           targetSubjects: proj.targetSubjects,
-          mode: proj.mode,
+          // 저장값이 solo 여도 팀원이 있는 레거시 방은 협력 프롬프트(서버는 memberUids 를 받지 않는다)
+          mode: effectiveProjectMode(proj),
           isA23Completed: proj.isA23Completed,
           currentCycle: proj.currentCycle,
           // P1-I: 이전 주기 E 개선안 (T-1-1 시스템 프롬프트 주입용, 없으면 undefined)
@@ -2617,7 +2630,7 @@ function ChatPanelContent() {
     // 연수용 약식 활동은 일반 환영 대신 trainingMode 정의로 만든 짧은 고정 안내(AI 없음)
     let welcome = isTrainingActivity(proj, currentActivity)
       ? buildTrainingWelcome(currentActivity)
-      : (project?.mode === 'solo' ? SOLO_ACTIVITY_WELCOME[currentActivity] : undefined)
+      : (isSoloProject(project) ? SOLO_ACTIVITY_WELCOME[currentActivity] : undefined)
         ?? ACTIVITY_WELCOME[currentActivity]
     if (!welcome) return
     if (!isTrainingActivity(proj, currentActivity) && currentActivity === 'A-1-2' && !Object.keys(project.artifacts?.['A-1-1']?.content ?? {}).length) {
@@ -3251,8 +3264,8 @@ ${discussionSummary}
   // solo는 T-1-2·T-2-1·T-2-2가 숨김 활동이라 비전·일정 2행만 생성된다.
   const collaborationEmptyWithAgreements = useCallback(() => {
     const base = emptyCollaborationReflectionWorkspace()
-    return { ...base, rows: buildCollaborationAgreementRows(proj.artifacts, proj.mode === 'solo') }
-  }, [proj.artifacts, proj.mode])
+    return { ...base, rows: buildCollaborationAgreementRows(proj.artifacts, isSoloProject(proj)) }
+  }, [proj.artifacts, proj.mode, proj.memberUids])
 
   // AI 제안 맥락 — 활동마다 "근거로 삼아야 할 이전 산출물"이 다르다(가이드 §4·§5).
   // 산출물이 없으면 해당 항목을 빼고 보낸다 → 라우트가 지어내지 않고 빈 칸으로 둔다.
@@ -3306,7 +3319,7 @@ ${discussionSummary}
       if (!project?.id) return
       const mod = coeditModules[code]
       // 팀원은 직접 저장하지 않고 방장에게 제안 (기존 워크스페이스와 동일 규칙)
-      if (project.mode === 'collaborative' && !isHost) {
+      if (effectiveProjectMode(project) === 'collaborative' && !isHost) {
         await proposeArtifactToHost(
           project.id, code, content,
           userProfile?.uid ?? '', userProfile?.displayName ?? '팀원',
@@ -3779,7 +3792,7 @@ ${discussionSummary}
     if (isHost) {
       setPendingArtifactSave(sheetProposal)
       addAssistantNotice('분석시트에 저장된 표를 기준으로 산출물 초안을 만들었습니다. 저장 카드에서 검토한 뒤 산출물에 저장하세요.')
-    } else if (project?.mode === 'collaborative') {
+    } else if (effectiveProjectMode(project) === 'collaborative') {
       proposeArtifactToHost(
         proj.id,
         'A-2-1',
@@ -4057,10 +4070,32 @@ ${discussionSummary}
   }
 
   // ─── 메시지 전송 ──────────────────────────────────────
+  async function confirmMemberRemoval(target: MemberRef) {
+    if (!project || !userProfile?.uid) return
+    setMemberCommand(current => current && { ...current, busy: true, error: undefined })
+    try {
+      await removeMember(project.id, userProfile.uid, target.uid)
+      setMemberCommand({ command: { kind: 'confirm', target }, state: 'removed' })
+    } catch (error) {
+      const code = (error instanceof Error ? error.message : '') as MemberAdminError
+      setMemberCommand(current => current && {
+        ...current, busy: false,
+        error: MEMBER_ADMIN_ERROR_COPY[code] ?? '내보내지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+      })
+    }
+  }
+
   async function handleSend() {
     if (!input.trim() || !project) return
     // 준비 전에는 보내지 않고 입력을 그대로 둔다 — 조용히 버리지 않는다(#26).
     if (sendBlockReason) return
+    // 팀원 내보내기 명령은 AI 를 부르지 않고 방장 화면의 확인 카드로만 처리한다(명령 문장·카드는 저장하지 않음).
+    const command = classifyMemberCommand(input, project, userProfile?.uid)
+    if (command.kind !== 'none') {
+      setMemberCommand({ command, state: 'pending' })
+      setInput('')
+      return
+    }
     // AI 가 답하는 중이면 버리지 않고 대기열에 넣어 '보내는 중'으로 보여 주고, 답이 끝나면 보낸다(#T10).
     if (isLoading && !isTeamMode && !isWaitingForChoice) {
       const queuedReply = replyTo
@@ -6040,6 +6075,15 @@ ${discussionSummary}
 
       {/* 입력창 */}
       {flowNotice && <p role="status" className="px-4 py-2 text-sm text-[#00695C] bg-[#E0F2F1]">{flowNotice}</p>}
+      {memberCommand && (
+        <MemberCommandPanel
+          value={memberCommand}
+          isHost={isHost}
+          onChoose={target => setMemberCommand({ command: { kind: 'confirm', target }, state: 'pending' })}
+          onRemove={target => { void confirmMemberRemoval(target) }}
+          onClose={() => setMemberCommand(null)}
+        />
+      )}
       <div className="px-4 py-3 border-t"
         style={isTeamMode
           ? { background: 'linear-gradient(90deg, #E0F2F1 0%, #F1F8F7 100%)', borderColor: '#80CBC4' }
@@ -6047,7 +6091,7 @@ ${discussionSummary}
       >
         {/* 팀 채팅 컨트롤 바 — solo 모드에서는 팀 협업 컨트롤(방장/팀원·팀 채팅)이 불필요해 숨긴다.
             (안 선택 대기 메시지는 solo에서도 필요하므로 isWaitingForChoice일 때는 유지) */}
-        {!(proj.mode === 'solo' && !isTeamMode && !isWaitingForChoice) && (
+        {!(isSoloProject(proj) && !isTeamMode && !isWaitingForChoice) && (
         <div className="flex items-center justify-between mb-2">
           {isTeamMode ? (
             <span className="text-[11px] text-[#00695C] font-medium">팀원끼리 자유롭게 대화하세요 · AI는 잠시 대기 중</span>

@@ -9,6 +9,7 @@ import {
   formatGradeBandList,
   describeGradeBandSubjects,
 } from '@/lib/curriculum/teamGradeBands'
+import { effectiveProjectMode, isSoloProject } from '@/lib/project/projectMode'
 
 // ─── 공통 시스템 프롬프트 ────────────────────────────
 
@@ -3222,7 +3223,7 @@ export function buildSystemPrompt(
   const displayCode = displayActivityCode(activityCode)
   const isActiveReturn = activityStatus === 'active_return'
   // 개인 설계(solo) 여부 — solo일 때만 전용 규칙·축약 절차가 주입되고, 협력 모드 출력은 기존과 동일하다.
-  const isSolo = project.mode === 'solo'
+  const isSolo = isSoloProject(project)
   const hasLearnerProfile = Boolean(learnerProfileSummary?.trim())
   const hasPriorArtifacts = Boolean(
     confirmedArtifacts && Object.keys(confirmedArtifacts).some(code => code !== activityCode)
@@ -3361,7 +3362,7 @@ ${Object.entries(confirmedArtifacts)
 ${gradeBandLine}
 - 학교급별 안내: ${schoolLevelGuidance}
 - 융합 교과: ${project.targetSubjects?.join(', ') || '미지정'}
-- 모드: ${project.mode === 'collaborative' ? '협력' : '단독'}
+- 모드: ${effectiveProjectMode(project) === 'collaborative' ? '협력' : '단독'}
 - 현재 단계: ${stage} > ${activityCode} (${activityMeta.label})
 - 현재 주기: ${project.currentCycle}주기
 ${isSolo ? `- 설계 방식: 개인 설계 — 선생님 1인과 AI의 1:1 협업${teamMembers ? ` (설계자: ${teamMembers})` : ''}` : teamMembers ? `- 팀원 명단: ${teamMembers}

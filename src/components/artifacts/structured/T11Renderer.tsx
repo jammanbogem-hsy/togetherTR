@@ -2,6 +2,7 @@
 
 import type { T11Structured } from '@/lib/artifacts/schemas'
 import { useProjectStore } from '@/store/project'
+import { isSoloProject } from '@/lib/project/projectMode'
 
 export type T11DeletableField = 'personalVisions' | 'teamVision' | 'coreKeywords' | 'designPrinciples' | 'blocks'
 
@@ -30,7 +31,7 @@ function SectionDeleteButton({ onClick, label }: { onClick: () => void; label: s
 export function T11Renderer({ data, onDeleteField }: Props) {
   // 개인 설계 모드에서는 팀 용어가 자기 산출물로 읽히지 않으므로 표시 라벨만 1인 관점으로 바꾼다.
   // 저장 데이터 필드명(personalVisions/teamVision)은 그대로 — 보고서·주기 전환이 같은 필드를 읽는다.
-  const isSolo = useProjectStore(s => s.project?.mode === 'solo')
+  const isSolo = useProjectStore(s => isSoloProject(s.project))
   const personalVisionLabel = isSolo ? '나의 비전' : '개인 비전'
   const teamVisionLabel = isSolo ? '확정 비전 문장' : '팀 공통 비전'
   const personalVisions = data?.personalVisions ?? []

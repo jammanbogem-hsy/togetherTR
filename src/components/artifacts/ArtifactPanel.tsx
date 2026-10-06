@@ -45,6 +45,7 @@ import { Ds22Renderer } from './structured/Ds22Renderer'
 import { TrainingForm } from '@/components/training/TrainingForm'
 import { isTrainingActivity } from '@/lib/training/trainingMode'
 import { MD3Button } from '@/components/ui/MD3Button'
+import { effectiveProjectMode, isSoloProject } from '@/lib/project/projectMode'
 
 const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: Icon; className: string }> = {
   ai_draft:  { label: 'AI 초안', icon: Sparkle,      className: 'bg-[#E8F0FE] text-[#1A73E8]' },
@@ -71,7 +72,7 @@ function EmptyState({ activityLabel, sections, sectionVariant, stageLight, stage
   stageLight: string   // stageColor.light 클래스
   stageText: string    // stageColor.text 클래스
 }) {
-  const isSolo = useProjectStore(s => s.project?.mode === 'solo')
+  const isSolo = useProjectStore(s => isSoloProject(s.project))
   const activityCode = useProjectStore(s => s.viewingActivity ?? s.currentActivity)
   const sectionHeader = sectionVariant === 'required'
     ? '이 활동에서 꼭 채워야 할 내용'
@@ -302,7 +303,7 @@ function RequiredSectionsChecklist({
   const [collapsed, setCollapsed] = useState(false)
   const setChatInputRequest = useProjectStore(s => s.setChatInputRequest)
   const observationOnly = useProjectStore(s => isDemoObservationOnly(s.project))
-  const isSolo = useProjectStore(s => s.project?.mode === 'solo')
+  const isSolo = useProjectStore(s => isSoloProject(s.project))
   const meta = ACTIVITY_META[activityCode]
   // required 우선, 없으면 recommended fallback (동시 존재 케이스 없음 — Task #9 설계 결정).
   const sections = meta.requiredSections ?? meta.recommendedSections
@@ -1396,7 +1397,7 @@ function InteractiveArtifactPanel() {
     setIsSaving(true)
     try {
       const content = { [activityMeta.label]: directInputText.trim() }
-      if (project.mode === 'collaborative' && !isHost) {
+      if (effectiveProjectMode(project) === 'collaborative' && !isHost) {
         await proposeArtifactToHost(
           project.id,
           viewingActivity,

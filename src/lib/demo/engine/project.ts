@@ -8,6 +8,7 @@ import { addJoinedProjectId } from '@/lib/inviteCode'
 import { ACTIVITY_META, STAGES, type ActivityCode, type Message, type Project, type StageCode } from '@/types'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import type { DemoEngineConfig, DemoRunState, DemoTurnResponse } from './types'
+import { nextArtifactUpdatedAt } from '@/lib/artifacts/artifactUpdatedAt'
 
 export const LIVE_DEMO_SCENARIO_ID = 'live-multi-agent-demo-v1'
 
@@ -280,7 +281,10 @@ export async function saveLiveDemoArtifact(
       versions.push({ version: previous.version, content: previous.content, savedAt: Date.now(), savedBy: 'demo-teacher-team' })
     }
     transaction.update(ref, {
-      [`artifacts.${code}`]: JSON.parse(JSON.stringify({ ...artifact, versions: versions.slice(-3), _schemaVersion: 'v2-sections' })),
+      [`artifacts.${code}`]: JSON.parse(JSON.stringify({
+        ...artifact, versions: versions.slice(-3), _schemaVersion: 'v2-sections',
+        updatedAt: nextArtifactUpdatedAt(previous, artifact, Date.now()),
+      })),
       ...(code === 'A-2-3' ? { isA23Completed: artifact.status === 'confirmed' } : {}),
       'demoRun.lease.expiresAt': Date.now() + LEASE_TTL_MS,
       updatedAt: serverTimestamp(),

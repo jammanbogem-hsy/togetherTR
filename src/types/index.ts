@@ -424,6 +424,10 @@ export interface Project {
   }
   // 팀장 종합으로 저장된 산출물의 부재 팀원 확인(#28). 팀원 uid가 첫 키라 규칙에서 '자기 항목만' 수정을 강제할 수 있다.
   artifactConfirmations?: Record<string, Partial<Record<ActivityCode, ArtifactConfirmationEntry>>>
+  // 방장이 내보낸 팀원 기록(removeMember). 남긴 대화·산출물은 보존되고 이름 표시에 쓴다.
+  memberRemovals?: { uid: string; displayName: string; byUid: string; at: number }[]
+  // 모드 저장값 변경 기록 — 팀원이 있는 레거시 solo 방을 방장이 열 때 collaborative 로 맞춘 이력(syncProjectModeIfNeeded)
+  modeChanges?: { from: ProjectMode; to: ProjectMode; reason: string; byUid: string; at: number }[]
   // 지식 그래프 저장 데이터
   graphSavedData?: GraphSavedData
   // 문제상황 디자이너 오픈 상태 (팀원 자동 오픈)
@@ -458,6 +462,8 @@ export interface Project {
     _schemaVersion?: string
     // 산출물 이력 (최신 = 가장 큰 version). content 덮어쓰기 전 push, 최대 20개 유지.
     versions?: ArtifactVersion[]
+    // R1 변동 배지: 제목·내용·상태가 실제로 바뀐 마지막 시각(ms). 같은 내용 재저장은 바꾸지 않는다.
+    updatedAt?: number
   }>
   // P1-I: E→T 순환 시 직전 주기 E 산출물에서 추출된 개선안.
   // 다음 주기 T-1-1 프롬프트에 주입되어 지식 누적의 흐름을 만든다.

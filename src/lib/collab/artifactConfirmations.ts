@@ -1,6 +1,7 @@
 // 팀장 종합 진행(규칙 4-1)으로 부재 팀원 의견이 대신 정리돼 저장될 때, 당사자 확인 절차(#28).
 // 순수 함수만 둔다 — Firestore 쓰기는 lib/firebase/projects.ts, 표시는 컴포넌트.
 import type { ArtifactConfirmationEntry, Project } from '@/types'
+import { isSoloProject } from '@/lib/project/projectMode'
 
 type Confirmations = Project['artifactConfirmations']
 
@@ -25,7 +26,7 @@ export interface PendingTargetInput {
  * 같은 버전에 이미 확인·다시 논의 요청을 남긴 팀원은 다시 묻지 않는다(확정만 바뀐 재저장 등).
  */
 export function computePendingConfirmations(input: PendingTargetInput): Record<string, ArtifactConfirmationEntry> {
-  if (input.mode === 'solo' || input.demoRun) return {}
+  if (isSoloProject(input) || input.demoRun) return {}
   const members = [...new Set(input.memberUids?.length ? input.memberUids : Object.keys(input.memberInfo ?? {}))]
   if (members.length < 2) return {}
   const hosts = new Set([input.hostUid, input.createdBy].filter(Boolean))

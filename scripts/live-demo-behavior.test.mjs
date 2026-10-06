@@ -209,7 +209,7 @@ function transactionHarness() {
       operations.forEach(operation => operation())
     },
   }
-  const helpers = load('src/lib/demo/engine/project.ts', { 'firebase/firestore': sdk, '@/lib/firebase/config': { db: {} }, '@/lib/firebase/projects': {}, '@/lib/inviteCode': {}, '@/types': meta, '@/lib/activity/demo-contracts': contracts }, { Date: { now: () => now }, crypto: { randomUUID: () => `lease-${++sequence}` } })
+  const helpers = load('src/lib/demo/engine/project.ts', { 'firebase/firestore': sdk, '@/lib/firebase/config': { db: {} }, '@/lib/firebase/projects': {}, '@/lib/inviteCode': {}, '@/types': meta, '@/lib/activity/demo-contracts': contracts, '@/lib/artifacts/artifactUpdatedAt': load('src/lib/artifacts/artifactUpdatedAt.ts') }, { Date: { now: () => now }, crypto: { randomUUID: () => `lease-${++sequence}` } })
   return { helpers, documents, advance: ms => { now += ms } }
 }
 test('transaction lease rejects another tab and stale runner writes after takeover', async () => {

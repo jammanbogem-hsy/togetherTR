@@ -38,6 +38,8 @@ import { PanelToggle } from '@/components/layout/PanelToggle'
 import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 import { PendingConfirmationBanner } from '@/components/collab/PendingConfirmationBanner'
 import { TrainingSettingsModal } from '@/components/training/TrainingSettingsModal'
+import { MemberRemovalButton } from '@/components/members/MemberRemovalButton'
+import { isSoloProject } from '@/lib/project/projectMode'
 
 function hasMemberHost(project: Project): boolean {
   const members = project.memberUids ?? Object.keys(project.memberInfo ?? {})
@@ -602,7 +604,7 @@ export default function ProjectPage() {
   useEffect(() => {
     if (!project || !userProfile) return
     if (project.demoRun) return
-    if (project.mode !== 'solo' || project.started) return
+    if (!isSoloProject(project) || project.started) return
     const isHost = project.hostUid === userProfile.uid || project.createdBy === userProfile.uid
     if (!isHost) return
     if (soloAutoStartRef.current === projectId) return
@@ -789,7 +791,7 @@ export default function ProjectPage() {
   // 대기실
   if (!project.started && !project.demoRun) {
     // 개인 설계: 대기실 대신 자동 시작(soloAutoStart effect)이 적용되는 동안 짧은 로딩만 노출.
-    if (project.mode === 'solo') {
+    if (isSoloProject(project)) {
       return (
         <div className="flex items-center justify-center h-screen bg-[#F8F9FA]">
           <div className="flex flex-col items-center gap-4 text-[#5F6368]">
@@ -901,7 +903,7 @@ export default function ProjectPage() {
           const stageInfo = STAGES.find(s => s.code === currentStage)
           // solo는 숨김 활동을 진행률 계산에서 제외 (사이드바 표시와 동일 기준 유지)
           const activities = (stageInfo?.activities ?? []).filter(
-            a => project.mode !== 'solo' || !SOLO_HIDDEN_ACTIVITIES.includes(a)
+            a => !isSoloProject(project) || !SOLO_HIDDEN_ACTIVITIES.includes(a)
           )
           const completedCount = activities.filter(a => checkEffectivelyDone(a, activityStatus, project?.artifacts)).length
           const totalCount = activities.length
@@ -1170,7 +1172,7 @@ export default function ProjectPage() {
             <MD3Button variant="text" size="xs" onClick={() => setShowTrainingSettings(true)}
               aria-haspopup="dialog" aria-expanded={showTrainingSettings}>설정</MD3Button>
           )}
-          {project.stageReports && Object.keys(project.stageReports).length > 0 && (
+          {(!project.demoRun || Object.keys(project.stageReports ?? {}).length > 0) && (
             <button
               onClick={() => setShowReports(true)}
               className="flex items-center gap-1 text-[11px] bg-[#E0F2F1] text-[#00897B]
@@ -1195,7 +1197,7 @@ export default function ProjectPage() {
               {project.publicStatus?.isPublic ? '공개 중' : '공개'}
             </button>
           )}
-          {!project.demoRun && project.mode !== 'solo' && project.inviteCode && (
+          {!project.demoRun && !isSoloProject(project) && project.inviteCode && (
             <button
               type="button"
               onClick={() => setShowInviteCode(true)}
@@ -1227,7 +1229,7 @@ export default function ProjectPage() {
       {showTrainingSettings && !project.demoRun && (
         <TrainingSettingsModal key={project.id} project={project} onClose={closeTrainingSettings} />
       )}
-      {!project.demoRun && project.mode !== 'solo' && <PendingConfirmationBanner />}
+      {!project.demoRun && !isSoloProject(project) && <PendingConfirmationBanner />}
 
       {showReports && (
         <StageReportsModal onClose={() => setShowReports(false)} />
@@ -1263,18 +1265,18 @@ export default function ProjectPage() {
         <>
           <div className="fixed inset-0 z-[200]" onClick={() => setShowMembers(false)} />
           <div
-            className="fixed z-[210] min-w-[220px]"
+            className="fixed z-[210] w-[340px] max-w-[calc(100vw-32px)]"
             style={{
               top: membersPopoverPos.top,
-              left: membersPopoverPos.left,
+              left: Math.max(16, Math.min(membersPopoverPos.left, window.innerWidth - 356)),
               filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.13))',
             }}
           >
             <div className="bg-white rounded-2xl overflow-hidden border border-[#E8EAED]">
               <div className="px-4 py-2.5 border-b border-[#F1F3F4]">
-                <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">{project.mode === 'solo' ? '참여자' : '참여 중인 팀원'}</p>
+                <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">{isSoloProject(project) ? '참여자' : '참여 중인 팀원'}</p>
               </div>
-              <div className="py-1.5">
+              <div className="max-h-[60dvh] overflow-y-auto py-1.5">
                 {(project.memberUids ?? []).map((mUid: string) => {
                   const info = project.memberInfo?.[mUid]
                   const displayName = info?.displayName ?? mUid
@@ -1295,6 +1297,7 @@ export default function ProjectPage() {
                           </p>
                         )}
                       </div>
+                      <MemberRemovalButton project={project} userId={uid} targetUid={mUid} name={displayName} />
                     </div>
                   )
                 })}
