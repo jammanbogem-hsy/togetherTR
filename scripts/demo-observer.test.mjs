@@ -7,7 +7,7 @@ import React from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { REMARK_PLUGINS } from '../src/lib/markdown/remarkPlugins.ts'
 
 function loadObserver() {
   const module = { exports: {} }
@@ -120,7 +120,7 @@ test('rendered tutorial is read-only, shows simulated approval and material tabl
     react: React,
     'react/jsx-runtime': jsxRuntime,
     'react-markdown': ReactMarkdown,
-    'remark-gfm': remarkGfm,
+    '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
     'firebase/firestore': {},
     '@/lib/firebase/config': {},
     '@/lib/firebase/projects': { watchMessages: () => { throw new Error('SSR must not subscribe or mutate') } },
