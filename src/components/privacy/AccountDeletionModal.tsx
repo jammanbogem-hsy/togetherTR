@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ACCOUNT_DELETION_COPY, ACCOUNT_DELETION_ERROR_COPY, type AccountDeletionErrorCode } from '@/lib/privacy/consent'
+import { ACCOUNT_DELETION_COPY, ACCOUNT_DELETION_ERROR_COPY, type AccountDeletionErrorCode, type AccountDeletionResult } from '@/lib/privacy/consent'
 import { deleteCurrentAccount } from '@/lib/privacy/deleteAccountClient'
 import { MD3Button } from '@/components/ui/MD3Button'
 
-export function AccountDeletionModal({ onClose, onDeleted }: { onClose: () => void; onDeleted: () => void | Promise<void> }) {
+export function AccountDeletionModal({ onClose, onDeleted }: { onClose: () => void; onDeleted: (result: AccountDeletionResult) => void | Promise<void> }) {
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -23,8 +23,8 @@ export function AccountDeletionModal({ onClose, onDeleted }: { onClose: () => vo
     setBusy(true)
     setError('')
     try {
-      await deleteCurrentAccount(confirm)
-      await onDeleted()
+      const result = await deleteCurrentAccount(confirm)
+      await onDeleted(result)
     } catch (cause) {
       const code = cause instanceof Error ? cause.message : ''
       setError(Object.hasOwn(ACCOUNT_DELETION_ERROR_COPY, code)

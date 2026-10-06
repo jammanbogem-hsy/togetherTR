@@ -2,7 +2,7 @@
 // 문구를 바꾸면 PRIVACY_CONSENT_VERSION 을 올려 모든 회원에게 다시 동의를 받는다.
 // 순수 데이터·함수만 둔다(테스트·서버에서 Firebase 없이 불러올 수 있게). 저장은 consent.ts.
 
-export const PRIVACY_CONSENT_VERSION = '2026-10-05'
+export const PRIVACY_CONSENT_VERSION = '2026-10-06'
 
 export type ConsentItemId = 'collect' | 'overseas'
 
@@ -40,7 +40,7 @@ export const CONSENT_COPY = {
     },
   ] as const satisfies readonly ConsentItemCopy[],
   refusal: '동의를 거부할 수 있으나, 거부하면 AI 공동 설계가 중심 기능인 이 서비스를 이용할 수 없습니다.',
-  retention: "회원 탈퇴 시까지. 탈퇴는 설정의 '회원 탈퇴'에서 직접 할 수 있습니다. 팀 프로젝트에 남긴 대화와 산출물은 팀의 공동 기록으로 남습니다.",
+  retention: "회원 탈퇴 시까지. 탈퇴는 설정의 '회원 탈퇴'에서 직접 할 수 있습니다. 팀 프로젝트에 남긴 대화와 산출물은 팀의 공동 기록으로 남습니다. 탈퇴 후 남은 업로드 자료는 순차 삭제됩니다.",
   agreeButton: '동의하고 계속하기',
   declineButton: '동의하지 않고 나가기',
   detailsLink: '자세한 내용 보기',
@@ -51,7 +51,7 @@ export const CONSENT_COLLECTION_TABLE = {
   columns: ['수집 항목', '이용 목적', '보유 기간'] as const,
   rows: [
     ['이름, 이메일, 프로필 사진 주소(Google 로그인)', '회원 식별, 팀 구성원 표시', '회원 탈퇴 시까지'],
-    ['서비스 이용 중 작성한 채팅·산출물·업로드 자료', 'AI 공동 수업설계, 산출물·보고서 작성', '회원 탈퇴 시까지(팀 프로젝트에 남긴 대화와 산출물은 팀의 공동 기록으로 남음)'],
+    ['서비스 이용 중 작성한 채팅·산출물·업로드 자료', 'AI 공동 수업설계, 산출물·보고서 작성', '회원 탈퇴 시까지(팀 프로젝트에 남긴 대화와 산출물은 팀의 공동 기록으로 남음). 탈퇴 후 남은 업로드 자료는 순차 삭제됩니다.'],
   ] as const,
 }
 
@@ -91,7 +91,7 @@ export const ACCOUNT_DELETION_COPY = {
   menuLabel: '회원 탈퇴',
   dialogTitle: '회원 탈퇴',
   steps: [
-    '나만 참여한 프로젝트(개인 설계 포함)는 대화·산출물·자료와 함께 삭제됩니다.',
+    '나만 참여한 프로젝트(개인 설계 포함)는 대화·산출물·자료와 함께 삭제됩니다. 탈퇴 후 남은 업로드 자료는 순차 삭제됩니다.',
     '내가 방장인 팀 프로젝트는 남은 팀원 중 가장 먼저 참여한 분에게 방장이 넘어갑니다.',
     '팀 프로젝트에 남긴 대화와 산출물은 팀의 공동 기록으로 남습니다.',
     '계정 정보와 로그인 계정이 삭제되며, 되돌릴 수 없습니다.',
@@ -103,6 +103,7 @@ export const ACCOUNT_DELETION_COPY = {
   cancelButton: '취소',
   inProgress: '탈퇴를 처리하는 중입니다…',
   done: '회원 탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.',
+  doneCleanupPending: '탈퇴가 완료되었습니다. 일부 업로드 자료는 정리 중입니다',
   failed: '탈퇴를 끝내지 못했습니다. 처리된 부분은 그대로 두었으니 잠시 후 다시 시도해 주세요.',
   reauthRequired: '보안을 위해 다시 로그인한 뒤 탈퇴해 주세요.',
 } as const
@@ -120,6 +121,8 @@ export interface AccountDeletionResult {
   leftProjects: string[]
   userDocDeleted: boolean
   authDeleted: boolean
+  /** 관리자 정리 목록에 남은 업로드 자료가 있는지(정리 완료 시 false). */
+  storageCleanupPending?: boolean
 }
 
 /** 탈퇴 실패 코드 → 화면 안내 문구 */

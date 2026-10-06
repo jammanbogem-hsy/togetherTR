@@ -3415,11 +3415,11 @@ test('P2d: 앱 layout에서만 동의가 없거나 오래된 회원을 막고, �
 })
 
 test('P2e: 탈퇴 확인은 네 가지 처리 안내·정확한 탈퇴 입력·진행 잠금·실패 원인 표시·완료 콜백을 지킨다', async () => {
-  let calls = 0, completed = 0, resolveDelete, failure = 'admin-unavailable'
+  let calls = 0, completed = 0, completedResult, resolveDelete, failure = 'admin-unavailable'
   const ui = privacyUiHarness('../src/components/privacy/AccountDeletionModal.tsx', 'AccountDeletionModal', {
     deleteCurrentAccount: async confirm => { calls++; assert.equal(confirm, privacyCopy.ACCOUNT_DELETION_COPY.confirmWord); if (failure) throw Error(failure); return await new Promise(resolve => { resolveDelete = resolve }) },
   })
-  const props = { onClose: () => {}, onDeleted: async () => { completed++ } }
+  const props = { onClose: () => {}, onDeleted: async result => { completed++; completedResult = result } }
   let element = ui.render(props)
   const submit = () => trainingUiElements(element, privacyButton).at(-1)
   assert.equal(submit().props.disabled, true)
@@ -3448,9 +3448,10 @@ test('P2e: 탈퇴 확인은 네 가지 처리 안내·정확한 탈퇴 입력·�
   assert.equal(input().props.disabled, true)
   assert.ok(trainingUiElements(element, privacyButton).every(button => button.props.disabled))
   assert.match(renderToStaticMarkup(element), /role="status"/)
-  resolveDelete({ ok: true })
+  resolveDelete({ ok: true, storageCleanupPending: true })
   await first
   assert.equal(completed, 1)
+  assert.equal(completedResult.storageCleanupPending, true)
 })
 
 test('P2e-1: native 탈퇴 dialog는 마운트 시 열리고 해제 시 닫히며, 처리 중에는 Esc 취소를 막는다', async () => {
@@ -3525,10 +3526,13 @@ test('P2g: 대시보드 탈퇴 메뉴 연결·성공 후 로그아웃/캐시 정
     }, sourceTree)
     await finish()
     assert.deepEqual(events, ['signOut', 'clearCache', 'clearProfile', '/login?accountDeleted=1'])
+    events.length = 0
+    await finish({ storageCleanupPending: true })
+    assert.deepEqual(events, ['signOut', 'clearCache', 'clearProfile', '/login?accountDeleted=1&storageCleanupPending=1'])
   }
   const login = fs.readFileSync(new URL('../src/app/(auth)/login/page.tsx', import.meta.url), 'utf8')
   assert.match(login, /params\.accountDeleted === '1'/)
-  assert.match(login, /ACCOUNT_DELETION_COPY\.done/)
+  assert.match(login, /params\.storageCleanupPending === '1' \? ACCOUNT_DELETION_COPY\.doneCleanupPending : ACCOUNT_DELETION_COPY\.done/)
 })
 
 // ─── TASK-T5: 한국어 양식 재표시·입력 원문·개입 금지 체크 ───

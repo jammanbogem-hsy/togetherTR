@@ -11,7 +11,7 @@ import { FOLDER_COLORS, FolderCard, ProjectCard } from '@/components/dashboard/D
 import { cn } from '@/lib/utils'
 import { Plus, BookOpen, Loader2, LogOut, UserPlus, Play, FolderPlus, Folder, ArrowLeft, Network } from 'lucide-react'
 import { clearLocalProfile, signOut } from '@/lib/auth'
-import { ACCOUNT_DELETION_COPY } from '@/lib/privacy/consent'
+import { ACCOUNT_DELETION_COPY, type AccountDeletionResult } from '@/lib/privacy/consent'
 import { AccountDeletionModal } from '@/components/privacy/AccountDeletionModal'
 
 
@@ -60,11 +60,13 @@ export default function DashboardPage() {
     router.replace('/login')
   }
 
-  async function handleAccountDeleted() {
+  async function handleAccountDeleted(result?: AccountDeletionResult) {
     try { await signOut() } catch { /* 서버에서 삭제된 계정은 다시 삭제하지 않고 로컬 세션을 정리한다. */ }
     try { clearLocalProfile() } catch { /* 저장소가 막혀도 완료 안내로 이동한다. */ }
     setUserProfile(null)
-    window.location.replace('/login?accountDeleted=1')
+    window.location.replace(result?.storageCleanupPending
+      ? '/login?accountDeleted=1&storageCleanupPending=1'
+      : '/login?accountDeleted=1')
   }
 
   function handleFolderSubmit() {

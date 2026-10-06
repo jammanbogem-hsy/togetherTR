@@ -4,6 +4,7 @@
 // Firebase Hosting 60초 제한: 프로젝트 삭제는 recursiveDelete(BulkWriter 배치), 시간이 모자라면 partial-failure 로 돌려주고 재시도.
 import { getAdminAuth, getAdminBucket, getAdminDb, getFieldValue } from '@/lib/firebase/admin'
 import { memberRemovalFieldPaths, planAccountDeletion, PRESENCE_COLLECTIONS, type DeletionProjectLike } from '@/lib/account/accountDeletion'
+import { queueProjectStorageCleanup, retryStorageCleanup, storageCleanupOwnerHash, STORAGE_CLEANUP_COLLECTION } from '@/lib/account/storageCleanup'
 import type { AccountDeletionResult } from '@/lib/privacy/consentContent'
 
 export const runtime = 'nodejs'
@@ -53,10 +54,11 @@ export async function POST(request: Request) {
       if (Date.now() - startedAt > TIME_BUDGET_MS) throw new Error('time-budget-exceeded')
       const ref = projectsRef.doc(step.projectId)
       if (step.action === 'delete') {
-        // 업로드 자료(Storage)는 실패해도 탈퇴를 막지 않는다
-        if (bucket) await bucket.deleteFiles({ prefix: `projects/${step.projectId}/` }).catch((e: unknown) => console.warn('[account/delete] storage', step.projectId, e))
+        // 자료 정리 목록이 영속 저장돼야 프로젝트/계정을 지울 수 있다.
+        const cleanup = await queueProjectStorageCleanup(db, FieldValue, step.projectId, uid, bucket?.name)
         await db.recursiveDelete(ref)
         result.deletedProjects.push(step.projectId)
+        await retryStorageCleanup(db, FieldValue, bucket, cleanup.id)
         continue
       }
       const updates: Record<string, unknown> = { memberUids: FieldValue.arrayRemove(uid) }
@@ -73,6 +75,10 @@ export async function POST(request: Request) {
       else result.leftProjects.push(step.projectId)
     }
 
+    // 이전 부분 실패로 이미 프로젝트가 사라진 경우도 남은 자료 안내에 포함한다.
+    const pendingCleanup = await db.collection(STORAGE_CLEANUP_COLLECTION)
+      .where('uidHash', '==', storageCleanupOwnerHash(uid)).limit(1).get()
+    result.storageCleanupPending = !pendingCleanup.empty
     await db.collection('users').doc(uid).delete()
     result.userDocDeleted = true
     try {
