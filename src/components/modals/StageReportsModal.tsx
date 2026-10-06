@@ -10,22 +10,30 @@ import { downloadReportPdf } from './downloadReportPdf'
 import { cleanReportMarkdown } from '@/lib/markdown/reportDisplay'
 import { X, FileText, ArrowLeft, DownloadSimple, FilePdf, SpinnerGap } from '@phosphor-icons/react'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
+import { StageAnalysisModal } from './StageAnalysisModal'
+import { MemberActionDialog as ReportConfirmationDialog } from '@/components/members/MemberActionDialog'
+import { canGenerateStageReport, stageHasArtifacts, stageReportChanged } from '@/lib/report/stageReportState'
 
 const STAGE_LABELS: Record<string, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
 }
 
 export function StageReportsModal({ onClose }: { onClose: () => void }) {
-  const { project } = useProjectStore()
+  const { project, userProfile } = useProjectStore()
   const [selectedStage, setSelectedStage] = useState<StageCode | null>(null)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [pdfError, setPdfError] = useState('')
+  const [generationStage, setGenerationStage] = useState<StageCode | null>(null)
+  const [confirmStage, setConfirmStage] = useState<StageCode | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const stageReports = project?.stageReports ?? {}
-  const savedStages = STAGES.filter(s => stageReports[s.code])
+  const savedStages = STAGES.filter(s => stageReports[s.code] || (project && stageHasArtifacts(project, s.code)))
+  const isHost = canGenerateStageReport(project, userProfile?.uid)
 
-  if (savedStages.length === 0) return null
+  if (!project) return null
+  if (generationStage) return <StageAnalysisModal key={generationStage} reportStage={generationStage} forceGenerate isHost={isHost}
+    onClose={() => { setGenerationStage(null); setSelectedStage(null) }} />
 
   const selectedReport = selectedStage ? stageReports[selectedStage] : null
   const displayContent = (selectedReport?.content ?? '')
@@ -50,6 +58,12 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   const removedStillInReport = subjectsInReport.filter(s => !currentSubjects.includes(s))   // 보고서엔 있으나 시트엔 없음 (예: 도덕 삭제)
   const reportStale = !!selectedReport && selectedStage === 'A' && currentSubjects.length > 0
     && (addedNotInReport.length > 0 || removedStillInReport.length > 0)
+
+  function requestGeneration(code: StageCode) {
+    if (!isHost || pdfBusy) return
+    if (stageReports[code]) setConfirmStage(code)
+    else if (stageHasArtifacts(project!, code)) setGenerationStage(code)
+  }
 
   function formatDate(ts: number) {
     return new Date(ts).toLocaleDateString('ko-KR', {
@@ -115,7 +129,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
             {selectedStage && <MD3Button variant="text" tone="neutral" onClick={() => setSelectedStage(null)} aria-label="보고서 목록으로" icon={<ArrowLeft size={20} />} />}
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <FileText size={22} weight="fill" className="mt-1 shrink-0 text-[var(--md-sys-primary)]" />
-              <h2 id="stage-reports-title" className="text-[20px] font-medium leading-7 text-[var(--md-sys-on-surface)]">{selectedStage ? `${STAGE_LABELS[selectedStage]}(${selectedStage}) 단계 보고서` : '저장된 단계 보고서'}</h2>
+              <h2 id="stage-reports-title" className="text-[20px] font-medium leading-7 text-[var(--md-sys-on-surface)]">{selectedStage ? `${STAGE_LABELS[selectedStage]}(${selectedStage}) 단계 보고서` : '단계 보고서'}</h2>
             </div>
             <MD3Button variant="text" tone="neutral" onClick={onClose} aria-label="단계 보고서 닫기" icon={<X size={20} />} />
           </div>
@@ -125,26 +139,37 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
             <MD3Button variant="tonal" onClick={handlePrint} disabled={pdfBusy} icon={<FilePdf size={18} />}>인쇄</MD3Button>
             <MD3Button variant="outlined" onClick={downloadHwpx} icon={<DownloadSimple size={18} />}>HWPX 베타</MD3Button>
           </div>}
+          {selectedStage && selectedReport && <div className="mt-3 flex flex-wrap items-center gap-2">
+            {stageReportChanged(project, selectedStage) && <span className="rounded-full bg-[#FFF3E0] px-3 py-1 text-xs font-medium text-[#8A3D00]">보고서 이후 산출물이 바뀌었어요</span>}
+            {isHost ? <MD3Button variant={stageReportChanged(project, selectedStage) ? 'filled' : 'tonal'} disabled={pdfBusy} onClick={() => requestGeneration(selectedStage)}>다시 생성</MD3Button>
+              : <p className="text-xs text-[#5F6368]">방장이 다시 생성할 수 있어요</p>}
+          </div>}
           {pdfError && <p role="alert" className="mt-3 text-[13px] text-[var(--md-sys-error)]">{pdfError}</p>}
         </header>
         {!selectedStage ? <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
-          <p className="mb-4 text-[13px] text-[var(--md-sys-on-surface-variant)]">완료된 단계의 심층 분석 보고서입니다. 단계를 선택해 전체 내용을 확인하세요.</p>
+          <p className="mb-4 text-[13px] text-[var(--md-sys-on-surface-variant)]">저장된 산출물로 단계 보고서를 만들거나 다시 생성할 수 있어요. 보고서를 선택하면 전체 내용을 볼 수 있어요.</p>
           <div className="grid grid-cols-1 gap-3">
             {savedStages.map(stageInfo => {
-              const report = stageReports[stageInfo.code]!
-              return <button type="button" key={stageInfo.code} onClick={() => setSelectedStage(stageInfo.code as StageCode)}
-                className="group w-full min-w-0 rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] p-4 text-left transition-colors hover:bg-[var(--md-sys-surface-container)] focus-visible:outline-2 focus-visible:outline-[var(--md-sys-primary)]">
+              const report = stageReports[stageInfo.code]
+              const changed = stageReportChanged(project, stageInfo.code)
+              return <section key={stageInfo.code} className="w-full min-w-0 rounded-[var(--md-sys-radius-lg)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-primary-container)] text-[14px] font-medium text-[var(--md-sys-on-primary-container)]">{stageInfo.code}</div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">{STAGE_LABELS[stageInfo.code]}({stageInfo.code}) 단계</p>
-                    <p className="mt-1 text-[12px] text-[var(--md-sys-on-surface-variant)]">{formatDate(report.savedAt)}</p>
+                    <h3 className="text-[16px] font-medium text-[var(--md-sys-on-surface)]">{STAGE_LABELS[stageInfo.code]}({stageInfo.code}) 단계</h3>
+                    <p className="mt-1 text-[12px] text-[var(--md-sys-on-surface-variant)]">{report ? formatDate(report.savedAt) : '저장된 산출물이 있어요 · 아직 보고서가 없어요'}</p>
                   </div>
-                  <span className="hidden text-[13px] font-medium text-[var(--md-sys-primary)] sm:inline">보고서 보기 →</span>
                 </div>
-                <p className="mt-3 line-clamp-2 break-words text-[13px] leading-6 text-[var(--md-sys-on-surface-variant)]">{report.content.replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').substring(0, 150)}...</p>
-              </button>
+                {report && <p className="mt-3 line-clamp-2 break-words text-[13px] leading-6 text-[var(--md-sys-on-surface-variant)]">{report.content.replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').substring(0, 150)}...</p>}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {changed && <span className="rounded-full bg-[#FFF3E0] px-3 py-1 text-xs font-medium text-[#8A3D00]">보고서 이후 산출물이 바뀌었어요</span>}
+                  {report && <MD3Button variant="text" onClick={() => setSelectedStage(stageInfo.code)}>보고서 보기 →</MD3Button>}
+                  {isHost ? <MD3Button variant={changed ? 'filled' : 'tonal'} disabled={pdfBusy} onClick={() => requestGeneration(stageInfo.code)}>{report ? '다시 생성' : '보고서 만들기'}</MD3Button>
+                    : <p className="text-xs text-[#5F6368]">방장이 다시 생성할 수 있어요</p>}
+                </div>
+              </section>
             })}
+            {savedStages.length === 0 && <p className="py-6 text-center text-sm text-[#5F6368]">단계에 산출물을 저장하면 보고서를 만들 수 있어요.</p>}
           </div>
         </div> : <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
           {reportStale && <div className="mx-4 mt-4 rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-error-container)] p-4 text-[var(--md-sys-on-error-container)] sm:mx-6">
@@ -164,6 +189,10 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>}
       </div>
+      {confirmStage && <ReportConfirmationDialog title={`${STAGE_LABELS[confirmStage]} 보고서를 다시 생성할까요?`} confirmLabel="다시 생성" busy={false}
+        onClose={() => setConfirmStage(null)} onConfirm={() => { if (isHost) { setGenerationStage(confirmStage); setConfirmStage(null) } }}>
+        <p>이전 보고서는 새 보고서로 바뀌어요.</p>
+      </ReportConfirmationDialog>}
     </div>
   )
 }

@@ -2,15 +2,16 @@
 
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useProjectStore } from '@/store/project'
-import { STAGES, ACTIVITY_META, type StageCode } from '@/types'
+import { STAGES, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { ReportHero, ReportMarkdown } from './ReportMarkdown'
 import { printReport } from './printReport'
 import { downloadReportPdf } from './downloadReportPdf'
 import { cleanReportMarkdown } from '@/lib/markdown/reportDisplay'
 import { X, DownloadSimple, FilePdf, FileText, SpinnerGap, ChartBar, ArrowRight } from '@phosphor-icons/react'
-import { setAnalysisReport, saveStageReport } from '@/lib/firebase/projects'
+import { generateStageReport } from '@/lib/report/generateStageReport'
 import { generateHwpx } from '@/lib/hwpx/generateHwpx'
+import { MemberActionDialog as ReportConfirmationDialog } from '@/components/members/MemberActionDialog'
 
 const STAGE_LABELS: Record<string, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
@@ -20,10 +21,14 @@ export function StageAnalysisModal({
   onClose,
   onReady,
   isHost = true,
+  reportStage,
+  forceGenerate = false,
 }: {
   onClose: () => void
   onReady?: () => void
   isHost?: boolean
+  reportStage?: StageCode
+  forceGenerate?: boolean
 }) {
   const { project, setPendingStageMove, userProfile } = useProjectStore()
   const callerUid = userProfile?.uid
@@ -32,6 +37,7 @@ export function StageAnalysisModal({
   const [errorMsg, setErrorMsg] = useState('')
   const [pdfBusy, setPdfBusy] = useState(false)
   const [pdfError, setPdfError] = useState('')
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -44,7 +50,7 @@ export function StageAnalysisModal({
   const projectSnapshotRef = useRef(project)
   const hasStartedRef = useRef(false)
 
-  const stage = project?.currentStage ?? 'T'
+  const stage = reportStage ?? project?.currentStage ?? 'T'
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -136,176 +142,52 @@ export function StageAnalysisModal({
     setPendingStageMove(nextStage)
   }
 
-  // ── 방장: 마운트 1회만 실행 — 기존 보고서 있으면 재사용 ──
-  useEffect(() => {
-    if (!isHost || hasStartedRef.current) return
-    hasStartedRef.current = true
-
-    // 기존 완성된 보고서가 있으면 바로 표시 (재생성 안 함)
-    const existingReport = projectSnapshotRef.current?.analysisReport
-    if (existingReport && !existingReport.generating && existingReport.content && existingReport.stage === stage) {
-      setMarkdown(existingReport.content)
-      setStatus('done')
-      return
-    }
-
-    const snap = projectSnapshotRef.current
-    if (!snap) return
-
-    async function run() {
-      const p = snap!
-      setMarkdown('')
-      setStatus('loading')
-      setErrorMsg('')
-
-      // Firestore에 생성 중 표시
-      if (p.id) await setAnalysisReport(p.id, stage, '', true).catch(console.error)
-
-      const stageInfo = STAGES.find(s => s.code === stage)!
-      const artifacts: Record<string, { title: string; content: Record<string, unknown> }> = {}
-      for (const code of stageInfo.activities) {
-        const art = p.artifacts?.[code]
-        if (art) artifacts[code] = { title: ACTIVITY_META[code].label, content: art.content ?? {} }
-      }
-
-      abortRef.current = new AbortController()
-      let fullText = ''
-      try {
-        const res = await fetch('/api/analyze/stage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: abortRef.current.signal,
-          body: JSON.stringify({
-            stage,
-            project: {
-              title: p.title,
-              targetGradeGroup: p.targetGradeGroup,
-              targetSubjects: p.targetSubjects,
-            },
-            artifacts,
-          }),
-        })
-        if (!res.ok) throw new Error('분석 요청 실패')
-        setStatus('streaming')
-
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buf += decoder.decode(value, { stream: true })
-          const lines = buf.split('\n')
-          buf = lines.pop() ?? ''
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'text') {
-                fullText += data.text
-                setMarkdown(fullText)
-                setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50)
-              } else if (data.type === 'done') {
-                setStatus('done')
-              } else if (data.type === 'error') {
-                throw new Error(data.message)
-              }
-            } catch { /* ignore parse errors */ }
-          }
-        }
-        setStatus('done')
-        // 완료 후 Firestore 저장 → 팀원 공유 + 단계별 영구 저장
-        if (p.id && fullText) {
-          await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
-          await saveStageReport(p.id, stage, fullText, callerUid).catch(console.error)
-        }
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') return
-        setStatus('error')
-        setErrorMsg(err instanceof Error ? err.message : '알 수 없는 오류')
-        if (p.id) await setAnalysisReport(p.id, stage, '', false).catch(console.error)
-      }
-    }
-
-    run()
-    return () => abortRef.current?.abort()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // 마운트 1회만 실행
-
-  // 방장: 다시 생성 버튼
-  function rerunAnalysis() {
-    hasStartedRef.current = false
-    projectSnapshotRef.current = project
+  async function runAnalysis(snapshot: NonNullable<typeof project>) {
+    if (!isHost) return
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     setMarkdown('')
     setStatus('loading')
     setErrorMsg('')
-    hasStartedRef.current = true
-
-    const snap = project
-    if (!snap) return
-
-    async function run() {
-      const p = snap!
-      if (p.id) await setAnalysisReport(p.id, stage, '', true).catch(console.error)
-
-      const stageInfo = STAGES.find(s => s.code === stage)!
-      const artifacts: Record<string, { title: string; content: Record<string, unknown> }> = {}
-      for (const code of stageInfo.activities) {
-        const art = p.artifacts?.[code]
-        if (art) artifacts[code] = { title: ACTIVITY_META[code].label, content: art.content ?? {} }
-      }
-
-      abortRef.current?.abort()
-      abortRef.current = new AbortController()
-      let fullText = ''
-      try {
-        const res = await fetch('/api/analyze/stage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: abortRef.current.signal,
-          body: JSON.stringify({
-            stage,
-            project: { title: p.title, targetGradeGroup: p.targetGradeGroup, targetSubjects: p.targetSubjects },
-            artifacts,
-          }),
-        })
-        if (!res.ok) throw new Error('분석 요청 실패')
-        setStatus('streaming')
-        const reader = res.body!.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buf += decoder.decode(value, { stream: true })
-          const lines = buf.split('\n')
-          buf = lines.pop() ?? ''
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'text') {
-                fullText += data.text
-                setMarkdown(fullText)
-                setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50)
-              } else if (data.type === 'done') {
-                setStatus('done')
-              }
-            } catch { /* ignore */ }
-          }
-        }
-        setStatus('done')
-        if (p.id && fullText) {
-          await setAnalysisReport(p.id, stage, fullText, false).catch(console.error)
-          await saveStageReport(p.id, stage, fullText, callerUid).catch(console.error)
-        }
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') return
-        setStatus('error')
-        setErrorMsg(err instanceof Error ? err.message : '알 수 없는 오류')
-      }
+    try {
+      await generateStageReport({
+        project: snapshot, stage, callerUid, signal: controller.signal,
+        onStreaming: () => { if (!controller.signal.aborted) setStatus('streaming') },
+        onText: text => {
+          if (controller.signal.aborted) return
+          setMarkdown(text)
+          setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50)
+        },
+      })
+      if (!controller.signal.aborted) setStatus('done')
+    } catch (cause) {
+      if (controller.signal.aborted) return
+      setStatus('error')
+      setErrorMsg(cause instanceof Error ? cause.message : '알 수 없는 오류')
     }
-    run()
+  }
+
+  // 단계 이동·보고서 목록 모두 같은 생성 함수를 사용한다. 지정 단계 재생성은 캐시를 재사용하지 않는다.
+  useEffect(() => {
+    if (!isHost || hasStartedRef.current) return
+    hasStartedRef.current = true
+    const existingReport = projectSnapshotRef.current?.analysisReport
+    if (!forceGenerate && existingReport && !existingReport.generating && existingReport.content && existingReport.stage === stage) {
+      setMarkdown(existingReport.content)
+      setStatus('done')
+      return () => { hasStartedRef.current = false; abortRef.current?.abort() }
+    }
+    const snapshot = projectSnapshotRef.current
+    if (snapshot) void runAnalysis(snapshot)
+    return () => { hasStartedRef.current = false; abortRef.current?.abort() }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function rerunAnalysis() {
+    if (!project || !isHost) return
+    if (project.stageReports?.[stage]) setConfirmRegenerate(true)
+    else void runAnalysis(project)
   }
 
   // ── 팀원: Firestore 보고서 감지 (project 구독으로 자동 업데이트) ──
@@ -408,7 +290,7 @@ export function StageAnalysisModal({
             {status === 'error' && <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
               <p className="font-medium text-[var(--md-sys-error)]">분석 중 오류가 발생했습니다</p>
               <p className="break-words text-[13px] text-[var(--md-sys-on-surface-variant)]">{errorMsg}</p>
-              <MD3Button variant="filled" onClick={rerunAnalysis}>다시 시도</MD3Button>
+              {isHost && <MD3Button variant="filled" onClick={rerunAnalysis}>다시 시도</MD3Button>}
             </div>}
           </div>
         </div>
@@ -421,9 +303,13 @@ export function StageAnalysisModal({
             {isHost && <p className="mt-2 text-[12px] text-[var(--md-sys-on-surface-variant)]">보고서가 저장됐습니다 · “보고서 확인”에서 다시 볼 수 있어요</p>}
           </div>
           {isHost && <MD3Button variant="text" tone="neutral" onClick={rerunAnalysis}>다시 생성</MD3Button>}
-          {isHost && nextStage && <MD3Button variant="filled" onClick={handleMoveToNextStage} trailing={<ArrowRight size={18} />} className="w-full sm:w-auto">{STAGE_LABELS[nextStage]} 단계로 이동</MD3Button>}
+          {isHost && !reportStage && nextStage && <MD3Button variant="filled" onClick={handleMoveToNextStage} trailing={<ArrowRight size={18} />} className="w-full sm:w-auto">{STAGE_LABELS[nextStage]} 단계로 이동</MD3Button>}
         </footer>}
       </div>
+      {confirmRegenerate && <ReportConfirmationDialog title="보고서를 다시 생성할까요?" confirmLabel="다시 생성" busy={false}
+        onClose={() => setConfirmRegenerate(false)} onConfirm={() => { setConfirmRegenerate(false); if (project && isHost) void runAnalysis(project) }}>
+        <p>이전 보고서는 새 보고서로 바뀌어요.</p>
+      </ReportConfirmationDialog>}
     </div>
   )
 }
