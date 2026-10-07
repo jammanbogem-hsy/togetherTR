@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       force?: boolean
     }
 
-    const { theme, centerId, candidateIds, artifactContext, force } = body
+    const { theme, gradeGroup, centerId, candidateIds, artifactContext, force } = body
     if (!theme || !centerId || !candidateIds?.length) {
       return NextResponse.json({ error: '필수 파라미터 누락' }, { status: 400 })
     }
@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
       return {
         id: std.id,
         code: std.code,
+        gradeBand: std.grade_band,
         subjectId: std.subject_id,
         subjectName: SUBJECT_NAMES[std.subject_id] ?? std.subject_id,
         coreIdea: getCoreIdeaText(std.core_idea_id, graph.coreIdeas),
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
       .map(toMeta)
       .filter((m): m is StandardMeta => m !== null)
 
-    const relations = await classifyRelations(theme, center, candidates, artifactContext, { force })
+    const relations = await classifyRelations(theme, center, candidates, artifactContext, { force, gradeGroup })
 
     // 클라이언트는 rel.standardId (= 상대 성취기준 id) 를 기대한다.
     // center 기준으로 반대편 id를 standardId로 노출한다.

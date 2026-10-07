@@ -301,7 +301,7 @@ export function useGraphData({
     fetch('/api/ontology/relate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ theme: keyword, gradeGroup, centerId: centerNodeId, candidateIds: connectedIds }),
+      body: JSON.stringify({ theme: keyword, gradeGroup, centerId: centerNodeId, candidateIds: connectedIds, artifactContext }),
     })
       .then(r => r.json())
       .then((data: { relations?: Array<{ sourceId: string; targetId: string; relationType: GraphRelationType; score: number; explanation: string; ideas?: string[]; teachingNote?: string; source: 'claude' | 'rule' }> }) => {
@@ -322,7 +322,7 @@ export function useGraphData({
       })
       .catch(console.error)
       .finally(() => setClaudeLoading(false))
-  }, [keyword, gradeGroup, nodesRef])
+  }, [keyword, gradeGroup, nodesRef, artifactContext])
 
   // ── 수동 분석 실행 (확인 배너/재분석 버튼) ──────────────────────────────
   const runAnalysis = useCallback((centerNodeId: string) => {
@@ -359,7 +359,7 @@ export function useGraphData({
             if (!data.relations) return
             setClaudeRelations(prev => {
               const next = new Map(prev)
-              for (const rel of data.relations as Array<{ standardId: string; relationType: GraphRelationType; score: number; explanation: string; ideas?: string[]; teachingNote?: string }>) {
+              for (const rel of data.relations as Array<{ standardId: string; relationType: GraphRelationType; score: number; explanation: string; ideas?: string[]; teachingNote?: string; source?: 'claude' | 'rule' }>) {
                 const key = [centerNodeId, rel.standardId].sort().join('||')
                 next.set(key, {
                   relationType: normalizeGraphRelationType(rel.relationType) ?? DEFAULT_GRAPH_RELATION_TYPE,
@@ -367,7 +367,7 @@ export function useGraphData({
                   explanation: rel.explanation,
                   ideas: rel.ideas,
                   teachingNote: rel.teachingNote,
-                  source: 'claude' as const,
+                  source: rel.source ?? 'claude',
                 })
               }
               return next

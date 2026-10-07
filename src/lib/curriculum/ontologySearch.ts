@@ -19,6 +19,7 @@ import { resolveClaudeModel } from '@/lib/llm/anthropic'
 import OpenAI from 'openai'
 import fs from 'fs'
 import path from 'path'
+import { LESSON_AUDIENCE_VERSION, lessonAudiencePrompt, lessonDifficultyIssues } from './lessonAudience'
 import { loadGraph, type CurriculumStandard, type CrossSubjectLink } from './graphReader'
 import { jevJudgeEnabled, judgeTopicRelevance } from '@/lib/curriculum/jevJudge'
 import type { GraphRelationType } from '@/lib/knowledge-graph/domain'
@@ -436,7 +437,7 @@ export async function judgeRelations(
   const results = new Map<string, ClaudeJudgment>()
   const cache = loadJSON<Record<string, RelationCacheEntry>>(RELATION_CACHE_PATH, {})
   const cacheKey = (themeText: string, a: string, b: string) =>
-    `${themeText.toLowerCase().trim().replace(/\s+/g, ' ').slice(0, 120)}::${[a, b].sort().join('||')}`
+    `search-${LESSON_AUDIENCE_VERSION}::${themeText.toLowerCase().trim().replace(/\s+/g, ' ')}::${a}→${b}`
 
   const toJudge: CurriculumStandard[] = []
   for (const cand of candidates) {
@@ -491,6 +492,7 @@ export async function judgeRelations(
 수업 주제: "${theme}"
 주제 핵심개념: ${topic.concept_anchors.join(', ')}
 주제 기능의도: ${topic.function_intents.join(', ')}
+${lessonAudiencePrompt(center.grade_band, [center, ...batch].map(std => ({ code: std.code, gradeBand: std.grade_band })))}
 
 중심 성취기준: ${center.code} (${SUBJECT_NAMES[center.subject_id] ?? center.subject_id})
 핵심아이디어: ${centerCiText.slice(0, 80)}
@@ -567,8 +569,14 @@ ${candidateList}
               : undefined)),
           source: 'claude',
         }
-        results.set(cand.id, entry)
-        cache[cacheKey(theme, center.id, cand.id)] = entry
+        if (lessonDifficultyIssues(entry.teachingNote ?? '', center.grade_band, [{ code: center.code, gradeBand: center.grade_band }, { code: cand.code, gradeBand: cand.grade_band }]).length) {
+          entry.teachingNote = '학년군과 수업 주제에 맞는 수업 예시를 만들지 못했습니다. 다시 생성해 주세요.'
+          entry.source = 'rule'
+          results.set(cand.id, entry)
+        } else {
+          results.set(cand.id, entry)
+          cache[cacheKey(theme, center.id, cand.id)] = entry
+        }
       }
 
       for (const cand of batch) {

@@ -96,6 +96,8 @@ import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/st
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
 import { CHECKLIST_ALL_DONE_NOTE, isChecklistChecked, checklistParticipants, checklistLegacyEntry, applyChecklistToggle, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
+import { buildAutofillContext, resolveAutofillTopic } from '@/lib/curriculum/autofillContext'
+import { buildLessonTeachingContext } from '@/lib/curriculum/lessonAudience'
 import { buildTrainingWelcome, displayedMessageContent, isTrainingActivity, isTrainingProject, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { isMoveRequest, MOVE_NEEDS_RECORDER } from '@/lib/chat/moveRequest'
 import { TrainingModeBar } from '@/components/training/TrainingModeBar'
@@ -1487,9 +1489,10 @@ function ChatPanelContent() {
   // ── 공유 그래프 키워드 (버튼 핸들러에서 사용) ─────────────────────────────
   const graphKeywordForShare = useMemo(() => {
     // 1순위: 산출물에서 주제 추출
-    let kw = ''
+    let kw = resolveAutofillTopic(project?.artifacts?.['A-1-2']?.content)
     const artifacts = project?.artifacts ?? {}
     for (const art of Object.values(artifacts)) {
+      if (kw) break
       const c = art.content as Record<string, unknown>
       const topic = (c['선택 주제'] || c['주제'] || c['수업 목표']) as string | undefined
       if (topic) { kw = topic.slice(0, 60); break }
@@ -5764,6 +5767,7 @@ ${discussionSummary}
           }}
           renderGraphView={(onBackToSheet) => {
             const graphKeyword = stableGraphKeyword || graphKeywordForShare
+            const lessonContext = buildAutofillContext({ project: proj, messages, currentActivity })
             return (
               <>
                 <GraphWorkspaceHeader
@@ -5781,7 +5785,7 @@ ${discussionSummary}
                 <div className="flex-1 min-h-0">
                   <KnowledgeGraphViewer
                     keyword={graphKeyword}
-                    gradeGroup={proj.targetGradeGroup}
+                    gradeGroup={proj.curriculumSheetGradeBand || proj.targetGradeGroup}
                     height={undefined}
                     currentUserName={userProfile?.displayName ?? '나'}
                     currentUserUid={userProfile?.uid}
@@ -5797,7 +5801,7 @@ ${discussionSummary}
                     preferredCenterCode={sheetPreferredCenterCode}
                     savedData={proj.graphSavedData ?? null}
                     curriculumSheet={proj.curriculumSheet}
-                    artifactContext={(() => { const parts: string[] = []; if (proj.targetGradeGroup) parts.push(`학년군: ${proj.targetGradeGroup}`); if (proj.title) parts.push(`프로젝트: ${proj.title}`); const arts = proj.artifacts ?? {}; for (const [code, art] of Object.entries(arts)) { const c = art.content as Record<string, unknown>; const topic = (c['선택 주제'] || c['주제'] || c['수업 목표']) as string | undefined; if (topic) parts.push(`${code} 산출물 — ${topic}`) }; return parts.join('\n') || undefined })()}
+                    artifactContext={buildLessonTeachingContext(lessonContext.chatContext, proj.curriculumSheet)}
                     onSetCenter={(nodeId) => setGraphCenter(proj.id, nodeId)}
                     onRecommendCenter={(nodeId) => recommendGraphCenter(proj.id, nodeId, userProfile?.displayName ?? '팀원', userProfile?.uid)}
                     onSaveGraph={isHost ? async (data) => { try { await saveGraphDataAndSyncSheet(data) } catch (e) { console.error('[saveGraphData]', e); throw e } } : undefined}

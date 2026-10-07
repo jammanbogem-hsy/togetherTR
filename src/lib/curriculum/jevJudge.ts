@@ -9,6 +9,8 @@
  * (한글 키 허용 여부가 문서에 없음).
  */
 
+import { lessonAudiencePrompt } from './lessonAudience'
+
 import {
   isJevConfigured,
   systemOne,
@@ -72,9 +74,9 @@ const ELEMENT_LEVELS = [
   '필수 — 선택한 성취기준을 달성하려면 반드시 다루는 요소다',
 ]
 
-async function callJev(state: Record<string, unknown>, questions: Record<string, JevQuestion>) {
+async function callJev(state: Record<string, unknown>, questions: Record<string, JevQuestion>, options?: { timeoutMs: number; maxRetries: number }) {
   try {
-    return await systemOne(state, questions)
+    return await systemOne(state, questions, options)
   } catch (error) {
     console.error('[jevJudge]', error)
     return null
@@ -283,6 +285,7 @@ export interface RelationStandard {
   id: string
   code: string
   subjectName: string
+  gradeBand?: string
   text: string
   coreIdea?: string
   /** 공식 성취수준 A·B·C 원문. 있으면 판정 근거(상태 블록)로 함께 넘긴다. */
@@ -301,7 +304,7 @@ export interface RelationJudgement {
 }
 
 function standardBlock(std: RelationStandard): Record<string, string> {
-  const block: Record<string, string> = { 교과: std.subjectName, 코드: std.code, 성취기준: std.text, 핵심아이디어: std.coreIdea ?? '' }
+  const block: Record<string, string> = { 교과: std.subjectName, 코드: std.code, 학년군: std.gradeBand ?? '', 성취기준: std.text, 핵심아이디어: std.coreIdea ?? '' }
   if (std.levels) {
     block.성취수준_A = std.levels.A
     block.성취수준_B = std.levels.B
@@ -339,7 +342,7 @@ export async function judgeRelations(
     중심_성취기준: standardBlock(center),
     후보_성취기준: candidates.map((cand, index) => ({ 번호: index + 1, ...standardBlock(cand) })),
   }
-  const response = await callJev(state, questions)
+  const response = await callJev(state, questions, { timeoutMs: 8000, maxRetries: 0 })
   if (!response) return null
   const byCandidateId: RelationJudgement['byCandidateId'] = {}
   candidates.forEach((cand, index) => {
@@ -367,6 +370,8 @@ export async function verifyTeachingNotes(
   theme: string,
   center: RelationStandard,
   items: Array<{ candidate: RelationStandard; relationType: string; teachingNote: string; ideas?: string[] }>,
+  gradeGroup?: string,
+  artifactContext?: string,
 ): Promise<TeachingNoteVerdict | null> {
   const targets = items.filter(item => item.teachingNote)
   if (targets.length === 0) return null
@@ -382,13 +387,22 @@ export async function verifyTeachingNotes(
         수업_아이디어: item.ideas ?? [],
       },
     }
+    questions[`a${index}`] = {
+      type: 'noul',
+      instructions: {
+        질문: '제안 전체가 대상 초등 학년군의 읽기·쓰기·자료 해석 수준에 적합하고, 현재 선정 주제 및 교사가 적은 수업 방향을 유지하는가? 교사의 자료 준비와 학생 과제가 분명히 구분되고 학생이 실제로 수행할 수 있어야 예. 기관명만으로 거부하지 말고 실제 학생 과제 난이도를 판단한다. 논문 요약본을 학생에게 직접 읽히거나 어린 학생에게 긴 논증문을 요구하고, 기후 변화를 임의로 태양계 탐구나 과학적 사실의 찬반 논쟁으로 바꾸면 아니오. 계절 변화나 한 해의 월별 기온 차이를 장기 기후 변화의 증거로 쓰는 등 쉽게 설명하면서 개념을 왜곡해도 아니오.',
+        학년별_기준: lessonAudiencePrompt(gradeGroup, [center, item.candidate]),
+        수업_제안: item.teachingNote, 수업_아이디어: item.ideas ?? [],
+      },
+    }
   })
-  const response = await callJev({ 수업주제: theme || '(미지정)' }, questions)
+  const response = await callJev({ 수업주제: theme || '(미지정)', 교사_수업맥락: artifactContext?.slice(0, 3100) ?? '' }, questions, { timeoutMs: 8000, maxRetries: 0 })
   if (!response) return null
   const byCandidateId: Record<string, number> = {}
   targets.forEach((item, index) => {
     const answer = response.answers[`v${index}`] as JevNoulAnswer | undefined
-    if (answer?.type === 'noul') byCandidateId[item.candidate.id] = answer.noul
+    const audience = response.answers[`a${index}`] as JevNoulAnswer | undefined
+    if (answer?.type === 'noul' && audience?.type === 'noul') byCandidateId[item.candidate.id] = Math.min(answer.noul, audience.noul)
   })
   return { byCandidateId, elapsedMs: response.elapsedMs }
 }

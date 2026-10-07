@@ -13,6 +13,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { resolveClaudeModel } from '@/lib/llm/anthropic'
 import fs from 'fs'
 import path from 'path'
+import { createHash } from 'node:crypto'
+import { LESSON_AUDIENCE_VERSION, lessonAudiencePrompt, lessonDifficultyIssues } from './lessonAudience'
 import type { GraphRelationType } from '@/lib/knowledge-graph/domain'
 import { DEFAULT_GRAPH_RELATION_TYPE, normalizeGraphRelationType } from '@/lib/knowledge-graph/domain'
 import { jevJudgeEnabled, judgeRelations, verifyTeachingNotes, type RelationJudgement } from '@/lib/curriculum/jevJudge'
@@ -26,6 +28,7 @@ export interface StandardMeta {
   code: string
   subjectId: string
   subjectName: string
+  gradeBand?: string
   coreIdea?: string   // 핵심아이디어 텍스트
   text: string        // 성취기준 원문
   keywords: string[]  // concepts/keywords
@@ -58,9 +61,11 @@ const CACHE_PATH = [
 
 let _cache: Record<string, RelationResult> | null = null
 
-function cacheKey(theme: string, a: string, b: string): string {
-  const themeKey = theme.toLowerCase().trim().replace(/\s+/g, ' ').slice(0, 120)
-  return `${themeKey}::${[a, b].sort().join('||')}`
+function cacheKey(theme: string, center: StandardMeta, candidate: StandardMeta, gradeGroup?: string, artifactContext?: string): string {
+  // Curriculum, audience, topic and teacher context all affect the lesson. Old unscoped examples are not reused.
+  return `${LESSON_AUDIENCE_VERSION}::${createHash('sha256').update(JSON.stringify({
+    theme: theme.trim(), center, candidate, gradeGroup: gradeGroup ?? '', artifactContext: artifactContext ?? '',
+  })).digest('hex')}`
 }
 
 function loadCache(): Record<string, RelationResult> {
@@ -204,7 +209,8 @@ function ruleWithJudgement(
 
 // ─── Claude 분류 ──────────────────────────────────────────────────────────────
 
-const REWRITE_DEADLINE_MS = 35_000
+// Reserve up to 20s for one repair and 8s for rechecking within the 60s route budget.
+const REWRITE_DEADLINE_MS = 30_000
 const VERIFY_THRESHOLD = 0.5
 
 async function verifyAndRewrite(params: {
@@ -213,80 +219,88 @@ async function verifyAndRewrite(params: {
   center: StandardMeta
   toClassify: StandardMeta[]
   results: RelationResult[]
-  cache: Record<string, RelationResult>
   artifactContext?: string
+  gradeGroup?: string
   startedAt: number
 }): Promise<void> {
-  const { client, theme, center, toClassify, results, cache, artifactContext, startedAt } = params
+  const { client, theme, center, toClassify, results, artifactContext, gradeGroup, startedAt } = params
   const byTarget = new Map(results.filter(r => r.source === 'claude').map(r => [r.targetId, r]))
   const candById = new Map(toClassify.map(c => [c.id, c]))
   const items = [...byTarget.values()].map(r => ({
-    candidate: candById.get(r.targetId)!,
-    relationType: r.relationType,
-    teachingNote: r.teachingNote ?? '',
-    ideas: r.ideas,
+    candidate: candById.get(r.targetId)!, relationType: r.relationType,
+    teachingNote: r.teachingNote ?? '', ideas: r.ideas,
   })).filter(item => item.candidate)
-  const verdict = await verifyTeachingNotes(theme, center, items)
-  if (!verdict) return
-  for (const [id, noul] of Object.entries(verdict.byCandidateId)) {
-    const result = byTarget.get(id)
-    if (result) result.verified = noul
+  const useJudge = jevJudgeEnabled()
+  const check = (target: typeof items) => useJudge
+    ? verifyTeachingNotes(theme, center, target, gradeGroup, artifactContext)
+    : Promise.resolve(null)
+  const applyVerdict = (verdict: Awaited<ReturnType<typeof verifyTeachingNotes>>) => {
+    for (const [id, score] of Object.entries(verdict?.byCandidateId ?? {})) {
+      const result = byTarget.get(id)
+      if (result) result.verified = score
+    }
   }
+  applyVerdict(await check(items))
+  const issuesFor = (id: string) => {
+    const result = byTarget.get(id)!, candidate = candById.get(id)!
+    return lessonDifficultyIssues([result.teachingNote, ...(result.ideas ?? [])].join('\n'), gradeGroup, [center, candidate])
+  }
+  const failing = items.filter(item => issuesFor(item.candidate.id).length > 0
+    || (byTarget.get(item.candidate.id)?.verified ?? 1) < VERIFY_THRESHOLD)
+  if (failing.length === 0) return
+  const rewrittenIds = new Set<string>()
 
-  const failing = items.filter(item => (verdict.byCandidateId[item.candidate.id] ?? 1) < VERIFY_THRESHOLD)
-  if (failing.length === 0 || performance.now() - startedAt > REWRITE_DEADLINE_MS) return
-
-  const rewritePrompt = `당신은 초등 교육과정 융합 수업 설계 전문가입니다.
-아래 후보들의 직전 수업 제안이 "두 성취기준을 실제로 다루지 않는다"고 판정되었습니다.
-중심 성취기준과 후보 성취기준 **둘 다의 문장에 있는 활동**이 수업 시퀀스 안에 드러나도록 다시 쓰십시오.
-다른 성취기준의 내용을 끌어오지 말고, 확정된 관계 유형을 바꾸지 마십시오.
-
+  if (performance.now() - startedAt <= REWRITE_DEADLINE_MS) {
+    const rewritePrompt = `당신은 초등 교육과정 융합 수업 설계 전문가입니다.
+아래 예시는 학년 수준·수업 주제·성취기준 연결 중 하나가 부적합합니다. 선택한 성취기준과 관계 유형을 유지하면서 학생이 실제로 수행할 수 있게 한 번만 다시 쓰십시오.
+${lessonAudiencePrompt(gradeGroup, [center, ...failing.map(item => item.candidate)])}
 ## 수업 주제
-${theme || '(주제 미지정)'}
-${artifactContext ? `\n## 수업 설계 맥락\n${artifactContext}\n` : ''}
+${theme || '(미지정)'}
+## 교사가 정한 수업 맥락
+${artifactContext || '(추가 맥락 없음)'}
 ## 중심 성취기준
 ${center.code} (${center.subjectName}) ${center.text}
-
 ## 다시 쓸 후보
 ${failing.map((item, i) => `[후보 ${i + 1}] ${item.candidate.code} (${item.candidate.subjectName}) ${item.candidate.text}
-- 확정된 관계 유형: ${item.relationType}
-- 직전 수업 제안(부적합): ${item.teachingNote}`).join('\n\n')}
-
-## 출력 형식 (JSON만)
-{ "relations": [ { "index": 1, "explanation": "두 성취기준 실문을 인용한 관계 근거 1문장", "ideas": ["아이디어1", "아이디어2"], "teachingNote": "차시·역할·산출물·평가가 드러나는 2~3문장" } ] }`
-
-  try {
-    const msg = await client.messages.create({
-      model: resolveClaudeModel('relation'),
-      max_tokens: 1500,
-      temperature: 0.6,
-      messages: [{ role: 'user', content: rewritePrompt }],
-    })
-    const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return
-    const parsed = JSON.parse(jsonMatch[0]) as { relations: Array<{ index: number; explanation?: string; ideas?: string[]; teachingNote?: string }> }
-    const rewritten: typeof items = []
-    for (const rel of parsed.relations ?? []) {
-      const item = failing[rel.index - 1]
-      const result = item && byTarget.get(item.candidate.id)
-      if (!item || !result) continue
-      if (rel.teachingNote?.trim()) result.teachingNote = rel.teachingNote.trim()
-      if (rel.explanation?.trim()) result.explanation = rel.explanation.trim()
-      const ideas = Array.isArray(rel.ideas) ? rel.ideas.map(s => String(s).trim()).filter(Boolean).slice(0, 3) : []
-      if (ideas.length > 0) result.ideas = ideas
-      rewritten.push({ candidate: item.candidate, relationType: result.relationType, teachingNote: result.teachingNote ?? '', ideas: result.ideas })
-      cache[cacheKey(theme, center.id, item.candidate.id)] = result
-    }
-    const recheck = rewritten.length > 0 ? await verifyTeachingNotes(theme, center, rewritten) : null
-    if (recheck) {
-      for (const [id, noul] of Object.entries(recheck.byCandidateId)) {
-        const result = byTarget.get(id)
-        if (result) result.verified = noul
+- 관계 유형: ${item.relationType}
+- 수정 사유: ${issuesFor(item.candidate.id).join(', ') || '학년 수준·주제·두 성취기준을 실제로 다루는지 재검토 필요'}
+- 직전 제안: ${item.teachingNote}
+- 직전 아이디어: ${(item.ideas ?? []).join(' / ')}`).join('\n\n')}
+## 출력(JSON만)
+{ "relations": [ { "index": 1, "explanation": "두 성취기준의 연결 근거", "ideas": ["학년 수준의 구체적 활동"], "teachingNote": "교사 준비 자료, 짧은 학생 활동 단계, 산출물과 확인 방법" } ] }`
+    try {
+      const msg = await client.messages.create({
+        model: resolveClaudeModel('relation'), max_tokens: 2500, temperature: 0.4,
+        messages: [{ role: 'user', content: rewritePrompt }],
+      }, { timeout: 20_000 })
+      const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+      const json = text.match(/\{[\s\S]*\}/)?.[0]
+      const parsed = json ? JSON.parse(json) as { relations?: Array<{ index: number; explanation?: string; ideas?: string[]; teachingNote?: string }> } : null
+      const rewritten: typeof items = []
+      for (const rel of parsed?.relations ?? []) {
+        const item = failing[rel.index - 1], result = item && byTarget.get(item.candidate.id)
+        if (!item || !result || typeof rel.teachingNote !== 'string' || !rel.teachingNote.trim()) continue
+        result.teachingNote = rel.teachingNote.trim()
+        if (rel.explanation?.trim()) result.explanation = rel.explanation.trim()
+        result.ideas = Array.isArray(rel.ideas) ? rel.ideas.filter(s => typeof s === 'string' && s.trim()).slice(0, 3) : []
+        rewrittenIds.add(item.candidate.id)
+        rewritten.push({ candidate: item.candidate, relationType: result.relationType, teachingNote: result.teachingNote, ideas: result.ideas })
       }
+      if (rewritten.length) applyVerdict(await check(rewritten))
+    } catch (err) {
+      console.error('[ontologyRelation] 학년 수준 재작성 실패:', err)
     }
-  } catch (err) {
-    console.error('[ontologyRelation] 재작성 실패 — 직전 제안 유지:', err)
+  }
+  // A failed repair is not a usable lesson and must not be cached as a successful generation.
+  for (const item of failing) {
+    const result = byTarget.get(item.candidate.id)!
+    if (!rewrittenIds.has(item.candidate.id) || issuesFor(item.candidate.id).length
+      || (result.verified ?? 1) < VERIFY_THRESHOLD) {
+      result.teachingNote = '학년군과 수업 주제에 맞는 수업 예시를 만들지 못했습니다. 다시 생성해 주세요.'
+      result.ideas = []
+      result.source = 'rule'
+      result.verified = 0
+    }
   }
 }
 
@@ -295,7 +309,7 @@ export async function classifyRelations(
   center: StandardMeta,
   candidates: StandardMeta[],
   artifactContext?: string,
-  options?: { force?: boolean },
+  options?: { force?: boolean; gradeGroup?: string },
 ): Promise<RelationResult[]> {
   const cache = loadCache()
   const results: RelationResult[] = []
@@ -303,7 +317,7 @@ export async function classifyRelations(
 
   // 캐시 확인 (force=true 면 전부 재호출)
   for (const cand of candidates) {
-    const key = cacheKey(theme, center.id, cand.id)
+    const key = cacheKey(theme, center, cand, options?.gradeGroup, artifactContext)
     if (!options?.force && cache[key]) {
       const relationType = normalizeGraphRelationType(cache[key].relationType) ?? DEFAULT_GRAPH_RELATION_TYPE
       const fallback = ruleBasedRelation(center, cand)
@@ -326,7 +340,7 @@ export async function classifyRelations(
     return results
   }
 
-  const client = new Anthropic({ apiKey })
+  const client = new Anthropic({ apiKey, timeout: 40_000, maxRetries: 0 })
   const startedAt = performance.now()
 
   // [1] 관계 유형·강도 판정은 Jev. LLM 이 관계까지 정하면 후보마다 유형이 흔들리고 코드가 지어낸 근거가 섞였다.
@@ -358,7 +372,8 @@ export async function classifyRelations(
     : ''
 
   const prompt = `당신은 초등 교육과정 융합 수업 설계 전문가입니다.
-이 요청의 목적은 두 성취기준을 묶었을 때 **교사에게 인사이트를 주는 구체적인 수업 설계**를 제시하는 것입니다. 상식적이고 보편적인 문장(예: "~탐구 후 ~로 표현한다")만 내놓으면 실패입니다.
+목적은 선택한 성취기준을 실제 초등 학생이 수행할 수 있는 수업으로 연결하는 것입니다. 학년 수준과 현재 주제의 적합성을 최우선으로 하고, 구체적인 자료·학생 행동·교사 도움을 제시하십시오.
+${lessonAudiencePrompt(options?.gradeGroup, [center, ...toClassify])}
 
 ## 수업 주제
 ${theme || '(주제 미지정 — 두 성취기준의 교차점을 직접 포착하라)'}
@@ -382,23 +397,11 @@ ${judgedNote}
 두 성취기준의 **실제 문장에서 구절을 각각 인용**하여 왜 이 관계 유형인지 한 문장으로. 교과명만 반복하는 추상적 설명 금지.
 
 ### ideas (배열, 2~3개의 수업 아이디어)
-각 아이디어는 **구체적 콘텐츠**(무엇을 다룰지 — 사례, 소재, 질문, 데이터)를 15~40자로. "보편형 1개 + 창의형 1~2개" 혼합 필수. 교사가 "오 이건 생각 못 했는데" 할 만한 앵글을 적어도 하나 포함.
-- 예 좋은 형태: "TV 시청률 Top10을 원그래프로 그리고 상위 3개 프로그램의 광고 노출 빈도 비교"
-- 예 나쁜 형태: "미디어 자료를 조사해 그래프로 나타낸다" (너무 보편, 인사이트 없음)
+각 아이디어는 교사가 제공할 자료와 학생이 할 일을 쉽게 그릴 수 있는 짧은 문장으로. 주제와 성취기준에 맞는 일상 사례를 쓰고 어려운 활동으로 차별화하지 마십시오.
 
-### teachingNote (수업 제안: 2~3문장, 융합 구조)
-두 성취기준을 **한 수업 시퀀스로 엮는 구조**를 설계. 반드시 포함:
-(1) 차시 수 또는 단계 (예: "3차시 프로젝트")
-(2) 각 차시/단계의 역할 (중심 교과 ↔ 후보 교과)
-(3) 최종 산출물과 공유 방식
-같은 세트 안에서 **후보마다 다른 수업 형태**를 쓸 것: 프로젝트·토론·현장조사·제작전시·시뮬레이션·데이터시각화·캠페인·역할극 중 선택.
-- 예 좋은 형태: "3차시 구성. 1차시 사회에서 가짜뉴스 사례 3건을 비판적으로 분석해 '의심 지점' 목록 작성 → 2차시 수학에서 반 친구들의 SNS 정보 신뢰 설문을 띠그래프로 시각화 → 3차시 두 결과를 결합한 '우리 반 미디어 리터러시 지도'를 공동 전시, 루브릭으로 상호평가."
-- 예 나쁜 형태: "사회에서 탐구한 후 수학으로 표현한다" (구조 없음, 평가 없음)
-
-## 천편일률 금지 (강한 제약)
-- 같은 동사구("탐구한다", "발표한다", "조사한다")를 세트 전체에서 2회 이상 쓰지 말 것
-- 산출물을 후보별로 다르게 선택: 포스터·영상·그래프·모형·공연·전시·정책제안서·인포그래픽·지도·데이터대시보드 등
-- 평가 방식도 달리 언급: 루브릭·자기평가·동료평가·체크리스트·포트폴리오·관찰기록 등
+### teachingNote (수업 제안: 2~3문장)
+교사가 준비할 학년 수준의 자료 → 학생이 할 짧은 활동 2~3단계 → 산출물과 간단한 확인 방법을 적습니다. 읽기·쓰기 지원이 필요하면 교사 질문이나 문장 틀을 포함하십시오.
+교과별 역할은 성취기준의 실제 행동에 근거합니다. 활동 형태나 산출물의 다양성보다 학년 수준·주제·성취기준의 연결을 우선합니다.
 
 ## 관계 유형 (필수 선택)
 의미연결 / 도구-활용 / 현상-가치 / 내용-표현 / 문제-해결 / 탐구-실천 / 개념-적용 / 원인-결과
@@ -422,7 +425,7 @@ ${judgedNote}
       model: resolveClaudeModel('relation'),
       // 후보 8개 × (근거+아이디어 3개+수업 제안) 이 2500 토큰에서 잘려 JSON 파싱이 깨지던 문제 → 4000.
       max_tokens: 4000,
-      temperature: 0.8,
+      temperature: 0.5,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -466,13 +469,12 @@ ${judgedNote}
         ...(verdict ? { judge: 'jev' as const } : {}),
       }
       results.push(result)
-      cache[cacheKey(theme, center.id, cand.id)] = result
     }
 
-    // [4] Jev 로 수업 제안 검증 → 두 성취기준을 실제로 안 다루는 후보만 1회 재작성.
-    //     60초 제한 안에 끝나도록 35초를 넘겼으면 재작성은 건너뛰고 검증값만 남긴다.
-    if (judgement) {
-      await verifyAndRewrite({ client, theme, center, toClassify, results, cache, artifactContext, startedAt })
+    await verifyAndRewrite({ client, theme, center, toClassify, results, artifactContext, gradeGroup: options?.gradeGroup, startedAt })
+    for (const result of results.filter(r => r.source === 'claude')) {
+      const candidate = toClassify.find(c => c.id === result.targetId)
+      if (candidate) cache[cacheKey(theme, center, candidate, options?.gradeGroup, artifactContext)] = result
     }
 
     // Claude가 인덱스를 빠뜨린 후보는 룰 폴백을 돌려주되, 다음 호출에서 재시도되도록 캐시에 남기지 않는다.
