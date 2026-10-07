@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { resolveClaudeModel } from '@/lib/llm/anthropic'
 import { ACTIVITY_META, displayActivityCode } from '@/types'
 import type { ActivityCode } from '@/types'
+import { displayArtifactContent, isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -70,7 +71,7 @@ function renderArtifactContent(content: Record<string, unknown>): string {
   }
 
   return Object.entries(content)
-    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .filter(([k, v]) => !isInternalArtifactKey(k) && v !== null && v !== undefined && v !== '')
     .map(([k, v]) => {
       if (typeof v === 'string') return `**${k}**\n\n${v.trim()}`
       if (Array.isArray(v)) {
@@ -100,7 +101,7 @@ function buildCumulativeReportPrompt(
       const meta = ACTIVITY_META[code]
       const art = artifacts[code]
       const contentBlock = art && Object.keys(art.content ?? {}).length > 0
-        ? renderArtifactContent(art.content)
+        ? renderArtifactContent(displayArtifactContent(art.content, code).content)
         : '*산출물 없음*'
 
       return `#### ${meta?.label ?? code} (${displayActivityCode(code)})\n\n${contentBlock}`

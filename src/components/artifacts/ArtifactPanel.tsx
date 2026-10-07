@@ -51,6 +51,7 @@ import { TrainingForm } from '@/components/training/TrainingForm'
 import { isTrainingActivity } from '@/lib/training/trainingMode'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { effectiveProjectMode, isSoloProject } from '@/lib/project/projectMode'
+import { displayArtifactContent, isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: Icon; className: string }> = {
   ai_draft:  { label: 'AI 초안', icon: Sparkle,      className: 'bg-[#E8F0FE] text-[#1A73E8]' },
@@ -197,11 +198,12 @@ function normalizeInlinePipeList(text: string): string {
 }
 
 // 산출물 content를 복사용 plain text로 포맷. 섹션 키를 2차 헤딩, 값을 본문으로 하여 다른 곳에 붙여넣기 좋은 형식.
-function formatArtifactForCopy(title: string, content: Record<string, unknown>): string {
-  const DISPLAY_BLOCKED = new Set(['_schemaVersion', 'status', 'version'])
+function formatArtifactForCopy(title: string, content: Record<string, unknown>, activityCode?: string): string {
+  const DISPLAY_BLOCKED = new Set(['status', 'version'])
   const lines: string[] = [`# ${title}`, '']
-  for (const [key, value] of Object.entries(content)) {
-    if (DISPLAY_BLOCKED.has(key)) continue
+  // 내부 키(manualWorkspace·'_' 접두)는 빼고, 공동 편집 표만 남은 경우 표로 바꿔 복사한다.
+  for (const [key, value] of Object.entries(displayArtifactContent(content, activityCode).content)) {
+    if (DISPLAY_BLOCKED.has(key) || isInternalArtifactKey(key)) continue
     const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
     if (!text || !text.trim()) continue
     lines.push(`## ${key}`)
@@ -229,7 +231,7 @@ export function ArtifactPreviewModal({
   const modalStageColor = STAGE_COLOR[modal.stageCode as keyof typeof STAGE_COLOR] ?? STAGE_COLOR.T
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(formatArtifactForCopy(modal.title, modal.content))
+      await navigator.clipboard.writeText(formatArtifactForCopy(modal.title, modal.content, modal.activityCode))
       setCopied(true)
     } catch {
       // Clipboard API 실패 시 조용히 무시 (사용자는 아무 피드백 없음) — 대부분 권한 문제
@@ -838,8 +840,8 @@ function computeArtifactRelation(prevCode: ActivityCode, currentCode: ActivityCo
 // page.tsx 접힘 버튼이 직접 project.artifacts를 읽어 섹션 개수/상태를 얻을 수 있도록 export.
 export function getVisibleArtifactSectionCount(content: Record<string, unknown> | undefined): number {
   if (!content) return 0
-  return Object.keys(content).filter(
-    key => !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
+  return Object.keys(displayArtifactContent(content).content).filter(
+    key => !isInternalArtifactKey(key) && !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
   ).length
 }
 
@@ -935,8 +937,11 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
     />
   }
 
-  const filteredEntries = Object.entries(content).filter(
-    ([key]) => !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
+  // 내부 키(manualWorkspace·'_' 접두)는 섹션으로 나열하지 않는다. 공동 편집 표만 남은 경우 해당 섹션 자리에 표로 보여 준다(표시 전용).
+  const display = displayArtifactContent(content, activityCode)
+  const derivedKeys = new Set(display.derivedKeys)
+  const filteredEntries = Object.entries(display.content).filter(
+    ([key]) => !isInternalArtifactKey(key) && !DISPLAY_BLOCKED_KEYS.some(k => key.toLowerCase().includes(k))
   )
   if (filteredEntries.length === 0) {
     return (
@@ -958,7 +963,7 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
           key={key}
           sectionKey={key}
           value={value}
-          onDelete={onDeleteSection ? () => onDeleteSection(key) : undefined}
+          onDelete={onDeleteSection && !derivedKeys.has(key) ? () => onDeleteSection(key) : undefined}
           onOpenPreview={onOpenPreview}
           artifactTitle={artifactTitle}
           artifactStatus={artifactStatus}

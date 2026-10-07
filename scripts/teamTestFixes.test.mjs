@@ -40,6 +40,8 @@ import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction
 const { effectiveProjectMode, isSoloProject } = await import('../src/lib/project/projectMode.ts')
 const { classifyMemberCommand } = await import('../src/lib/project/memberAdmin.ts')
 const MODE_HELPERS = { effectiveProjectMode, isSoloProject, classifyMemberCommand }
+// TASK-V1: 산출물 내부 키 필터
+const internalKeys = await import('../src/lib/artifacts/internalKeys.ts')
 const chat = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
 const tree = ts.createSourceFile('ChatPanel.tsx', chat, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 function loadChatFunction(name, bindings, sourceTree = tree) {
@@ -1506,7 +1508,7 @@ test('034c: 화면의 보고서 DOM을 PDF에 공유하고 MD·HWPX 다운로드
 // ─── TASK-036: 학습자 프로필 가드레일 요약 ─────────
 const stageBarSource = fs.readFileSync(new URL('../src/components/stage/StageBar.tsx', import.meta.url), 'utf8')
 const stageBarTree = ts.createSourceFile('StageBar.tsx', stageBarSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-const summarizeA23 = loadChatFunction('summarizeA23', { serializeArtifactForPrompt }, stageBarTree)
+const summarizeA23 = loadChatFunction('summarizeA23', { serializeArtifactForPrompt, isInternalArtifactKey: internalKeys.isInternalArtifactKey }, stageBarTree)
 
 test('036a: 구조화 A-2-3 요약은 객체 행·중첩 객체를 읽을 수 있게 직렬화하고 내부 키를 숨긴다', () => {
   const content = {
@@ -2658,8 +2660,12 @@ const trainingUiState = await import('../src/components/training/trainingFormSta
 const trainingUi = await import('../src/lib/training/trainingMode.ts')
 const trainingUiProject = { id: 'training-ui', title: '연수', mode: 'collaborative', createdBy: 'host', hostUid: 'host', currentStage: 'T', trainingMode: { enabled: true, coreFormal: true } }
 const trainingUiButton = ({ children, icon, trailing, variant: _variant, size: _size, ...props }) => React.createElement('button', props, icon, children, trailing)
+const { TrainingFieldInput } = loadArtifactTsx('../src/components/training/TrainingFieldInput.tsx', {
+  react: React,
+  '@/lib/training/trainingTable': await import('../src/lib/training/trainingTable.ts'),
+})
 const trainingUiBindings = {
-  ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES, isSoloProject,
+  ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES, isSoloProject, TrainingFieldInput,
   SOLO_HIDDEN_ACTIVITIES: ['T-2-1', 'T-2-2', 'T-2-3', 'E-2-1'],
   useState: value => [typeof value === 'function' ? value() : value, () => {}],
   useEffect: () => {}, useId: () => 'training-bar-help', useRef: value => ({ current: value }),
@@ -3271,7 +3277,7 @@ test('C2h: 구조화 반영 요청의 미리보기는 한국어 표이며 원문
   const { ArtifactSaveProposal } = loadArtifactTsx('../src/components/chat/ArtifactSaveProposal.tsx', {
     'react-markdown': { __esModule: true, default: ReactMarkdown }, '@/lib/markdown/remarkPlugins': { REMARK_PLUGINS },
     '@phosphor-icons/react': { CheckSquare: () => null, X: () => null }, '@/types': { ACTIVITY_META },
-    '@/components/training/trainingFormText': { trainingFormText },
+    '@/components/training/trainingFormText': { trainingFormText }, '@/lib/artifacts/internalKeys': internalKeys,
   })
   const sections = { _schema: 'T-2-1', roles: [{ teacherName: '잠만보', role: '사회 자료' }], manualWorkspace: { blocks: [{ content: '추가 메모' }] } }
   const before = structuredClone(sections)

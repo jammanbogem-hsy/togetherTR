@@ -5,6 +5,7 @@ import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { CheckSquare, X } from '@phosphor-icons/react'
 import { trainingFormText } from '@/components/training/trainingFormText'
 import { type ActivityCode, ACTIVITY_META } from '@/types'
+import { isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 interface Props {
   title: string
@@ -16,8 +17,8 @@ interface Props {
 export function ArtifactSaveProposal({ title, sections, onAccept, onDecline }: Props) {
   const schema = typeof sections._schema === 'string' && Object.hasOwn(ACTIVITY_META, sections._schema) ? sections._schema as ActivityCode : undefined
   const preview = schema
-    ? { '공동 편집 초안': trainingFormText(Object.fromEntries(Object.entries(sections).filter(([key]) => !key.startsWith('_') && key !== 'manualWorkspace')), schema) }
-    : Object.fromEntries(Object.entries(sections).filter(([key]) => !key.startsWith('_') && key !== 'manualWorkspace').map(([key, value]) => [key, typeof value === 'string' ? value : trainingFormText(value, 'T-2-1')]))
+    ? { '공동 편집 초안': trainingFormText(Object.fromEntries(Object.entries(sections).filter(([key]) => !isInternalArtifactKey(key))), schema) }
+    : Object.fromEntries(Object.entries(sections).filter(([key]) => !isInternalArtifactKey(key)).map(([key, value]) => [key, typeof value === 'string' ? value : trainingFormText(value, 'T-2-1')]))
   return (
     <div className="mx-0 my-3 border border-[#AECBFA] bg-[#E8F0FE] rounded-2xl p-4">
       <div className="flex items-start justify-between gap-2 mb-3">

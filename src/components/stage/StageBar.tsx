@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
 import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
 import { UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy, Check, Shield, ArrowsClockwise, type Icon } from '@phosphor-icons/react'
+import { isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 const STAGE_MORPH_DELAY: Record<StageCode, string> = {
   T: '0s', A: '-2.8s', Ds: '-5.6s', DI: '-8.4s', E: '-11.2s',
@@ -287,7 +288,7 @@ function StageConnector({ active }: { active: boolean }) {
 function summarizeA23(content: Record<string, unknown> | undefined): string | null {
   if (!content) return null
   const entries = Object.entries(content)
-    .filter(([key]) => !key.startsWith('_'))
+    .filter(([key]) => !isInternalArtifactKey(key))
     .map(([key, value]) => ({ key, value: typeof value === 'string' ? value : serializeArtifactForPrompt(value) }))
     .filter(({ value }) => value.trim().length > 0)
   if (entries.length === 0) return null

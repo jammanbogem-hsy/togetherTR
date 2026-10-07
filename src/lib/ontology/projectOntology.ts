@@ -16,6 +16,7 @@
 
 import { STAGES, ACTIVITY_META, type Project, type StageCode, type ActivityCode } from '@/types'
 import { isEffectivelyDone } from '@/lib/activity/completion'
+import { isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 export interface ArtifactSectionSnapshot {
   key: string
@@ -320,7 +321,7 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
   // 비구조화(레거시) 산출물
   if (sections.length === 0) {
     for (const [key, value] of Object.entries(artifact.content)) {
-      if (DISPLAY_BLOCKED.has(key)) continue
+      if (DISPLAY_BLOCKED.has(key) || isInternalArtifactKey(key)) continue
       const v = typeof value === 'string' ? value : ''
       if (!v.trim()) continue
       sections.push({ key, value: v.trim() })

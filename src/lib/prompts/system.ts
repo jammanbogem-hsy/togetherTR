@@ -10,6 +10,7 @@ import {
   describeGradeBandSubjects,
 } from '@/lib/curriculum/teamGradeBands'
 import { effectiveProjectMode, isSoloProject } from '@/lib/project/projectMode'
+import { displayArtifactContent, isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 // ─── 공통 시스템 프롬프트 ────────────────────────────
 
@@ -3308,7 +3309,7 @@ ${lines.length < sheetRows.length ? '상한으로 생략된 행은 미확인으�
 제목: ${currentArtifact.title}
 상태: ${isActiveReturn && currentArtifact.status === 'confirmed' ? 'confirmed → 재검토 중 (수정 가능)' : currentArtifact.status} (버전 ${currentArtifact.version})
 내용:
-${Object.entries(currentArtifact.content).map(([k, v]) => `  - ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')}
+${Object.entries(displayArtifactContent(currentArtifact.content, activityCode).content).filter(([k]) => !isInternalArtifactKey(k)).map(([k, v]) => `  - ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n')}
 
 ${currentArtifact.status === 'confirmed'
   ? `⚠️ 이 산출물은 확정(confirmed) 상태입니다. 그러나 사용자가 수정을 요청하면 수정 가능합니다.
@@ -3326,7 +3327,7 @@ ${hasPriorArtifacts
   const ARTIFACT_NOISE_KEYS = ['다음 행동', '다음 단계', 'next step', 'ai 제안', '추천 사항', '참고 사항']
   function cleanArtifactContent(content: Record<string, unknown>) {
     return Object.fromEntries(
-      Object.entries(content).filter(([k]) => !ARTIFACT_NOISE_KEYS.some(n => k.toLowerCase().includes(n)))
+      Object.entries(content).filter(([k]) => !isInternalArtifactKey(k) && !ARTIFACT_NOISE_KEYS.some(n => k.toLowerCase().includes(n)))
     )
   }
 

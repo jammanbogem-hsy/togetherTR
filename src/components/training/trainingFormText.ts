@@ -108,6 +108,29 @@ function legacyTableText(text: string, code: ActivityCode): string {
   return changed ? result.join(text.includes('\r\n') ? '\r\n' : '\n') : text
 }
 
+/** 공동 편집 columns/rows 및 머리글+행 배열도 기존 문자열 양식으로 받는다. */
+function structuredTableText(value: Record<string, unknown>, code: ActivityCode): string | null {
+  const columns = value.columns ?? value.headers
+  if (!Array.isArray(columns) || !columns.length || !Array.isArray(value.rows)) return null
+  const definitions = columns.map(column => typeof column === 'string' ? { id: column, label: column }
+    : record(column) && typeof column.id === 'string' && typeof column.label === 'string' ? { id: column.id, label: column.label } : null)
+  if (definitions.some(column => !column)) return null
+  const validColumns = definitions.filter((column): column is { id: string; label: string } => column !== null)
+  const rows: string[][] = []
+  for (const row of value.rows) {
+    if (Array.isArray(row)) {
+      if (row.length > validColumns.length) return null // 알 수 없는 추가 칸을 버리지 않는다.
+      rows.push(validColumns.map((_, index) => cell(structuredText(row[index], code))))
+    } else if (record(row) && record(row.cells)) {
+      const cells = row.cells
+      rows.push(validColumns.map(column => cell(structuredText(cells[column.id], code))))
+    } else return null
+  }
+  if (!rows.some(row => row.some(Boolean))) return ''
+  return [validColumns.map(column => cell(column.label)), validColumns.map(() => '---'), ...rows]
+    .map(row => `| ${row.join(' | ')} |`).join('\n')
+}
+
 function structuredText(value: unknown, code: ActivityCode): string {
   if (value == null) return ''
   if (typeof value === 'string') return filled(value) ? value : ''
@@ -124,6 +147,8 @@ function structuredText(value: unknown, code: ActivityCode): string {
     return [table, others].filter(Boolean).join('\n\n')
   }
   if (record(value)) {
+    const table = structuredTableText(value, code)
+    if (table !== null) return table
     const entries = Object.entries(value).filter(([key]) => visibleKey(key))
     const rows = entries.map(([key, item]) => [columnLabel(code, key), structuredText(item, code)])
       .filter(([, text]) => filled(text))

@@ -5,6 +5,7 @@ import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactFor
 import { artifactPlaceholder } from './artifactPlaceholders'
 import { normalizeArtifactText } from './artifactToMarkdown'
 import { REPORT_SECTIONS, reportSectionsFor } from './reportSections'
+import { displayArtifactContent, isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 const STAGE_LABELS: Record<StageCode, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
@@ -147,7 +148,7 @@ function renderArtifactContent(content: Record<string, unknown>): string {
   // 비구조화(레거시) 산출물 — 문자열은 그대로, 표 행 배열은 마크다운 표로, 그 밖의 객체는 serializeArtifactForPrompt 로 읽기 좋게 푼다.
   // (예전에는 JSON.stringify 원문이 그대로 보고서·AI 입력에 들어갔다)
   return Object.entries(content)
-    .filter(([k, v]) => v !== null && v !== undefined && v !== '' && !k.startsWith('_') && !HIDDEN_KEYS.has(k))
+    .filter(([k, v]) => v !== null && v !== undefined && v !== '' && !isInternalArtifactKey(k))
     .map(([k, v]) => {
       if (typeof v === 'string') return `**${k}**\n\n${v.trim()}`
       if (Array.isArray(v) && v.some(isRecord)) {
@@ -169,8 +170,6 @@ function renderArtifactContent(content: Record<string, unknown>): string {
 }
 
 /** 공동 편집 원본 등 보고서에 원문으로 싣지 않는 내부 키 */
-const HIDDEN_KEYS = new Set(['manualWorkspace'])
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 
@@ -196,7 +195,8 @@ export function buildArtifactOriginals(
   return Object.fromEntries((stageInfo?.activities ?? []).map(code => {
     const content = artifacts[code]?.content
     // 굵은 라벨 문단·성취기준 줄·여러 줄 문단을 표·목록으로 정규화한다(보고서·PDF·MD 내보내기 공통).
-    const text = content ? normalizeArtifactText(renderArtifactContent(content)) : ''
+    // 공동 편집 표만 남은 비구조화 산출물은 표로 바꿔 넣는다(내부 키는 제외).
+    const text = content ? normalizeArtifactText(renderArtifactContent(displayArtifactContent(content, code).content)) : ''
     return [code, text || '*산출물이 아직 작성되지 않았습니다.*']
   }))
 }
@@ -212,7 +212,7 @@ export function buildOverviewTable(
     const content = art?.content
     const items = content
       ? Object.entries(content)
-        .filter(([k]) => !k.startsWith('_') && !HIDDEN_KEYS.has(k))
+        .filter(([k]) => !isInternalArtifactKey(k))
         .reduce((sum, [, v]) => sum + (Array.isArray(v) ? v.length : 0), 0)
       : 0
     const state = !content ? '미작성' : art?.status === 'confirmed' ? '확정' : '작성됨'

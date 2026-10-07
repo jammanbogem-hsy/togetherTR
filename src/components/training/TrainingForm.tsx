@@ -11,6 +11,7 @@ import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { buildTrainingFormContent, trainingFormValues, trainingSaveAdviceSuffix } from './trainingFormState'
 import { useTrainingAdvice } from './useTrainingAdvice'
+import { TrainingFieldInput } from './TrainingFieldInput'
 
 export function TrainingForm({ project, activityCode, content, loaded, readOnly = false }: {
   project: Project
@@ -113,16 +114,16 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
       <form onSubmit={event => { event.preventDefault(); void save() }} className="space-y-4">
         <fieldset disabled={saving || readOnly || !user} className="min-w-0 space-y-4">
           {def.fields.map(field => (
-            <label key={field.key} className="block min-w-0">
+            <div key={field.key} role="group" aria-label={field.label} className="min-w-0">
               <span className="mb-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#202124]">
                 {field.label}
                 <span className={`rounded-full px-2 py-0.5 text-xs ${field.tier === 'A' ? 'bg-[#D3E3FD] text-[#0842A0]' : 'bg-[#F1F3F4] text-[#5F6368]'}`}>{field.tier === 'A' ? '필수' : '선택'}</span>
               </span>
-              <textarea value={draft.values[field.key] ?? ''} rows={4} placeholder={field.placeholder ?? '정리한 내용을 적어 주세요.'}
-                onChange={event => { const value = event.target.value; setFeedback(''); setDraft(previous => ({ ...previous, values: { ...previous.values, [field.key]: value }, dirty: { ...previous.dirty, [field.key]: true } })) }}
-                className="block w-full min-w-0 resize-y rounded-xl border border-[#C4C7C5] bg-white px-3 py-3 text-sm leading-relaxed text-[#202124] focus:border-[#0B57D0] focus:outline-none focus:ring-2 focus:ring-[#D3E3FD] disabled:bg-[#F8F9FA]" />
+              <TrainingFieldInput id={`training-${activityCode}-${field.key}`} label={field.label}
+                value={draft.values[field.key] ?? ''} columns={field.tableColumns} placeholder={field.placeholder}
+                onChange={value => { setFeedback(''); setDraft(previous => ({ ...previous, values: { ...previous.values, [field.key]: value }, dirty: { ...previous.dirty, [field.key]: true } })) }} />
               {field.reason && <span className="mt-1 block text-xs leading-relaxed text-[#5F6368]">{field.reason}</span>}
-            </label>
+            </div>
           ))}
         </fieldset>
         {status.missingRequired.length > 0 && <p className="text-xs leading-relaxed text-[#8A3D00]">아직 비어 있는 필수 칸: {status.missingRequired.map(field => field.label).join(' · ')}</p>}

@@ -1,3 +1,4 @@
+import { isInternalArtifactKey } from './internalKeys'
 const ANALYSIS_COLUMNS = [
   'gradeBand', 'subject', 'coreIdea', 'standard',
   'knowledgeUnderstanding', 'processFunction', 'valueAttitude',
@@ -35,7 +36,7 @@ export function serializeArtifactForPrompt(value: unknown): string {
   }
   if (isRecord(value)) {
     return Object.entries(value)
-      .filter(([key]) => !key.startsWith('_'))
+      .filter(([key]) => !isInternalArtifactKey(key))
       .map(([key, item]) => {
         const text = serializeArtifactForPrompt(item)
         return Array.isArray(item) || isRecord(item) ? `${key}:\n${text}` : `${key}: ${text}`

@@ -7,6 +7,7 @@
  */
 
 import { extractStandardCodes } from './standardCodes'
+import { isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
 
 export type LevelKey = 'A' | 'B' | 'C'
 
@@ -95,7 +96,7 @@ function evaluationSources(content: unknown): LinkSource[] {
   const primary = str(record['평가 계획']) || str(record['평가계획'])
   const sources: LinkSource[] = tableRows(primary).map(cells => ({ label: cells[1] || cells[0] || '', text: cells.join(' ') }))
   for (const [key, value] of Object.entries(record)) {
-    if (key.startsWith('_') || key === '평가 계획' || key === '평가계획') continue
+    if (isInternalArtifactKey(key) || key === '평가 계획' || key === '평가계획') continue
     const raw = str(value)
     if (!raw) continue
     for (const table of tablesWithHeader(raw)) {
