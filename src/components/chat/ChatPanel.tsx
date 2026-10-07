@@ -1294,7 +1294,7 @@ const SLASH_COMMANDS = [
 type SlashCommandId = typeof SLASH_COMMANDS[number]['id']
 
 // ─── 공동 편집 버튼 (활동별 공통) ──────────────────────
-// 12개 활동의 "OOO 공동 편집" 버튼은 라벨/onClick만 다른 동일 패턴이라 하나로 통일.
+// 16개 활동의 "OOO 공동 편집" 버튼은 라벨/onClick만 다른 동일 패턴이라 하나로 통일.
 // showHint=true면 버튼 아래에 말풍선 안내(산출물이 방금 입력됨 → 함께 편집 가능)를 띄운다.
 function CoeditButton({ label, title, onClick, showHint }: {
   label: string
@@ -4832,78 +4832,78 @@ ${discussionSummary}
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { if (isTrainingProject(proj)) return; setCoeditHintActivity(null); setShowTeamVisionWorkspace(true) }} />
           )}
-          {currentActivity === 'T-1-2' && (
+          {currentActivity === 'T-1-2' && !isTrainingProject(proj) && (
             <CoeditButton label="설계 방향 공동 편집" title="수업설계 방향 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowLessonDesignDirectionWorkspace(true) }} />
           )}
-          {currentActivity === 'Ds-1-1' && (
+          {currentActivity === 'Ds-1-1' && !isTrainingProject(proj) && (
             <CoeditButton label="평가 계획 공동 편집" title="평가 계획 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowEvaluationPlanWorkspace(true) }} />
           )}
-          {currentActivity === 'Ds-1-2' && (
+          {currentActivity === 'Ds-1-2' && !isTrainingProject(proj) && (
             <CoeditButton label="문제상황 공동 편집" title="문제상황 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowProblemSituationWorkspace(true) }} />
           )}
-          {currentActivity === 'Ds-2-1' && (
+          {currentActivity === 'Ds-2-1' && !isTrainingProject(proj) && (
             <CoeditButton label="지원 도구 공동 편집" title="지원 도구 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowSupportToolWorkspace(true) }} />
           )}
-          {currentActivity === 'T-2-1' && (
+          {currentActivity === 'T-2-1' && !isTrainingProject(proj) && (
             <CoeditButton label="역할 배분 공동 편집" title="역할 배분 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowRoleDistributionWorkspace(true) }} />
           )}
-          {currentActivity === 'T-2-2' && (
+          {currentActivity === 'T-2-2' && !isTrainingProject(proj) && (
             <CoeditButton label="팀 규칙 공동 편집" title="팀 규칙 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowTeamRulesWorkspace(true) }} />
           )}
-          {currentActivity === 'T-2-3' && (
+          {currentActivity === 'T-2-3' && !isTrainingProject(proj) && (
             <CoeditButton label="팀 일정 공동 편집" title="팀 일정 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowTeamScheduleWorkspace(true) }} />
           )}
-          {currentActivity === 'A-1-2' && (
+          {currentActivity === 'A-1-2' && !isTrainingProject(proj) && (
             <CoeditButton label="주제 선정 공동 편집" title="주제 선정 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowTopicSelectionWorkspace(true) }} />
           )}
-          {currentActivity === 'Ds-1-3' && (
+          {currentActivity === 'Ds-1-3' && !isTrainingProject(proj) && (
             <CoeditButton label="학습활동 공동 편집" title="학습활동 설계 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowLearningActivityWorkspace(true) }} />
           )}
-          {currentActivity === 'Ds-2-2' && (
+          {currentActivity === 'Ds-2-2' && !isTrainingProject(proj) && (
             <CoeditButton label="스캐폴딩 공동 편집" title="스캐폴딩 설계 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowScaffoldingWorkspace(true) }} />
           )}
-          {currentActivity === 'A-2-2' && (
+          {currentActivity === 'A-2-2' && !isTrainingProject(proj) && (
             <CoeditButton label="수업목표 공동 편집" title="통합 수업목표 진술 공동 편집"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowIntegratedGoalWorkspace(true) }} />
           )}
           {/* DI·E 공동 편집 (가이드 20260804 §4·§5) */}
-          {currentActivity === 'DI-1-1' && (
+          {currentActivity === 'DI-1-1' && !isTrainingProject(proj) && (
             <CoeditButton label="자료 목록 공동 편집" title="자료 탐색·개발 공동 편집 (자료 워크스루)"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowMaterialDevWorkspace(true) }} />
           )}
-          {currentActivity === 'DI-2-1' && (
+          {currentActivity === 'DI-2-1' && !isTrainingProject(proj) && (
             <CoeditButton label="수업 기록 공동 편집" title="수업 실행·기록 공동 편집 (결정적 장면 기록)"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowLessonRecordWorkspace(true) }} />
           )}
-          {currentActivity === 'E-1-1' && (
+          {currentActivity === 'E-1-1' && !isTrainingProject(proj) && (
             <CoeditButton label="성찰 공동 편집" title="수업 성찰·공동 개선 공동 편집 (증거 검토)"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowLessonReflectionWorkspace(true) }} />
           )}
-          {currentActivity === 'E-2-1' && (
+          {currentActivity === 'E-2-1' && !isTrainingProject(proj) && (
             <CoeditButton label="협력 성찰 공동 편집" title="협력 과정 성찰 공동 편집 (T단계 합의 대조)"
               showHint={coeditHintActivity === currentActivity}
               onClick={() => { setCoeditHintActivity(null); setShowCollaborationReflectionWorkspace(true) }} />
@@ -4941,7 +4941,7 @@ ${discussionSummary}
           {/* 문제 상황 설정 워크숍 버튼 (Ds-1-2 활동에서만 표시) */}
           {currentActivity === 'Ds-1-2' && (
             <div className="relative flex items-center">
-              {!showProblemSituationDesigner && coeditHintActivity !== 'Ds-1-2' && (
+              {!isTrainingProject(proj) && !showProblemSituationDesigner && coeditHintActivity !== 'Ds-1-2' && (
                 <div className="pointer-events-none absolute top-full mt-2 right-0 z-[60] min-w-[280px] rounded-2xl border border-white/80 bg-[#00897B] px-3 py-2 text-center text-[12px] font-bold leading-snug text-white shadow-[0_8px_24px_rgba(0,137,123,0.35)]">
                   <span className="absolute -top-1.5 right-8 h-3 w-3 rotate-45 border-l border-t border-white/80 bg-[#00897B]" />
                   문제상황 워크숍을 이용한 후 공동 편집을 하는 것도 좋습니다.

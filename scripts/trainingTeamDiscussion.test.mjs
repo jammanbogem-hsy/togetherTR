@@ -131,14 +131,27 @@ test('C3 추가: T-1 비전 공동 편집 버튼·기존 열린 모달은 연수
   assert.equal(visible({ ...training, trainingMode: { enabled: false } }), true)
 })
 
-test('C3 추가: 비전 열기 핸들러를 직접 호출해도 연수 방은 차단, 다른 활동 공동 편집 조건은 보존', () => {
+test('C3 추가: 비전 직접 열기를 차단하고 모든 활동의 공동 편집 버튼은 연수에서 숨김·일반에서 유지', () => {
   const arrow = findNode(node => ts.isArrowFunction(node) && node.getText(tree).includes('setShowTeamVisionWorkspace(true)'))
   const open = [], bindings = { isTrainingProject, setCoeditHintActivity() {}, setShowTeamVisionWorkspace: value => open.push(value) }
   execute(`exports.fn = ${arrow.getText(tree)}`, { ...bindings, proj: training }).fn()
   assert.deepEqual(open, [])
   execute(`exports.fn = ${arrow.getText(tree)}`, { ...bindings, proj: { trainingMode: { enabled: false } } }).fn()
   assert.deepEqual(open, [true])
-  for (const code of ['T-1-2', 'T-2-1', 'T-2-2', 'T-2-3', 'A-1-2', 'A-2-2', 'Ds-1-1', 'Ds-1-2', 'Ds-1-3', 'Ds-2-1', 'Ds-2-2']) {
-    assert.ok(chat.includes(`{currentActivity === '${code}' && (`), `${code} 버튼 조건에 연수용 차단을 추가하지 않음`)
+  const buttons = []
+  function collect(node) {
+    if (ts.isBinaryExpression(node) && /^\(\s*<CoeditButton /.test(node.right.getText(tree))) buttons.push(node)
+    ts.forEachChild(node, collect)
+  }
+  collect(tree)
+  assert.equal(buttons.length, 16, 'T·A·Ds·DI·E 공동 편집 전체 활동')
+  for (const button of buttons) {
+    const activity = button.left.getText(tree).match(/currentActivity === '([^']+)'/)[1]
+    const props = { currentActivity: activity, coeditHintActivity: activity, isTrainingProject,
+      require(name) { if (name === 'react/jsx-runtime') return jsx; throw new Error(name) },
+      CoeditButton: ({ label }) => React.createElement('button', {}, label) }
+    const render = proj => renderToStaticMarkup(execute(`exports.render = () => (${button.getText(tree)})`, { ...props, proj }).render())
+    for (const coreFormal of [true, false]) assert.equal(render({ trainingMode: { enabled: true, coreFormal } }), '', activity)
+    for (const proj of [{}, { trainingMode: { enabled: false } }]) assert.match(render(proj), /공동 편집/, activity)
   }
 })
