@@ -300,7 +300,7 @@ function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtif
         {isHostCurrent && !isHost && !isViewing && (
           <p className="text-[11px] text-[#E65100] mt-0.5 flex items-center gap-1">
             <Crown size={10} weight="fill" className="inline" />
-            <span>방장 진행 중</span>
+            <span>기록 담당 진행 중</span>
           </p>
         )}
       </div>
@@ -313,7 +313,7 @@ function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtif
           <Star size={16} weight="fill" className="text-[#F9AB00]" aria-label="평가 먼저 설계" />
         )}
         {isHostCurrent && !isHost && (
-          <Crown size={14} weight="fill" className="text-[#F9AB00]" aria-label="방장 현재 위치" />
+          <Crown size={14} weight="fill" className="text-[#F9AB00]" aria-label="기록 담당 현재 위치" />
         )}
 
         {/* 상태 뱃지: completed/warning/active_return은 라벨 칩, in_progress는 단일 아이콘 */}
@@ -464,7 +464,7 @@ export function ActivitySidebar() {
         <div className="mx-3 mt-2 rounded-xl bg-[#FFF8E1] border border-[#FFD54F] px-3 py-2 flex items-center gap-2">
           <Crown size={14} weight="fill" className="text-[#F9AB00] flex-shrink-0" />
           <p className="flex-1 text-[11px] text-[#E65100] leading-snug">
-            {project.demoRun ? '다시 보기 — 선택한 활동의 대화·산출물을 표시합니다' : '탐색 중 — 채팅은 방장 진행 활동에서 계속됩니다'}
+            {project.demoRun ? '다시 보기 — 선택한 활동의 대화·산출물을 표시합니다' : '탐색 중 — 채팅은 기록 담당 진행 활동에서 계속됩니다'}
           </p>
           <button
             onClick={() => setViewingActivity(currentActivity)}

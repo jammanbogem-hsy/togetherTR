@@ -128,7 +128,7 @@ export default function TutorialImportPage() {
                     </span>
                     <div>
                       <p className="text-sm font-extrabold">{userProfile.displayName}</p>
-                      <p className="text-xs text-[#1A73E8]">현재 접속 교사 · 방장</p>
+                      <p className="text-xs text-[#1A73E8]">현재 접속 교사 · 기록 담당</p>
                     </div>
                   </div>
                   <p className="text-xs leading-5 text-[#5F6368]">학교 맥락을 제공하고 고위험 결정과 최종 산출물을 승인합니다.</p>

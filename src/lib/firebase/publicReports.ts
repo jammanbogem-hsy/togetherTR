@@ -36,7 +36,7 @@ export const PUBLIC_REPORTS_COLLECTION = 'public_reports'
 function assertHostPermission(project: Project, uid: string): void {
   const hostUid = project.hostUid ?? project.createdBy
   if (hostUid !== uid) {
-    throw new Error('호스트(방장)만 공개 링크를 관리할 수 있습니다.')
+    throw new Error('기록 담당만 공개 링크를 관리할 수 있습니다.')
   }
 }
 

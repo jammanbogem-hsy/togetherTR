@@ -128,7 +128,7 @@ export function ActionCard({
           aria-disabled={locked || !isHost}
           tabIndex={locked || !isHost ? -1 : 0}
           aria-label={`권장 행동: ${card.primary}`}
-          title={!isHost ? '방장만 결정할 수 있습니다' : undefined}
+          title={!isHost ? '기록 담당만 결정할 수 있습니다' : undefined}
           className="transition-transform hover:enabled:scale-[1.02] px-4 py-2 rounded-xl text-white text-[13px] font-bold disabled:cursor-not-allowed disabled:opacity-50"
           style={{
             background: palette.primaryBg,
@@ -149,7 +149,7 @@ export function ActionCard({
             aria-disabled={locked || !isHost}
             tabIndex={locked || !isHost ? -1 : 0}
             aria-label={`대안 행동: ${card.secondary}`}
-            title={!isHost ? '방장만 결정할 수 있습니다' : undefined}
+            title={!isHost ? '기록 담당만 결정할 수 있습니다' : undefined}
             className="transition-transform hover:enabled:scale-[1.02] px-4 py-2 rounded-xl text-[13px] font-semibold border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {card.secondary}
@@ -174,7 +174,7 @@ export function ActionCard({
       {/* 방장 아님 안내 — primary/secondary disabled 이유 명시 */}
       {!isHost && (
         <p className="text-[10px] text-gray-400 mt-2">
-          방장만 결정할 수 있습니다. 본인 차원의 건너뛰기는 가능합니다.
+          기록 담당만 결정할 수 있습니다. 본인 차원의 건너뛰기는 가능합니다.
         </p>
       )}
     </div>

@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { findProjectByInviteCode, joinProject } from '@/lib/firebase/projects'
 import { useProjectStore } from '@/store/project'
 import { cn } from '@/lib/utils'
-import { ArrowLeft, BookOpen, Loader2, Users } from 'lucide-react'
+import { ArrowLeft, Loader2, Users } from 'lucide-react'
 
 export default function JoinProjectPage() {
   const router = useRouter()
@@ -56,24 +56,24 @@ export default function JoinProjectPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
+    <div className="m3-shell flex min-h-dvh items-center justify-center px-4 py-8 sm:py-12">
+      <div className="w-full min-w-0 max-w-md">
         <button
           onClick={() => router.push('/dashboard')}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
+          className="mb-5 inline-flex min-h-12 items-center gap-2 rounded-full px-3 text-base font-medium text-[var(--md-sys-primary)] transition-[filter] hover:bg-[var(--md-sys-primary-container)]"
         >
           <ArrowLeft className="w-4 h-4" />
           대시보드로
         </button>
 
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center">
-              <Users className="w-5 h-5 text-teal-600" />
+        <div className="rounded-[var(--md-sys-radius-xl)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] p-5 sm:p-8">
+          <div className="mb-7 flex items-start gap-3">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]">
+              <Users className="size-6" />
             </div>
             <div>
-              <p className="text-sm font-bold text-gray-900">방 참여하기</p>
-              <p className="text-xs text-gray-500">초대코드를 입력하세요</p>
+              <p className="text-2xl font-medium leading-8 text-[var(--md-sys-on-surface)]" aria-level={1} role="heading">방 참여하기</p>
+              <p className="mt-1 text-base leading-6 text-[var(--md-sys-on-surface-variant)]" id="join-code-label">초대코드를 입력하세요</p>
             </div>
           </div>
 
@@ -84,20 +84,20 @@ export default function JoinProjectPage() {
             onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && handleJoin()}
             placeholder="예) 파란고양이"
             autoFocus
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-lg font-bold text-center focus:outline-none focus:ring-2 focus:ring-teal-400 mb-4 tracking-wide"
+            className="mb-5 min-h-14 w-full min-w-0 rounded-[var(--md-sys-radius-sm)] border border-[var(--md-sys-outline)] bg-[var(--md-sys-surface-container-lowest)] px-4 py-3 text-center text-lg font-medium tracking-wide text-[var(--md-sys-on-surface)] placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-[var(--md-sys-on-surface-variant)] focus:border-[var(--md-sys-primary)] focus:outline-2 focus:outline-offset-2 focus:outline-[var(--md-sys-primary)]" aria-invalid={!!error} aria-describedby={error ? 'join-error' : undefined} aria-labelledby="join-code-label"
           />
 
           {error && (
-            <p className="text-xs text-red-500 mb-3 text-center">{error}</p>
+            <p className="mb-4 rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-error-container)] px-4 py-3 text-base leading-6 text-[var(--md-sys-on-error-container)]" id="join-error" role="alert">{error}</p>
           )}
 
           <button
             onClick={handleJoin}
             disabled={!code.trim() || isLoading}
             className={cn(
-              'w-full py-3 rounded-xl text-white font-bold text-sm transition-colors',
-              'disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2',
-              'bg-teal-500 hover:bg-teal-600'
+              'min-h-14 w-full rounded-full px-5 py-3 text-base font-medium transition-[filter]',
+              'flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:bg-[var(--md-sys-surface-container-highest)] disabled:text-[var(--md-sys-on-surface-variant)]',
+              'bg-[var(--md-sys-primary)] text-[var(--md-sys-on-primary)] enabled:hover:brightness-95'
             )}
           >
             {isLoading ? (
@@ -108,7 +108,7 @@ export default function JoinProjectPage() {
           </button>
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-4">
+        <p className="mt-5 px-3 text-base leading-7 text-[var(--md-sys-on-surface-variant)]">
           한 번 입장하면 다음부터는 코드 없이 바로 들어올 수 있어요
         </p>
       </div>

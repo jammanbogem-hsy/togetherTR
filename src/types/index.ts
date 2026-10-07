@@ -426,6 +426,11 @@ export interface Project {
   artifactConfirmations?: Record<string, Partial<Record<ActivityCode, ArtifactConfirmationEntry>>>
   // 방장이 내보낸 팀원 기록(removeMember). 남긴 대화·산출물은 보존되고 이름 표시에 쓴다.
   memberRemovals?: { uid: string; displayName: string; byUid: string; at: number }[]
+  // 기록 권한(host) 요청 — 팀원 uid → 요청 시각·이름, 거절되면 rejectedAt(transferHostTo·requestHostRole)
+  hostRequests?: Record<string, { at: number; name: string; rejectedAt?: number }>
+  // 기록 권한 넘기기 이력 · 처음 만든 사람(넘기기 때 createdBy 도 바뀌므로 한 번만 보존)
+  hostTransfers?: { from: string; to: string; byUid: string; at: number; via: 'transfer' | 'request' }[]
+  originalCreatedBy?: string
   // 모드 저장값 변경 기록 — 팀원이 있는 레거시 solo 방을 방장이 열 때 collaborative 로 맞춘 이력(syncProjectModeIfNeeded)
   modeChanges?: { from: ProjectMode; to: ProjectMode; reason: string; byUid: string; at: number }[]
   // 지식 그래프 저장 데이터

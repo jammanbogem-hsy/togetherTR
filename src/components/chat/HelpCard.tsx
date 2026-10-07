@@ -8,7 +8,7 @@ interface Props {
   onSearchStandards: () => void
   onShowExample: () => void
   onShowGuide: () => void
-  onStartTeamDiscussion: () => void
+  onStartTeamDiscussion?: () => void
 }
 
 export function HelpCard({ message, onSearchStandards, onShowExample, onShowGuide, onStartTeamDiscussion }: Props) {
@@ -60,13 +60,13 @@ export function HelpCard({ message, onSearchStandards, onShowExample, onShowGuid
           <MapTrifold size={16} weight="fill" className="text-[#00897B] flex-shrink-0" />
           <span className="text-[12px] font-semibold text-[#3C4043]">흐름 안내받기</span>
         </button>
-        <button
+        {onStartTeamDiscussion && <button
           onClick={() => { onStartTeamDiscussion(); setDismissed(true) }}
           className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white border border-[#FFD54F] hover:bg-[#FFFDE7] transition-colors text-left"
         >
           <UsersThree size={16} weight="fill" className="text-[#7B1FA2] flex-shrink-0" />
           <span className="text-[12px] font-semibold text-[#3C4043]">팀 토의 하기</span>
-        </button>
+        </button>}
       </div>
     </div>
   )

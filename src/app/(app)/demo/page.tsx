@@ -499,7 +499,7 @@ export default function DemoSetupPage() {
                 <CheckCircle2 className="mt-0.5 h-7 w-7 flex-shrink-0 text-[#137333]" />
                 <div>
                   <h2 className="text-lg font-extrabold text-[#137333]">AI가 협력팀과 수업 설정을 완성했습니다</h2>
-                  <p className="mt-1 text-sm leading-6 text-[#3C4043]">아래 내용을 직접 고친 뒤 실행하세요. 시작하면 현재 교사는 방장이 되고, 교사 에이전트들은 이 페르소나를 유지하며 활동별로 협의합니다.</p>
+                  <p className="mt-1 text-sm leading-6 text-[#3C4043]">아래 내용을 직접 고친 뒤 실행하세요. 시작하면 현재 교사는 기록 담당이 되고, 교사 에이전트들은 이 페르소나를 유지하며 활동별로 협의합니다.</p>
                 </div>
               </div>
             </section>

@@ -142,7 +142,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
           {selectedStage && selectedReport && <div className="mt-3 flex flex-wrap items-center gap-2">
             {stageReportChanged(project, selectedStage) && <span className="rounded-full bg-[#FFF3E0] px-3 py-1 text-xs font-medium text-[#8A3D00]">보고서 이후 산출물이 바뀌었어요</span>}
             {isHost ? <MD3Button variant={stageReportChanged(project, selectedStage) ? 'filled' : 'tonal'} disabled={pdfBusy} onClick={() => requestGeneration(selectedStage)}>다시 생성</MD3Button>
-              : <p className="text-xs text-[#5F6368]">방장이 다시 생성할 수 있어요</p>}
+              : <p className="text-xs text-[#5F6368]">기록 담당이 다시 생성할 수 있어요</p>}
           </div>}
           {pdfError && <p role="alert" className="mt-3 text-[13px] text-[var(--md-sys-error)]">{pdfError}</p>}
         </header>
@@ -165,7 +165,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
                   {changed && <span className="rounded-full bg-[#FFF3E0] px-3 py-1 text-xs font-medium text-[#8A3D00]">보고서 이후 산출물이 바뀌었어요</span>}
                   {report && <MD3Button variant="text" onClick={() => setSelectedStage(stageInfo.code)}>보고서 보기 →</MD3Button>}
                   {isHost ? <MD3Button variant={changed ? 'filled' : 'tonal'} disabled={pdfBusy} onClick={() => requestGeneration(stageInfo.code)}>{report ? '다시 생성' : '보고서 만들기'}</MD3Button>
-                    : <p className="text-xs text-[#5F6368]">방장이 다시 생성할 수 있어요</p>}
+                    : <p className="text-xs text-[#5F6368]">기록 담당이 다시 생성할 수 있어요</p>}
                 </div>
               </section>
             })}

@@ -71,6 +71,10 @@ service cloud.firestore {
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['artifactConfirmations'])
           || request.resource.data.get('artifactConfirmations', {}).diff(resource.data.get('artifactConfirmations', {}))
                .affectedKeys().hasOnly([request.auth.uid]))
+        // 기록 권한 요청(TASK-H1): 팀원은 hostRequests 의 자기 uid 항목만 만들고 지울 수 있다(기록 담당은 isHostOf 로 전체).
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['hostRequests'])
+          || request.resource.data.get('hostRequests', {}).diff(resource.data.get('hostRequests', {}))
+               .affectedKeys().hasOnly([request.auth.uid]))
         && !request.resource.data.diff(resource.data).changedKeys().hasAny([
           'artifacts',
           'activityStatuses',
@@ -86,6 +90,8 @@ service cloud.firestore {
           'cumulativeReport',
           'hostUid',
           'createdBy',
+          'originalCreatedBy',
+          'hostTransfers',
           'memberUids',
           'inviteCode',
           'started'

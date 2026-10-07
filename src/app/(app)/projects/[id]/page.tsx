@@ -51,6 +51,9 @@ import { useLayoutToggle } from '@/components/layout/useLayoutToggle'
 import { PendingConfirmationBanner } from '@/components/collab/PendingConfirmationBanner'
 
 import { MemberRemovalButton } from '@/components/members/MemberRemovalButton'
+import { HostTransferButton } from '@/components/members/HostTransferButton'
+import { HostRequestButton } from '@/components/members/HostRequestButton'
+import { HostRequestBanner } from '@/components/members/HostRequestBanner'
 import { isSoloProject } from '@/lib/project/projectMode'
 
 function hasMemberHost(project: Project): boolean {
@@ -121,53 +124,47 @@ function WaitingRoom({
   const memberCount = memberUids.length
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+    <div className="m3-shell flex min-h-dvh min-w-0 flex-col">
       {/* 헤더 */}
-      <header className="bg-white border-b border-[#DADCE0] px-6 py-4 flex-shrink-0">
-        <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-[#F9AB00]"
-            style={{ animation: 'dot-idle 1.6s ease-in-out infinite' }} />
-          <span className="text-[13px] text-[#E37400] font-bold">팀원을 기다리는 중</span>
-          <div className="h-4 w-px bg-[#DADCE0] mx-1" />
-          <h1 className="text-[14px] font-extrabold text-[#202124]">{project.title}</h1>
+      <header className="shrink-0 border-b border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-low)] px-4 py-4 sm:py-5">
+        <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="size-2.5 shrink-0 rounded-full bg-[var(--md-sys-primary)]"
+             />
+          <span className="text-base font-medium leading-6 text-[var(--md-sys-on-surface-variant)]">팀원을 기다리는 중</span>
+          <div className="hidden h-5 w-px bg-[var(--md-sys-outline-variant)] sm:block" />
+          <h1 className="min-w-0 basis-full break-words sm:basis-auto sm:flex-1 text-xl font-medium leading-7 text-[var(--md-sys-on-surface)]">{project.title}</h1>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto w-full px-4 py-8 grid grid-cols-1 lg:grid-cols-2 gap-5 flex-1">
+      <div className="mx-auto w-full min-w-0 max-w-3xl flex-1 space-y-5 px-4 py-6 sm:py-8">
         {/* 왼쪽: 초대코드 + 참여 인원 + 시작 */}
         <div className="space-y-4">
 
           {/* 초대코드 카드 */}
           {project.inviteCode && (
-            <div className="project-card rounded-2xl p-6"
-              style={{
-                '--cc': 'rgba(26,115,232,0.12)', '--cx1': '100%', '--cy1': '0%', '--cx2': '0%', '--cy2': '100%', '--card-speed': '0.65s',
-                border: '2.5px solid #4285F4', boxShadow: '0 2px 12px rgba(26,115,232,0.18)',
-              } as React.CSSProperties}>
-              <p className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-widest mb-2">이 방의 초대코드</p>
-              <div className="flex items-center justify-between">
-                <p className="text-4xl font-black text-[#1A73E8] tracking-widest">{project.inviteCode}</p>
+            <div className="rounded-[var(--md-sys-radius-xl)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] p-5 sm:p-6"
+              >
+              <p className="mb-3 text-base font-medium leading-6 text-[var(--md-sys-on-surface-variant)]">이 방의 초대코드</p>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <p className="min-w-0 break-all text-3xl font-medium leading-tight tracking-wide text-[var(--md-sys-primary)] sm:text-4xl">{project.inviteCode}</p>
                 <button onClick={handleCopy}
-                  className="morph-btn flex items-center gap-1.5 text-[13px] font-bold text-[#1A73E8] px-4 py-2 bg-[#E8F0FE] hover:bg-[#C5D9F9] transition-colors">
+                  className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--md-sys-secondary-container)] px-5 py-3 text-base font-medium text-[var(--md-sys-on-secondary-container)] transition-[filter] hover:brightness-95">
                   {copied ? <Check size={15} weight="bold" /> : <Copy size={15} weight="bold" />}
                   {copied ? '복사됨!' : '복사'}
                 </button>
               </div>
-              <p className="text-[11px] text-[#9AA0A6] mt-3 leading-snug">
+              <p className="mt-4 text-base leading-7 text-[var(--md-sys-on-surface-variant)]">
                 팀원에게 공유하면 대시보드 &ldquo;방 참여하기&rdquo;에서 입장할 수 있어요
               </p>
             </div>
           )}
 
           {/* 참여 인원 카드 */}
-          <div className="project-card rounded-2xl p-5"
-            style={{
-              '--cc': 'rgba(26,115,232,0.09)', '--cx1': '0%', '--cy1': '0%', '--cx2': '100%', '--cy2': '100%', '--card-speed': '0.9s',
-              border: '2.5px solid #4285F4', boxShadow: '0 2px 12px rgba(26,115,232,0.14)',
-            } as React.CSSProperties}>
-            <div className="flex items-center gap-2 mb-4">
-              <Users size={16} weight="fill" className="text-[#1A73E8]" />
-              <span className="text-[14px] font-extrabold text-[#202124]">참여 중 · {memberCount}명</span>
+          <div className="rounded-[var(--md-sys-radius-xl)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)] p-5 sm:p-6"
+            >
+            <div className="mb-4 flex items-center gap-2">
+              <Users size={16} weight="fill" className="text-[var(--md-sys-primary)]" />
+              <span className="text-xl font-medium leading-7 text-[var(--md-sys-on-surface)]">참여 중 · {memberCount}명</span>
             </div>
             <div className="space-y-3">
               {memberUids.map(mUid => {
@@ -175,22 +172,22 @@ function WaitingRoom({
                 const isThisHost = project.hostUid === mUid || project.createdBy === mUid
                 const isSelf = mUid === uid
                 return (
-                  <div key={mUid} className="flex items-center gap-3">
+                  <div key={mUid} className="flex min-w-0 items-center gap-3 py-1">
                     <Avatar name={info?.displayName} color={info?.color ?? '#9AA0A6'} size={40} />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[14px] font-bold text-[#202124] truncate">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="min-w-0 break-words text-base font-medium leading-6 text-[var(--md-sys-on-surface)]">
                           {info?.displayName ?? mUid.slice(0, 8)}
                         </span>
                         {isSelf && (
-                          <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">나</span>
+                          <span className="rounded-full bg-[var(--md-sys-primary-container)] px-2.5 py-0.5 text-base font-medium text-[var(--md-sys-on-primary-container)]">나</span>
                         )}
                         {isThisHost && (
-                          <Crown size={14} weight="fill" className="text-[#F9AB00]" />
+                          <Crown size={14} weight="fill" className="text-[var(--md-sys-primary)]" />
                         )}
                       </div>
                       {isThisHost && (
-                        <p className="text-[11px] text-[#F9AB00] font-semibold">방장</p>
+                        <p className="mt-0.5 text-base leading-6 text-[var(--md-sys-on-surface-variant)]">기록</p>
                       )}
                     </div>
                   </div>
@@ -204,8 +201,8 @@ function WaitingRoom({
             <button
               onClick={handleStart}
               disabled={starting}
-              className="morph-btn w-full flex items-center justify-center gap-2 py-4 bg-[#1A73E8] text-white font-extrabold text-[15px] hover:bg-[#1557b0] transition-colors disabled:opacity-50"
-              style={{ filter: 'drop-shadow(0 4px 14px rgba(26,115,232,0.40))' }}
+              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[var(--md-sys-primary)] px-5 py-4 text-base font-medium text-[var(--md-sys-on-primary)] transition-[filter] enabled:hover:brightness-95 disabled:bg-[var(--md-sys-surface-container-highest)] disabled:text-[var(--md-sys-on-surface-variant)]"
+
             >
               {starting ? (
                 <><span style={{ animation: 'spin 1s linear infinite', display: 'inline-flex' }}><SpinnerGap size={20} /></span>시작 중...</>
@@ -215,41 +212,38 @@ function WaitingRoom({
             </button>
           ) : (
             <div className="space-y-3">
-              <div className="project-card w-full py-4 rounded-2xl text-[13px] text-center font-semibold text-[#9AA0A6]"
-                style={{ '--cc': 'rgba(0,0,0,0.04)', '--cx1': '50%', '--cy1': '0%', '--cx2': '50%', '--cy2': '100%', '--card-speed': '0.5s', border: '2px solid #DADCE0' } as React.CSSProperties}>
-                방장이 시작 버튼을 누를 때까지 기다려주세요
+              <div className="w-full rounded-[var(--md-sys-radius-lg)] bg-[var(--md-sys-surface-container)] px-4 py-4 text-center text-base font-medium leading-7 text-[var(--md-sys-on-surface-variant)]"
+                >
+                기록 담당이 시작 버튼을 누를 때까지 기다려주세요
               </div>
               {!hasMemberHost(project) && <button
                 onClick={onBecomeHost}
-                className="morph-btn w-full py-3 border-2 border-[#FFCC80] text-[#E65100] text-[13px] font-bold hover:bg-[#FFF3E0] transition-all flex items-center justify-center gap-1.5"
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-[var(--md-sys-outline)] px-5 py-3 text-base font-medium text-[var(--md-sys-primary)] transition-[filter] hover:bg-[var(--md-sys-primary-container)]"
               >
-                <Crown size={15} weight="fill" className="text-[#F9AB00]" />
-                방장 권한 받기
+                <Crown size={15} weight="fill" className="text-[var(--md-sys-primary)]" />
+                기록 권한 받기
               </button>}
             </div>
           )}
         </div>
 
         {/* 오른쪽: 대기실 채팅 */}
-        <div className="project-card rounded-2xl flex flex-col overflow-hidden"
-          style={{
-            '--cc': 'rgba(26,115,232,0.11)', '--cx1': '100%', '--cy1': '0%', '--cx2': '100%', '--cy2': '100%', '--card-speed': '0.5s',
-            border: '2.5px solid #4285F4', boxShadow: '0 2px 12px rgba(26,115,232,0.18)', height: '480px',
-          } as React.CSSProperties}>
-          <div className="px-5 py-4 border-b border-[#E8F0FE] bg-[#E8F0FE]/60 flex-shrink-0">
-            <h3 className="text-[14px] font-extrabold text-[#202124]">대기실 채팅</h3>
-            <p className="text-[11px] text-[#5F6368] font-medium mt-0.5">팀원과 미리 대화해보세요</p>
+        <div className="flex h-[480px] min-h-0 flex-col overflow-hidden rounded-[var(--md-sys-radius-xl)] border border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-lowest)]"
+          >
+          <div className="shrink-0 border-b border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-low)] px-5 py-4 sm:px-6">
+            <h3 className="text-xl font-medium leading-7 text-[var(--md-sys-on-surface)]">대기실 채팅</h3>
+            <p className="mt-1 text-base leading-6 text-[var(--md-sys-on-surface-variant)]">팀원과 미리 대화해보세요</p>
           </div>
 
           {/* 메시지 목록 */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
             {lobbyMessages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-[#9AA0A6]">
-                <div className="w-12 h-12 flex items-center justify-center bg-[#E8F0FE] text-[#4285F4] text-xl"
-                  style={{ animation: 'morph-shape 9s ease-in-out infinite' }}>
+              <div className="flex h-full flex-col items-center justify-center gap-3 text-[var(--md-sys-on-surface-variant)]">
+                <div className="flex size-12 items-center justify-center rounded-full bg-[var(--md-sys-secondary-container)] text-xl text-[var(--md-sys-on-secondary-container)]"
+                  >
                   👋
                 </div>
-                <p className="text-[12px] font-semibold text-center">아직 메시지가 없습니다<br />팀원에게 인사해보세요</p>
+                <p className="text-center text-base leading-7">아직 메시지가 없습니다<br />팀원에게 인사해보세요</p>
               </div>
             )}
             {lobbyMessages.map(msg => {
@@ -257,18 +251,18 @@ function WaitingRoom({
               return (
                 <div key={msg.id} className={cn('flex gap-2.5', isSelf ? 'flex-row-reverse' : 'flex-row')}>
                   <Avatar name={msg.displayName} color={msg.color} size={36} />
-                  <div className={cn('max-w-[75%] space-y-0.5 flex flex-col', isSelf ? 'items-end' : 'items-start')}>
+                  <div className={cn('flex min-w-0 max-w-[80%] flex-col space-y-1', isSelf ? 'items-end' : 'items-start')}>
                     {!isSelf && (
-                      <span className="text-[11px] font-bold px-1" style={{ color: msg.color }}>
+                      <span className="px-1 text-base font-medium leading-6 text-[var(--md-sys-on-surface-variant)]" >
                         {msg.displayName}
                       </span>
                     )}
                     <div
                       className={cn(
-                        'px-3.5 py-2 text-[13px] font-medium',
-                        isSelf ? 'text-white rounded-2xl rounded-tr-sm' : 'bg-[#EAF2FF] text-[#1a2e5a] rounded-2xl rounded-tl-none border-l-[3px] border-[#4285F4]'
+                        'break-words whitespace-pre-wrap px-4 py-3 text-base leading-6',
+                        isSelf ? 'rounded-[var(--md-sys-radius-lg)] rounded-tr-[var(--md-sys-radius-xs)] bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]' : 'rounded-[var(--md-sys-radius-lg)] rounded-tl-[var(--md-sys-radius-xs)] bg-[var(--md-sys-surface-container)] text-[var(--md-sys-on-surface)]'
                       )}
-                      style={isSelf ? { backgroundColor: msg.color } : undefined}
+
                     >
                       {msg.content}
                     </div>
@@ -280,26 +274,22 @@ function WaitingRoom({
           </div>
 
           {/* 입력창 */}
-          <div className="px-3 py-3 border-t border-[#E8F0FE] bg-[#F8F9FA] flex-shrink-0">
-            <div className="chat-input-wrap">
-              <div className="chat-input-inner flex gap-2 bg-white px-3 py-2">
+          <div className="shrink-0 border-t border-[var(--md-sys-outline-variant)] bg-[var(--md-sys-surface-container-low)] p-3 sm:px-5">
+            <div className="rounded-[var(--md-sys-radius-xl)] border border-[var(--md-sys-outline)] bg-[var(--md-sys-surface-container-lowest)] focus-within:border-[var(--md-sys-primary)]">
+              <div className="flex min-w-0 items-center gap-2 px-2 py-2 sm:pl-4">
                 <input
                   type="text"
                   value={lobbyInput}
                   onChange={e => setLobbyInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSendLobby() }}
                   placeholder="메시지 입력..."
-                  className="flex-1 bg-transparent text-[13px] focus:outline-none text-[#202124] placeholder:text-[#9AA0A6]"
+                  className="min-h-12 min-w-0 flex-1 rounded-[var(--md-sys-radius-sm)] bg-transparent px-2 text-base text-[var(--md-sys-on-surface)] placeholder:text-[var(--md-sys-on-surface-variant)]" aria-label="대기실 채팅 메시지"
                 />
                 <button
                   onClick={handleSendLobby}
                   disabled={!lobbyInput.trim()}
-                  className="w-9 h-9 flex items-center justify-center text-white disabled:opacity-40 transition-all flex-shrink-0"
-                  style={{
-                    backgroundColor: '#1A73E8',
-                    animation: 'morph-shape 6s ease-in-out infinite',
-                    filter: lobbyInput.trim() ? 'drop-shadow(0 2px 6px rgba(26,115,232,0.5))' : 'none',
-                  }}
+                  className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--md-sys-primary)] text-[var(--md-sys-on-primary)] transition-[filter] enabled:hover:brightness-95 disabled:bg-[var(--md-sys-surface-container-highest)] disabled:text-[var(--md-sys-on-surface-variant)]"
+                   aria-label="메시지 보내기"
                 >
                   <PaperPlaneRight size={16} weight="fill" />
                 </button>
@@ -794,7 +784,7 @@ export default function ProjectPage() {
 
   async function handleClaimHost() {
     if (!project || hasMemberHost(project)) return
-    if (!window.confirm('방장 권한을 가져오시겠습니까?\n기존 방장은 방장 권한을 잃게 됩니다.')) return
+    if (!window.confirm('기록 권한을 가져오시겠습니까?\n기존 기록 담당은 기록 권한을 잃게 됩니다.')) return
     setClaimingHost(true)
     await transferHost(projectId, uid).catch(console.error)
     setClaimingHost(false)
@@ -869,22 +859,22 @@ export default function ProjectPage() {
               <div className="flex items-center gap-2">
               {isHost ? (
                 <span
-                  title="방장"
+                  title="기록 담당"
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#FFE7C7] px-4 text-[13px] font-medium text-[#8A3D00] flex-shrink-0"
                 >
                   <Crown size={18} weight="fill" />
-                  방장
+                  기록
                 </span>
               ) : !project.demoRun && !hasMemberHost(project) ? (
                 <MD3Button
                   onClick={handleClaimHost}
                   disabled={claimingHost}
-                  title={claimingHost ? '처리 중...' : '방장 되기'}
-                  aria-label="방장 되기"
+                  title={claimingHost ? '처리 중...' : '기록 담당 되기'}
+                  aria-label="기록 담당 되기"
                   variant="outlined" tone="amber" size="sm"
                   icon={<Crown size={18} weight="fill" />}
                 >
-                  {claimingHost ? '처리 중...' : '방장 되기'}
+                  {claimingHost ? '처리 중...' : '기록 담당 되기'}
                 </MD3Button>
               ) : project.demoRun ? <span className="inline-flex h-10 items-center gap-2 rounded-full bg-[#D3E3FD] px-4 text-[13px] font-medium text-[#0842A0]"><Sparkle size={18} weight="fill" />AI 팀</span> : null}
               <div className="ml-auto flex items-center gap-1">
@@ -1243,6 +1233,8 @@ export default function ProjectPage() {
         <TrainingSettingsModal key={project.id} project={project} onClose={closeTrainingSettings} />
       )}
       {!project.demoRun && !isSoloProject(project) && <PendingConfirmationBanner />}
+      {/* 팀원의 기록 권한 요청 — 기록 담당에게만, 오프라인 동안 들어온 요청도 접속하면 보인다 */}
+      <HostRequestBanner project={project} userId={uid} />
 
       {showReports && (
         <StageReportsModal onClose={() => setShowReports(false)} />
@@ -1306,10 +1298,13 @@ export default function ProjectPage() {
                         </p>
                         {isHostMember && (
                           <p className="text-[11px] text-[#F9AB00] font-bold flex items-center gap-0.5">
-                            <Crown size={10} weight="fill" /> 방장
+                            <Crown size={10} weight="fill" /> 기록
                           </p>
                         )}
                       </div>
+                      {isCurrentUser
+                        ? <HostRequestButton project={project} userId={uid} name={displayName} />
+                        : <HostTransferButton project={project} userId={uid} targetUid={mUid} name={displayName} />}
                       <MemberRemovalButton project={project} userId={uid} targetUid={mUid} name={displayName} />
                     </div>
                   )

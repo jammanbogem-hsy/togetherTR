@@ -98,9 +98,15 @@ test('V2: 기존 구조화 일정·공동 편집 columns/rows·행 배열을 한
   assert.deepEqual(data, original)
 })
 
-test('V2: 빈 기본 표·빈 행 추가는 필수 칸 완료가 아니고 열기만 해서는 저장하지 않는다', () => {
+test('V2: 글 입력이 기본이고 표 전환·빈 행 추가만으로 필수 칸 완료 처리하지 않는다', () => {
   const form = editor('')
-  const tree = form.render()
+  let tree = form.render()
+  assert.equal(elements(tree, 'textarea').length, 1)
+  assert.equal(elements(tree, 'th').length, 0)
+  assert.equal(elements(tree, 'button').find(button => button.props.children === '글로 입력').props['aria-pressed'], true)
+  assert.equal(form.emitted.length, 0)
+  elements(tree, 'button').find(button => button.props.children === '표로 입력').props.onClick()
+  tree = form.render()
   assert.equal(elements(tree, 'th').length, columns.length + 1)
   assert.equal(form.emitted.length, 0)
   const add = elements(tree, 'button').find(button => button.props.children === '행 추가')
@@ -112,6 +118,7 @@ test('V2: 빈 기본 표·빈 행 추가는 필수 칸 완료가 아니고 열�
 
 test('V2: 칸 수정·행 추가/삭제가 같은 문자열로 저장되고 마지막 행 삭제 뒤 다시 입력할 수 있다', () => {
   const form = editor(schedule)
+  elements(form.render(), 'button').find(button => button.props.children === '표로 입력').props.onClick()
   let tree = form.render()
   const originalKey = elements(tree, 'tr')[1].key
   elements(tree, 'textarea')[0].props.onChange({ target: { value: '11월' } })
@@ -130,8 +137,8 @@ test('V2: 칸 수정·행 추가/삭제가 같은 문자열로 저장되고 마�
 
 test('V2: 글/표 전환은 내용을 쓰거나 버리지 않고 외부 갱신은 새 값을 표시한다', () => {
   const form = editor(schedule)
-  elements(form.render(), 'button').find(button => button.props.children === '글로 입력').props.onClick()
   let tree = form.render()
+  assert.equal(elements(tree, 'button').find(button => button.props.children === '글로 입력').props['aria-pressed'], true)
   assert.equal(elements(tree, 'textarea').length, 1)
   assert.equal(elements(tree, 'textarea')[0].props.value, schedule)
   assert.equal(form.emitted.length, 0)
@@ -145,7 +152,9 @@ test('V2: 글/표 전환은 내용을 쓰거나 버리지 않고 외부 갱신�
 })
 
 test('V2: 표의 고정 머리글·모바일 한 열 카드와 읽기 전용 fieldset을 렌더한다', () => {
-  const html = renderToStaticMarkup(React.createElement('fieldset', { disabled: true }, React.createElement(Input, { id: 'test', label: '팀 일정', value: schedule, onChange() {} })))
+  const form = editor(schedule)
+  elements(form.render(), 'button').find(button => button.props.children === '표로 입력').props.onClick()
+  const html = renderToStaticMarkup(React.createElement('fieldset', { disabled: true }, form.render()))
   assert.match(html, /<fieldset disabled=""/)
   assert.match(html, /<thead class="sticky top-0/)
   assert.match(html, /sm:block/)

@@ -216,7 +216,7 @@ export async function importCompletedCheugugiProject(
         displayName: owner.displayName,
         color: owner.color || '#5B8DEF',
         emoji: owner.emoji || '👩‍🏫',
-        role: '현재 접속 교사·프로젝트 방장',
+        role: '현재 접속 교사·프로젝트 기록 담당',
         expertise: '학교 맥락을 제공하고 고위험 결정과 최종 산출물을 승인한다.',
         joinedAt,
       },

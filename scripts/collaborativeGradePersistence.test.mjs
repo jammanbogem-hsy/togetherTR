@@ -34,12 +34,12 @@ function reset() {
 test('member recognition persists only a proposal; host confirmation commits bands and switch together', async () => {
   reset()
   auth.currentUser.uid = 'member'
-  await assert.rejects(updateTeamGradeBands('p', ['1-2학년군', '5-6학년군']), /방장/)
+  await assert.rejects(updateTeamGradeBands('p', ['1-2학년군', '5-6학년군']), /기록 담당/)
   await proposeTeamGradeBands('p', ['1-2학년군'], '저학년 교사')
   assert.equal(state.teamGradeBands, undefined)
   assert.equal(state.curriculumSheetGradeMode, 'single')
   const proposal = state.teamGradeBandProposals.member
-  await assert.rejects(resolveTeamGradeBandProposal('p', 'member', proposal.id, true), /방장/)
+  await assert.rejects(resolveTeamGradeBandProposal('p', 'member', proposal.id, true), /기록 담당/)
   auth.currentUser.uid = 'host'
   await resolveTeamGradeBandProposal('p', 'member', proposal.id, true)
   assert.deepEqual(state.teamGradeBands, ['1-2학년군', '5-6학년군'])

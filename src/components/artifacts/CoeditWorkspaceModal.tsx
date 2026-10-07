@@ -323,7 +323,7 @@ export function CoeditWorkspaceModal({
       await onSendArtifact(content)
       setOfferReflection(false)
       if (isHost) onClose()
-      else setNotice('방장에게 반영을 요청했어요')
+      else setNotice('기록 담당에게 반영을 요청했어요')
     } catch {
       setError('산출물 저장에 실패했습니다. 다시 시도해 주세요.')
     } finally {
@@ -581,7 +581,7 @@ export function CoeditWorkspaceModal({
             disabled={sending || saving}
             icon={sending ? <FloppyDisk size={MD3_ICON.sm} /> : <PaperPlaneRight size={MD3_ICON.sm} weight="fill" />}
           >
-            {sending ? '보내는 중…' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
+            {sending ? '보내는 중…' : isHost ? '산출물로 보내기' : '기록 담당에게 반영 요청'}
           </MD3Button>
         </div>
       </div>

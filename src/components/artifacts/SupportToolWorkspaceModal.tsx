@@ -35,6 +35,8 @@ import {
 } from './workspaceHelpers'
 import type { SupportToolSuggestRequest, SupportToolSuggestResult, Ds21Material } from '@/app/api/support-tool/suggest/route'
 import { useWorkspaceSync } from './useWorkspaceSync'
+import { useArtifactDraftSync } from './useArtifactDraftSync'
+import { structuredArtifactContent } from '@/lib/coedit/artifactDraft'
 import { PresenceAwayChips, presenceAccentStyle, presenceChipStyle, presenceTagStyle, presenceTitle, splitPresence, usePresenceClock } from './presence'
 
 interface PresenceEntry {
@@ -448,7 +450,7 @@ export function SupportToolWorkspaceModal({
   projectId,
   collaborativeMembers,
 }: Props) {
-  const [workspace, setLegacyWorkspace] = useState<SupportToolWorkspace>(() => normalizeWorkspace(savedWorkspace, artifactContent))
+  const [workspace, setLegacyWorkspace] = useState<SupportToolWorkspace>(() => normalizeWorkspace(savedWorkspace, structuredArtifactContent('Ds-2-1', artifactContent)))
   const [saving, setSaving] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<number | undefined>()
   const [offerReflection, setOfferReflection] = useState(false)
@@ -465,7 +467,7 @@ export function SupportToolWorkspaceModal({
   const pendingDeletionsRef = useRef<Set<string>>(new Set())
 
   // 원격 스냅숏은 들어올 때만 반영하고, 편집 중·저장 대기 중 칸은 로컬 값을 지킨다(#T7 — 칸에서 나가면 옛 저장본으로 되돌아가던 결함).
-  const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, artifactContent), [artifactContent, savedWorkspace])
+  const incomingWorkspace = useMemo(() => normalizeWorkspace(savedWorkspace, structuredArtifactContent('Ds-2-1', artifactContent)), [artifactContent, savedWorkspace])
   const realtime = useRealtimeWorkspace({
     open, projectId, workspaceField: 'supportToolWorkspace', workspace, incoming: incomingWorkspace,
     setWorkspace: setLegacyWorkspace, editingKey,
@@ -515,6 +517,12 @@ export function SupportToolWorkspaceModal({
   )
 
   const freshEditors = resolveWorkspacePresence(receivedEditors, realtime)
+  // 저장된 산출물과 공동 초안 맞추기(#S1) — 산출물이 더 새로우면 산출물 기준, 초안이 더 새로우면 빈 칸만 채움
+  const artifactDraft = useArtifactDraftSync({
+    open, projectId, activityCode: 'Ds-2-1', workspaceField: 'supportToolWorkspace', workspace, incoming: incomingWorkspace, savedWorkspace, artifactContent,
+    normalize: normalizeWorkspace, realtime, othersEditing: freshEditors.some(entry => entry.uid !== currentUid), currentUid,
+    apply: next => commit({ type: 'replace-all', workspace: next, updatedBy: currentUserName }, next),
+  })
 
   const updatePresence = (cellKey: string | null, caretPos?: number) => {
     if (typeof caretPos === 'number' && !shouldReportWorkspaceCaret(realtime)) return
@@ -884,7 +892,7 @@ export function SupportToolWorkspaceModal({
       await sendWorkspaceArtifact({ isHost, projectId, activityCode: 'Ds-2-1', currentUid, currentUserName, content: stripUndefinedDeep(structured) as Ds21Structured, onSendArtifact })
       setLastSavedAt(saved?.updatedAt ?? Date.now())
       setOfferReflection(false)
-      setMessage(isHost ? `${displayActivityCode('Ds-2-1')} 산출물로 보냈습니다.` : '방장에게 반영을 요청했어요')
+      setMessage(isHost ? `${displayActivityCode('Ds-2-1')} 산출물로 보냈습니다.` : '기록 담당에게 반영을 요청했어요')
       if (isHost) onClose()
     } catch (error) {
       console.error('[supportToolWorkspace send]', error)
@@ -914,6 +922,7 @@ export function SupportToolWorkspaceModal({
     <>
     <div {...realtime.boundaryProps} className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4">
       <WorkspaceRealtimeStatus session={realtime} onClose={onClose} />
+      {artifactDraft.banner}
       <div className="bg-white w-full max-w-[1480px] h-[94vh] rounded-[18px] shadow-2xl overflow-hidden flex flex-col">
         {/* 헤더 */}
         <div className="flex-shrink-0 flex items-center gap-3 px-5 py-3 border-b border-[#DADCE0] bg-white">
@@ -942,7 +951,7 @@ export function SupportToolWorkspaceModal({
             'hidden md:inline-flex h-8 items-center rounded-lg px-3 text-[13px] font-medium',
             isHost ? 'bg-[#E8F0FE] text-[#1A73E8]' : 'bg-[#F1F3F4] text-[#5F6368]',
           )}>
-            {isHost ? '방장' : '팀원'}
+            {isHost ? '기록' : '팀원'}
           </span>
           {canLoadFromArtifact && isHost && (
             <button
@@ -968,11 +977,11 @@ export function SupportToolWorkspaceModal({
             type="button"
             onClick={sendArtifact}
             disabled={sending || saving}
-            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('Ds-2-1')} 산출물로 보냅니다` : '편집 내용을 방장에게 반영 요청합니다'}
+            title={isHost ? `현재 워크스페이스를 ${displayActivityCode('Ds-2-1')} 산출물로 보냅니다` : '편집 내용을 기록 담당에게 반영 요청합니다'}
             className="hidden sm:flex h-10 items-center gap-2 px-5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06327A] text-white text-[14px] font-medium shadow-[0_1px_2px_rgba(60,64,67,0.3),0_1px_3px_1px_rgba(60,64,67,0.15)] transition-colors disabled:opacity-40 disabled:shadow-none"
           >
             <PaperPlaneRight size={17} weight="fill" />
-            {sending ? '전송 중' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
+            {sending ? '전송 중' : isHost ? '산출물로 보내기' : '기록 담당에게 반영 요청'}
           </button>
           <button
             type="button"
@@ -1360,7 +1369,7 @@ export function SupportToolWorkspaceModal({
 
               {!isHost && (
                 <div className="rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-[14px] text-[#5F6368] leading-relaxed">
-                  팀원은 공동 초안을 편집할 수 있고, 최종 산출물 전송은 방장이 실행합니다.
+                  팀원은 공동 초안을 편집할 수 있고, 최종 산출물 전송은 기록 담당이 실행합니다.
                 </div>
               )}
               {/* 빈 공간 클릭 → 바로 본문 입력 (Notion 편집창과 동일한 동작) */}
@@ -1547,7 +1556,7 @@ export function SupportToolWorkspaceModal({
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <WorkspaceSaveStatus lastSavedAt={Math.max(lastSavedAt ?? 0, savedWorkspace?.updatedAt ?? 0)} offerReflection={isHost && offerReflection} busy={saving || sending} onReflect={sendArtifact} />
               <button type="button" onClick={sendArtifact} disabled={saving || sending} className="sm:hidden rounded-full bg-[#0B57D0] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
-                {sending ? '전송 중' : isHost ? '산출물로 보내기' : '방장에게 반영 요청'}
+                {sending ? '전송 중' : isHost ? '산출물로 보내기' : '기록 담당에게 반영 요청'}
               </button>
               <button
                 type="button"

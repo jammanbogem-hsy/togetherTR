@@ -97,7 +97,7 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
         const sections = Object.fromEntries(Object.entries(draft.values).filter(([, text]) => text.trim()).map(([key, text]) => [key, text.trim()]))
         if (!Object.keys(sections).length) { setError('제안할 내용을 한 칸 이상 입력해 주세요.'); return }
         await proposeArtifactToHost(project.id, activityCode, sections, user.uid, user.displayName)
-        setFeedback('방장에게 저장을 제안했습니다. 방장이 수락하면 팀 산출물에 반영됩니다.')
+        setFeedback('기록 담당에게 저장을 제안했습니다. 기록 담당이 수락하면 팀 산출물에 반영됩니다.')
       }
       setDraft(previous => ({ ...previous, dirty: {} }))
     } catch {
@@ -137,7 +137,7 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
         )}
         {error && <p role="alert" className="text-sm text-[#C5221F]">{error}</p>}
         {feedback && <p role="status" className="text-sm text-[#137333]">{feedback}</p>}
-        <MD3Button type="submit" size="sm" disabled={saving || readOnly || !user}>{saving ? '저장 중…' : isHost ? '산출물에 저장' : '방장에게 저장 제안'}</MD3Button>
+        <MD3Button type="submit" size="sm" disabled={saving || readOnly || !user}>{saving ? '저장 중…' : isHost ? '산출물에 저장' : '기록 담당에게 저장 제안'}</MD3Button>
       </form>
       <details className="border-t border-[#DADCE0] pt-3 text-sm text-[#5F6368]">
         <summary className="cursor-pointer font-medium">정식 진행 스텝 보기</summary>

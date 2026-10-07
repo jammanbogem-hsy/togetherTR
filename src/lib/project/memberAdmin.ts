@@ -4,12 +4,13 @@
 export type MemberRef = { uid: string; displayName: string; color?: string; emoji?: string }
 
 type MemberSource = {
-  memberUids?: string[]
+  memberUids?: readonly string[]
   memberInfo?: Record<string, { displayName?: string; color?: string; emoji?: string } | undefined>
   hostUid?: string
   createdBy?: string
   artifactConfirmations?: Record<string, unknown>
   teamGradeBandProposals?: Record<string, unknown>
+  hostRequests?: Record<string, unknown>
 }
 
 export type MemberCommand =
@@ -26,10 +27,10 @@ export type MemberAdminError =
 
 export const MEMBER_ADMIN_ERROR_COPY: Record<MemberAdminError, string> = {
   'project-not-found': '프로젝트를 찾지 못했어요. 새로고침 뒤 다시 시도해 주세요.',
-  'not-host': '팀원 내보내기는 방장만 할 수 있어요.',
+  'not-host': '팀원 내보내기는 기록 담당만 할 수 있어요.',
   'target-not-member': '이미 방에 없는 선생님이에요.',
-  'cannot-remove-self': '방장 자신은 내보낼 수 없어요.',
-  'cannot-remove-host': '방장은 내보낼 수 없어요.',
+  'cannot-remove-self': '기록 담당 자신은 내보낼 수 없어요.',
+  'cannot-remove-host': '기록 담당은 내보낼 수 없어요.',
 }
 
 // 팀원이 남긴 표 커서·본문 커서 문서(이름이 …Presence 인 하위 컬렉션)
@@ -148,5 +149,6 @@ export function planMemberRemoval(project: MemberSource | null | undefined, byUi
   const deleteFieldPaths = [`memberInfo.${targetUid}`]
   if (project.artifactConfirmations && targetUid in project.artifactConfirmations) deleteFieldPaths.push(`artifactConfirmations.${targetUid}`)
   if (project.teamGradeBandProposals && targetUid in project.teamGradeBandProposals) deleteFieldPaths.push(`teamGradeBandProposals.${targetUid}`)
+  if (project.hostRequests && targetUid in project.hostRequests) deleteFieldPaths.push(`hostRequests.${targetUid}`)
   return { ok: true, target, deleteFieldPaths }
 }

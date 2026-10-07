@@ -280,7 +280,7 @@ export function StageAnalysisModal({
             {status === 'loading' && <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 text-center text-[var(--md-sys-on-surface-variant)]">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--md-sys-primary-container)] text-[var(--md-sys-on-primary-container)]"><ChartBar size={28} weight="fill" /></div>
               <p className="text-[16px] font-medium">{isHost ? '산출물 분석 중...' : '보고서가 생성 중입니다'}</p>
-              <p className="text-[13px]">{isHost ? 'T-CID 협력 수업설계 관점에서 분석합니다' : '방장이 분석을 완료하면 자동으로 표시됩니다'}</p>
+              <p className="text-[13px]">{isHost ? 'T-CID 협력 수업설계 관점에서 분석합니다' : '기록 담당이 분석을 완료하면 자동으로 표시됩니다'}</p>
               {!isHost && <SpinnerGap size={20} className="animate-spin text-[var(--md-sys-primary)]" />}
             </div>}
             {(status === 'streaming' || status === 'done') && markdown && <div className="min-w-0">

@@ -45,7 +45,7 @@ export function TeamDiscussionBanner({ topic, onEnd, isHost }: Props) {
           회의 종료 → AI 분석
         </button>
       ) : (
-        <span className="text-[11px] text-[#00695C] flex-shrink-0">방장이 종료할 수 있어요</span>
+        <span className="text-[11px] text-[#00695C] flex-shrink-0">기록 담당이 종료할 수 있어요</span>
       )}
     </div>
   )

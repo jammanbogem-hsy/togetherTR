@@ -14,7 +14,8 @@ const fields = new Set([
   'supportToolWorkspace', 'scaffoldingWorkspace', 'materialDevWorkspace', 'lessonRecordWorkspace', 'lessonReflectionWorkspace', 'collaborationReflectionWorkspace',
 ])
 type ProjectData = Record<string, unknown>
-interface StoredState { version: 1; cycle: number; state: string }
+// savedAt(#S1): 표 내용이 마지막으로 저장된 시각 — 산출물과 어느 쪽이 새로운지 비교한다. 옛 저장본에는 없다.
+export interface StoredState { version: 1; cycle: number; state: string; savedAt?: number }
 export type WorkspaceStatus = 'connecting' | 'saved' | 'saving' | 'offline' | 'error'
 export interface WorkspaceTransaction<T> { updates: ProjectData; value: T }
 /** Injectable transport for deterministic concurrency/offline tests; production uses Firestore transactions. */
@@ -119,7 +120,7 @@ export function mergeWorkspaceTransaction(project: ProjectData, options: Pick<Co
       delete workspace[key]
       if (Object.hasOwn(legacy, key)) workspace[key] = legacy[key]
     }
-    const entry: StoredState = { version: 1, cycle, state: encoded }
+    const entry: StoredState = { version: 1, cycle, state: encoded, savedAt: Date.now() }
     const next = { ...project, [WORKSPACE_CRDT_FIELD]: { ...all, [options.workspaceField]: entry }, [options.workspaceField]: workspace }
     if (estimateProjectBytes(next) > Math.min(options.maxProjectBytes ?? WORKSPACE_PROJECT_LIMIT, WORKSPACE_PROJECT_LIMIT)) throw new WorkspaceError('resource-exhausted', '프로젝트 저장 용량 한도입니다. 입력을 복사해 보관한 뒤 관리자에게 문의해 주세요.')
     const changed = !current || current.cycle !== cycle || current.state !== encoded || JSON.stringify(legacy) !== JSON.stringify(workspace)

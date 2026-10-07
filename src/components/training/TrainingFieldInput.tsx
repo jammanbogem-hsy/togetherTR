@@ -16,11 +16,11 @@ export function TrainingFieldInput({ id, label, value, onChange, columns, placeh
   columns?: readonly string[]; placeholder?: string;
 }) {
   const [draft, setDraft] = useState(() => ({ source: value, parts: fieldParts(value, columns) }))
-  const [mode, setMode] = useState<'auto' | 'table' | 'text'>('auto')
+  const [mode, setMode] = useState<'table' | 'text'>('text')
   // Parent protects dirty fields. Unedited fields still follow incoming artifact snapshots.
   if (draft.source !== value) setDraft({ source: value, parts: fieldParts(value, columns) })
   const hasTable = draft.parts.some(part => part.kind === 'table')
-  const tableMode = mode !== 'text' && hasTable
+  const tableMode = mode === 'table' && hasTable
 
   function changeParts(parts: TrainingTablePart[]) {
     const next = serializeTrainingTables(parts)

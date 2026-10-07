@@ -7,7 +7,7 @@ export async function generateStageReport({ project, stage, callerUid, signal, o
   project: Project; stage: StageCode; callerUid?: string; signal: AbortSignal
   onText: (markdown: string) => void; onStreaming: () => void
 }): Promise<string> {
-  if (!canGenerateStageReport(project, callerUid)) throw new Error('방장만 보고서를 저장할 수 있어요.')
+  if (!canGenerateStageReport(project, callerUid)) throw new Error('기록 담당만 보고서를 저장할 수 있어요.')
   const activities = STAGES.find(item => item.code === stage)?.activities
   if (!activities) throw new Error('단계를 찾지 못했어요.')
   const artifacts: Record<string, { title: string; content: Record<string, unknown> }> = {}

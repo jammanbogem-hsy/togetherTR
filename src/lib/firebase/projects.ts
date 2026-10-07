@@ -25,6 +25,7 @@ import { isTrainingActivity } from '@/lib/training/trainingMode'
 import { effectiveProjectMode, isSoloProject, needsProjectModeSync } from '@/lib/project/projectMode'
 import { MEMBER_PRESENCE_COLLECTIONS, planMemberRemoval } from '@/lib/project/memberAdmin'
 import { nextArtifactUpdatedAt } from '@/lib/artifacts/artifactUpdatedAt'
+import { planHostTransfer } from '@/lib/project/hostTransfer'
 import { serializeWorkspaceSave } from './serializeSave'
 import { messageDocPath } from '@/lib/chat/checklist'
 import { createPresenceThrottle } from '@/lib/coedit/presenceThrottle'
@@ -685,6 +686,68 @@ export async function transferHost(projectId: string, newHostUid: string): Promi
   })
 }
 
+/**
+ * 기록 담당(host)이 팀원에게 기록 권한을 넘긴다. hostUid·createdBy 를 함께 바꿔 이전 기록 담당은 일반 팀원이 된다.
+ * 트랜잭션으로 최신 문서를 다시 읽어 판정하므로, 두 창에서 동시에 넘기면 늦은 쪽은 'not-host' 로 실패한다.
+ * 받은 사람의 요청은 정리하고 hostTransfers 에 이력을 남긴다. 실패는 Error(message = HostTransferError 코드).
+ */
+export async function transferHostTo(projectId: string, byUid: string, targetUid: string): Promise<void> {
+  const ref = doc(db, 'projects', projectId)
+  await runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref)
+    const plan = planHostTransfer(snap.exists() ? snap.data() as Project : null, byUid, targetUid, Date.now())
+    if (!plan.ok) throw new Error(plan.error)
+    transaction.update(ref, {
+      ...plan.updates,
+      [`hostRequests.${plan.clearRequestOf}`]: deleteField(),
+      hostTransfers: arrayUnion(plan.record),
+      updatedAt: serverTimestamp(),
+    })
+  })
+}
+
+// #S1: 공동 초안을 산출물 기준으로 바꾸기 전에 이전 초안을 남긴다(손실 0). 필드별 최근 3개, 문자열로 보관.
+export const DRAFT_BACKUP_FIELD = 'coeditDraftBackups'
+const DRAFT_BACKUP_KEEP = 3
+const DRAFT_BACKUP_MAX_CHARS = 120_000
+export async function backupWorkspaceDraft(projectId: string, workspaceField: string, draft: unknown, reason: string, byUid?: string): Promise<'saved' | 'duplicate' | 'too-large'> {
+  const json = JSON.stringify(draft ?? null)
+  if (json.length > DRAFT_BACKUP_MAX_CHARS) return 'too-large'
+  const ref = doc(db, 'projects', projectId)
+  return runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref)
+    const all = (snap.exists() ? (snap.data() as Record<string, unknown>)[DRAFT_BACKUP_FIELD] : undefined) as Record<string, Array<{ json: string }>> | undefined
+    const list = Array.isArray(all?.[workspaceField]) ? all![workspaceField] : []
+    if (list.some(item => item?.json === json)) return 'duplicate' as const
+    const entry = stripUndefinedDeep({ json, reason, byUid, at: Date.now() })
+    transaction.update(ref, { [`${DRAFT_BACKUP_FIELD}.${workspaceField}`]: [...list, entry].slice(-DRAFT_BACKUP_KEEP) })
+    return 'saved' as const
+  })
+}
+
+/** 팀원의 기록 권한 요청. 기록 담당이 오프라인이어도 문서에 남아 접속하면 배너로 보인다. 다시 요청하면 거절 표시가 지워진다. */
+export async function requestHostRole(projectId: string, uid: string, name: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    [`hostRequests.${uid}`]: { at: Date.now(), name },
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function cancelHostRequest(projectId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    [`hostRequests.${uid}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+/** 기록 담당이 요청을 거절한다 — 요청한 사람이 결과를 볼 수 있게 rejectedAt 만 남긴다. */
+export async function rejectHostRequest(projectId: string, targetUid: string): Promise<void> {
+  await updateDoc(doc(db, 'projects', projectId), {
+    [`hostRequests.${targetUid}.rejectedAt`]: Date.now(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export async function startProject(projectId: string): Promise<void> {
   await updateDoc(doc(db, 'projects', projectId), {
     started: true,
@@ -1094,7 +1157,7 @@ export async function updateCurriculumSheetSettings(
 function requireGradeBandHost(project: Project) {
   const uid = auth.currentUser?.uid
   if (!uid || (project.hostUid !== uid && project.createdBy !== uid)) {
-    throw new Error('팀 학년군은 방장만 확정할 수 있습니다.')
+    throw new Error('팀 학년군은 기록 담당만 확정할 수 있습니다.')
   }
 }
 

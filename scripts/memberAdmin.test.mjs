@@ -165,7 +165,7 @@ test('chat command: 방장의 내보내기 문장은 확인 카드, 팀원은 �
   }
   assert.equal(classifyMemberCommand('최유나 선생님 내보내 줘', legacy, 'host').target?.uid, 'u6', '저장 이름에 선생님이 붙어 있어도')
   assert.equal(classifyMemberCommand('이수진 선생님 빼 줘', legacy, 'u2').kind, 'not-host')
-  assert.equal(memberCommandText({ kind: 'not-host' }), '팀원 내보내기는 방장만 할 수 있어요.')
+  assert.equal(memberCommandText({ kind: 'not-host' }), '팀원 내보내기는 기록 담당만 할 수 있어요.')
   const confirm = classifyMemberCommand('이수진 선생님 빼 줘', legacy, 'host')
   assert.equal(memberCommandText(confirm), '이수진 선생님을 이 방에서 내보낼까요? 남긴 대화와 산출물은 남습니다.')
   assert.equal(memberRemovedText(confirm.target), '이수진 선생님이 방에서 나갔어요.')

@@ -242,14 +242,22 @@ function parsePersonalVisions(raw: string): T11PersonalVision[] {
   const lines = raw.split('\n').filter(l => l.trim().startsWith('|'))
   if (lines.length >= 3) {
     // 헤더 + 구분 + 데이터 행
-    const dataLines = lines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim())).slice(1) // 헤더 제거
-    for (const line of dataLines) {
-      const cells = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
-      if (cells.length >= 3 && cells[0]) {
+    const rows = lines.filter(l => !/^\|[\s\-:|]+\|$/.test(l.trim()))
+    const split = (line: string) => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim())
+    // 머리행으로 열을 찾는다 — 연수 양식 표는 '담당 교과' 열이 더 있어 위치로 읽으면 한 칸씩 밀렸다(#S1).
+    const header = split(rows[0] ?? '')
+    const find = (re: RegExp, except?: RegExp) => header.findIndex(cell => re.test(cell) && !(except?.test(cell)))
+    const nameAt = find(/교사|이름/), keywordAt = find(/키워드/), visionAt = find(/정교화|비전/, /키워드/), subjectAt = find(/교과/)
+    const byHeader = nameAt >= 0 && keywordAt >= 0 && visionAt >= 0
+    for (const line of rows.slice(1)) {
+      const cells = split(line)
+      const [name, keywords, vision] = byHeader ? [cells[nameAt], cells[keywordAt], cells[visionAt]] : [cells[0], cells[1], cells[2]]
+      if ((byHeader || cells.length >= 3) && name) {
         entries.push({
-          teacherName: cells[0].replace(/\s*선생님$/, ''),
-          keywords: cells[1].split(/[,，·]/).map(s => s.trim()).filter(Boolean),
-          refinedVision: cells[2],
+          teacherName: name.replace(/\s*선생님$/, ''),
+          keywords: (keywords ?? '').split(/[,，·]/).map(s => s.trim()).filter(Boolean),
+          refinedVision: vision ?? '',
+          ...(byHeader && subjectAt >= 0 && cells[subjectAt] ? { subject: cells[subjectAt] } : {}),
         })
       }
     }

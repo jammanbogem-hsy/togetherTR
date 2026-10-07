@@ -160,7 +160,7 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
           <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
             {isHost && (
               <span className="inline-flex items-center gap-1 text-[12px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                <Crown className="w-3.5 h-3.5" /> 방장
+                <Crown className="w-3.5 h-3.5" /> 기록
               </span>
             )}
             {project.demoExperience && (

@@ -2786,7 +2786,7 @@ test('T14: 방장 양식 직접 저장·팀원 제안·조언 체크에 따른 �
   const member = await run({ uid: 'member' })
   assert.equal(member.writes[0][0], 'propose')
   assert.equal(member.notices.length, 0)
-  assert.match(member.feedback.at(-1), /방장에게/)
+  assert.match(member.feedback.at(-1), /기록 담당에게/)
   const failed = await run({ reject: true })
   assert.equal(failed.notices.length, 0)
   assert.match(failed.errors.at(-1), /저장하지 못했습니다/)
@@ -3063,7 +3063,7 @@ const trainingBarHelpText = [
   '이 활동에서 꼭 채울 칸을 몇 개 채웠는지 보여 줘요. 다 못 채워도 다음 활동으로 넘어갈 수 있어요.',
   '이 활동에서 막히기 쉬운 일 하나만 AI가 도와줘요. 다른 질문은 덧붙이지 않아요.',
   '이 활동만 AI가 단계마다 묻고 이끌어 주는 방식으로 바꿔요. 채팅에 "직접 적을게요"라고 쓰면 다시 간단히 옮겨 적는 방식으로 돌아와요.',
-  '다음 활동으로 넘어가요. 방장만 누를 수 있고, 비어 있는 칸은 나중에 돌아와 채울 수 있어요.',
+  '다음 활동으로 넘어가요. 기록 담당만 누를 수 있고, 비어 있는 칸은 나중에 돌아와 채울 수 있어요.',
   '도움이 필요 없으면 채팅에 "개입하지 마세요"라고 쓰면 AI가 조언하지 않아요.',
 ]
 
@@ -3187,7 +3187,7 @@ test('C2c: 12개 창은 팀원 반영 요청 후 열린 상태로 안내하고, 
     assert.equal(h.state.request.currentUid, 'member', name)
     assert.deepEqual(h.state.request.content.roles ?? h.state.request.content.subjectGoals, h.latest.rows, name)
     assert.equal(h.state.closed === true, host, name)
-    if (!host) assert.equal(h.state.message, '방장에게 반영을 요청했어요', name)
+    if (!host) assert.equal(h.state.message, '기록 담당에게 반영을 요청했어요', name)
     assert.equal(h.state.sending, false, name)
   }
 })
@@ -3230,8 +3230,8 @@ test('C2e: 모든 창의 팀원 초안 버튼은 권한으로 잠기지 않고 �
     const source = c2ModalTree(name).text
     assert.doesNotMatch(source, /disabled=\{!isHost \|\| (?:saving|sending)\}|초안 저장과 산출물 전송은 방장만/)
     assert.match(source, /'초안 저장'/)
-    assert.match(source, /'방장에게 반영 요청'/)
-    assert.match(source, /sm:hidden[^\n]+\n\s*\{sending \? '전송 중' : isHost \? '산출물로 보내기' : '방장에게 반영 요청'\}/)
+    assert.match(source, /'기록 담당에게 반영 요청'/)
+    assert.match(source, /sm:hidden[^\n]+\n\s*\{sending \? '전송 중' : isHost \? '산출물로 보내기' : '기록 담당에게 반영 요청'\}/)
     assert.match(source, /<WorkspaceSaveStatus[^>]+savedWorkspace\?\.updatedAt/)
   }
 })
@@ -3268,7 +3268,7 @@ test('C2g: 범용 창 팀원 제안도 최신 저장본을 보내며 팀원에�
     await loadChatFunction('handleSendArtifact', h.bindings, sourceTree)()
     assert.equal(sent[0]['실행 기록'], '최신 기록')
     assert.equal(h.state.closed === true, host)
-    if (!host) assert.equal(notices.at(-1), '방장에게 반영을 요청했어요')
+    if (!host) assert.equal(notices.at(-1), '기록 담당에게 반영을 요청했어요')
   }
 })
 

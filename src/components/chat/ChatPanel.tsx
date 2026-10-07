@@ -93,7 +93,7 @@ import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/st
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
 import { CHECKLIST_ALL_DONE_NOTE, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
-import { buildTrainingWelcome, displayedMessageContent, isTrainingActivity, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
+import { buildTrainingWelcome, displayedMessageContent, isTrainingActivity, isTrainingProject, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { TrainingModeBar } from '@/components/training/TrainingModeBar'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
@@ -122,6 +122,7 @@ import { sanitizeAssistantText } from '@/lib/chat/sanitizeAssistantText'
 import { shouldCreateWelcomeMessage } from '@/lib/activity/navigationDecisions'
 import { validateRequiredSections } from '@/lib/activity/completion'
 import { effectiveProjectMode, isSoloProject, needsProjectModeSync } from '@/lib/project/projectMode'
+import { retireTrainingTeamDiscussion } from '@/lib/chat/trainingTeamDiscussion'
 import { classifyMemberCommand, MEMBER_ADMIN_ERROR_COPY, type MemberAdminError, type MemberRef } from '@/lib/project/memberAdmin'
 import { MemberCommandPanel, type MemberCommandState } from './MemberCommandPanel'
 
@@ -1333,6 +1334,22 @@ function ChatPanelContent() {
     chatInputRequest, setChatInputRequest, pendingNavigation,
   } = useProjectStore()
   const project = projectState!
+  const trainingRecoveryRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!isTrainingProject(project)) return
+    // 로컬 복귀는 저장 성공을 기다리지 않는다. 기존 대화와 산출물은 그대로 둔다.
+    if (discussionMode === 'team_discussion') setDiscussionMode('ai_facilitated')
+    if (pendingTeamDiscussion) setPendingTeamDiscussion(null)
+    const active = project.teamDiscussions?.[currentActivity]?.active
+    const pending = project.teamDiscussionRequests?.[currentActivity]?.pending
+    if (!active && !pending) return
+    const key = `${project.id}:${currentActivity}`
+    if (trainingRecoveryRef.current === key) return
+    trainingRecoveryRef.current = key
+    void retireTrainingTeamDiscussion(project, currentActivity, userProfile?.uid)
+      .catch(cause => console.warn('[training] team discussion cleanup failed:', cause))
+      .finally(() => { if (trainingRecoveryRef.current === key) trainingRecoveryRef.current = null })
+  }, [project, currentActivity, userProfile?.uid, discussionMode, pendingTeamDiscussion, setDiscussionMode, setPendingTeamDiscussion])
 
   const chatDraft = useMemo(createChatDraft, [])
   const { setInput, setSlashQuery, setSlashCmdIdx } = chatDraft
@@ -2595,7 +2612,7 @@ function ChatPanelContent() {
 
   function handlePromptNextCommand() {
     if (!isHost) {
-      setChatError('다음 단계 이동은 방장만 실행할 수 있습니다.')
+      setChatError('다음 단계 이동은 기록 담당만 실행할 수 있습니다.')
       return
     }
 
@@ -2796,6 +2813,7 @@ function ChatPanelContent() {
 
   // ─── 팀 토의 승낙 (AI 제안 카드) ────────────────────
   async function handleAcceptDiscussion() {
+    if (isTrainingProject(proj)) return
     setPendingTeamDiscussion(null)
     await setTeamDiscussion(proj.id, currentActivity, true, pendingTeamDiscussion?.topic).catch(console.error)
     setDiscussionMode('team_discussion')
@@ -2804,6 +2822,7 @@ function ChatPanelContent() {
 
   // ─── 팀 토의 종료 → AI 분석 ──────────────────────────
   async function handleEndDiscussion() {
+    if (isTrainingProject(proj)) return
     setDiscussionMode('ai_facilitated')
     setIsIdle(false)
     clearStreamingText()
@@ -2965,7 +2984,7 @@ ${discussionSummary}
     finally { setIsAnalyzing(false) }
   }
 
-  const isTeamMode = discussionMode === 'team_discussion'
+  const isTeamMode = !isTrainingProject(project) && discussionMode === 'team_discussion'
   // 페이지 이동 직후 준비 전에는 전송만 막고 입력은 지킨다(#26).
   const sendBlockReason = pendingNavigation ? '활동 이동을 저장하고 있어요' : chatSendBlockReason({
     hasProject: !!projectState,
@@ -3771,7 +3790,7 @@ ${discussionSummary}
         const pending = userProfile?.uid ? project.teamGradeBandProposals?.[userProfile.uid] : undefined
         if (pending && pending.bands.join(',') === bands.join(',')) return
         await proposeTeamGradeBands(proj.id, bands, userProfile?.displayName ?? '팀원')
-        addAssistantNotice(`학년군 ${formatGradeBandList(bands)}을 방장에게 확인 요청했습니다. 방장이 반영하면 분석시트에 적용됩니다.`)
+        addAssistantNotice(`학년군 ${formatGradeBandList(bands)}을 기록 담당에게 확인 요청했습니다. 기록 담당이 반영하면 분석시트에 적용됩니다.`)
         return
       }
       const next = await updateTeamGradeBands(proj.id, bands)
@@ -3820,10 +3839,10 @@ ${discussionSummary}
         userProfile?.uid ?? '',
         userProfile?.displayName ?? '팀원',
       ).catch(console.error)
-      addAssistantNotice('분석시트에 저장된 표를 기준으로 방장에게 산출물 저장 제안을 보냈습니다.')
+      addAssistantNotice('분석시트에 저장된 표를 기준으로 기록 담당에게 산출물 저장 제안을 보냈습니다.')
     } else {
-      setChatError('산출물 저장은 방장만 실행할 수 있습니다.')
-      addAssistantNotice('분석시트 표 형식 산출물은 방장이 저장할 수 있습니다. 방장에게 교육과정 분석 버튼에서 산출물 저장을 요청해주세요.')
+      setChatError('산출물 저장은 기록 담당만 실행할 수 있습니다.')
+      addAssistantNotice('분석시트 표 형식 산출물은 기록 담당이 저장할 수 있습니다. 기록 담당에게 교육과정 분석 버튼에서 산출물 저장을 요청해주세요.')
     }
 
     return true
@@ -4322,6 +4341,7 @@ ${discussionSummary}
   // 팀원(!isHost)은 hostOnly=false 인 커맨드만 사용 가능. 현재는 /브리핑 단 하나.
   function filterSlashCommands(slashQuery: string | null) { return slashQuery !== null
     ? SLASH_COMMANDS.filter(cmd => {
+        if (cmd.id === 'team-chat' && isTrainingProject(proj)) return false
         if (cmd.hostOnly && !isHost) return false
         return slashQuery === '' ||
           cmd.label.includes(slashQuery) ||
@@ -4332,6 +4352,7 @@ ${discussionSummary}
 
   // ─── 슬래시 커맨드 실행 ─────────────────────────────
   async function executeSlashCommand(cmdId: SlashCommandId) {
+    if (cmdId === 'team-chat' && isTrainingProject(proj)) return
     const { input } = chatDraft.getSnapshot()
     // 끝에 붙은 `/커맨드` 구문 제거. 앞부분 텍스트·공백은 보존 → 같은 메시지에서 추가 / 입력 가능.
     const cleanInput = input.replace(/(?:^|\s)\/([\w가-힣]*)$/, '').trimEnd()
@@ -4415,6 +4436,7 @@ ${discussionSummary}
 
   // 팀 채팅 시작 확인 → Firestore 업데이트 (방장/팀원 모두)
   async function handleConfirmStartDiscussion() {
+    if (isTrainingProject(proj)) return
     if (isLoading || isAnalyzing) return
     setShowDiscussionConfirm(false)
     try { await setTeamDiscussion(proj.id, currentActivity, true) }
@@ -4427,6 +4449,7 @@ ${discussionSummary}
 
   // 팀 채팅 종료 → Firestore 업데이트 후 AI 분석
   async function handleEndDiscussionAndAnalyze() {
+    if (isTrainingProject(proj)) return
     const isLegacyOptionRestart = proj.teamDiscussions?.[currentActivity]?.topic === '제안안을 다시 논의하기'
     if (isLegacyOptionRestart && lastAIMsg && parseOptions(lastAIMsg.content)) {
       await closeOptionChoice(proj.id, lastAIMsg.id).catch(() => {
@@ -4675,7 +4698,7 @@ ${discussionSummary}
                   onSearchStandards={() => sendMessageDirectlyStable('현재 활동에 맞는 성취기준을 찾아주세요')}
                   onShowExample={() => sendMessageDirectlyStable('현재 활동의 다른 팀 사례나 예시를 보여주세요')}
                   onShowGuide={() => sendMessageDirectlyStable('현재 위치와 앞으로 해야 할 일을 안내해주세요')}
-                  onStartTeamDiscussion={() => {
+                  onStartTeamDiscussion={isTrainingProject(proj) ? undefined : () => {
                     requestTeamDiscussion(proj.id, currentActivity, userProfile?.uid ?? '', userProfile?.displayName ?? '').catch(console.error)
                   }}
                 />
@@ -4771,10 +4794,10 @@ ${discussionSummary}
               </MD3Button>
             )
           })()}
-          {currentActivity === 'T-1-1' && (
+          {currentActivity === 'T-1-1' && !isTrainingProject(proj) && (
             <CoeditButton label="비전 공동 편집" title="팀 공통 비전 공동 편집"
               showHint={coeditHintActivity === currentActivity}
-              onClick={() => { setCoeditHintActivity(null); setShowTeamVisionWorkspace(true) }} />
+              onClick={() => { if (isTrainingProject(proj)) return; setCoeditHintActivity(null); setShowTeamVisionWorkspace(true) }} />
           )}
           {currentActivity === 'T-1-2' && (
             <CoeditButton label="설계 방향 공동 편집" title="수업설계 방향 공동 편집"
@@ -5165,7 +5188,7 @@ ${discussionSummary}
           }}
         />
 
-        {(showTeamVisionWorkspace) && <TeamVisionWorkspaceModal
+        {(!isTrainingProject(proj) && showTeamVisionWorkspace) && <TeamVisionWorkspaceModal
           open={showTeamVisionWorkspace}
           onClose={() => setShowTeamVisionWorkspace(false)}
           workspace={proj.teamVisionWorkspace}
@@ -5816,7 +5839,7 @@ ${discussionSummary}
         />
 
         {/* 팀 채팅 시작 확인 카드 */}
-        {isHost && showDiscussionConfirm && !isTeamMode && (
+        {!isTrainingProject(proj) && isHost && showDiscussionConfirm && !isTeamMode && (
           <div className="mx-0 my-3 bg-[#E0F2F1] border border-[#80CBC4] rounded-2xl p-4">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-full bg-[#00897B] flex items-center justify-center flex-shrink-0">
@@ -5848,7 +5871,7 @@ ${discussionSummary}
         )}
 
         {/* 팀 채팅 요청 알림 카드 (방장에게만 표시) */}
-        {isHost && proj.teamDiscussionRequests?.[currentActivity]?.pending && !isTeamMode && !showDiscussionConfirm && (
+        {!isTrainingProject(proj) && isHost && proj.teamDiscussionRequests?.[currentActivity]?.pending && !isTeamMode && !showDiscussionConfirm && (
           <div className="mx-0 my-3 rounded-2xl overflow-hidden border border-[#80CBC4]"
             style={{ background: 'linear-gradient(135deg, #E0F2F1 0%, #F1F8F7 100%)' }}>
             <div className="flex items-center gap-3 px-4 py-3">
@@ -5865,6 +5888,7 @@ ${discussionSummary}
               <div className="flex gap-1.5 flex-shrink-0">
                 <button
                   onClick={async () => {
+                    if (isTrainingProject(proj)) return
                     await Promise.all([
                       setTeamDiscussion(proj.id, currentActivity, true),
                       clearTeamDiscussionRequest(proj.id, currentActivity),
@@ -5899,7 +5923,7 @@ ${discussionSummary}
                   setGradeProposalBusy(proposal.id)
                   try {
                     const next = await resolveTeamGradeBandProposal(proj.id, uid, proposal.id, accept)
-                    if (next) addAssistantNotice(`방장이 팀 학년군을 ${formatGradeBandList(next)}으로 반영했습니다. 분석시트의 학년군 설정에도 적용됩니다.`)
+                    if (next) addAssistantNotice(`기록 담당이 팀 학년군을 ${formatGradeBandList(next)}으로 반영했습니다. 분석시트의 학년군 설정에도 적용됩니다.`)
                   } catch (error) {
                     setChatError(error instanceof Error ? error.message : '학년군 제안을 처리하지 못했습니다.')
                   } finally { setGradeProposalBusy(null) }
@@ -5909,7 +5933,7 @@ ${discussionSummary}
         ))}
 
         {/* 팀 토의 제안 카드 (AI가 제안한 경우) */}
-        {isHost && pendingTeamDiscussion && !isTeamMode && !showDiscussionConfirm && (
+        {!isTrainingProject(proj) && isHost && pendingTeamDiscussion && !isTeamMode && !showDiscussionConfirm && (
           <TeamDiscussionProposal
             topic={pendingTeamDiscussion.topic}
             onAccept={handleAcceptDiscussion}
@@ -6100,7 +6124,7 @@ ${discussionSummary}
               style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
           ))}
           <span className="text-[11px] text-[#00695C] font-semibold truncate">
-            팀 채팅 진행 중{!isHost && ' · 방장이 종료할 수 있어요'}
+            팀 채팅 진행 중{!isHost && ' · 기록 담당이 종료할 수 있어요'}
           </span>
         </div>
       )}
@@ -6123,7 +6147,7 @@ ${discussionSummary}
       >
         {/* 팀 채팅 컨트롤 바 — solo 모드에서는 팀 협업 컨트롤(방장/팀원·팀 채팅)이 불필요해 숨긴다.
             (안 선택 대기 메시지는 solo에서도 필요하므로 isWaitingForChoice일 때는 유지) */}
-        {!(isSoloProject(proj) && !isTeamMode && !isWaitingForChoice) && (
+        {(!isTrainingProject(proj) || isWaitingForChoice) && !(isSoloProject(proj) && !isTeamMode && !isWaitingForChoice) && (
         <div className="flex items-center justify-between mb-2">
           {isTeamMode ? (
             <span className="text-[11px] text-[#00695C] font-medium">팀원끼리 자유롭게 대화하세요 · AI는 잠시 대기 중</span>
@@ -6132,16 +6156,16 @@ ${discussionSummary}
               <Chat size={16} weight="regular" className="text-[#E65100]" />
               {isHost
                 ? '안을 선택하거나, 마음에 들지 않으면 원하는 내용을 그대로 입력해 주세요'
-                : '방장이 안을 검토하고 있습니다 · 의견을 남길 수 있어요'}
+                : '기록 담당이 안을 검토하고 있습니다 · 의견을 남길 수 있어요'}
             </span>
           ) : (
             <>
               <span className="text-[11px] text-[#9AA0A6]">
-                {isHost ? '방장' : '팀원'}
+                {isHost ? '기록' : '팀원'}
               </span>
               {isHost ? (
                 <button
-                  onClick={() => setShowDiscussionConfirm(true)}
+                  onClick={() => { if (!isTrainingProject(proj)) setShowDiscussionConfirm(true) }}
                   disabled={isLoading}
                   className="squid-btn morph-btn text-[11px] font-semibold text-[#00897B] bg-[rgba(0,137,123,0.12)] hover:bg-[rgba(0,137,123,0.22)] px-3 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-40"
                 >
@@ -6151,7 +6175,7 @@ ${discussionSummary}
               ) : (
                 <button
                   onClick={async () => {
-                    if (!userProfile) return
+                    if (!userProfile || isTrainingProject(proj)) return
                     await requestTeamDiscussion(proj.id, currentActivity, userProfile.uid, userProfile.displayName).catch(console.error)
                   }}
                   disabled={isLoading || !!proj.teamDiscussionRequests?.[currentActivity]?.pending}
@@ -6294,7 +6318,7 @@ ${discussionSummary}
                   : isTeamMode
                   ? '팀원에게 의견을 전달하세요...'
                   : isWaitingForChoice
-                    ? isHost ? '안을 고르거나, 원하는 내용을 직접 입력해도 됩니다...' : '방장에게 의견을 남겨 주세요...'
+                    ? isHost ? '안을 고르거나, 원하는 내용을 직접 입력해도 됩니다...' : '기록 담당에게 의견을 남겨 주세요...'
                     : '메시지를 입력하세요... (/ 로 커맨드 · Shift+Enter: 줄바꿈)'}
                 rows={3}
                 disabled={isLoading && !isTeamMode && !isWaitingForChoice}

@@ -87,7 +87,7 @@ test('R1 report: 중간 SSE 오류·빈 응답·취소·저장 실패는 성공�
 
 test('R1 report: 방장만 생성 요청하며 저장 promise가 끝나기 전에는 생성 완료가 아님', async () => {
   const denied = generatorFixture([{ type: 'text', text: '답' }])
-  await assert.rejects(denied.run({ callerUid: 'member' }), /방장만/)
+  await assert.rejects(denied.run({ callerUid: 'member' }), /기록 담당만/)
   assert.equal(denied.calls.length, 0)
   let resolveSave, completed = false
   const f = generatorFixture([{ type: 'text', text: '답' }], { saveStageReport() { return new Promise(resolve => { resolveSave = resolve }) } })
@@ -138,7 +138,7 @@ test('R1 report UI: 최초 생성은 보고서 없어도 열리고 팀원은 버
   host.render(); host.callbacks.find(props => props.children === '보고서 만들기').onClick(); host.render()
   assert.equal(host.generationProps[0].reportStage, 'T')
   const member = reportsFixture(project, 'member')
-  assert.match(member.render(), /방장이 다시 생성할 수 있어요/)
+  assert.match(member.render(), /기록 담당이 다시 생성할 수 있어요/)
   assert.equal(member.callbacks.some(props => props.children === '다시 생성' || props.children === '보고서 만들기'), false)
   const blank = reportsFixture({ ...project, artifacts: {}, stageReports: {} })
   assert.match(blank.render(), /산출물을 저장하면/)
