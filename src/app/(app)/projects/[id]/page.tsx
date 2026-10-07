@@ -449,23 +449,23 @@ function InviteCodeModal({
         aria-modal="true"
         aria-labelledby="invite-code-title"
         aria-describedby="invite-code-description"
-        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-[#D2E3FC] bg-white shadow-2xl"
+        className="relative w-full max-w-xl overflow-hidden rounded-[28px] bg-[var(--surface-variant)] text-[var(--on-surface)] shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-[#DADCE0] bg-gradient-to-br from-[#E8F0FE] to-white px-6 py-5">
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-[#1A73E8] text-white">
+        <div className="flex items-center gap-4 px-6 pt-6">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-[#D3E3FD] text-[#0842A0]">
             <Key size={23} weight="fill" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A73E8]">팀 참여</p>
-            <h2 id="invite-code-title" className="text-lg font-extrabold text-[#202124]">이 방의 초대코드</h2>
+            <p className="text-sm font-medium text-[var(--on-surface-variant)]">팀 참여</p>
+            <h2 id="invite-code-title" className="text-xl font-medium text-[var(--on-surface)]">이 방의 초대코드</h2>
           </div>
           <button
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="초대코드 닫기"
-            className="rounded-full p-2 text-[#5F6368] transition-colors hover:bg-white hover:text-[#202124] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--on-surface-variant)] transition-colors hover:bg-black/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0B57D0]"
           >
             <XIcon size={20} weight="bold" />
           </button>
@@ -473,23 +473,24 @@ function InviteCodeModal({
 
         <div className="px-6 py-8 text-center sm:px-10 sm:py-10">
           <p
-            className="select-all break-all text-[clamp(2.25rem,10vw,4.5rem)] font-black leading-none tracking-[0.12em] text-[#1A73E8]"
+            className="select-all break-all rounded-2xl bg-white px-4 py-6 text-[clamp(2rem,8vw,4rem)] font-semibold leading-tight tracking-[0.06em] text-[#0842A0]"
             aria-label={`초대코드 ${inviteCode}`}
           >
             {inviteCode}
           </p>
-          <p id="invite-code-description" className="mt-5 text-sm leading-relaxed text-[#5F6368]">
+          <p id="invite-code-description" className="mt-5 text-base leading-relaxed text-[var(--on-surface-variant)]">
             팀원에게 이 코드를 공유하면 같은 설계 방에 참여할 수 있습니다.
           </p>
 
-          <button
-            type="button"
+          <MD3Button
+            variant="filled"
+            size="sm"
             onClick={handleCopy}
-            className="mt-7 inline-flex min-w-36 items-center justify-center gap-2 rounded-full bg-[#1A73E8] px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-[#1557B0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
+            className="mt-7 min-h-12 px-6 text-base"
+            icon={copied ? <Check size={18} weight="bold" /> : <Copy size={18} weight="bold" />}
           >
-            {copied ? <Check size={18} weight="bold" /> : <Copy size={18} weight="bold" />}
             {copied ? '복사됨!' : '초대코드 복사'}
-          </button>
+          </MD3Button>
           {copyError && (
             <p role="alert" className="mt-3 text-xs font-medium text-[#C5221F]">
               복사하지 못했습니다. 코드를 직접 선택해 복사해 주세요.
@@ -1165,56 +1166,59 @@ export default function ProjectPage() {
       >
         {layout.artifact ? (
         <>
-        {/* 우측 상단: 프로젝트 정보 — 자료함은 일단 숨김. 보고서·초대코드는 텍스트 유지. */}
-        <div className="flex items-center justify-end gap-1.5 px-2 h-14 bg-white border-b border-[#DADCE0] flex-shrink-0">
-          <PanelToggle direction="right" onClick={() => layout.toggle('artifact')} label="산출물 패널 접기" className="mr-auto" />
-          {project.demoRun && <DemoProjectToolbar />}
-          {/* 구조도 버튼은 중앙 단계 섹션으로 이동됨 */}
-          {isHost && !project.demoRun && (
-            <MD3Button variant="text" size="xs" onClick={() => setShowTrainingSettings(true)}
-              aria-haspopup="dialog" aria-expanded={showTrainingSettings}>설정</MD3Button>
-          )}
-          {(!project.demoRun || Object.keys(project.stageReports ?? {}).length > 0) && (
-            <button
-              onClick={() => setShowReports(true)}
-              className="flex items-center gap-1 text-[11px] bg-[#E0F2F1] text-[#00897B]
-                px-2 py-1.5 rounded-full font-semibold hover:bg-[#B2DFDB] transition-colors flex-shrink-0 whitespace-nowrap"
-            >
-              <FileText size={13} weight="fill" />
-              보고서
-            </button>
-          )}
-          {isHost && (
-            <button
-              onClick={() => setShowPublish(true)}
-              title={project.publicStatus?.isPublic ? '공개 링크 관리' : '공개 링크로 배포'}
-              className={cn(
-                'flex items-center gap-1 text-[11px] px-2 py-1.5 rounded-full font-semibold transition-colors flex-shrink-0 whitespace-nowrap',
-                project.publicStatus?.isPublic
-                  ? 'bg-[#E6F4EA] text-[#188038] hover:bg-[#CEEAD6]'
-                  : 'bg-[#F1F3F4] text-[#5F6368] hover:bg-[#E8F0FE] hover:text-[#1A73E8]',
-              )}
-            >
-              <Globe size={13} weight={project.publicStatus?.isPublic ? 'fill' : 'regular'} />
-              {project.publicStatus?.isPublic ? '공개 중' : '공개'}
-            </button>
-          )}
-          {!project.demoRun && !isSoloProject(project) && project.inviteCode && (
-            <button
-              type="button"
-              onClick={() => setShowInviteCode(true)}
-              title="초대코드 크게 보기"
-              aria-haspopup="dialog"
-              aria-expanded={showInviteCode}
-              className="flex items-center gap-1 text-[11px] bg-[#E8F0FE] text-[#1A73E8]
-                px-2 py-1.5 rounded-full font-semibold hover:bg-[#D2E3FC] transition-colors flex-shrink-0 whitespace-nowrap
-                focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
-            >
-              <Key size={13} weight="regular" />
-              {project.inviteCode}
-            </button>
-          )}
-          {/* 팀원 목록 버튼은 좌측 사이드바 헤더로 이동됨 (우측 폭 확보) */}
+        {/* 우측 상단: 보고서·초대코드 — 좁은 패널에서도 버튼을 줄이지 않고 줄바꿈 */}
+        <div className="flex min-h-14 flex-shrink-0 items-start gap-2 border-b border-[var(--outline)] bg-[var(--surface)] px-2 py-2">
+          <PanelToggle direction="right" onClick={() => layout.toggle('artifact')} label="산출물 패널 접기" className="mt-1 h-8 w-8 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+            {project.demoRun && <DemoProjectToolbar />}
+            {(!project.demoRun || Object.keys(project.stageReports ?? {}).length > 0) && (
+              <MD3Button
+                variant="tonal"
+                tone="teal"
+                size="sm"
+                icon={<FileText size={18} />}
+                onClick={() => setShowReports(true)}
+                aria-haspopup="dialog"
+                aria-expanded={showReports}
+                className="shrink-0 px-3 text-base sm:text-sm"
+              >
+                보고서
+              </MD3Button>
+            )}
+            {!project.demoRun && !isSoloProject(project) && project.inviteCode && (
+              <MD3Button
+                variant="tonal"
+                size="sm"
+                icon={<Key size={18} />}
+                onClick={() => setShowInviteCode(true)}
+                title="초대코드 크게 보기"
+                aria-label={`초대코드 ${project.inviteCode}, 크게 보기`}
+                aria-haspopup="dialog"
+                aria-expanded={showInviteCode}
+                className="shrink-0 px-3 text-base sm:text-sm"
+              >
+                {project.inviteCode}
+              </MD3Button>
+            )}
+            {isHost && (
+              <div className="flex w-full flex-wrap items-center justify-end gap-1">
+                {!project.demoRun && (
+                  <MD3Button variant="text" size="xs" onClick={() => setShowTrainingSettings(true)}
+                    aria-haspopup="dialog" aria-expanded={showTrainingSettings}>설정</MD3Button>
+                )}
+                <MD3Button
+                  variant="text"
+                  tone={project.publicStatus?.isPublic ? 'green' : 'neutral'}
+                  size="xs"
+                  onClick={() => setShowPublish(true)}
+                  title={project.publicStatus?.isPublic ? '공개 링크 관리' : '공개 링크로 배포'}
+                  icon={<Globe size={16} weight={project.publicStatus?.isPublic ? 'fill' : 'regular'} />}
+                >
+                  {project.publicStatus?.isPublic ? '공개 중' : '공개'}
+                </MD3Button>
+              </div>
+            )}
+          </div>
         </div>
         {/* 우측 하단: 산출물 패널 */}
         <div className="flex-1 overflow-hidden">
