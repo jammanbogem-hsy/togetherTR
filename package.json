@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "npm run sync:runtime-assets && npm run verify:curriculum && next build && npm run verify:runtime-assets",
-    "sync:runtime-assets": "node scripts/sync-runtime-assets.mjs",
+    "build:core-idea-mapping": "node --experimental-strip-types scripts/build-core-idea-mapping.ts",
+    "sync:runtime-assets": "npm run build:core-idea-mapping && node scripts/sync-runtime-assets.mjs",
     "verify:runtime-assets": "node scripts/verify-runtime-assets.mjs",
     "test:runtime-assets": "node --experimental-strip-types --test scripts/contentSystemBundle.test.mjs",
     "start": "next start",

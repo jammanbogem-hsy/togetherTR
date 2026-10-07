@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { CurriculumSheetModal } from './CurriculumSheetModal'
+import { useProjectStore } from '@/store/project'
+import { buildAutofillContext } from '@/lib/curriculum/autofillContext'
 import type { CurriculumSheetRow } from '@/types'
 import type { CurriculumSheetPatch } from '@/lib/firebase/projects'
 import { buildGraphCodesFromSheet } from '@/lib/curriculum/graphSheetBridge'
@@ -55,6 +57,15 @@ export function CurriculumWorkspaceModal({
   onRequestArtifactSave,
 }: Props) {
   const [view, setView] = useState<'sheet' | 'graph'>(initialView)
+  const liveProject = useProjectStore(state => state.project)
+  const liveMessages = useProjectStore(state => state.messages)
+  const activeActivity = useProjectStore(state => state.currentActivity)
+  const matchingProject = projectId && liveProject?.id === projectId ? liveProject : undefined
+  const autofillContext = useMemo(() => buildAutofillContext({
+    project: matchingProject, a12Artifact, chatContext,
+    messages: matchingProject ? liveMessages : [], currentActivity: matchingProject ? activeActivity : undefined,
+  }), [matchingProject, liveMessages, activeActivity, a12Artifact, chatContext])
+
 
   // 시트 → 그래프 전환
   const switchToGraph = useCallback((sourceRows?: CurriculumSheetRow[]) => {
@@ -148,11 +159,11 @@ export function CurriculumWorkspaceModal({
             currentUid={currentUid}
             currentUserColor={currentUserColor}
             projectId={projectId}
-            a12Artifact={a12Artifact}
+            a12Artifact={autofillContext.a12Artifact}
             graphSavedData={graphSavedData}
             targetGradeGroup={targetGradeGroup}
             teamGradeBands={teamGradeBands}
-            chatContext={chatContext}
+            chatContext={autofillContext.chatContext}
             gradeMode={gradeMode}
             sheetGradeBand={sheetGradeBand}
             onGradeSettingsChange={onGradeSettingsChange}

@@ -31,8 +31,14 @@ export function remarkShortColumns() {
         for (let i = 0; i < columns; i++) {
           const cells = rows.map(row => row.children?.[i]).filter((cell): cell is MdNode => !!cell)
           const minCh = shortColumnMinCh(cells.map(nodeText))
-          if (minCh === null) continue
-          for (const cell of cells) cell.data = { ...cell.data, hProperties: { ...cell.data?.hProperties, 'data-min-ch': minCh } }
+          const bodyWidth = Math.max(0, ...cells.slice(1).map(cell => textWidth(nodeText(cell).trim())))
+          // Symbols/ratings need only a small column; their longer heading can wrap.
+          // Give prose a readable minimum instead of squeezing it after nowrap headings.
+          const layout = minCh === null ? 'prose' : bodyWidth > 0 && bodyWidth <= 4 ? 'rating' : 'short'
+          for (const cell of cells) cell.data = { ...cell.data, hProperties: {
+            ...cell.data?.hProperties, 'data-column-layout': layout,
+            ...(minCh === null ? {} : { 'data-min-ch': minCh }),
+          } }
         }
         return
       }

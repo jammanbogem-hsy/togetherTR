@@ -275,6 +275,7 @@ export function ArtifactPreviewModal({
           </button>
           <button
             onClick={onClose}
+            aria-label="미리보기 닫기"
             className="ml-1 p-1.5 rounded-full hover:bg-[#F1F3F4] text-[#5F6368] transition-colors flex-shrink-0"
           >
             <X size={18} weight="regular" />
@@ -1210,7 +1211,7 @@ function InteractiveArtifactPanel() {
 
   // A-2-3 미완 상태에서 Ds 진입 시 경고 배너
   const a23Done = project
-    ? isEffectivelyDone('A-2-3', project.activityStatuses ?? {}, project.artifacts ?? {})
+    ? isEffectivelyDone('A-2-3', project.activityStatuses ?? {}, project.artifacts ?? {}, project)
     : false
   const showA23IncompleteWarning = viewingStage === 'Ds' && !a23Done
 
@@ -1470,6 +1471,52 @@ function InteractiveArtifactPanel() {
     })
   }
 
+  const previousArtifactList = previousArtifacts.length > 0 && (
+          <div className="mt-6 rounded-2xl border-2 border-[#C2D7F8] bg-[#F5FAFF] p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-[#1A73E8]">
+                  <Stack size={15} weight="fill" className="text-white" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[12px] font-bold text-[#1557B0]">저장된 산출물 (이전 활동)</p>
+                  <p className="text-[11px] text-[#5F6368] mt-0.5 leading-snug">
+                    저장한 이전 활동 결과물입니다. 카드를 클릭하면 새 창에서 열립니다.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold text-white bg-[#1A73E8] px-2.5 py-1 rounded-full whitespace-nowrap tabular-nums">
+                저장됨 {previousArtifacts.length}
+              </span>
+            </div>
+            {/* §7-3.8 — 각 이전 산출물에 관계 pill 부착 */}
+            <div className="space-y-1.5">
+              {previousArtifacts.map((artifact) => {
+                const relStyle = RELATION_STYLE[artifact.relation]
+                return (
+                  <button
+                    key={artifact.code}
+                    onClick={() => openPreviousArtifactPreview(artifact.code)}
+                    className="w-full flex items-center gap-2 rounded-xl border border-[#DADCE0] bg-white px-3 py-2 hover:border-[#1A73E8] hover:bg-[#F8FBFF] transition-colors text-left"
+                  >
+                    <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0', relStyle.bg, relStyle.text)}>
+                      {relStyle.label}
+                    </span>
+                    <span className="text-[11px] font-semibold text-[#5F6368] tabular-nums flex-shrink-0">
+                      {artifact.code}
+                    </span>
+                    <span className="text-[12px] text-[#202124] truncate flex-1 min-w-0">
+                      {artifact.label}
+                    </span>
+                    <CaretLeft size={12} weight="bold" className="rotate-180 text-[#9AA0A6] flex-shrink-0" />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )
+  const artifactPreview = <ArtifactPreviewModal modal={previewModal} onClose={() => setPreviewModal(null)} />
+
   if (project && isTrainingActivity(project, viewingActivity)) {
     const trainingContent = (firestoreArtifact?.content ?? displayContent) as Record<string, unknown>
     return (
@@ -1482,6 +1529,7 @@ function InteractiveArtifactPanel() {
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <TrainingForm project={project} activityCode={viewingActivity} content={trainingContent}
             loaded={project.id === routeParams.id} readOnly={observationOnly} />
+          {previousArtifactList}
         </div>
         {!observationOnly && isHost && hasContent && (
           <div className="shrink-0 border-t border-[#DADCE0] p-4">
@@ -1490,7 +1538,7 @@ function InteractiveArtifactPanel() {
               onClick={isConfirmed ? handleRedraft : handleConfirm}>{isSaving ? '저장 중…' : isConfirmed ? '확정 취소 · 재검토' : '산출물 확정하기'}</MD3Button>
           </div>
         )}
-        <ArtifactPreviewModal modal={previewModal} onClose={() => setPreviewModal(null)} />
+        {artifactPreview}
       </div>
     )
   }
@@ -1915,50 +1963,7 @@ function InteractiveArtifactPanel() {
 
         {/* 누적 산출물 — 스펙 §7-3: 현재 산출물 이후 아래 섹션으로 분리
             (빈 상태에서도 참고로 볼 수 있도록 항상 노출) */}
-        {previousArtifacts.length > 0 && (
-          <div className="mt-6 rounded-2xl border-2 border-[#C2D7F8] bg-[#F5FAFF] p-4">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-[#1A73E8]">
-                  <Stack size={15} weight="fill" className="text-white" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[12px] font-bold text-[#1557B0]">저장된 산출물 (이전 활동)</p>
-                  <p className="text-[11px] text-[#5F6368] mt-0.5 leading-snug">
-                    저장한 이전 활동 결과물입니다. 카드를 클릭하면 새 창에서 열립니다.
-                  </p>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold text-white bg-[#1A73E8] px-2.5 py-1 rounded-full whitespace-nowrap tabular-nums">
-                저장됨 {previousArtifacts.length}
-              </span>
-            </div>
-            {/* §7-3.8 — 각 이전 산출물에 관계 pill 부착 */}
-            <div className="space-y-1.5">
-              {previousArtifacts.map((artifact) => {
-                const relStyle = RELATION_STYLE[artifact.relation]
-                return (
-                  <button
-                    key={artifact.code}
-                    onClick={() => openPreviousArtifactPreview(artifact.code)}
-                    className="w-full flex items-center gap-2 rounded-xl border border-[#DADCE0] bg-white px-3 py-2 hover:border-[#1A73E8] hover:bg-[#F8FBFF] transition-colors text-left"
-                  >
-                    <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0', relStyle.bg, relStyle.text)}>
-                      {relStyle.label}
-                    </span>
-                    <span className="text-[11px] font-semibold text-[#5F6368] tabular-nums flex-shrink-0">
-                      {artifact.code}
-                    </span>
-                    <span className="text-[12px] text-[#202124] truncate flex-1 min-w-0">
-                      {artifact.label}
-                    </span>
-                    <CaretLeft size={12} weight="bold" className="rotate-180 text-[#9AA0A6] flex-shrink-0" />
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
+        {previousArtifactList}
       </div>
 
       {/* 액션 버튼 — 내용이 없으면 숨김 */}
@@ -2088,7 +2093,7 @@ function InteractiveArtifactPanel() {
         </div>
       )}
 
-      <ArtifactPreviewModal modal={previewModal} onClose={() => setPreviewModal(null)} />
+      {artifactPreview}
       {showCumulativeReport && (
         <CumulativeReportModal onClose={() => setShowCumulativeReport(false)} />
       )}

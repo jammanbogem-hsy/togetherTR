@@ -332,7 +332,7 @@ export function StageBar() {
   function isEffectivelyDone(code: ActivityCode) {
     // P1-I: 중앙화된 헬퍼로 위임 (E 단계 requiredSections 검증 포함).
     // non-E 활동은 기존 로직과 동일하게 작동(회귀 없음).
-    return checkEffectivelyDone(code, activityStatus, project?.artifacts)
+    return checkEffectivelyDone(code, activityStatus, project?.artifacts, project)
   }
 
   function getCompletedCount(stageCode: StageCode) {

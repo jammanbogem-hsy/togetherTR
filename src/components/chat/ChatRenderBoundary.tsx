@@ -19,7 +19,12 @@ export function ChatDraftBoundary({ draft, children }: { draft: ChatDraft; child
 
 const MessageRow = memo(function MessageRow({ message, renderMessage }: {
   message: Message; renderMessage: (message: Message) => ReactNode;
-}) { return renderMessage(message) })
+}) {
+  const content = renderMessage(message)
+  return message.role === 'assistant'
+    ? <div data-ai-response-id={message.id} data-ai-revision={message.content.length}>{content}</div>
+    : content
+})
 
 interface MessageListProps {
   messages: Message[]; renderMessage: (message: Message) => ReactNode; onCommit: () => void;

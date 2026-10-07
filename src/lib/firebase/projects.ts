@@ -1,7 +1,7 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query,
   where, orderBy, limit, serverTimestamp, onSnapshot, type Unsubscribe, arrayUnion, arrayRemove, deleteField,
-  runTransaction, type QueryDocumentSnapshot, type DocumentData, Timestamp
+  runTransaction, FieldPath, type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { auth, db } from './config'
 import type { ArtifactConfirmationEntry, Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow, TeamVisionWorkspace, TeamVisionWorkspaceBlock, TeamVisionWorkspaceColumn, TeamVisionWorkspaceRow, IntegratedGoalWorkspace, IntegratedGoalWorkspaceBlock, IntegratedGoalWorkspaceColumn, IntegratedGoalWorkspaceRow, IntegratedGoalMethod } from '@/types'
@@ -3313,6 +3313,26 @@ export function watchMessages(
  * AI 답변 속 체크리스트 한 칸의 상태를 그 메시지 문서에 필드 경로로 저장한다(다른 칸·본문은 건드리지 않음).
  * 팀원 화면에는 메시지 구독으로 실시간 반영된다.
  */
+export async function updateMessageChecklist(
+  projectId: string,
+  message: Pick<Message, 'id' | 'activityCode' | 'legacyPath'>,
+  index: number,
+  uid: string,
+  checked: boolean,
+  name: string,
+): Promise<void> {
+  const actor = auth.currentUser
+  if (!actor) throw new Error('checklist-auth-required')
+  if (!uid || actor.uid !== uid) throw new Error('checklist-user-mismatch')
+  if (!Number.isSafeInteger(index) || index < 0) throw new Error('checklist-invalid-index')
+  if (typeof checked !== 'boolean') throw new Error('checklist-invalid-checked')
+  const path = messageDocPath(projectId, message, ACTIVITY_META[message.activityCode].stage)
+  await updateDoc(doc(db, path), new FieldPath('checklistState', String(index), uid), {
+    checked, name: typeof name === 'string' && name.trim() ? name : actor.displayName || uid, at: serverTimestamp(),
+  })
+}
+
+/** 이전 호출 계약은 인증 uid를 사용해 개인 기록으로 저장한다. by는 이름이지 uid가 아니다. */
 export async function setMessageChecklistItem(
   projectId: string,
   message: Pick<Message, 'id' | 'activityCode' | 'legacyPath'>,
@@ -3320,8 +3340,9 @@ export async function setMessageChecklistItem(
   checked: boolean,
   by: string,
 ): Promise<void> {
-  const path = messageDocPath(projectId, message, ACTIVITY_META[message.activityCode].stage)
-  await updateDoc(doc(db, path), { [`checklistState.${index}`]: { checked, by, at: serverTimestamp() } })
+  const uid = auth.currentUser?.uid
+  if (!uid) throw new Error('checklist-auth-required')
+  return updateMessageChecklist(projectId, message, index, uid, checked, by)
 }
 
 // ─── 단계 전환 이력 ──────────────────────────────────

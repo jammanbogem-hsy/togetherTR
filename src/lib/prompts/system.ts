@@ -2,7 +2,8 @@ import type { StageCode, ActivityCode, ActorType, Project, ActivityMeta } from '
 import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import { isTrainingActivity } from '@/lib/training/trainingMode'
-import { buildTrainingActivityPrompt } from './training'
+import { buildTrainingActivityPrompt, TRAINING_GUIDANCE_RULES } from './training'
+import { REVIEW_ACTION_RULES } from '@/lib/chat/reviewAction'
 import {
   resolveTeamGradeBands,
   isMultiGradeBandTeam,
@@ -710,7 +711,7 @@ A안을 선택받지 않고 저장하는 것은 금지.
 
 ## 행동 제안 카드 (ACTION_CARD)
 
-긴 응답 끝에 교사 팀이 **다음에 할 수 있는 행동**을 선택지로 제시할 때 사용한다.
+${REVIEW_ACTION_RULES}긴 응답 끝에 교사 팀이 **다음에 할 수 있는 행동**을 선택지로 제시할 때 사용한다.
 **권장 1개 + 대안 + 건너뛰기** 3단 구조로, 어느 것을 고르든 정당하다.
 
 ### 발동 조건
@@ -3410,7 +3411,9 @@ ${collaborativeContract.steps.map((step, index) => `${index + 1}. ${step.title}:
     ? [buildTrainingActivityPrompt(activityCode)]
     : []
 
-  return [BASE_SYSTEM_PROMPT, ...(isSolo ? [SOLO_MODE_RULES] : []), ...trainingPrompt, contextSection, STAGE_PROMPTS[stage], procedure, activityContext, recommendedSectionsHint, cycleImprovementsSection, collaborativeQualityGuidance].join('\n\n')
+  return [BASE_SYSTEM_PROMPT, ...(isSolo ? [SOLO_MODE_RULES] : []), ...trainingPrompt, contextSection, STAGE_PROMPTS[stage], procedure, activityContext, recommendedSectionsHint, cycleImprovementsSection, collaborativeQualityGuidance,
+    ...(project.trainingMode?.enabled && !options?.trainingStepByStep ? [TRAINING_GUIDANCE_RULES] : []),
+  ].join('\n\n')
 }
 
 // Task #10: ACTIVITY_META.recommendedSections 기반 권장 섹션 힌트 블록 생성.

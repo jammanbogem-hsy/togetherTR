@@ -21,6 +21,9 @@ const ScaffoldingWorkspaceModal = dynamic(() => import('@/components/artifacts/S
 
 import { navigateOptimistically } from '@/lib/activity/optimisticNavigation'
 import { createChatDraft } from '@/lib/chat/chatDraft'
+import { useResponseScroll } from './useResponseScroll'
+import { ChatMarkdownTable } from './ChatMarkdownTable'
+import { completeReviewAction, isReviewAction, appendReviewDraft } from '@/lib/chat/reviewAction'
 import { ChatDraftBoundary, MessageList, useStableCallback, markChatInput } from './ChatRenderBoundary'
 import { samePresenceEntry } from '@/lib/coedit/presenceThrottle'
 
@@ -85,16 +88,18 @@ import {
   sanitizeChatForExtraction,
   stripNonContentLines,
 } from '@/lib/artifacts/schemas'
-import { addKeyNote, setMessageChecklistItem } from '@/lib/firebase/projects'
+import { addKeyNote, updateMessageChecklist } from '@/lib/firebase/projects'
 import { buildCurriculumSheetArtifactProposal, mergeGraphAgentExamplesIntoRows } from '@/lib/curriculum/graphSheetBridge'
 import { defaultGradeMode, effectiveRowGradeBand, resolveSheetGradeBand, toGradeBandLabel } from '@/lib/curriculum/sheetGradeBands'
 import { parseTeamGradeBandsSignal, normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { designStandardSources, extractStandardCodes } from '@/lib/curriculum/standardCodes'
 import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
-import { CHECKLIST_ALL_DONE_NOTE, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
+import { CHECKLIST_ALL_DONE_NOTE, isChecklistChecked, checklistParticipants, checklistLegacyEntry, applyChecklistToggle, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
 import { buildTrainingWelcome, displayedMessageContent, isTrainingActivity, isTrainingProject, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
+import { isMoveRequest, MOVE_NEEDS_RECORDER } from '@/lib/chat/moveRequest'
 import { TrainingModeBar } from '@/components/training/TrainingModeBar'
+import { isTrainingNextRequest, nextTrainingActivity } from '@/lib/training/navigation'
 import { needsMultiBandModeRepair } from '@/lib/curriculum/teamGradeBandState'
 import type { CurriculumSheetRow, KeyNote } from '@/types'
 import { cn } from '@/lib/utils'
@@ -582,11 +587,13 @@ function HighlightedStrong({ children, dark, pendingAware = false }: {
 /** AI 답변 속 체크리스트 — 상태는 메시지 문서(checklistState)에 저장. canEdit=false 면 읽기 전용(관찰자 대비). */
 export interface MessageChecklistProps {
   state?: ChecklistState | null
+  uid?: string
+  memberUids?: readonly string[]
   canEdit: boolean
   onToggle: (index: number, checked: boolean) => void
 }
 
-const CHECKER_COLORS = ['#1A73E8', '#188038', '#E37400', '#A142F4', '#D93025', '#007B83', '#B06000', '#3949AB']
+const CHECKER_COLORS = ['#185ABC', '#137333', '#974800', '#762AB2', '#B3261E', '#00656B', '#895200', '#303F9F']
 
 /** 체크한 사람 이름 → 고정 색(같은 이름은 늘 같은 색) */
 function checkerColor(name: string): string {
@@ -604,37 +611,32 @@ function checkedAtText(at: unknown): string {
 
 /** 체크 칸 — 체크박스 + 체크한 사람 이름 첫 글자 원형 배지를 한 줄로. 전체 이름·시각은 마우스 올림/포커스 툴팁. */
 function ChecklistBox({ index, defaultChecked, checklist, dark }: { index: number; defaultChecked: boolean; checklist: MessageChecklistProps; dark: boolean }) {
-  const saved = checklist.state?.[String(index)]
-  const checked = saved ? saved.checked : defaultChecked
-  const by = checked ? saved?.by?.trim() : ''
-  const when = by ? checkedAtText(saved?.at) : ''
-  const label = by ? `${by}${when ? ` · ${when}` : ''} 확인` : ''
+  const checked = isChecklistChecked(0, [defaultChecked], { 0: checklist.state?.[String(index)] }, checklist.uid)
+  const legacy = checklistLegacyEntry(index, checklist.state)
+  const members = checklist.memberUids ? new Set(checklist.memberUids) : null
+  const people = checklistParticipants(index, checklist.state).filter(person => person.checked && (!members || members.has(person.uid)))
+  const badges = checklist.uid ? people : legacy?.checked && legacy.by ? [{ uid: 'legacy', name: legacy.by, at: legacy.at }] : people
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap align-middle" data-testid="message-checklist-item">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={!checklist.canEdit}
-        onChange={event => checklist.onToggle(index, event.target.checked)}
-        aria-label={`확인 항목 ${index + 1}${by ? ` — ${label}` : ''}`}
-        className={cn('h-4 w-4 shrink-0 cursor-pointer rounded accent-[#1A73E8] disabled:cursor-default', dark && 'accent-white')}
-      />
-      {by && (
-        <span className="group relative inline-flex shrink-0" data-testid="checker-badge">
-          <span
-            tabIndex={0}
-            title={label}
-            aria-label={label}
+      <label className="inline-flex cursor-pointer items-center gap-1">
+        <input type="checkbox" checked={checked} disabled={!checklist.canEdit}
+          onChange={event => checklist.onToggle(index, event.target.checked)}
+          aria-label={`${checklist.uid ? '내 체크' : '확인 항목'} ${index + 1}`}
+          className={cn('h-4 w-4 shrink-0 cursor-pointer rounded accent-[#1A73E8] disabled:cursor-default', dark && 'accent-white')} />
+        {checklist.uid && <span className="text-xs">내 체크</span>}
+      </label>
+      {badges.map(person => {
+        const when = checkedAtText(person.at)
+        const label = `${person.name}${when ? ` · ${when}` : ''} 확인`
+        return <span key={person.uid} className="group relative inline-flex shrink-0" data-testid="checker-badge">
+          <span tabIndex={0} title={label} aria-label={label}
             className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold leading-none text-white outline-none focus-visible:ring-2 focus-visible:ring-[#1A73E8]"
-            style={{ backgroundColor: checkerColor(by) }}
-          >
-            {Array.from(by)[0]}
-          </span>
-          <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[#202124] px-2 py-1 text-[11px] text-white shadow group-hover:block group-focus-within:block">
-            {label}
-          </span>
+            style={{ backgroundColor: checkerColor(person.uid === 'legacy' ? person.name : person.uid) }}>{Array.from(person.name)[0] || '?'}</span>
+          <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[#202124] px-2 py-1 text-[11px] text-white shadow group-hover:block group-focus-within:block">{label}</span>
         </span>
-      )}
+      })}
+      {checklist.uid && <span className="text-xs" aria-label={`${people.length}명 확인, 전체 ${members?.size ?? people.length}명`}>{people.length}/{members?.size ?? people.length}</span>}
+      {checklist.uid && legacy?.checked && <span className="rounded border border-[#9AA0A6] px-1 text-[11px]" title={legacy.by ? `${legacy.by}의 이전 공동 체크` : '개인별 체크 도입 전 공동 기록'}>이전 공동 기록</span>}
     </span>
   )
 }
@@ -642,8 +644,11 @@ function ChecklistBox({ index, defaultChecked, checklist, dark }: { index: numbe
 /** remarkShortColumns 가 붙인 data-min-ch 가 있으면 nowrap + 최소 폭 스타일 */
 function shortCellStyle(node: unknown): React.CSSProperties | undefined {
   const properties = (node as { properties?: Record<string, unknown> } | undefined)?.properties
+  const layout = properties?.dataColumnLayout ?? properties?.['data-column-layout']
+  if (layout === 'prose') return { minWidth: 'min(32ch, 72vw)', whiteSpace: 'normal', wordBreak: 'keep-all', overflowWrap: 'anywhere' }
+  if (layout === 'rating') return { width: '1%', minWidth: '10ch', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'keep-all', overflowWrap: 'anywhere' }
   const minCh = Number(properties?.dataMinCh ?? properties?.['data-min-ch'])
-  return minCh > 0 ? { minWidth: `${minCh}ch`, whiteSpace: 'nowrap', wordBreak: 'keep-all', overflowWrap: 'normal' } : undefined
+  return minCh > 0 ? { width: '1%', minWidth: `${minCh}ch`, whiteSpace: 'nowrap', wordBreak: 'keep-all', overflowWrap: 'normal' } : undefined
 }
 
 // 채팅 표: 짧은 열(단계·팀 확인 등)은 줄바꿈 없이 최소 폭 — 보고서와 같은 규칙(lib/markdown/tableColumnWidth)
@@ -752,9 +757,7 @@ function MarkdownContent({ text, dark = false, standardTextMap, checklist }: { t
         ),
         // 테이블 렌더링 — 내부 셀은 자연스럽게 wrap, 정말 넓을 때만 overflow-x 스크롤 (말풍선 밖으로 흐르지 않도록)
         table: ({ children }) => (
-          <div className="my-2 overflow-x-auto rounded-xl border border-[#DADCE0] max-w-full">
-            <table className="w-full text-sm border-collapse table-auto">{children}</table>
-          </div>
+          <ChatMarkdownTable>{children}</ChatMarkdownTable>
         ),
         thead: ({ children }) => (
           <thead className={dark ? 'bg-white/20' : 'bg-[#F8F9FA]'}>{children}</thead>
@@ -771,8 +774,9 @@ function MarkdownContent({ text, dark = false, standardTextMap, checklist }: { t
           // 짧은 열(단계·팀 확인 등)은 줄바꿈 없이 최소 폭 — 이름·코드가 글자 단위로 세로로 쪼개지지 않게
           const short = shortCellStyle(node)
           if (short) {
+            const code = /\[(\d[가-힣]{1,4}\d{2}-\d{2})\]/.exec(childrenToText(children))?.[1]
             return (
-              <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed align-top" style={short}>
+              <td className="px-3 py-2.5 text-sm text-[#202124] leading-relaxed align-top" style={short} title={code ? standardTextMap?.[code] : undefined}>
                 {children}
               </td>
             )
@@ -1046,7 +1050,7 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
   checklist?: MessageChecklistProps
 }) {
   const isUser = role === 'user'
-  const checklistDone = !isUser && checklist ? checklistProgress(content, checklist.state).allChecked : false
+  const checklistDone = !isUser && checklist ? checklistProgress(content, checklist.state, checklist.uid).allChecked : false
   const alignRight = isUser && isSelf
   const avatarColor = senderColor ?? (isUser ? '#A0BCE8' : '#1F2937')
   const isLightColor = avatarColor.startsWith('#') && (() => {
@@ -1124,7 +1128,7 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
           }
           {checklistDone && (
             <p className="mt-2 rounded-lg bg-white/70 px-3 py-1.5 text-[12px] font-medium text-[#137333]" data-testid="checklist-all-done" role="status">
-              ✓ {CHECKLIST_ALL_DONE_NOTE}
+              ✓ {checklist?.uid ? '내 체크를 모두 마쳤어요. 다른 팀원의 확인 상태도 살펴보세요.' : CHECKLIST_ALL_DONE_NOTE}
             </p>
           )}
         </div>
@@ -1133,7 +1137,22 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
   )
 }
 
-const MemoMarkdownContent = React.memo(MarkdownContent)
+const MemoParsedMarkdownContent = React.memo(MarkdownContent)
+// Project snapshots and message callbacks change often; keep unchanged Markdown
+// props stable while the event callback always reads the latest committed handler.
+function MemoMarkdownContent({ text, dark, standardTextMap, checklist }: Parameters<typeof MarkdownContent>[0]) {
+  const onToggle = useStableCallback((index: number, checked: boolean) => checklist?.onToggle(index, checked))
+  const membersKey = JSON.stringify(checklist?.memberUids)
+  const memberUids = useMemo<string[] | undefined>(() => membersKey ? JSON.parse(membersKey) : undefined, [membersKey])
+  const standardsKey = JSON.stringify(standardTextMap)
+  const standards = useMemo<Record<string, string> | undefined>(() => standardsKey ? JSON.parse(standardsKey) : undefined, [standardsKey])
+  const hasChecklist = !!checklist
+  const state = checklist?.state, uid = checklist?.uid, canEdit = checklist?.canEdit
+  const stableChecklist = useMemo(() => hasChecklist
+    ? { state, uid, memberUids, canEdit: !!canEdit, onToggle }
+    : undefined, [hasChecklist, state, uid, memberUids, canEdit, onToggle])
+  return <MemoParsedMarkdownContent text={text} dark={dark} standardTextMap={standards} checklist={stableChecklist} />
+}
 const MemoMessageBubble = React.memo(MessageBubble)
 
 // ─── AI 분석 결과 버블 ────────────────────────────────
@@ -1334,6 +1353,7 @@ function ChatPanelContent() {
     chatInputRequest, setChatInputRequest, pendingNavigation,
   } = useProjectStore()
   const project = projectState!
+  const checklistWritesRef = useRef(new Map<string, symbol>())
   const trainingRecoveryRef = useRef<string | null>(null)
   useEffect(() => {
     if (!isTrainingProject(project)) return
@@ -1559,10 +1579,9 @@ function ChatPanelContent() {
   const chatMentionedStds = useMemo(() => {
     return activeGraphCodes.map(c => ({ ...c, source: 'chat' as const }))
   }, [activeGraphCodes])
-  const messagesViewportRef = useRef<HTMLDivElement>(null)
-  const shouldFollowLatestRef = useRef(true)
-  const latestAssistantMessageIdRef = useRef<string | null>(null)
-  const [hasNewAIResponse, setHasNewAIResponse] = useState(false)
+  const responseScroll = useResponseScroll(`${project.id}:${currentActivity}`, messagesLoaded, messages, streamingText, remoteStreamingText)
+  const { viewportRef: messagesViewportRef, hasNewResponse: hasNewAIResponse, goToLatest: scrollToLatestAIResponse,
+    onCommit: handleMessageListCommit, onScroll: handleMessagesScroll } = responseScroll
 
   // 스트리밍 중 Firestore 동기화용 interval ref
   const streamingFlushRef = useRef<NodeJS.Timeout | null>(null)
@@ -1577,9 +1596,6 @@ function ChatPanelContent() {
     setHelpCardMap({})
     setReplyTo(null)
     setCoeditHintActivity(null)  // 활동 전환 시 이전 활동의 공동편집 안내 말풍선 해제
-    shouldFollowLatestRef.current = true
-    latestAssistantMessageIdRef.current = null
-    setHasNewAIResponse(false)
     return () => { if (coeditHintTimerRef.current) clearTimeout(coeditHintTimerRef.current) }
   }, [currentActivity])
 
@@ -1847,45 +1863,6 @@ function ChatPanelContent() {
     })
     return onlyConfirmedNoops
   }
-
-  const scrollToLatestAIResponse = useCallback(() => {
-    shouldFollowLatestRef.current = true
-    setHasNewAIResponse(false)
-    const viewport = messagesViewportRef.current
-    if (!viewport) return
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' })
-  }, [])
-
-  const handleMessageListCommit = useCallback(() => {
-    if (shouldFollowLatestRef.current) scrollToLatestAIResponse()
-  }, [scrollToLatestAIResponse])
-
-  const handleMessagesScroll = useCallback(() => {
-    const viewport = messagesViewportRef.current
-    if (!viewport) return
-    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
-    const isNearBottom = distanceFromBottom <= 96
-    shouldFollowLatestRef.current = isNearBottom
-    if (isNearBottom) setHasNewAIResponse(false)
-  }, [])
-
-  useEffect(() => {
-    const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
-    const latestAssistantId = latestAssistantMessage?.id ?? null
-    const hasCompletedAIResponse = latestAssistantId !== null
-      && latestAssistantId !== latestAssistantMessageIdRef.current
-    latestAssistantMessageIdRef.current = latestAssistantId
-
-    const hasIncomingAIUpdate = Boolean(
-      streamingText || remoteStreamingText || hasCompletedAIResponse,
-    )
-
-    if (shouldFollowLatestRef.current) {
-      scrollToLatestAIResponse()
-    } else if (hasIncomingAIUpdate) {
-      setHasNewAIResponse(true)
-    }
-  }, [messages, streamingText, remoteStreamingText, scrollToLatestAIResponse])
 
   // 다른 팀원의 AI 스트리밍 상태 구독 (사용자별 개별 문서 — 동시 스트리밍 충돌 없음)
   useEffect(() => {
@@ -2625,12 +2602,29 @@ function ChatPanelContent() {
     setPendingAdvance(nextActivity)
   }
 
-  function offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops: boolean, userMessage: string) {
-    if (isHost && onlyConfirmedNoops
-      && !/고쳐|수정|바꿔|보완|전에/.test(userMessage)
-      && /이동|넘어가|다음\s*활동|다음\s*단계|다음으로/.test(userMessage)) {
-      handlePromptNextCommand()
+  async function handleTrainingNextRequest(text: string): Promise<boolean> {
+    if (!isTrainingActivity(proj, currentActivity) || !isTrainingNextRequest(text)) return false
+    if (!isHost) {
+      setFlowNotice('다음 활동 이동은 기록 담당이 진행합니다. 기록 담당 화면의 ‘다음 활동’ 버튼을 눌러 주세요.')
+      return true
     }
+    if (pendingArtifactSave && (!pendingArtifactSave.activityCode || pendingArtifactSave.activityCode === currentActivity)) {
+      setFlowNotice('아직 저장하지 않은 제안이 있습니다. 산출물 저장 제안을 먼저 확인한 뒤 다음 활동으로 이동해 주세요.')
+      return true
+    }
+    const next = nextTrainingActivity(proj, currentActivity)
+    if (next) await handleActivityAdvance(next)
+    else setFlowNotice('마지막 활동입니다. 연수 막대의 ‘보고서 작성하기’를 눌러 결과를 확인해 주세요.')
+    return true
+  }
+
+  function offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops: boolean, userMessage: string) {
+    const legacyIntent = onlyConfirmedNoops
+      && !/고쳐|수정|바꿔|보완|전에/.test(userMessage)
+      && /이동|넘어가|다음\s*활동|다음\s*단계|다음으로/.test(userMessage)
+    if (!legacyIntent && !isMoveRequest(userMessage)) return
+    if (isHost) handlePromptNextCommand()
+    else addAssistantNotice(MOVE_NEEDS_RECORDER)
   }
 
   // ─── 활동 시작 환영 메시지 (API 호출 없음, 정적) ────────
@@ -2951,7 +2945,7 @@ ${discussionSummary}
           }
           // P0-phil2 (Task #30): 분석 응답에서도 ACTION_CARD 파싱 → Message.actionCard 필드.
           // 신호 블록은 displayText에서 strip (raw 텍스트 노출 방지) — Phase 1-b 메인 파서와 동일 처리.
-          const parsedActionCardAnalysis = parseActionCard(text1d)
+          const parsedActionCardAnalysis = completeReviewAction(parseActionCard(text1d), text1d, currentActivity)
           const displayText = (parsedActionCardAnalysis ? parsedActionCardAnalysis.cleanText : text1d).trimEnd()
           const newMsgIdAnalysis = Date.now().toString()
           addMessage({
@@ -3894,12 +3888,34 @@ ${discussionSummary}
 
   // AI 답변 속 체크리스트 — 화면에 바로 반영하고 그 메시지 문서의 checklistState.순번 만 저장한다(팀원 화면은 구독으로 반영).
   function toggleChecklistItem(msg: Message, index: number, checked: boolean) {
-    const by = userProfile?.displayName ?? '팀원'
-    replaceMessage(msg.id, msg.content, { checklistState: { ...msg.checklistState, [String(index)]: { checked, by } } })
-    setMessageChecklistItem(proj.id, msg, index, checked, by).catch(error => {
+    const uid = userProfile?.uid
+    if (!uid) return
+    const current = useProjectStore.getState().messages.find(message => message.id === msg.id)
+    if (!current) return
+    const name = userProfile?.displayName ?? '팀원'
+    const key = `${proj.id}:${msg.id}:${index}:${uid}`
+    const token = Symbol(key)
+    checklistWritesRef.current.set(key, token)
+    const previous = checklistParticipants(index, current.checklistState).find(person => person.uid === uid)
+    const at = Date.now()
+    replaceMessage(current.id, current.content, { checklistState: applyChecklistToggle(current.checklistState, index, uid, checked, name, at) })
+    updateMessageChecklist(proj.id, msg, index, uid, checked, name).catch(error => {
       console.error('[checklist] save failed:', error)
-      setChatError('체크 상태를 저장하지 못했습니다. 다시 눌러 주세요.')
-    })
+      if (checklistWritesRef.current.get(key) !== token) return
+      const store = useProjectStore.getState()
+      if (store.project?.id !== proj.id) return
+      const latest = store.messages.find(message => message.id === msg.id)
+      const slot = latest?.checklistState?.[String(index)]
+      const own = checklistParticipants(index, latest?.checklistState).find(person => person.uid === uid)
+      // Undo only this failed edit, never a newer edit or someone else's check.
+      if (latest && slot && own && typeof own === 'object' && 'at' in own && own.at === at) {
+        const restored = previous
+          ? applyChecklistToggle(latest.checklistState, index, uid, previous.checked, previous.name, previous.at)
+          : { ...latest.checklistState, [String(index)]: Object.fromEntries(Object.entries(slot).filter(([key]) => key !== uid)) }
+        replaceMessage(latest.id, latest.content, { checklistState: restored })
+      }
+      setChatError('내 체크를 저장하지 못했습니다. 다시 눌러 주세요.')
+    }).finally(() => { if (checklistWritesRef.current.get(key) === token) checklistWritesRef.current.delete(key) })
   }
 
   // 보내기 대기열 — 연수용 화면(연수 막대 버튼·양식 저장 알림)과, AI 가 답하는 중에 교사가 친 메시지를 담는다.
@@ -3969,6 +3985,7 @@ ${discussionSummary}
       requestMessages = [...messages, tempUserMsg]
 
       if (handleA21SheetArtifactRequest(text)) return
+      if (await handleTrainingNextRequest(text)) return
       // 연수용: 양식 저장 알림 + 개입 금지면 AI 를 부르지 않고 고정 응답만 남긴다(프롬프트가 아니라 코드로 보장).
       const previousUserTexts = messages.filter(m => m.role === 'user' && m.activityCode === currentActivity).map(m => m.content)
       if (shouldReplyTrainingQuietly(proj, currentActivity, text, previousUserTexts)) {
@@ -4025,7 +4042,7 @@ ${discussionSummary}
               console.warn('[ACTION_CARD] 상호배제 규칙 위반 — 무시.', { conflictingWith: conflictingD })
             }
           } else {
-            parsedActionCardD = parseActionCard(t2e)
+            parsedActionCardD = completeReviewAction(parseActionCard(t2e), t2e, currentActivity)
           }
           const finalText = appendSaveGateNotice(parsedActionCardD ? parsedActionCardD.cleanText : t2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd(), saveNotices)
           if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
@@ -4062,7 +4079,7 @@ ${discussionSummary}
           // A안/B안 OptionsMessage가 이미 저장 결정을 묻는 중에 텍스트 패턴 매칭으로
           // "산출물 초안으로 저장할까요?" 카드를 또 띄우는 중복 UI 발생. 규칙 0-2/A안 게이트와 충돌.
           // 저장은 (a) A안/B안 명시 선택 또는 (b) ACTION_CARD primary 클릭 후 ARTIFACT_UPDATE 신호 경로만 허용.
-          if (advance?.nextActivity) setPendingAdvance(advance.nextActivity)
+          if (advance?.nextActivity) { if (isHost) setPendingAdvance(advance.nextActivity); else addAssistantNotice(MOVE_NEEDS_RECORDER) }
           else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
           else offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops, text)
           return newMsgId
@@ -4085,6 +4102,16 @@ ${discussionSummary}
     label: string
   ) {
     if (!project || !msg.actionCard) return
+    if (selection === 'secondary' && isReviewAction(msg.actionCard)) {
+      setInput(current => appendReviewDraft(current, msg.content, msg.activityCode))
+      setSlashQuery(null)
+      requestAnimationFrame(() => {
+        const input = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input]')
+        input?.focus({ preventScroll: true })
+        if (input) input.setSelectionRange(input.value.length, input.value.length)
+      })
+      return
+    }
     // 메시지 상태 갱신 — Firestore 업데이트 실패해도 낙관적 UI는 ActionCard 내부 clicked 플래그로 처리
     const state: 'selected' | 'skipped' = selection === 'skip' ? 'skipped' : 'selected'
     updateMessageActionCardState(proj.id, msg.activityCode, msg.id, state, selection).catch(console.error)
@@ -4201,6 +4228,7 @@ ${discussionSummary}
     setReplyTo(null)
 
     if (handleA21SheetArtifactRequest(userMessage)) return
+    if (await handleTrainingNextRequest(userMessage)) return
 
     // 팀 토의 모드: AI 호출 없이 메시지만 저장 (AI는 토의 종료 후 응답)
     if (isTeamMode) return
@@ -4269,7 +4297,7 @@ ${discussionSummary}
               }
             }
           } else {
-            parsedActionCard = parseActionCard(text2e)
+            parsedActionCard = completeReviewAction(parseActionCard(text2e), text2e, currentActivity)
           }
           const cleanText = parsedActionCard ? parsedActionCard.cleanText : text2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd()
           const displayText = appendSaveGateNotice(cleanText, saveNotices2)
@@ -4317,7 +4345,8 @@ ${discussionSummary}
           if (advance?.nextActivity) {
             // 저장 여부와 무관하게 항상 pendingAdvance 배너로 막음
             // → 사용자가 산출물을 검토·확정한 후 직접 "다음 단계로" 버튼을 눌러야 이동
-            setPendingAdvance(advance.nextActivity)
+            if (isHost) setPendingAdvance(advance.nextActivity)
+            else addAssistantNotice(MOVE_NEEDS_RECORDER)
           } else if (ret?.targetActivity) await handleActivityReturn(ret.targetActivity)
           else offerAdvanceAfterConfirmedNoop(onlyConfirmedNoops, userMessage)
           return newMsgId
@@ -4506,6 +4535,7 @@ ${discussionSummary}
                     card={msg.actionCard}
                     stage={stage}
                     isHost={isHost}
+                    secondaryIsDraft={isReviewAction(msg.actionCard)}
                     isSelected={isSelected}
                     selectedLabel={selectedLabel}
                     onPrimary={() => handleActionCardClickStable(msg, 'primary', msg.actionCard!.primary)}
@@ -4626,6 +4656,8 @@ ${discussionSummary}
                 standardTextMap={stdTooltipMap}
                 checklist={msg.role === 'assistant' ? {
                   state: msg.checklistState,
+                  uid: userProfile?.uid,
+                  memberUids: proj.memberUids ?? Object.keys(proj.memberInfo ?? {}),
                   canEdit: !!userProfile,
                   onToggle: (index, checked) => toggleChecklistItemStable(msg, index, checked),
                 } : undefined}
@@ -4718,6 +4750,7 @@ ${discussionSummary}
                     card={msg.actionCard}
                     stage={stage}
                     isHost={isHost}
+                    secondaryIsDraft={isReviewAction(msg.actionCard)}
                     isSelected={isSelected}
                     selectedLabel={selectedLabel}
                     onPrimary={() => handleActionCardClickStable(msg, 'primary', msg.actionCard!.primary)}
@@ -5053,7 +5086,7 @@ ${discussionSummary}
                   version: (proj.artifacts?.['Ds-1-2']?.version ?? 0) + 1,
                   confirmedBy: userProfile?.uid,
                   confirmedAt: Date.now(),
-                }).catch(console.error)
+                })
               } else {
                 // fallback: fullResult 없는 경우 (기존 저장 데이터 로드 후 저장)
                 const eqList = data.essentialQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
@@ -5071,7 +5104,7 @@ ${discussionSummary}
                   version: (proj.artifacts?.['Ds-1-2']?.version ?? 0) + 1,
                   confirmedBy: userProfile?.uid,
                   confirmedAt: Date.now(),
-                }).catch(console.error)
+                })
               }
 
               setShowProblemSituationDesigner(false)
@@ -5143,8 +5176,14 @@ ${discussionSummary}
           aria-relevant="additions"
           tabIndex={0}
           onScroll={handleMessagesScroll}
+          onWheelCapture={responseScroll.onUserIntent}
+          onTouchStartCapture={responseScroll.onUserIntent}
+          onTouchMoveCapture={responseScroll.onUserIntent}
+          onPointerMoveCapture={event => { if (event.buttons) responseScroll.onUserIntent() }}
+          onPointerDownCapture={responseScroll.onUserIntent}
+          onKeyDownCapture={event => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) responseScroll.onUserIntent() }}
           className="h-full overflow-y-auto px-4 py-4 space-y-1 relative focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#1A73E8]"
-          style={{ zoom: chatFontScale }}
+          style={{ zoom: chatFontScale, overflowAnchor: 'none' }}
         >
         {visibleMessages.length === 0 && !streamingText && !isLoading && !messagesLoaded && (
           <div className="flex items-center justify-center h-full text-[#DADCE0]">
@@ -5628,7 +5667,7 @@ ${discussionSummary}
             try {
               const savedRows = await patchCurriculumSheet(proj.id, { type: 'replace-all', rows: newRows, updatedBy: userProfile?.displayName ?? undefined })
               latestSheetRowsRef.current = savedRows
-            } catch (e) { console.error('[curriculumSheet save]', e) }
+            } catch (e) { console.error('[curriculumSheet save]', e); throw e }
           }}
           onSheetPatch={async (patch) => {
             try {
@@ -5637,7 +5676,7 @@ ${discussionSummary}
               return savedRows
             } catch (e) {
               console.error('[curriculumSheet patch]', e)
-              return undefined
+              throw e
             }
           }}
           onRequestArtifactSave={(rows) => proposeCurriculumSheetArtifactSave(rows, '분석시트 저장')}
@@ -5686,7 +5725,7 @@ ${discussionSummary}
             // 다양한 필드명 대응 + raw content 전체 전달
             return {
               ...a12,
-              selectedTopic: (a12['selectedTopic'] || a12['선택 주제'] || a12['주제']) as string | undefined,
+              selectedTopic: (a12['최종 선정 주제'] || a12['selectedTopic'] || a12['선택 주제'] || a12['주제']) as string | undefined,
               linkedSubjects: (a12['linkedSubjects'] || a12['교과 연계']) as Array<{ subject: string; focus: string }> | undefined,
               targetSubjects: (a12['targetSubjects'] || a12['대상 교과'] || proj.targetSubjects) as string[] | undefined,
               topicType: (a12['topicType'] || a12['주제 유형']) as string | undefined,
@@ -6073,11 +6112,11 @@ ${discussionSummary}
         ))}
 
         {/* 스트리밍 - 내가 보낸 경우 (로컬) */}
-        <StreamingBubble text={streamingText} isAnalysis={isAnalyzing} stage={ACTIVITY_META[currentActivity]?.stage} />
+        {streamingText && <div data-ai-stream="local" data-ai-revision={streamingText.length}><StreamingBubble text={streamingText} isAnalysis={isAnalyzing} stage={ACTIVITY_META[currentActivity]?.stage} /></div>}
         {/* 스트리밍 - 다른 팀원이 보낸 경우 (Firestore 공유) */}
         {!isLoading && isRemoteLoading && !remoteStreamingText && <AIIdleBubble />}
         {!isLoading && remoteStreamingText && (
-          <StreamingBubble text={remoteStreamingText} isAnalysis={false} stage={ACTIVITY_META[currentActivity]?.stage} />
+          <div data-ai-stream="remote" data-ai-revision={remoteStreamingText.length}><StreamingBubble text={remoteStreamingText} isAnalysis={false} stage={ACTIVITY_META[currentActivity]?.stage} /></div>
         )}
         {(isLoading || isAnalyzing) && !streamingText && (
           <div className="flex gap-2 mb-3">

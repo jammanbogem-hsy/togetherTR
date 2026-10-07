@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, type StageCode } from '@/types'
 import { MD3Button } from '@/components/ui/MD3Button'
@@ -26,6 +26,9 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   const [generationStage, setGenerationStage] = useState<StageCode | null>(null)
   const [confirmStage, setConfirmStage] = useState<StageCode | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const selectedSavedAt = selectedStage ? project?.stageReports?.[selectedStage]?.savedAt : undefined
+  useLayoutEffect(() => { scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' }) }, [selectedStage, selectedSavedAt, generationStage])
 
   const stageReports = project?.stageReports ?? {}
   const savedStages = STAGES.filter(s => stageReports[s.code] || (project && stageHasArtifacts(project, s.code)))
@@ -146,7 +149,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
           </div>}
           {pdfError && <p role="alert" className="mt-3 text-[13px] text-[var(--md-sys-error)]">{pdfError}</p>}
         </header>
-        {!selectedStage ? <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+        {!selectedStage ? <div ref={scrollRef} style={{ overflowAnchor: 'none' }} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <p className="mb-4 text-[13px] text-[var(--md-sys-on-surface-variant)]">저장된 산출물로 단계 보고서를 만들거나 다시 생성할 수 있어요. 보고서를 선택하면 전체 내용을 볼 수 있어요.</p>
           <div className="grid grid-cols-1 gap-3">
             {savedStages.map(stageInfo => {
@@ -171,7 +174,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
             })}
             {savedStages.length === 0 && <p className="py-6 text-center text-sm text-[#5F6368]">단계에 산출물을 저장하면 보고서를 만들 수 있어요.</p>}
           </div>
-        </div> : <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+        </div> : <div ref={scrollRef} style={{ overflowAnchor: 'none' }} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
           {reportStale && <div className="mx-4 mt-4 rounded-[var(--md-sys-radius-md)] bg-[var(--md-sys-error-container)] p-4 text-[var(--md-sys-on-error-container)] sm:mx-6">
             <p className="text-[13px] font-medium">⚠ 이 보고서가 현재 분석시트와 일치하지 않습니다 — 보고서를 다시 생성해야 최신 교과·중심 교과가 반영됩니다.</p>
             <p className="mt-1 text-[12px]">

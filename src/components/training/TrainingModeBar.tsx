@@ -7,12 +7,12 @@ const StageAnalysisModal = dynamic(() => import('@/components/modals/StageAnalys
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { CheckCircle, ArrowRight, Question, X } from '@phosphor-icons/react'
-import { ACTIVITY_META, STAGES, SOLO_HIDDEN_ACTIVITIES, type ActivityCode, type Project } from '@/types'
+import { ACTIVITY_META, type ActivityCode, type Project } from '@/types'
 import { TRAINING_ACTIVITIES, TRAINING_STEP_BY_STEP, formatTrainingHelpRequest, isTrainingActivity, trainingStatus } from '@/lib/training/trainingMode'
 
 import { MD3Button } from '@/components/ui/MD3Button'
 import { trainingFormValues } from './trainingFormState'
-import { isSoloProject } from '@/lib/project/projectMode'
+import { nextTrainingActivity } from '@/lib/training/navigation'
 
 export interface TrainingModeBarProps {
   project: Project
@@ -62,10 +62,7 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
   }, [showHelp])
   if (!isTrainingActivity(project, activityCode)) return null
   const status = trainingStatus(activityCode, trainingFormValues(activityCode, content))
-  const activities = STAGES.flatMap(stage => stage.activities)
-    .filter(code => !isSoloProject(project) || !SOLO_HIDDEN_ACTIVITIES.includes(code))
-  const activityIndex = activities.indexOf(activityCode)
-  const next = activityIndex >= 0 ? activities[activityIndex + 1] : undefined
+  const next = nextTrainingActivity(project, activityCode)
   const blocked = !loaded || busy
   return (
     <aside aria-label="연수용 모드" className="relative shrink-0 border-b border-[#DADCE0] bg-[#F3F7FE] px-4 py-3">
@@ -97,6 +94,7 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
             else setShowReport(true)
           }}>{next ? `다음 활동 · ${ACTIVITY_META[next].label}` : '보고서 작성하기'}</MD3Button>
       </div>
+      {!isHost && <p className="mt-2 text-xs text-[#3C4043]">다음 활동 이동은 기록 담당이 진행합니다.</p>}
       {showHelp && <div ref={helpPanelRef} id={helpId} role="dialog" aria-labelledby={`${helpId}-title`}
         className="absolute right-4 top-full z-30 mt-2 max-h-[60vh] w-[calc(100%-2rem)] max-w-[26rem] overflow-y-auto rounded-2xl border border-[#DADCE0] bg-white p-4 text-[13px] leading-relaxed text-[#3C4043] shadow-lg">
         <div className="mb-2 flex items-center justify-between gap-2">

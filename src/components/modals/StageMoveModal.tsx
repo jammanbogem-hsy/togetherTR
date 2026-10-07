@@ -40,7 +40,8 @@ function getIncompleteActivities(
   fromStage: StageCode,
   activityStatus: Record<string, string>,
   artifacts: Record<string, { status?: string }> | undefined,
-  isSolo: boolean
+  isSolo: boolean,
+  project?: Parameters<typeof isEffectivelyDone>[3],
 ): string[] {
   const stageInfo = STAGES.find(s => s.code === fromStage)
   if (!stageInfo) return []
@@ -52,6 +53,7 @@ function getIncompleteActivities(
         a,
         activityStatus as Parameters<typeof isEffectivelyDone>[1],
         artifacts as Parameters<typeof isEffectivelyDone>[2],
+        project,
       )
     })
     .map(a => ACTIVITY_META[a].label)
@@ -171,7 +173,7 @@ export function StageMoveModal() {
   const fromStage = project.currentStage
   const toStage = pendingStageMove
   const isSolo = project.mode === 'solo'
-  const incompleteActivities = getIncompleteActivities(fromStage, activityStatus, project.artifacts as Record<string, { status?: string }> | undefined, isSolo)
+  const incompleteActivities = getIncompleteActivities(fromStage, activityStatus, project.artifacts as Record<string, { status?: string }> | undefined, isSolo, project)
   const isBackward = STAGES.findIndex(s => s.code === toStage) <
     STAGES.findIndex(s => s.code === fromStage)
   const currentStageDone = incompleteActivities.length === 0

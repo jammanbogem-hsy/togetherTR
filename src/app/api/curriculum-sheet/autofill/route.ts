@@ -40,6 +40,7 @@ import {
   type JudgeContext,
   type JudgeMode,
 } from '@/lib/curriculum/jevJudge'
+import { resolveAutofillTopic, AUTOFILL_CONTEXT_LIMIT } from '@/lib/curriculum/autofillContext'
 import fs from 'fs'
 import path from 'path'
 
@@ -129,6 +130,8 @@ interface CoreIdeaProposal {
   judge?: JudgeKind
   confidence?: number
   mode?: JudgeMode
+  requiresConfirmation?: boolean
+  selectionNote?: string
 }
 
 interface StepTiming {
@@ -409,7 +412,7 @@ function deriveSubjects(
 }
 
 function queryForSubject(subject: string, focus: string, topic: string, chatContext?: string): string {
-  return `${subject} ${focus} ${topic} ${chatContext?.slice(0, 500) ?? ''}`.trim()
+  return `${subject} ${focus} ${topic} ${chatContext?.slice(0, AUTOFILL_CONTEXT_LIMIT) ?? ''}`.trim()
 }
 
 function standardsForSubject(graph: KnowledgeGraph, subject: string, gradeBand: string): CurriculumStandard[] {
@@ -626,16 +629,33 @@ async function buildCoreIdeaProposal(params: {
     }
   }).sort((a, b) => b.score - a.score || b.standardsCount - a.standardsCount)
 
+  const existingIndex = options.findIndex(option => existingNormalized && normalizeText(option.idea) === existingNormalized)
+  const hasContext = !!(topic.trim() || chatContext?.trim() || focus.trim())
+  const noRelevantScore = !hasContext || scores.every(score => score <= 0) || mode === '명료화'
+  const existingDisagrees = existingIndex >= 0 && (scores[existingIndex] ?? 0) < Math.max(...scores)
+  const unknownExisting = !!existingNormalized && existingIndex < 0
+  const requiresConfirmation = noRelevantScore || existingDisagrees || unknownExisting
+  const selectionNote = unknownExisting
+    ? '현재 학년군의 DB 후보에서 기존 핵심아이디어를 찾지 못했어요. 후보를 비교해 선택해 주세요.'
+    : noRelevantScore
+    ? '주제와 확실히 연결되는 후보를 정하지 못했어요. 후보를 비교해 선택하거나 주제·대화 맥락을 보완해 주세요.'
+    : existingDisagrees ? '기존 핵심아이디어와 현재 맥락의 추천 순위가 달라요. 후보를 비교하고 선택을 확인해 주세요.' : undefined
+  const displayOptions = takeOptionsPerBand(scored, gradeBands)
+  if (existingIndex >= 0) {
+    const existing = scored.find(option => option.idea === options[existingIndex].idea)!
+    if (!displayOptions.some(option => option.idea === existing.idea)) displayOptions.push(existing)
+  }
   return {
     subject,
     focus,
     isCenter,
-    selectedCoreIdea: scored[0]?.idea ?? '',
+    selectedCoreIdea: existingIndex >= 0 ? options[existingIndex].idea : noRelevantScore || unknownExisting ? '' : scored[0]?.idea ?? '',
     gradeBands,
-    options: takeOptionsPerBand(scored, gradeBands),
+    options: displayOptions,
     judge,
-    confidence,
-    mode,
+    confidence: requiresConfirmation ? undefined : confidence,
+    mode: requiresConfirmation ? (noRelevantScore ? '명료화' as const : '확인' as const) : mode,
+    ...(requiresConfirmation ? { requiresConfirmation, selectionNote } : {}),
   }
 }
 
@@ -1516,7 +1536,7 @@ export async function POST(request: NextRequest) {
     const graph = loadGraph()
     if (!graph) return NextResponse.json({ error: '교육과정 지식 그래프를 불러오지 못했습니다.' }, { status: 500 })
 
-    const topic = String(a12Artifact?.['selectedTopic'] || a12Artifact?.['선택 주제'] || a12Artifact?.['주제'] || '')
+    const topic = resolveAutofillTopic(a12Artifact, requestTopic)
 
     // describe 모드: 판정이 끝난 행만 받아 LLM 설명을 쓰고 Jev 로 범위를 검증한다.
     if (mode === 'describe') {

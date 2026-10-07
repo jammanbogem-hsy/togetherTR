@@ -648,7 +648,7 @@ export default function ProjectPage() {
 
     const eStage = STAGES.find(stage => stage.code === 'E')!
     const eStageDone = eStage.activities.every(activity =>
-      checkEffectivelyDone(activity, project.activityStatuses ?? {}, project.artifacts),
+      checkEffectivelyDone(activity, project.activityStatuses ?? {}, project.artifacts, project),
     )
     const nextCycleChoice = parseNextCycleChoice(
       project.artifacts?.['E-2-1']?.content?.['다음 주기 선택'] as string | undefined,
@@ -907,7 +907,7 @@ export default function ProjectPage() {
           const activities = (stageInfo?.activities ?? []).filter(
             a => !isSoloProject(project) || !SOLO_HIDDEN_ACTIVITIES.includes(a)
           )
-          const completedCount = activities.filter(a => checkEffectivelyDone(a, activityStatus, project?.artifacts)).length
+          const completedCount = activities.filter(a => checkEffectivelyDone(a, activityStatus, project?.artifacts, project)).length
           const totalCount = activities.length
           const pct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
           const stageColor = STAGE_COLOR[currentStage]

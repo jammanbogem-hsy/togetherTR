@@ -14,6 +14,7 @@ import { BridgePicker, JUDGE_LABEL } from './curriculum-sheet/BridgePicker'
 import type { BridgeCandidate } from './curriculum-sheet/BridgePicker'
 import { SheetMapLayer, requestSheetMapClose } from './curriculum-sheet/SheetMapLayer'
 import type { SheetMapPick, SheetMapRequest } from './curriculum-sheet/SheetMapLayer'
+import { resolveAutofillTopic, normalizeAutofillArtifact } from '@/lib/curriculum/autofillContext'
 import { fetchCurriculumJson } from '@/lib/curriculum/curriculumFilters'
 import {
   ELEMENTARY_GRADE_BANDS,
@@ -108,6 +109,8 @@ interface CoreIdeaProposal {
   judge?: 'jev' | 'embedding'
   confidence?: number
   mode?: '제시' | '확인' | '명료화'
+  requiresConfirmation?: boolean
+  selectionNote?: string
 }
 interface AutofillStep {
   id: string
@@ -481,6 +484,13 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const [dragRowId, setDragRowId] = useState<string | null>(null)
   const [dragOverRowId, setDragOverRowId] = useState<string | null>(null)
   const [autofillLoading, setAutofillLoading] = useState(false)
+  const [coreIdeaConfirmations, setCoreIdeaConfirmations] = useState<Record<string, boolean>>({})
+  const [manualSaveStatus, setManualSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [manualSaveError, setManualSaveError] = useState('')
+  const manualSaveInFlightRef = useRef(false)
+  const manualSaveFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const manualSaveMountedRef = useRef(true)
+  useEffect(() => { manualSaveMountedRef.current = true; return () => { manualSaveMountedRef.current = false; if (manualSaveFeedbackTimerRef.current) clearTimeout(manualSaveFeedbackTimerRef.current) } }, [])
   const [autofillReview, setAutofillReview] = useState<AutofillReview | null>(null)
   const [coreIdeaSelections, setCoreIdeaSelections] = useState<Record<string, string>>({})
   // 교과별 학년군 선택 (AI 자동 채우기 확인 창) — 기본값은 프로젝트 학년군, 통합교과는 1~2학년군.
@@ -1043,7 +1053,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
           sourceSubject: link.subject,
           sourceCoreIdea: link.coreIdea,
           targetBand: band,
-          topic: (a12Artifact?.selectedTopic as string | undefined) ?? undefined,
+          topic: resolveAutofillTopic(a12Artifact) || undefined,
           chatContext,
         }),
       })
@@ -1305,7 +1315,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   function autofillCommonPayload() {
     return {
       existingRows: getAutofillExistingRows(),
-      a12Artifact,
+      a12Artifact: normalizeAutofillArtifact(a12Artifact),
+      topic: resolveAutofillTopic(a12Artifact) || undefined,
       graphSavedData,
       targetGradeGroup: sheetBand || targetGradeGroup,
       teamGradeBands: confirmedTeamBands,
@@ -1356,6 +1367,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             defaults[proposal.subject] = proposal.selectedCoreIdea
             bandDefaults[proposal.subject] = defaultGradeBandsForSubject(proposal.subject, proposal.gradeBands)
           }
+          setCoreIdeaConfirmations(Object.fromEntries(data.proposals.map(proposal => [proposal.subject, !proposal.requiresConfirmation])))
           setCoreIdeaSelections(defaults)
           setCoreIdeaGradeBands(bandDefaults)
           setAutofillReview(data)
@@ -1382,6 +1394,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   // 요청당 시간을 줄인다(Firebase Hosting 60초 제한). 설명 요청이 실패해도 판정된 행은 살린다.
   async function applyAutofillReview() {
     if (!autofillReview) return
+    if (autofillReview.proposals.some(proposal => !(coreIdeaSelections[proposal.subject] ?? proposal.selectedCoreIdea).trim()
+      || (proposal.requiresConfirmation && !coreIdeaConfirmations[proposal.subject]))) {
+      setAutofillError('핵심아이디어 후보를 선택하거나 현재 선택을 확인해 주세요.')
+      return
+    }
     setAutofillLoading(true)
     setAutofillError('')
     setAutofillProgress(prev => [
@@ -1692,25 +1709,44 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     updatePresence(`${rowId}:${field}`)
   }
   async function handleManualSave() {
+    if (manualSaveInFlightRef.current) return
+    manualSaveInFlightRef.current = true
+    if (manualSaveFeedbackTimerRef.current) clearTimeout(manualSaveFeedbackTimerRef.current)
+    setManualSaveStatus('saving')
+    setManualSaveError('')
+    const submitted = rowsRef.current.length > 0 ? rowsRef.current : rows
+    const submittedCellVersions = { ...dirtyCellVersionsRef.current }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = null
     clearPendingCellTimers()
-    let savedRows = rows
-    if (onPatchSave) {
-      try {
-        const patched = await onPatchSave({ type: 'replace-all', rows, updatedBy: currentUserName })
-        if (patched?.length) {
-          savedRows = patched
-          setRows(mergeIncomingRows(patched, rows))
-        }
-      } catch (e) {
-        console.error('[curriculumSheet manual save]', e)
+    // 저장 중·실패 후의 원격 snapshot에도 아직 저장하지 못한 입력을 보존한다.
+    dirtyCellVersionsRef.current = { ...submittedCellVersions }
+    let savedRows = submitted
+    try {
+      if (onPatchSave) {
+        const patched = await onPatchSave({ type: 'replace-all', rows: submitted, updatedBy: currentUserName })
+        if (patched) { savedRows = patched; setRows(current => mergeIncomingRows(patched, current)) }
+      } else {
+        await onSave(submitted)
       }
-    } else {
-      onSave(rows)
-    }
-    setDirty(false)
-    onRequestArtifactSave?.(savedRows)
-    if (savedRows.some(r => r.isCenter && r.subject && r.standard)) setShowGraphPrompt(true)
+      if (!manualSaveMountedRef.current) return
+      for (const [key, version] of Object.entries(submittedCellVersions)) {
+        if (dirtyCellVersionsRef.current[key] === version) delete dirtyCellVersionsRef.current[key]
+      }
+      for (const row of savedRows) if (!patchTimersRef.current[`__row__:${row.id}`]) pendingRowIdsRef.current.delete(row.id)
+      setDirty(!!saveTimerRef.current || hasPendingLocalChanges())
+      setManualSaveStatus('saved')
+      manualSaveFeedbackTimerRef.current = setTimeout(() => setManualSaveStatus('idle'), 4000)
+      try { onRequestArtifactSave?.(savedRows) } catch (cause) { console.warn('[curriculumSheet saved artifact notice]', cause) }
+      if (savedRows.some(row => row.isCenter && row.subject && row.standard)) setShowGraphPrompt(true)
+    } catch (cause) {
+      if (manualSaveMountedRef.current) {
+        setDirty(true)
+        setManualSaveStatus('error')
+        setManualSaveError('저장하지 못했습니다. 입력한 내용은 그대로예요. 다시 저장해 주세요.')
+      }
+      console.error('[curriculumSheet manual save]', cause)
+    } finally { manualSaveInFlightRef.current = false }
   }
   // 해당 셀을 편집 중인 다른 사용자 (자기 제외)
   function getPresenceForCell(rowId: string, field: string): PresenceEntry | undefined {
@@ -1732,8 +1768,9 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const myColor = currentUserColor ?? (currentUid ? PRESENCE_COLORS[(currentUid.charCodeAt(0) + currentUid.charCodeAt(Math.min(currentUid.length - 1, 5))) % PRESENCE_COLORS.length] : '#999')
   // 앱 바 보조 줄 — 기존 dirty/저장됨 상태를 그대로 문장으로 보여 준다.
   const filledRowCount = rows.filter(r => r.subject || r.coreIdea || r.standard).length
-  const statusLine = dirty
-    ? '저장 중…'
+  const statusLine = manualSaveStatus === 'saving' ? '저장 중…'
+    : manualSaveStatus === 'error' ? '저장 실패 · 입력 내용 보존됨'
+    : dirty ? '저장할 변경 내용 있음'
     : `${rows.some(r => r.subject) ? '저장됨' : '작성 전'} · ${rows.length}행${filledRowCount > 0 ? ` (입력 ${filledRowCount}행)` : ''}`
   // 학년군 UI는 초등 학년군이 판정되는 시트에서만 노출한다(중·고는 기존 화면 그대로).
   const showGradeBandUI = !!sheetBand
@@ -1953,11 +1990,16 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
             variant="filled"
             tone="blue"
             onClick={handleManualSave}
+            disabled={manualSaveStatus === 'saving'} aria-busy={manualSaveStatus === 'saving'}
             icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.sm }} aria-hidden>save</span>}
           >
-            저장
+            {manualSaveStatus === 'saving' ? '저장 중…' : '저장'}
           </MD3Button>
         </SheetAppBar>
+        {manualSaveStatus !== 'idle' && <p role={manualSaveStatus === 'error' ? 'alert' : 'status'}
+          aria-live={manualSaveStatus === 'error' ? 'assertive' : 'polite'} className={`shrink-0 px-5 py-2 text-sm ${manualSaveStatus === 'error' ? 'text-[#C5221F] bg-[#FCE8E6]' : 'text-[#137333] bg-[#E6F4EA]'}`}>
+          {manualSaveStatus === 'saving' ? '수동 저장 중…' : manualSaveStatus === 'saved' ? '저장되었습니다.' : manualSaveError}
+        </p>}
 
         {/* ── 툴바: 학년군 모드 ── */}
         {showGradeBandUI && (
@@ -2056,7 +2098,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                 <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
                   {autofillReview.proposals.map(proposal => {
                     const selected = coreIdeaSelections[proposal.subject] ?? proposal.selectedCoreIdea
-                    const selectedOption = proposal.options.find(option => option.idea === selected) ?? proposal.options[0]
+                    const selectedOption = selected ? proposal.options.find(option => option.idea === selected) ?? proposal.options[0] : undefined
                     return (
                       <div key={proposal.subject} className="rounded-xl border border-[#E8EAED] p-4">
                         <div className="flex items-center justify-between gap-2 mb-2">
@@ -2065,12 +2107,12 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                             {proposal.isCenter && <span className="px-2 py-0.5 rounded-full bg-[#FEF7E0] text-[#E65100] text-[12px] font-bold">중심</span>}
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {proposal.judge === 'jev' && proposal.mode && (
+                            {proposal.mode && (
                               <span
-                                title={`추천 신뢰도 ${Math.round((proposal.confidence ?? 0) * 100)}% — 제시: 그대로 진행해도 됨 · 확인: 후보 비교 권장 · 명료화: 주제·맥락을 더 적어 주세요`}
+                                title={typeof proposal.confidence === 'number' ? `추천 신뢰도 ${Math.round(proposal.confidence * 100)}% — 제시: 그대로 진행해도 됨 · 확인: 후보 비교 권장 · 명료화: 주제·맥락을 더 적어 주세요` : '후보를 비교해 현재 수업 맥락에 맞는지 확인해 주세요.'}
                                 className={`px-2 py-0.5 rounded-full text-[12px] font-bold ${proposal.mode === '제시' ? 'bg-[#E6F4EA] text-[#137333]' : proposal.mode === '확인' ? 'bg-[#FEF7E0] text-[#B06000]' : 'bg-[#F1F3F4] text-[#5F6368]'}`}
                               >
-                                {proposal.mode} {(proposal.confidence ?? 0).toFixed(2)}
+                                {proposal.mode}{typeof proposal.confidence === 'number' ? ` ${proposal.confidence.toFixed(2)}` : ''}
                               </span>
                             )}
                             <span className="text-[13px] font-semibold text-[#7B1FA2]">{selectedOption?.area ?? '영역'}</span>
@@ -2084,11 +2126,18 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                           </div>
                         </div>
                         {proposal.focus && <p className="mb-2 text-sm text-[#5F6368]">{proposal.focus}</p>}
+                        {proposal.requiresConfirmation && <div className="mb-2 space-y-2 text-sm text-[#8A3D00]" role="status">
+                          <p>{proposal.selectionNote}</p>
+                          {selected && !coreIdeaConfirmations[proposal.subject] && <button type="button"
+                            className="rounded-lg border border-[#F2B77A] px-3 py-1.5 font-medium hover:bg-[#FFF3E0]"
+                            onClick={() => setCoreIdeaConfirmations(prev => ({ ...prev, [proposal.subject]: true }))}>현재 선택 확인</button>}
+                        </div>}
                         <select
                           value={selected}
-                          onChange={e => setCoreIdeaSelections(prev => ({ ...prev, [proposal.subject]: e.target.value }))}
+                          onChange={e => { setCoreIdeaSelections(prev => ({ ...prev, [proposal.subject]: e.target.value })); setCoreIdeaConfirmations(prev => ({ ...prev, [proposal.subject]: true })) }}
                           className="w-full rounded-xl border border-[#DADCE0] bg-white px-3 py-2 text-sm leading-relaxed text-[#202124] focus:outline-none focus:border-[#7B1FA2]"
                         >
+                          {!selected && <option value="" disabled>핵심아이디어 후보를 비교해 선택해 주세요</option>}
                           {proposal.options.map(option => (
                             <option key={`${option.coreIdeaId}:${option.idea}`} value={option.idea}>
                               [{option.area}] {option.idea}
@@ -2156,7 +2205,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
                     variant="filled"
                     tone="green"
                     onClick={applyAutofillReview}
-                    disabled={autofillLoading}
+                    disabled={autofillLoading || autofillReview.proposals.some(proposal => !(coreIdeaSelections[proposal.subject] ?? proposal.selectedCoreIdea).trim() || (proposal.requiresConfirmation && !coreIdeaConfirmations[proposal.subject]))}
                     icon={<span className="material-symbols-rounded leading-none" style={{ fontSize: MD3_ICON.sm }} aria-hidden>auto_awesome</span>}
                   >
                     {autofillLoading ? '분석표 생성 중…' : '성취기준 추천 및 분석표 생성'}
@@ -2455,7 +2504,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
               tone="green"
               onClick={handleAutofill}
               disabled={autofillLoading}
-              title={!a12Artifact?.selectedTopic && !graphSavedData ? 'A-1-2 주제 선정 또는 지식 그래프 데이터 필요' : '핵심아이디어 후보를 먼저 확인하고 DB 기반으로 자동 채우기'}
+              title={!resolveAutofillTopic(a12Artifact) && !graphSavedData ? 'A-1-2 주제 선정 또는 지식 그래프 데이터 필요' : '핵심아이디어 후보를 먼저 확인하고 DB 기반으로 자동 채우기'}
               icon={<span className={cn('material-symbols-rounded leading-none', autofillLoading && 'animate-spin')} style={{ fontSize: MD3_ICON.sm }} aria-hidden>{autofillLoading ? 'sync' : 'auto_awesome'}</span>}
             >
               {autofillLoading

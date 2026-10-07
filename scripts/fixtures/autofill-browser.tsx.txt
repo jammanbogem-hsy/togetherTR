@@ -1,0 +1,83 @@
+'use client'
+
+// 임시 독립 React fixture에서만 사용. 앱 route/Firestore/인증을 연결하지 않는다.
+// review는 AUTOFILL_BROWSER_RESPONSE_FILE로 새 회귀 테스트가 내보낸 실제 DB 후보 JSON.
+import { useEffect, useRef, useState } from 'react'
+import { Timestamp } from 'firebase/firestore'
+import type { Project, CurriculumSheetRow } from '@/types'
+import type { CurriculumSheetPatch } from '@/lib/firebase/projects'
+import { useProjectStore } from '@/store/project'
+import { CurriculumWorkspaceModal } from '@/components/chat/CurriculumWorkspaceModal'
+
+type Review = { proposals: Array<{ subject: string; isCenter?: boolean; gradeBands: string[]; selectedCoreIdea: string; options: Array<{ idea: string; sampleStandards: string[] }> }> }
+const artifact = { '최종 선정 주제': '기후위기: 우리 동네 폭염 자료를 근거로 그늘 제안하기', '선정 근거': '온도 자료를 읽고 근거 있는 주장 글로 제안한다.' }
+const project = { id: 'autofill-fixture', title: '맥락·저장 fixture', targetSubjects: ['국어', '수학'], targetGradeGroup: '초5-6', currentActivity: 'A-2-1', currentStage: 'A', currentCycle: 1,
+  createdBy: 'fixture', hostUid: 'fixture', memberUids: ['fixture'], started: true, mode: 'collaborative', trainingMode: { enabled: true, coreFormal: true },
+  artifacts: { 'A-1-2': { content: artifact, title: '선정 주제', version: 1, status: 'confirmed' } } } as unknown as Project
+
+export function AutofillBrowserFixture({ review }: { review: Review }) {
+  const [ready, setReady] = useState(false)
+  const [rows, setRows] = useState<CurriculumSheetRow[]>([])
+  const [requests, setRequests] = useState<unknown[]>([])
+  const [saves, setSaves] = useState(0)
+  const [failSave, setFailSave] = useState(false)
+  const failRef = useRef(false)
+  const rowsRef = useRef<CurriculumSheetRow[]>([])
+  useEffect(() => { failRef.current = failSave }, [failSave])
+  useEffect(() => {
+    useProjectStore.getState().resetProjectState()
+    useProjectStore.getState().setProject(project)
+    useProjectStore.getState().setCurrentActivity('A-2-1')
+    useProjectStore.getState().setMessages([{ id: 'fixture-user', role: 'user', content: '기후위기요. 온도 자료를 읽고 근거 있는 주장 글로 제안하면 좋겠어요.', activityCode: 'A-2-1', createdAt: Timestamp.now() }])
+    const original = window.fetch
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (!url.includes('/api/curriculum-sheet/autofill')) return original(input, init)
+      const body = JSON.parse(String(init?.body || '{}'))
+      setRequests(current => [...current, body])
+      if (body.mode === 'coreIdeas') return Response.json(review)
+      if (body.mode === 'describe') return Response.json({ descriptions: {}, verification: {}, steps: [] })
+      const generated = (body.selectedCoreIdeas ?? []).map((item: { subject: string; coreIdea: string; gradeBands?: string[] }, index: number) => ({
+        id: `mock-row-${index}`, subject: item.subject, gradeBand: item.gradeBands?.[0] ?? '5-6학년군', coreIdea: item.coreIdea,
+        standard: review.proposals.find(proposal => proposal.subject === item.subject)?.options.find(option => option.idea === item.coreIdea)?.sampleStandards[0] ?? '',
+        knowledge: '', processFunction: '', valueAttitude: '', description: '', isCenter: false, updatedBy: '브라우저 mock', updatedAt: 1,
+      }))
+      return Response.json({ rows: generated, steps: [], notes: ['브라우저 fixture 응답 — 저장은 메모리 콜백뿐입니다.'] })
+    }
+    setReady(true)
+    return () => { window.fetch = original; useProjectStore.getState().resetProjectState() }
+  }, [review])
+  function commit(next: CurriculumSheetRow[]) { rowsRef.current = next; setRows(next) }
+  async function save(next: CurriculumSheetRow[]) {
+    setSaves(count => count + 1)
+    await new Promise(resolve => setTimeout(resolve, 800))
+    if (failRef.current) throw new Error('mock 저장 실패')
+    commit(next)
+    return next
+  }
+  async function patch(value: CurriculumSheetPatch): Promise<CurriculumSheetRow[]> {
+    const current = rowsRef.current
+    if (value.type === 'replace-all') return save(value.rows)
+    if (value.type === 'upsert-row') { commit([...current.filter(row => row.id !== value.row.id), value.row]); return rowsRef.current }
+    if (value.type === 'update-cell') { commit(current.map(row => row.id === value.rowId ? { ...row, [value.field]: value.value } : row)); return rowsRef.current }
+    if (value.type === 'merge-autofill') { commit(value.rows); return rowsRef.current }
+    return current
+  }
+  return <>
+    {ready && <CurriculumWorkspaceModal open onClose={() => {}} projectId={project.id}
+      sheetRows={rows} onSheetSave={async next => { await save(next) }} onSheetPatch={patch}
+      targetGradeGroup="초5-6" teamGradeBands={['5-6학년군']} currentUserName="시험 교사" currentUid=""
+      a12Artifact={{ ...artifact, targetSubjects: ['국어', '수학'] }} chatContext="[assistant] 옛 독서 예시는 현재 수업 주제가 아닙니다." />}
+    <div style={{ position: 'fixed', left: 12, bottom: 6, zIndex: 10001, background: 'white', border: '1px solid #999', padding: 8 }} data-testid="autofill-controls">
+      <label><input type="checkbox" checked={failSave} onChange={event => setFailSave(event.target.checked)} data-testid="fail-save" />저장 reject 시험</label>
+      <span data-testid="save-count">저장 {saves}회</span>
+      <span data-testid="request-count"> 요청 {requests.length}회</span>
+      <button type="button" onClick={() => {
+        const current = useProjectStore.getState().project!
+        useProjectStore.getState().setProject({ ...current, trainingMode: { enabled: !current.trainingMode?.enabled, coreFormal: true } })
+      }}>일반/연수 전환</button>
+      <pre hidden data-testid="autofill-request-json">{JSON.stringify(requests)}</pre>
+      <pre hidden data-testid="saved-rows-json">{JSON.stringify(rows)}</pre>
+    </div>
+  </>
+}

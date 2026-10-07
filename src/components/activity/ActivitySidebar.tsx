@@ -375,7 +375,7 @@ export function ActivitySidebar() {
   // 산출물이 있어야 완료로 간주 (status만으로는 완료 처리 안 함)
   // P1-I: 중앙화된 헬퍼로 위임 (E 단계 requiredSections 검증 포함).
   function isEffectivelyDone(code: ActivityCode) {
-    return checkEffectivelyDone(code, activityStatus, project?.artifacts)
+    return checkEffectivelyDone(code, activityStatus, project?.artifacts, project)
   }
   const completedCount = visibleActivities.filter(a => isEffectivelyDone(a)).length
   const totalCount = visibleActivities.length
@@ -502,7 +502,7 @@ export function ActivitySidebar() {
                   isHost={isHost}
                   status={activityStatus[code] ?? 'not_started'}
                   hasArtifact={!!project?.artifacts?.[code]}
-                  artifactConfirmed={project?.artifacts?.[code]?.status === 'confirmed'}
+                  artifactConfirmed={project?.artifacts?.[code]?.status === 'confirmed' || isEffectivelyDone(code)}
                   stageBg={color.bg}
                   onClick={() => handleActivityClick(code)}
                 />

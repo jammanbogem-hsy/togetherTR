@@ -325,18 +325,26 @@ function ResultView({
   detailStatus,
   onRetryDetail,
   onSelect,
+  committedTitle,
+  canSave = false,
+  saving = false,
 }: {
   result: ProblemSituationResult
   detailStatus: DetailStatusMap
   onRetryDetail: (index: number) => void
   onSelect: (data: ProblemSituationData) => void
+  /** 실제로 확정된 문제 상황 제목(부모의 currentData) — 체크 표시는 이 값에서만 나온다 */
+  committedTitle?: string | null
+  /** 기록 담당이면 확정하는 순간 저장까지 한다 */
+  canSave?: boolean
+  saving?: boolean
 }) {
-  const [selectedIndex, setSelectedIndex] = useState(result.recommended?.index ?? 0)
-  const [zoom, setZoom] = useState<{ title: string; body: ReactNode } | null>(null)
-  // 산출물로 보낼 단 하나의 확정 후보 (기본값: AI 추천 후보)
-  const [committedIndex, setCommittedIndex] = useState(result.recommended?.index ?? 0)
-  const openZoom = (title: string, body: ReactNode) => setZoom({ title, body })
   const candidates = result.candidates ?? []
+  // 체크(확정) 표시는 저장될 선택값에서 계산한다 — 예전에는 확정 전에도 AI 추천 후보에 체크가 보였다.
+  const committedIndex = committedTitle ? candidates.findIndex(c => c.title === committedTitle) : -1
+  const [selectedIndex, setSelectedIndex] = useState(committedIndex >= 0 ? committedIndex : (result.recommended?.index ?? 0))
+  const [zoom, setZoom] = useState<{ title: string; body: ReactNode } | null>(null)
+  const openZoom = (title: string, body: ReactNode) => setZoom({ title, body })
   const selected = candidates[selectedIndex]
   const detail = getScenarioDetail(result, selectedIndex)
   const isRecommended = result.recommended?.index === selectedIndex
@@ -350,7 +358,6 @@ function ResultView({
   // 조각이 아직 안 온 필드는 빈칸 대신 생성 중 표시
   const orPending = (v: string | undefined) => v || (selectedStatus === 'loading' ? '생성 중…' : '')
   const commitSelected = () => {
-    setCommittedIndex(selectedIndex)
     try { onSelect(resultToSaveData(result, selectedIndex)) }
     catch (e) { console.error('[후보 선택] resultToSaveData 오류:', e) }
   }
@@ -428,14 +435,14 @@ function ResultView({
                 tone="blue"
                 size="sm"
                 onClick={commitSelected}
-                disabled={detailPending}
+                disabled={detailPending || saving}
                 icon={<CheckCircle size={MD3_ICON.sm} weight="fill" />}
               >
-                이 후보를 산출물로 선택
+                {canSave ? '이 후보로 확정·저장' : '이 후보를 산출물로 선택'}
               </MD3Button>
             )}
             <span className="text-[14px] text-[var(--md-sys-on-surface-variant)]">
-              {detailPending ? '상세 생성이 끝나면 선택할 수 있습니다' : '산출물에는 선택한 1개 후보만 저장됩니다'}
+              {detailPending ? '상세 생성이 끝나면 선택할 수 있습니다' : canSave ? '확정하면 바로 산출물에 저장됩니다(선택한 1개 후보만)' : '산출물에는 선택한 1개 후보만 저장됩니다'}
             </span>
           </div>
         </div>
@@ -732,6 +739,10 @@ export default function ProblemSituationDesigner({
 
   // 확정된 문제상황
   const [currentData, setCurrentData] = useState<ProblemSituationData | null>(savedData ?? null)
+  const savingRef = useRef(false)
+  // 채팅 스트림 콜백(useCallback)에서 최신 확정 함수·권한을 쓰기 위한 참조
+  const isLeaderRef = useRef(isLeader)
+  const confirmScenarioRef = useRef<(data: ProblemSituationData) => Promise<boolean>>(async () => false)
 
   // 채팅 상태
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -740,6 +751,8 @@ export default function ProblemSituationDesigner({
   const [chatStreamingText, setChatStreamingText] = useState('')
   const chatBottomRef = useRef<HTMLDivElement>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [savedScenarioTitle, setSavedScenarioTitle] = useState(savedData?.scenario.title ?? '')
 
   // ── 생성 (2단계: 개요 → 후보별 상세 병렬) ─────────────────
   const buildRequestBody = useCallback(() => ({
@@ -891,8 +904,14 @@ export default function ProblemSituationDesigner({
             if (evt.type === 'text') { fullText += evt.text; setChatStreamingText(fullText) }
             else if (evt.type === 'done') {
               const psData = parsePsReady(fullText)
-              if (psData) setCurrentData(psData)
-              setChatMessages(prev => [...prev, { role: 'assistant', content: cleanPsReady(fullText) }])
+              const saved = psData ? await confirmScenarioRef.current(psData) : false
+              // 확정 신호만 온 답은 빈 말풍선이 되지 않게 결과를 알린다.
+              const reply = psData
+                ? (isLeaderRef.current
+                  ? (saved ? `"${psData.scenario.title}" 문제 상황을 확정하고 저장했습니다.` : '저장을 완료하지 못했습니다. 선택한 내용은 남아 있으니 아래 저장 안내를 확인해 주세요.')
+                  : `"${psData.scenario.title}" 문제 상황을 골랐습니다. 저장은 기록 담당이 할 수 있어요.`)
+                : cleanPsReady(fullText).trim()
+              if (reply) setChatMessages(prev => [...prev, { role: 'assistant', content: reply }])
               setChatStreamingText('')
             }
           } catch { /* skip */ }
@@ -906,17 +925,34 @@ export default function ProblemSituationDesigner({
     }
   }, [chatInput, chatMessages, chatStreaming, currentData, result, projectTitle, targetGradeGroup])
 
-  const handleSave = async () => {
-    if (!currentData || !isLeader) return
+  // 기록 담당이 후보를 확정하거나 채팅으로 확정하면 그 순간 저장한다('저장해줘'·하단 버튼을 따로 누르지 않아도 됨).
+  const handleSave = async (data: ProblemSituationData | null = currentData) => {
+    if (!data || !isLeader || savingRef.current) return false
+    savingRef.current = true
     setIsSaving(true)
+    setSaveError('')
     try {
-      await onSave(currentData)
+      await onSave(data)
+      setSavedScenarioTitle(data.scenario.title)
+      return true
     } catch (e) {
       console.error('[ProblemSituationDesigner] 저장 실패:', e)
+      setSaveError('저장하지 못했습니다. 선택한 내용은 그대로예요. 다시 저장해 주세요.')
+      return false
     } finally {
+      savingRef.current = false
       setIsSaving(false)
     }
   }
+  const confirmScenario = async (data: ProblemSituationData): Promise<boolean> => {
+    if (savingRef.current) return false
+    setCurrentData(data)
+    return isLeader ? handleSave(data) : false
+  }
+  useEffect(() => {
+    isLeaderRef.current = isLeader
+    confirmScenarioRef.current = confirmScenario
+  })
 
   return (
     <div className="m3-shell fixed inset-0 z-50 bg-[var(--md-sys-surface-container-low)] flex flex-col" style={{ fontFamily: 'inherit' }}>
@@ -1130,7 +1166,8 @@ export default function ProblemSituationDesigner({
               </div>
             )}
             {result && !isGenerating && (
-              <ResultView result={result} detailStatus={detailStatus} onRetryDetail={retryDetail} onSelect={setCurrentData} />
+              <ResultView result={result} detailStatus={detailStatus} onRetryDetail={retryDetail} onSelect={confirmScenario}
+                committedTitle={isLeader ? savedScenarioTitle : currentData?.scenario.title} canSave={isLeader} saving={isSaving} />
             )}
           </div>
         </div>
@@ -1200,6 +1237,7 @@ export default function ProblemSituationDesigner({
         </div>
       </div>
 
+      {saveError && <p role="alert" className="shrink-0 bg-[#FCE8E6] px-5 py-3 text-sm text-[#C5221F]">{saveError}</p>}
       {/* 하단 저장 바 */}
       {isLeader && (
         <div className="flex-shrink-0 bg-[var(--md-sys-surface-container)] px-4 py-3 sm:px-5 flex items-center justify-between gap-3">
@@ -1211,7 +1249,7 @@ export default function ProblemSituationDesigner({
                 title="확정 내용 전체 보기"
               >
                 <ArrowsOut size={13} />
-                <span className="truncate">&quot;{currentData.scenario.title}&quot; 확정됨 — 클릭해서 전체 보기</span>
+                <span className="truncate">&quot;{currentData.scenario.title}&quot; {isLeader && savedScenarioTitle !== currentData.scenario.title ? '저장 전' : '확정됨'} — 클릭해서 전체 보기</span>
               </button>
             ) : (
               <p className="text-[15px] text-[var(--md-sys-on-surface-variant)]">결과에서 &quot;이 후보를 산출물로 선택&quot; 버튼을 클릭하거나 채팅에서 &quot;저장해줘&quot;라고 하세요.</p>
@@ -1220,7 +1258,7 @@ export default function ProblemSituationDesigner({
           <MD3Button
             variant="filled"
             tone="blue"
-            onClick={handleSave}
+            onClick={() => { void handleSave() }}
             disabled={!currentData || isSaving}
             className="flex-shrink-0"
             icon={isSaving ? <SpinnerGap size={MD3_ICON.sm} className="animate-spin" /> : <FloppyDisk size={MD3_ICON.sm} weight="bold" />}

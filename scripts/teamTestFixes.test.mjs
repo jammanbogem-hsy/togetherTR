@@ -1,3 +1,5 @@
+import { TRAINING_GUIDANCE_RULES } from '../src/lib/prompts/training.ts'
+import { REVIEW_ACTION_RULES } from '../src/lib/chat/reviewAction.ts'
 // node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs --test scripts/teamTestFixes.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -39,7 +41,8 @@ import { buildT12Structured, sanitizeArtifactSections, sanitizeChatForExtraction
 // TASK-M1: 저장값만 solo 인 팀원 있는 방은 협력 방 — ChatPanel 함수들이 쓰는 판정·명령 해석을 하네스 기본값으로 넣는다.
 const { effectiveProjectMode, isSoloProject } = await import('../src/lib/project/projectMode.ts')
 const { classifyMemberCommand } = await import('../src/lib/project/memberAdmin.ts')
-const MODE_HELPERS = { effectiveProjectMode, isSoloProject, classifyMemberCommand }
+const moveRequest = await import('../src/lib/chat/moveRequest.ts')
+const MODE_HELPERS = { handleTrainingNextRequest: async () => false, effectiveProjectMode, isSoloProject, classifyMemberCommand, isMoveRequest: moveRequest.isMoveRequest, MOVE_NEEDS_RECORDER: moveRequest.MOVE_NEEDS_RECORDER }
 // TASK-V1: 산출물 내부 키 필터
 const internalKeys = await import('../src/lib/artifacts/internalKeys.ts')
 const chat = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
@@ -254,7 +257,7 @@ test('15b: 부분 답 재시도는 같은 ID의 Firestore 문서와 로컬 메�
     parseArtifactUpdates: text => ({ updates: [], cleanText: text }), gateArtifactUpdates: (updates, confirmCodes) => ({ updates, confirmCodes, notices: [] }), appendSaveGateNotice: text => text,
     displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [], shouldReplyTrainingQuietly: () => false,
     parseHelpCard: text => ({ cleanText: text }),
-    parseOptions: () => null, parseActionCard: () => null, Timestamp: { now: () => 1 },
+    parseOptions: () => null, parseActionCard: () => null, completeReviewAction: parsed => parsed, Timestamp: { now: () => 1 },
     generateMessageId: () => { throw new Error('재시도에 새 ID를 만들면 안 된다') },
     addMessage: message => additions.push(message), replaceMessage: (...args) => replacements.push(args),
     saveMessage: async (...args) => writes.push(args), processArtifactSignals: async () => false,
@@ -482,19 +485,22 @@ test('5b: 확정 산출물의 동일 내용 신호만 있고 이동 의도가 �
     })
     const updates = [{ sections: { '설계 방향': '- **자료 읽기**: 근거를 살핀다' } }]
     const unchanged = await process(updates, [], '')
+    // 분명한 이동 요청은 산출물 상태와 무관하게 이동 카드(한 번 더 확인)를 띄운다 — AI 가 이동 신호를 빠뜨려도(2026-10-07)
     offer(unchanged, '다음 활동으로 가요')
-    assert.equal(offered, status === 'confirmed' ? 1 : 0)
+    assert.equal(offered, 1)
     offer(unchanged, '고맙습니다')
-    assert.equal(offered, status === 'confirmed' ? 1 : 0)
+    assert.equal(offered, 1)
     assert.equal(await process([], [], ''), false)
     assert.equal(await process([{ sections: { '설계 방향': '- **자료 읽기**: 출처도 확인한다' } }], [], ''), false)
   }
   let offered = false
+  const notices = []
   const memberOffer = loadChatFunction('offerAdvanceAfterConfirmedNoop', {
-    isHost: false, handlePromptNextCommand: () => { offered = true },
+    isHost: false, handlePromptNextCommand: () => { offered = true }, addAssistantNotice: text => notices.push(text),
   })
   memberOffer(true, '넘어가 주세요')
   assert.equal(offered, false)
+  assert.match(notices[0], /기록 담당만/, '팀원에게는 이동이 막혀 있다는 안내')
 })
 
 test('2: 실패 요청은 해당 클라이언트·발신자·활동에서만 재시도할 수 있다', () => {
@@ -1623,7 +1629,8 @@ test('38b: 관문은 Ds-1-1 평가 계획·Ds-1-3 학습 활동만 거르고, �
 
 test('38c: Ds-1-1·Ds-1-3 프롬프트에 허용 근거 코드 목록과 형식 줄(수준 글자 없음)이 붙고, 저장 두 경로가 관문을 거친다', () => {
   const ctx = task038.buildAllowedEvidenceCodesContext('Ds-1-1', ['[2국03-02]', '[4사08-02]'])
-  assert.match(ctx, /허용 근거 코드 목록[\s\S]*\[2국03-02\] \[4사08-02\]/)
+  assert.match(ctx, /근거로 쓸 수 있는 성취기준 코드[\s\S]*\[2국03-02\] \[4사08-02\]/)
+  assert.match(ctx, /"허용 코드 목록" 같은 내부 표현을 쓰지 않는다/)
   assert.match(ctx, /목록 밖 코드는 저장 단계에서 자동으로 지워진다/)
   assert.match(ctx, /"\(근거: \[코드\]\)", 여러 개면 쉼표로 잇는다/)
   assert.match(ctx, /코드 뒤에 A·B·C 같은 수준 글자는 붙이지 않는다/)
@@ -2598,12 +2605,13 @@ test('T7: buildSystemPrompt — 연수용 활동에만 규칙 주입(일반 규�
 // TASK-T9 이후 허용된 유일한 차이: 단계 종료 체크리스트의 팀 확인 칸 '□' → '☐' 와 그 형식 안내 한 줄.
 function withChecklistFormat(text) {
   return text
+    .replace('## 행동 제안 카드 (ACTION_CARD)\n\n', '## 행동 제안 카드 (ACTION_CARD)\n\n' + REVIEW_ACTION_RULES)
     .replaceAll('| □ |', '| ☐ |')
     .replace('**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").', '**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").\n**팀 확인** 칸에는 \'☐\' 한 글자만 쓴다 — 선생님들이 화면에서 직접 눌러 체크한다(✅·□·설명 글 쓰지 않기).')
     .replace('아래 **축약 체크리스트**를 표로 출력한다:\n', '아래 **축약 체크리스트**를 표로 출력한다(확인 칸에는 \'☐\' 한 글자만 — 선생님이 화면에서 직접 체크):\n')
 }
 
-test('T8: 일반 프로젝트 프롬프트는 연수용 도입 전(태그 pre-training-mode-2026-10-04)과 한 글자도 같다', async t => {
+test('T8: 일반 프롬프트는 승인된 체크리스트 형식·검토 행동 안내 외에 연수용 도입 전과 같다', async t => {
   let source
   try {
     source = execFileSync('git', ['show', 'pre-training-mode-2026-10-04:src/lib/prompts/system.ts'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname })
@@ -2631,7 +2639,7 @@ test('T8: 일반 프로젝트 프롬프트는 연수용 도입 전(태그 pre-tr
   for (const code of training.TRAINING_CORE_ACTIVITIES) {
     const stage = T_META[code].stage
     const args = [stage, code, on, '팀+AI', undefined, null, undefined, {}, undefined]
-    assert.equal(buildSystemPrompt(...args), withChecklistFormat(before.buildSystemPrompt(...args)), code)
+    assert.equal(buildSystemPrompt(...args), withChecklistFormat(before.buildSystemPrompt(...args)) + '\n\n' + TRAINING_GUIDANCE_RULES, code)
   }
   fs.rmSync(dir, { recursive: true, force: true })
 })
@@ -2664,7 +2672,9 @@ const { TrainingFieldInput } = loadArtifactTsx('../src/components/training/Train
   react: React,
   '@/lib/training/trainingTable': await import('../src/lib/training/trainingTable.ts'),
 })
+const trainingNavigation = await import('../src/lib/training/navigation.ts')
 const trainingUiBindings = {
+  ...trainingNavigation,
   ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES, isSoloProject, TrainingFieldInput,
   SOLO_HIDDEN_ACTIVITIES: ['T-2-1', 'T-2-2', 'T-2-3', 'E-2-1'],
   useState: value => [typeof value === 'function' ? value() : value, () => {}],
@@ -3627,10 +3637,10 @@ test('T16c: 상태 저장 경로 — 메시지 문서의 checklistState.순번 �
   assert.equal(checklistLib.messageDocPath('p1', { id: 'm1', activityCode: 'T-2-3' }, 'T'), 'projects/p1/conversations/T-2-3/messages/m1')
   assert.equal(checklistLib.messageDocPath('p1', { id: 'm1', activityCode: 'T-2-3', legacyPath: true }, 'T'), 'projects/p1/conversations/T/messages/m1')
   const projects = fs.readFileSync(new URL('../src/lib/firebase/projects.ts', import.meta.url), 'utf8')
-  assert.match(projects, /updateDoc\(doc\(db, path\), \{ \[`checklistState\.\$\{index\}`\]: \{ checked, by, at: serverTimestamp\(\) \} \}\)/)
+  assert.match(projects, /new FieldPath\('checklistState', String\(index\), uid\)/)
   assert.match(projects, /\.map\(d => \(\{ id: d\.id, \.\.\.d\.data\(\), legacyPath: true \}\) as Message\)/)
   const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
-  assert.match(panel, /replaceMessage\(msg\.id, msg\.content, \{ checklistState: \{ \.\.\.msg\.checklistState, \[String\(index\)\]: \{ checked, by \} \} \}\)/)
+  assert.match(panel, /applyChecklistToggle\(current\.checklistState, index, uid, checked, name, at\)/)
   assert.match(panel, /checklist=\{msg\.role === 'assistant' \? \{/)
 })
 
@@ -3644,7 +3654,7 @@ test('T16d: 렌더 — 진짜 체크박스, 저장 상태·체크한 사람 이�
     INTERNAL_ACTIVITY_CODE_RE: /$^/g, displayActivityCode: c => c, splitGuideLines: () => null,
     childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
     CHAT_REMARK_PLUGINS: [...REMARK_PLUGINS, tableWidthLib.remarkShortColumns],
-    CHECKER_COLORS: ['#1A73E8', '#188038'],
+    CHECKER_COLORS: ['#1A73E8', '#188038'], ...checklistLib, ChatMarkdownTable: ({ children }) => React.createElement('div', null, React.createElement('table', null, children)),
   }, ['MarkdownContent', 'ChecklistBox', 'shortCellStyle', 'checkerColor', 'checkedAtText'])
   const state = { 0: { checked: true, by: '캔바1' }, 4: { checked: false, by: '홍성용' } }
   const html = renderToStaticMarkup(React.createElement(MarkdownContent, { text: tChecklistText, checklist: { state, canEdit: true, onToggle() {} } }))
@@ -3979,7 +3989,7 @@ test('C1: 체크 칸은 체크박스+첫 글자 배지 한 줄, 짧은 열(단�
     markdownHeadingComponents: {}, HighlightedStrong: ({ children }) => React.createElement('strong', null, children),
     INTERNAL_ACTIVITY_CODE_RE: /$^/g, displayActivityCode: c => c, splitGuideLines: () => null,
     childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
-    CHAT_REMARK_PLUGINS: [...REMARK_PLUGINS, tableWidthLib.remarkShortColumns], CHECKER_COLORS: ['#1A73E8', '#188038'],
+    CHAT_REMARK_PLUGINS: [...REMARK_PLUGINS, tableWidthLib.remarkShortColumns], CHECKER_COLORS: ['#1A73E8', '#188038'], ...checklistLib, ChatMarkdownTable: ({ children }) => React.createElement('div', null, React.createElement('table', null, children)),
   }, ['MarkdownContent', 'ChecklistBox', 'shortCellStyle', 'checkerColor', 'checkedAtText'])
   const text = '| 단계 | 핵심 점검 항목 | AI 분석 | 팀 확인 |\n|---|---|---|---|\n| T-3 역할 배분 | 팀원 각자의 강점, 관심사, 현재 업무 여력을 충분히 고려하여 균형 있게 역할을 배분하였는가? 그리고 기록하였는가? | ✅ | ☐ |'
   const html = renderToStaticMarkup(React.createElement(MarkdownContent, { text, checklist: { state: { 0: { checked: true, by: '홍성용', at: { toDate: () => new Date(2026, 9, 5, 9, 30) } } }, canEdit: true, onToggle() {} } }))

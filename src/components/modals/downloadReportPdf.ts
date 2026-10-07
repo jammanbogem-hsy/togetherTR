@@ -15,15 +15,46 @@ function reportBlocks(root: HTMLElement): HTMLElement[] {
   return [root]
 }
 
+/** 소제목처럼 쓰인 문단 — 굵은 글씨 한 줄만 있는 짧은 문단('**AI 점검**'). */
+export function isLabelParagraph(text: string, strongText: string): boolean {
+  const t = text.trim()
+  return !!t && t.length <= 40 && t === strongText.trim()
+}
+
+/**
+ * 소제목과 그 뒤 첫 내용 사이에서는 페이지를 나누지 않는다 — 제목만 앞 페이지 끝에 남던 결함.
+ * keep: [소제목 위쪽, 뒤따르는 첫 행·문단의 아래쪽) 구간 안의 경계는 버린다.
+ */
+export function keepHeadingsWithNext(breakpoints: readonly number[], keep: ReadonlyArray<{ start: number; end: number }>): number[] {
+  return breakpoints.filter(point => !keep.some(range => point > range.start + 0.5 && point < range.end - 0.5))
+}
+
+const HEADING_SELECTOR = 'h1,h2,h3,h4,h5,h6'
+function isHeadingLike(element: HTMLElement): boolean {
+  if (element.matches(HEADING_SELECTOR)) return true
+  if (element.tagName !== 'P') return false
+  const strong = Array.from(element.querySelectorAll('strong,b')).map(item => item.textContent ?? '').join('')
+  return isLabelParagraph(element.textContent ?? '', strong)
+}
+
 function measureBlock(element: HTMLElement): MeasuredBlock {
   const bounds = element.getBoundingClientRect()
-  // 표의 내부 문단을 경계로 쓰면 한 행이 잘리므로 최상위 행·문단만 사용한다.
-  const breakpoints = Array.from(element.querySelectorAll<HTMLElement>('tr,p,li,pre,blockquote')).filter(child => {
+  // 표의 내부 문단을 경계로 쓰면 한 행이 잘리므로 최상위 행·문단만 사용한다. 내용 없는 빈 문단은 경계가 아니다.
+  const candidates = Array.from(element.querySelectorAll<HTMLElement>('tr,p,li,pre,blockquote')).filter(child => {
     if (child.closest('thead')) return false
     if (child.tagName !== 'TR' && child.closest('tr')) return false
     if (child.tagName !== 'LI' && child.closest('li')) return false
-    return child.getBoundingClientRect().height > 0
-  }).map(child => child.getBoundingClientRect().bottom - bounds.top)
+    return child.getBoundingClientRect().height > 0 && !!child.textContent?.trim()
+  })
+  // 소제목(h1~h6·굵은 한 줄 문단)은 뒤따르는 첫 행·문단과 한 묶음으로 둔다.
+  const headings = Array.from(element.querySelectorAll<HTMLElement>(`${HEADING_SELECTOR},p`)).filter(item => isHeadingLike(item) && item.getBoundingClientRect().height > 0)
+  const keep = headings.map(heading => {
+    const top = heading.getBoundingClientRect().top - bounds.top
+    const next = candidates.find(child => child !== heading && !isHeadingLike(child)
+      && (heading.compareDocumentPosition(child) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0)
+    return { start: top, end: next ? next.getBoundingClientRect().bottom - bounds.top : top }
+  })
+  const breakpoints = keepHeadingsWithNext(candidates.map(child => child.getBoundingClientRect().bottom - bounds.top), keep)
   const headerElements = Array.from(element.querySelectorAll<HTMLElement>('thead')).filter(header => !header.closest('.report-table-wide') && header.getBoundingClientRect().height > 0)
   const headers = headerElements.map(header => {
     const rectangle = header.getBoundingClientRect()

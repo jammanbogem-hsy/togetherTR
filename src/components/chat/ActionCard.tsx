@@ -53,7 +53,8 @@ export function ActionCard({
   onPrimary,
   onSecondary,
   onSkip,
-}: ActionCardProps) {
+  secondaryIsDraft = false,
+}: ActionCardProps & { secondaryIsDraft?: boolean }) {
   const palette = STAGE_PALETTE[stage]
   // 낙관적 잠금 — 클릭 즉시 버튼 비활성. Firestore 동기화가 돌아오면 isSelected로 덮어씀.
   const [clicked, setClicked] = useState(false)
@@ -65,8 +66,8 @@ export function ActionCard({
     onPrimary()
   }
   const handleSecondary = () => {
-    if (locked || !isHost || !onSecondary) return
-    setClicked(true)
+    if (locked || (!isHost && !secondaryIsDraft) || !onSecondary) return
+    if (!secondaryIsDraft) setClicked(true)
     onSecondary()
   }
   const handleSkip = () => {
@@ -145,11 +146,11 @@ export function ActionCard({
           <button
             type="button"
             onClick={handleSecondary}
-            disabled={locked || !isHost}
-            aria-disabled={locked || !isHost}
-            tabIndex={locked || !isHost ? -1 : 0}
+            disabled={locked || (!isHost && !secondaryIsDraft)}
+            aria-disabled={locked || (!isHost && !secondaryIsDraft)}
+            tabIndex={locked || (!isHost && !secondaryIsDraft) ? -1 : 0}
             aria-label={`대안 행동: ${card.secondary}`}
-            title={!isHost ? '기록 담당만 결정할 수 있습니다' : undefined}
+            title={!isHost && !secondaryIsDraft ? '기록 담당만 결정할 수 있습니다' : undefined}
             className="transition-transform hover:enabled:scale-[1.02] px-4 py-2 rounded-xl text-[13px] font-semibold border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {card.secondary}

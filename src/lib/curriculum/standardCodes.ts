@@ -5,7 +5,8 @@
 
 import type { CurriculumSheetRow } from '@/types'
 
-const STANDARD_CODE_RE = /\[(\d[가-힣]{1,3}\d{2}-\d{2})\]/g
+// 대괄호가 빠진 코드(예: 표 칸의 '4수04-03')도 같은 코드로 본다 — 항상 '[코드]' 형태로 돌려준다.
+const STANDARD_CODE_RE = /\[?(\d[가-힣]{1,3}\d{2}-\d{2})\]?/g
 
 /** 글 안의 성취기준 코드를 처음 나온 순서대로 중복 없이 뽑는다. */
 export function extractStandardCodes(text: string): string[] {
@@ -18,7 +19,8 @@ type ArtifactMap = Record<string, { content?: Record<string, unknown> | null } |
 
 /**
  * 이 설계의 성취기준 코드를 찾을 글 목록. A-2-1 산출물(성취기준 분석표)이 1순위,
- * 공동 편집 교육과정 시트가 2순위다.
+ * 공동 편집 교육과정 시트가 2순위, 교사가 저장한 A-2-2 통합 수업목표(교과별 목표의 근거 코드)가 3순위다.
+ * A-2-2 를 빼면 목표에 쓴 성취기준이 평가·활동 근거에서 '목록 밖'으로 지워졌다.
  */
 export function designStandardSources(
   artifacts: ArtifactMap | null | undefined,
@@ -30,5 +32,7 @@ export function designStandardSources(
   for (const row of curriculumSheet ?? []) {
     if (row?.standard) sources.push(row.standard)
   }
+  const a22 = artifacts?.['A-2-2']?.content
+  if (a22) sources.push(JSON.stringify(a22))
   return sources
 }

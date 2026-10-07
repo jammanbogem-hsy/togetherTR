@@ -13,6 +13,8 @@
 import type { ActivityCode, Project, StageStatus } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import { validateRequiredSections } from './requiredSections'
+import { isTrainingActivity, trainingStatus } from '@/lib/training/trainingMode'
+import { trainingFormValues } from '@/components/training/trainingFormState'
 
 export { validateRequiredSections } from './requiredSections'
 
@@ -28,11 +30,20 @@ type ArtifactsMap = Project['artifacts']
 export function isEffectivelyDone(
   code: ActivityCode,
   activityStatus: ActivityStatusMap,
-  artifacts: ArtifactsMap
+  artifacts: ArtifactsMap,
+  project?: Pick<Project, 'trainingMode'> | null,
 ): boolean {
   const status = activityStatus[code]
   const artifact = artifacts?.[code]
   const hasArtifact = !!artifact
+
+  // The training form saves its result without an AI advance signal. Use the same
+  // normalized fields as the form, whether entered as prose, Markdown or structured data.
+  if (isTrainingActivity(project, code)) {
+    if (!artifact || artifact.status === 'rejected') return false
+    const result = trainingStatus(code, trainingFormValues(code, artifact.content ?? {}))
+    return result.requiredTotal > 0 && result.missingRequired.length === 0
+  }
 
   // 기존 로직 (non-E 활동은 여기서 판정 종료)
   const baseDone = (status === 'completed' || status === 'warning') && hasArtifact

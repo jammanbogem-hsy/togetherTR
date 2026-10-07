@@ -9,8 +9,57 @@ export interface ChecklistEntry {
   at?: unknown
 }
 
-/** messages/{id}.checklistState — 순번(문자열 키) → 상태 */
-export type ChecklistState = Record<string, ChecklistEntry | undefined>
+export interface ChecklistUserEntry {
+  checked: boolean
+  name: string
+  at?: unknown
+}
+
+/** 기존 공동 기록 또는 uid별 기록. 공동 기록에 uid 필드를 더한 과도기 문서도 읽는다. */
+export type ChecklistItemState = ChecklistEntry | Record<string, ChecklistUserEntry | undefined>
+export type ChecklistState = Record<string, ChecklistItemState | undefined>
+
+function checklistRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+/** uid로 추정해 이관하지 않는다. by는 예전 교사 이름이므로 공동 기록으로 따로 표시한다. */
+export function checklistLegacyEntry(index: number, state?: ChecklistState | null): ChecklistEntry | null {
+  const row = checklistRecord(state?.[String(index)])
+  if (!row || typeof row.checked !== 'boolean') return null
+  return { checked: row.checked, ...(typeof row.by === 'string' ? { by: row.by } : {}), ...(row.at !== undefined ? { at: row.at } : {}) }
+}
+
+function checklistUserEntry(value: unknown, uid: string): ChecklistUserEntry | null {
+  const saved = checklistRecord(value)
+  if (!saved || typeof saved.checked !== 'boolean') return null
+  return { checked: saved.checked, name: typeof saved.name === 'string' && saved.name.trim() ? saved.name : uid,
+    ...(saved.at !== undefined ? { at: saved.at } : {}) }
+}
+
+/** 개인별 n/전체에는 이 목록만 사용한다. 이전 공동 체크·원문 [x]는 참여자로 세지 않는다. */
+export function checklistParticipants(index: number, state?: ChecklistState | null): Array<ChecklistUserEntry & { uid: string }> {
+  const row = checklistRecord(state?.[String(index)])
+  if (!row) return []
+  const legacy = checklistLegacyEntry(index, state)
+  return Object.entries(row).flatMap(([uid, value]) => {
+    if (legacy && ['checked', 'by', 'at'].includes(uid)) return []
+    const entry = checklistUserEntry(value, uid)
+    return entry ? [{ uid, ...entry }] : []
+  }).sort((a, b) => a.uid.localeCompare(b.uid))
+}
+
+/** 화면의 개인 낙관적 갱신. 저장 경로처럼 지정 uid만 바꾸고 다른 uid·공동 기록은 보존한다. */
+export function applyChecklistToggle(state: ChecklistState | null | undefined, index: number, uid: string, checked: boolean, name: string, at: unknown = Date.now()): ChecklistState {
+  if (!Number.isSafeInteger(index) || index < 0) throw new Error('checklist-invalid-index')
+  if (typeof uid !== 'string' || !uid.trim()) throw new Error('checklist-user-required')
+  if (typeof checked !== 'boolean') throw new Error('checklist-invalid-checked')
+  const key = String(index)
+  const entry: ChecklistUserEntry = { checked, name: typeof name === 'string' && name.trim() ? name : uid, ...(at !== undefined ? { at } : {}) }
+  // 기존 타입이 보장하는 공동 기록과 개인 map을 그대로 복사한다.
+  const item: ChecklistItemState = { ...state?.[key], [uid]: entry }
+  return { ...state, [key]: item }
+}
 
 const MARK_RE = /^⟦체크:(\d+):([01])⟧$/
 
@@ -59,16 +108,19 @@ export function prepareChecklistMarkdown(text: string): { markdown: string; coun
   return { markdown: lines.join('\n'), count: defaults.length, defaults }
 }
 
-/** 화면에 보일 체크 상태(저장된 상태가 있으면 그것, 없으면 원문 기본값) */
-export function isChecklistChecked(index: number, defaults: readonly boolean[], state?: ChecklistState | null): boolean {
-  const saved = state?.[String(index)]
-  return saved ? saved.checked : defaults[index] === true
+/** uid를 지정하면 본인 명시 기록만 읽는다. uid 생략은 기존 공동 기록·원문 기본값 호환. */
+export function isChecklistChecked(index: number, defaults: readonly boolean[], state?: ChecklistState | null, uid?: string): boolean {
+  if (uid !== undefined) {
+    const row = checklistRecord(state?.[String(index)])
+    return !!uid && checklistUserEntry(row?.[uid], uid)?.checked === true
+  }
+  return checklistLegacyEntry(index, state)?.checked ?? defaults[index] === true
 }
 
-export function checklistProgress(text: string, state?: ChecklistState | null): { total: number; checked: number; allChecked: boolean } {
+export function checklistProgress(text: string, state?: ChecklistState | null, uid?: string): { total: number; checked: number; allChecked: boolean } {
   const { count, defaults } = prepareChecklistMarkdown(text)
   let checked = 0
-  for (let i = 0; i < count; i++) if (isChecklistChecked(i, defaults, state)) checked++
+  for (let i = 0; i < count; i++) if (isChecklistChecked(i, defaults, state, uid)) checked++
   return { total: count, checked, allChecked: count > 0 && checked === count }
 }
 

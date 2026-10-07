@@ -49,6 +49,7 @@ export function StageAnalysisModal({
   // 마운트 시점의 project 스냅샷 — Firestore 업데이트로 인한 재실행 방지
   const projectSnapshotRef = useRef(project)
   const hasStartedRef = useRef(false)
+  const receivedReportRef = useRef('')
 
   const stage = reportStage ?? project?.currentStage ?? 'T'
 
@@ -147,6 +148,7 @@ export function StageAnalysisModal({
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })
     setMarkdown('')
     setStatus('loading')
     setErrorMsg('')
@@ -157,7 +159,6 @@ export function StageAnalysisModal({
         onText: text => {
           if (controller.signal.aborted) return
           setMarkdown(text)
-          setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50)
         },
       })
       if (!controller.signal.aborted) setStatus('done')
@@ -195,6 +196,9 @@ export function StageAnalysisModal({
     if (isHost) return
     const saved = project?.analysisReport
     if (saved && !saved.generating && saved.content && saved.stage === stage) {
+      const key = `${saved.stage}:${saved.content}`
+      if (receivedReportRef.current !== key) scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+      receivedReportRef.current = key
       setMarkdown(saved.content)
       setStatus('done')
     }
@@ -274,7 +278,7 @@ export function StageAnalysisModal({
           {pdfError && <p role="alert" className="mt-3 text-[13px] text-[var(--md-sys-error)]">{pdfError}</p>}
         </header>
 
-        <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+        <div ref={scrollRef} style={{ overflowAnchor: 'none' }} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <div ref={contentRef}>
             <ReportHero content={markdown} stage={stage} project={project} generating={status === 'loading' || status === 'streaming'} generatedAt={project?.stageReports?.[stage]?.content === markdown ? project.stageReports[stage]?.savedAt : undefined} />
             {status === 'loading' && <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 text-center text-[var(--md-sys-on-surface-variant)]">

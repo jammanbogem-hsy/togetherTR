@@ -342,6 +342,7 @@ function extractArtifactSnapshot(artifact: { content?: Record<string, unknown> }
 
 // 인라인 프로젝트 스냅샷 타입 (공개 모드에서 최소 정보만 받기 위함)
 export interface OntologyProjectLike {
+  trainingMode?: Project['trainingMode']
   artifacts?: Project['artifacts']
   activityStatuses?: Project['activityStatuses']
   currentActivity?: ActivityCode | undefined
@@ -365,7 +366,7 @@ export function buildProjectOntology(project: OntologyProjectLike | null | undef
       if (!meta) return
       const artifact = project?.artifacts?.[code]
       const done = project
-        ? isEffectivelyDone(code, project.activityStatuses ?? {}, project.artifacts)
+        ? isEffectivelyDone(code, project.activityStatuses ?? {}, project.artifacts, project)
         : false
       const snapshot = extractArtifactSnapshot(artifact)
       nodes.push({
