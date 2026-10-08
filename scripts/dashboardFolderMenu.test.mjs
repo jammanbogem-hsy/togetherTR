@@ -27,6 +27,7 @@ function fixture() {
     },
     '@/store/project':{useProjectStore:()=>({userProfile:profile,setUserProfile:()=>{}})},
     '@/components/dashboard/DashboardCards':{ProjectCard:'ProjectCard',FolderCard:'FolderCard',FOLDER_COLORS:['#1A73E8']},
+    '@/components/ui/MD3Button':{MD3Button:'MD3Button'},
     '@/lib/utils':{cn:(...s)=>s.join(' ')},'lucide-react':new Proxy({}, {get:(_t,key)=>key}), '@/lib/auth':{signOut:async()=>{}},
   }
   const source=fs.readFileSync(new URL('../src/app/(app)/dashboard/page.tsx',import.meta.url),'utf8')

@@ -9,6 +9,7 @@ import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
 import { FOLDER_COLORS, FolderCard, ProjectCard } from '@/components/dashboard/DashboardCards'
 import { cn } from '@/lib/utils'
+import { MD3Button } from '@/components/ui/MD3Button'
 import { Plus, BookOpen, Loader2, LogOut, UserPlus, Play, FolderPlus, Folder, ArrowLeft, Network, X } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 
@@ -246,17 +247,19 @@ export default function DashboardPage() {
             </button>
           </div>
         ) : projects.length === 0 && folders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-[#9AA0A6] gap-5">
-            <div className="w-20 h-20 flex items-center justify-center bg-[#E8F0FE] text-[#1A73E8]" style={{ animation: 'morph-shape 9s ease-in-out infinite' }}>
-              <BookOpen className="w-9 h-9" />
+          // 빈 상태(MD3): 큰 도형 아이콘 → headline-small 제목 → 설명 → 큰 filled 버튼 하나(데모 체험은 머리말에서)
+          <div data-testid="dashboard-empty" className="flex flex-col items-center justify-center px-4 py-20 gap-6 text-center">
+            <div className="w-24 h-24 flex items-center justify-center bg-[#D3E3FD] text-[#0842A0]" style={{ animation: 'morph-shape 9s ease-in-out infinite' }}>
+              <BookOpen className="w-11 h-11" aria-hidden="true" />
             </div>
-            <p className="text-[15px] font-semibold text-[#5F6368]">아직 프로젝트가 없습니다</p>
-            <button onClick={() => router.push('/projects/new')} className="morph-btn flex items-center gap-2 bg-[#1A73E8] text-white text-[14px] font-bold px-6 py-3 hover:bg-[#1557B0] transition-colors" style={{ filter: 'drop-shadow(0 2px 8px rgba(26,115,232,0.35))' }}>
-              <Plus className="w-4 h-4" /> 첫 프로젝트 시작하기
-            </button>
-            <button onClick={() => router.push('/demo')} className="morph-btn flex items-center gap-2 bg-[#7C3AED] text-white text-[14px] font-bold px-6 py-3 hover:bg-[#6D28D9] transition-colors" style={{ filter: 'drop-shadow(0 2px 8px rgba(124,58,237,0.32))' }}>
-              <Play className="w-4 h-4" /> 데모 체험하기
-            </button>
+            <div className="flex flex-col items-center gap-2">
+              <h2 className="text-[28px] leading-9 font-semibold text-[#1F1F1F]">아직 프로젝트가 없습니다</h2>
+              <p className="max-w-md text-[16px] leading-6 text-[#444746]">T-CID 다섯 단계에 따라 팀과 함께 수업을 설계해 보세요.</p>
+            </div>
+            <MD3Button size="md" variant="filled" onClick={() => router.push('/projects/new')}
+              icon={<Plus className="w-6 h-6" aria-hidden="true" />} className="px-8 text-[18px] font-semibold">
+              첫 프로젝트 시작하기
+            </MD3Button>
           </div>
         ) : (() => {
           const folderProjectIds = new Set(folders.flatMap(f => f.projectIds))

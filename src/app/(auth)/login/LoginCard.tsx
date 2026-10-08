@@ -1,8 +1,6 @@
 'use client'
 
-// 로그인 카드 — 기존 page.tsx의 로그인 로직·UI를 verbatim 이식 (기능 무변경).
-// 로그인 로직(핸들러·상태·조건·maxLength·Google svg)은 문자 단위로 동일.
-// Material Design 3 표현(클래스·정적 텍스트 크기·아이콘·필드 스타일)만 변경.
+// Google 로그인 후 교사 프로필을 입력하는 Material Design 3 카드.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProjectStore } from '@/store/project'
@@ -14,9 +12,9 @@ type Step = 'google' | 'profile'
 
 const SCHOOL_LEVELS = ['초등', '중등', '고등'] as const
 const GRADE_OPTIONS: Record<string, string[]> = {
-  초등: ['1학년', '2학년', '3학년', '4학년', '5학년', '6학년', '1-2학년', '3-4학년', '5-6학년', '전학년'],
-  중등: ['1학년', '2학년', '3학년', '전학년'],
-  고등: ['1학년', '2학년', '3학년', '전학년'],
+  초등: ['1학년', '2학년', '3학년', '4학년', '5학년', '6학년'],
+  중등: ['1학년', '2학년', '3학년'],
+  고등: ['1학년', '2학년', '3학년'],
 }
 
 export default function LoginCard({ showBrand = true }: { showBrand?: boolean }) {
@@ -32,7 +30,9 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
   const [displayName, setDisplayName] = useState('')
   const [schoolLevel, setSchoolLevel] = useState<'초등' | '중등' | '고등'>('초등')
   const [schoolName, setSchoolName] = useState('')
-  const [grade, setGrade] = useState('전학년')
+  const [selectedGrades, setSelectedGrades] = useState<string[]>([])
+  const gradeOptions = GRADE_OPTIONS[schoolLevel]
+  const orderedGrades = gradeOptions.filter(grade => selectedGrades.includes(grade))
 
   async function handleGoogleLogin() {
     setIsLoading(true)
@@ -61,7 +61,7 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
   }
 
   async function handleCompleteProfile() {
-    if (!firebaseUser || !displayName.trim() || !schoolName.trim()) return
+    if (!firebaseUser || !displayName.trim() || !schoolName.trim() || orderedGrades.length === 0 || isLoading) return
     setIsLoading(true)
     setError('')
     try {
@@ -69,7 +69,8 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
         displayName: displayName.trim(),
         schoolLevel,
         schoolName: schoolName.trim(),
-        grade,
+        // 기존 프로필의 문자열 저장 형식을 유지한다.
+        grade: orderedGrades.length === gradeOptions.length ? '전학년' : orderedGrades.join(' · '),
       })
       setUserProfile(profile)
       router.push('/dashboard')
@@ -167,7 +168,12 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
                   {SCHOOL_LEVELS.map((level, idx) => (
                     <button
                       key={level}
-                      onClick={() => { setSchoolLevel(level); setGrade('전학년') }}
+                      onClick={() => {
+                        if (level !== schoolLevel) {
+                          setSchoolLevel(level)
+                          setSelectedGrades([])
+                        }
+                      }}
                       className={`m3-state flex-1 flex items-center justify-center gap-1 py-2.5 text-[14px] font-medium transition-colors ${idx > 0 ? 'border-l border-[color:var(--md-outline)]' : ''} ${
                         schoolLevel === level
                           ? 'bg-[var(--md-secondary-container)] text-[color:var(--md-on-secondary-container)]'
@@ -196,22 +202,38 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
                 />
               </div>
 
-              {/* 담당 학년 (M3 filled field + expand_more) */}
-              <div>
-                <label className="block text-[13.5px] font-medium text-[color:var(--md-on-surface-variant)] mb-1">담당 학년</label>
-                <div className="relative">
-                  <select
-                    value={grade}
-                    onChange={e => setGrade(e.target.value)}
-                    className="m3-field w-full appearance-none px-4 py-3 text-[16px] text-[color:var(--md-on-surface)] pr-9"
-                  >
-                    {(GRADE_OPTIONS[schoolLevel] ?? []).map(g => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-rounded absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--md-on-surface-variant)] pointer-events-none" style={{ fontSize: 20 }} aria-hidden="true">expand_more</span>
+              <fieldset disabled={isLoading} aria-describedby="profile-grade-hint">
+                <legend className="text-[13.5px] font-medium text-[color:var(--md-on-surface-variant)] mb-1">담당 학년</legend>
+                <p id="profile-grade-hint" className="text-[13px] text-[color:var(--md-on-surface-variant)] mb-2">담당하는 학년을 모두 선택해 주세요.</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {gradeOptions.map(grade => {
+                    const checked = selectedGrades.includes(grade)
+                    return (
+                      <label
+                        key={grade}
+                        className={`m3-state flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border px-2 py-3 text-[16px] font-medium transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--md-primary)] ${
+                          checked
+                            ? 'border-[color:var(--md-primary)] bg-[var(--md-secondary-container)] text-[color:var(--md-on-secondary-container)]'
+                            : 'border-[color:var(--md-outline-variant)] bg-[var(--md-surface)] text-[color:var(--md-on-surface)]'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          name="profile-grades"
+                          value={grade}
+                          checked={checked}
+                          onChange={e => {
+                            const checked = e.target.checked
+                            setSelectedGrades(current => checked ? [...current, grade] : current.filter(item => item !== grade))
+                          }}
+                          className="h-5 w-5 shrink-0 accent-[var(--md-primary)]"
+                        />
+                        {grade}
+                      </label>
+                    )
+                  })}
                 </div>
-              </div>
+              </fieldset>
             </div>
 
             {error && (
@@ -220,7 +242,7 @@ export default function LoginCard({ showBrand = true }: { showBrand?: boolean })
 
             <button
               onClick={handleCompleteProfile}
-              disabled={!displayName.trim() || !schoolName.trim() || isLoading}
+              disabled={!displayName.trim() || !schoolName.trim() || orderedGrades.length === 0 || isLoading}
               className="m3-state w-full mt-5 h-14 rounded-full bg-[var(--md-primary)] text-[color:var(--md-on-primary)] font-medium text-[16.5px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isLoading ? (
