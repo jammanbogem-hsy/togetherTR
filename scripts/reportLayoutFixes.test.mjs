@@ -6,11 +6,10 @@ import { REPORT_PRINT_CSS } from '../src/components/modals/reportDashboardStyles
 import { isLabelParagraph, keepHeadingsWithNext } from '../src/components/modals/downloadReportPdf.ts'
 import { layoutReportPdf } from '../src/components/modals/reportPdfLayout.ts'
 
-test('부록 카드: 행마다 테두리·왼쪽 띠, 첫 칸은 단계 색 머리 띠', () => {
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide tbody tr\{[^}]*border:1\.5px solid var\(--report-stage-line[^}]*border-left:4px solid var\(--report-stage-band[^}]*border-radius:8px/)
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide td:first-child\{background:var\(--report-stage-container[^}]*font-weight:700/)
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide td\{[^}]*border:0!important/, '칸 사이 일자 줄 제거')
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide tbody tr\{[^}]*break-inside:avoid/, '카드는 페이지에서 쪼개지지 않음')
+test('보고서 표는 모두 같은 표 모양 — 카드형 없음, 열이 많으면 PDF 글자만 촘촘히', () => {
+  assert.doesNotMatch(REPORT_PRINT_CSS, /report-table-wide/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard table\[data-dense="true"\]\{font-size:9px\}/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard th\{white-space:normal\}/, 'PDF 에서 머리글이 줄바꿈되어 A4 폭 안에 들어감')
 })
 
 test('굵은 한 줄 문단은 소제목으로 본다', () => {
@@ -92,7 +91,7 @@ test('부록 위계 스타일: 활동 머리는 단계색 띠, 하위 내용은 
   assert.doesNotMatch(REPORT_DASHBOARD_CSS, /\.report-subhead\{[^}]*margin:/, '소제목 여백이 들여쓰기를 덮지 않음')
 })
 
-test('표 선은 1.5px·바탕보다 진한 선 색, 6열 표(T-3 역할 배분)는 다른 표와 같은 표 모양, 7열부터 카드', () => {
+test('표 선은 1.5px·바탕보다 진한 선 색, 6·7열 표 모두 같은 표 모양(7열부터 PDF 글자만 촘촘히)', () => {
   assert.match(REPORT_DASHBOARD_CSS, /\.report-dashboard th,\.report-dashboard td\{[^}]*border-bottom:1\.5px solid var\(--report-stage-line/)
   assert.match(REPORT_DASHBOARD_CSS, /\.report-table-scroll\{[^}]*border:1\.5px solid var\(--report-stage-line/)
   const tones = reportStageColors('#1558D6')
@@ -102,6 +101,9 @@ test('표 선은 1.5px·바탕보다 진한 선 색, 6열 표(T-3 역할 배분)
   const six = ['교사명', '담당 교과', '강점', '팀 내 역할', '담당 업무', '완료 시점']
   const seven = [...six, '비고']
   const md = cols => `# 보고서\n\n## 부록: 산출물 원문\n\n### 역할 배분 (T-3)\n\n${row(cols)}\n${row(cols.map(() => '---'))}\n${row(cols.map(() => '짧음'))}`
-  assert.doesNotMatch(renderToStaticMarkup(React.createElement(ReportMarkdown, { content: md(six), stage: 'T' })), /class="report-table-scroll report-table-wide"/)
-  assert.match(renderToStaticMarkup(React.createElement(ReportMarkdown, { content: md(seven), stage: 'T' })), /class="report-table-scroll report-table-wide"/)
+  const sixHtml = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: md(six), stage: 'T' }))
+  const sevenHtml = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: md(seven), stage: 'T' }))
+  for (const html of [sixHtml, sevenHtml]) assert.match(html, /class="report-table-scroll"><table/, '같은 표 모양')
+  assert.doesNotMatch(sixHtml, /<table data-dense="true"/)
+  assert.match(sevenHtml, /<table data-dense="true"/)
 })

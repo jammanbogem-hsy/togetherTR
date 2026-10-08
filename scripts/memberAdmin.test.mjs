@@ -199,7 +199,7 @@ test('handleSend: 내보내기 명령은 AI·저장 없이 로컬 카드로만, 
       exports: {}, input, chatDraft: { getSnapshot: () => ({ input }) }, project: legacy, userProfile: { uid }, sendBlockReason: null,
       classifyMemberCommand, setMemberCommand: value => calls.cards.push(value), setInput: value => calls.inputs.push(value),
       // 일반 흐름에 들어서면 여기서 멈춘다(AI·저장 경로)
-      isLoading: true, isTeamMode: false, isWaitingForChoice: false, replyTo: null,
+      isLoading: true, remoteBusy: false, isTeamMode: false, isWaitingForChoice: false, replyTo: null,
       enqueueTrainingSend: () => { calls.reachedNormalFlow = true }, setReplyTo: () => {},
     }
     vm.runInNewContext(source, context)

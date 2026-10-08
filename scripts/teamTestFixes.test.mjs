@@ -1,6 +1,7 @@
 import { normalizeChatStructure } from '../src/lib/markdown/chatStructure.ts'
 import { TRAINING_GUIDANCE_RULES } from '../src/lib/prompts/training.ts'
 import { REVIEW_ACTION_RULES } from '../src/lib/chat/reviewAction.ts'
+import { REPLY_CHOICES_RULES } from '../src/lib/chat/replyChoices.ts'
 // node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs --test scripts/teamTestFixes.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -59,7 +60,11 @@ function loadChatFunction(name, bindings, sourceTree = tree) {
   const source = ts.transpileModule(`exports.fn = ${found.getText(sourceTree).replace(/^export\s+/, '')}`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText
-  const context = { exports: {}, ...MODE_HELPERS, setMemberCommand: () => {}, ...bindings }
+  const context = { exports: {}, ...MODE_HELPERS, setMemberCommand: () => {}, remoteBusy: false, generateMessageId: () => 'planned-assistant-id', ...bindings }
+  // 2026-10-08 중복 응답 수정: AI 답 저장은 saveAssistantMessageAndClearStreaming — 기존 saveMessage mock 으로 같은 인자를 넘긴다
+  if (!context.saveAssistantMessageAndClearStreaming && typeof context.saveMessage === 'function') {
+    context.saveAssistantMessageAndClearStreaming = (projectId, activityCode, data, id, _senderUid, createdAt) => context.saveMessage(projectId, activityCode, data, id, createdAt)
+  }
   vm.runInNewContext(source, context)
   return context.exports.fn
 }
@@ -773,7 +778,7 @@ test('017-b: 재시도로 부분 답을 대체할 때 기존 createdAt 을 유�
   assert.match(projects, /createdAt: createdAt \?\? serverTimestamp\(\)/)
   const chatSource = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.match(chatSource, /const replacedCreatedAt = replacingResponse \? messages\.find\(m => m\.id === newMsgId\)\?\.createdAt : undefined/)
-  assert.match(chatSource, /\}, newMsgId, replacedCreatedAt\)/)
+  assert.match(chatSource, /\}, newMsgId, userProfile\?\.uid \?\? '', replacedCreatedAt\)/)
   assert.match(chatSource, /replaceMessage\(newMsgId, finalText, \{[\s\S]{0,200}actionCard: parsedActionCardD\?\.card/)
   const store = fs.readFileSync(new URL('../src/store/project.ts', import.meta.url), 'utf8')
   assert.match(store, /messages: state\.messages\.map\(m => m\.id === id \? \{ \.\.\.m, \.\.\.fields, content \} : m\)/)
@@ -2092,12 +2097,13 @@ test('041h: 모든 섹션은 작은 tonal 아이콘·얇은 구분선만 쓰고 
   assert.match(pdf, /print-color-adjust:exact/)
 })
 
-test('041i: Ds-3 8열 표는 짧은 열의 실제 길이로 최소 폭을 정하고 PDF에서 머리글:값 카드가 된다', () => {
+test('041i: Ds-3 8열 표는 짧은 열의 실제 길이로 최소 폭을 정하고 PDF에서도 같은 표 모양(촘촘한 글자)으로 둔다', () => {
   const longText = '동네의 그늘이 있는 장소와 없는 장소를 비교하고 주민이 이용하는 시간과 이유를 기록한다.'
   const content = `## 활동별 산출물 및 분석\n\n| 순서 | 흐름 단계 | 차시 | 핵심/부가 | 담당 교과 | 활동명 | 학생 수행 | 기록 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 1 | 지역 조사 | 3차시 | 핵심 | 국어·통합교과 | 그늘 비교 | ${longText} | 관찰 지도 |\n| 2 | 자료 정리 | 4차시 | 부가 | 사회 | 인터뷰 | 질문 카드로 주민에게 묻고 이유를 자기 말로 설명한다. | https://example.com/verylongunbrokenresourceidentifierabcdefghijklmnopqrst |`
   const html = renderToStaticMarkup(React.createElement(ReportMarkdown, { content, stage: 'Ds' }))
-  assert.match(html, /class="report-table-scroll report-table-wide"/)
-  assert.match(html, /<table data-columns="8" style="min-width:\d+ch"/)
+  // 2026-10-08 사용자 요청: 카드형 없이 모든 표를 같은 표 디자인으로(열이 많으면 PDF 글자만 촘촘히)
+  assert.match(html, /class="report-table-scroll"><table data-dense="true" data-columns="8" style="min-width:\d+ch"/)
+  assert.doesNotMatch(html, /report-table-wide/)
   assert.match(html, /<th scope="col" style="min-width:13ch">흐름 단계<\/th>/)
   assert.match(html, /<td data-short-cell="true" data-label="흐름 단계" style="min-width:13ch">/)
   const subjectWidth = html.match(/<td data-short-cell="true" data-label="담당 교과" style="min-width:(\d+)ch">/)
@@ -2111,10 +2117,8 @@ test('041i: Ds-3 8열 표는 짧은 열의 실제 길이로 최소 폭을 정하
   assert.match(REPORT_DASHBOARD_CSS, /\.report-long-english\{word-break:normal;overflow-wrap:anywhere\}/)
   assert.match(REPORT_DASHBOARD_CSS, /th\{[^}]*white-space:nowrap/)
   assert.match(REPORT_DASHBOARD_CSS, /td\[data-short-cell="true"\]\{white-space:nowrap\}/)
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide\{border:0;background:transparent\}/)
-  assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide thead\{display:none\}/)
-  assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide tbody tr\{display:block;/)
-  assert.match(REPORT_DASHBOARD_CSS, /\.report-table-wide td:before\{content:attr\(data-label\);display:inline-block;white-space:nowrap/)
+  assert.doesNotMatch(REPORT_PRINT_CSS, /report-table-wide/)
+  assert.match(REPORT_PRINT_CSS, /table\[data-dense="true"\]\{font-size:9px\}/)
   assert.doesNotMatch(REPORT_DASHBOARD_CSS, /table-layout:fixed|white-space:normal!important/)
   const pdf = buildReportPrintDocument(html, '8열 활동 표')
   for (const label of ['순서', '흐름 단계', '담당 교과', '학생 수행']) assert.ok(pdf.includes(`data-label="${label}"`))
@@ -2290,32 +2294,33 @@ test('047b: 긴 일반 표와 부록 표의 모든 행은 인쇄 문서에 보�
   assert.ok(pdf.includes(REPORT_PRINT_CSS))
 })
 
-test('047c: 6열 이상과 폭이 큰 소수 열 표는 A4 카드형으로 표시하며 모든 셀의 머리글·내용을 유지한다', () => {
+test('047c: 열이 많거나 폭이 큰 표도 같은 표 모양(PDF 글자만 촘촘히)으로 모든 셀의 머리글·내용을 유지한다', () => {
   const wide = '| 순서 | 흐름 단계 | 차시 | 핵심/부가 | 담당 교과 | 활동명 | 학생 수행 | 기록 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n' + Array.from({ length: 30 }, (_, index) => `| ${index + 1} | 조사 | 3차시 | 핵심 | 사회 | 활동${index + 1} | 주민에게 질문하기 | 증거${index + 1} |`).join('\n')
   const longHeader = '| 첫째 항목의 자세한 내용과 연결된 근거 | 둘째 항목의 자세한 내용과 연결된 근거 | 셋째 항목의 자세한 내용과 연결된 근거 |\n| --- | --- | --- |\n| 첫 기록 | 둘째 기록 | 셋째 기록 |'
   const markup = renderToStaticMarkup(React.createElement(ReportMarkdown, { content: `## 활동\n${wide}\n\n## 부록: 산출물 원문\n${longHeader}` }))
   const pdf = buildReportPrintDocument(markup, '넓은 표')
-  assert.equal((markup.match(/class="report-table-scroll report-table-wide"/g) ?? []).length, 2)
+  // 2026-10-08 사용자 요청: 카드형 없이 일반 표로 통일
+  assert.equal((markup.match(/class="report-table-scroll"><table data-dense="true"/g) ?? []).length, 2)
+  assert.doesNotMatch(markup, /report-table-wide/)
   assert.equal((markup.match(/<td /g) ?? []).length, 243)
   for (let index = 1; index <= 30; index++) {
     assert.ok(pdf.includes(`활동${index}`))
     assert.ok(pdf.includes(`증거${index}`))
   }
   for (const label of ['순서', '흐름 단계', '담당 교과', '학생 수행']) assert.ok(pdf.includes(`data-label="${label}"`))
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide table,\.report-table-wide tbody\{display:block;width:100%\}/)
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide tbody tr\{[^}]*break-inside:avoid;page-break-inside:avoid/)
-  assert.match(REPORT_PRINT_CSS, /\.report-table-wide td:before\{content:attr\(data-label\)/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard table\[data-dense="true"\]\{font-size:9px\}/)
+  assert.match(REPORT_PRINT_CSS, /\.report-dashboard tr\{break-inside:avoid;page-break-inside:avoid\}/)
 })
 
 
 // ─── TASK-047b: 미리보기 창도 스크롤 없이 · 인쇄 DOM 정리 ─────────
-test('047d: 인쇄 창 전용 CSS는 media 밖에서 높이·스크롤·sticky를 풀고 넓은 표를 카드로 배치한다', () => {
+test('047d: 인쇄 창 전용 CSS는 media 밖에서 높이·스크롤·sticky를 풀고 넓은 표는 촘촘한 같은 표로 둔다', () => {
   assert.doesNotMatch(REPORT_PRINT_WINDOW_CSS, /@media/)
   assert.match(REPORT_PRINT_WINDOW_CSS, /html,body,body \*\{max-height:none!important;overflow:visible!important/)
   assert.match(REPORT_PRINT_WINDOW_CSS, /html,body,body \*\{position:static!important\}/)
   assert.match(REPORT_PRINT_WINDOW_CSS, /\.report-table-scroll\{height:auto!important;max-height:none!important;overflow:visible!important\}/)
   assert.match(REPORT_PRINT_WINDOW_CSS, /\.report-dashboard th[^}]*position:static!important/)
-  assert.match(REPORT_PRINT_WINDOW_CSS, /\.report-table-wide table,\.report-table-wide tbody\{display:block;width:100%\}/)
+  assert.match(REPORT_PRINT_WINDOW_CSS, /\.report-dashboard table\[data-dense="true"\]\{font-size:9px\}/)
   const html = buildReportPrintDocument('<div class="report-table-scroll">모든 행</div>', '인쇄')
   assert.ok(html.includes(REPORT_PRINT_WINDOW_CSS))
   assert.ok(html.indexOf(REPORT_PRINT_WINDOW_CSS) > html.indexOf(REPORT_DASHBOARD_CSS))
@@ -2606,6 +2611,7 @@ test('T7: buildSystemPrompt — 연수용 활동에만 규칙 주입(일반 규�
 // 사용자 승인 변경만 반영: 목록 시각화·검토 행동 안내와 단계 종료 체크리스트의 팀 확인 칸 '□' → '☐' 와 그 형식 안내 한 줄.
 function withChecklistFormat(text) {
   return text
+    .replace('## 응답 형식 — 위계와 강조 규칙', REPLY_CHOICES_RULES + '\n\n## 응답 형식 — 위계와 강조 규칙')
     .replace(`**유형 B — 마인드맵형 텍스트** (키워드 군집화 시)
 🎯 [주제/비전]
 ├── [군집1명]
@@ -2628,7 +2634,7 @@ function withChecklistFormat(text) {
     .replace('아래 **축약 체크리스트**를 표로 출력한다:\n', '아래 **축약 체크리스트**를 표로 출력한다(확인 칸에는 \'☐\' 한 글자만 — 선생님이 화면에서 직접 체크):\n')
 }
 
-test('T8: 일반 프롬프트는 승인된 목록 시각화·체크리스트·검토 행동 안내 외에 연수용 도입 전과 같다', async t => {
+test('T8: 일반 프롬프트는 승인된 목록 시각화·체크리스트·검토 행동·짧은 선택 답변 안내 외에 연수용 도입 전과 같다', async t => {
   let source
   try {
     source = execFileSync('git', ['show', 'pre-training-mode-2026-10-04:src/lib/prompts/system.ts'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname })
@@ -2665,7 +2671,7 @@ test('T9: ChatPanel·저장 흐름 — 이벤트 수신, 개입 금지 저장은
   const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.match(panel, /window\.addEventListener\(TRAINING_SEND_EVENT, onTrainingSend\)/)
   // AI 응답 중·불러오기 전에는 줄에 세웠다가 순서대로 보낸다(저장 알림 누락 방지).
-  assert.match(panel, /if \(isLoading \|\| isAnalyzing \|\| !messagesLoaded\) return\n    const next = trainingQueueRef\.current\.shift\(\)/)
+  assert.match(panel, /if \(isLoading \|\| isAnalyzing \|\| remoteBusy \|\| !messagesLoaded\) return\n    const next = trainingQueueRef\.current\.shift\(\)/)
   assert.match(panel, /void sendMessageDirectly\(next\)\.finally\(\(\) => setTrainingQueueTick/)
   // 연수 막대는 연수용 활동에서만, 슬롯 자리에 마운트
   assert.match(panel, /TRAINING_BAR_SLOT[^\n]*\n      \{isTrainingActivity\(proj, currentActivity\) && \(\n        <TrainingModeBar/)

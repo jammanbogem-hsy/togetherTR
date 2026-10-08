@@ -23,7 +23,7 @@ import {
 } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
 import { cn } from '@/lib/utils'
-import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, Trash, type Icon } from '@phosphor-icons/react'
+import { Sparkle, Note, CheckCircle, XCircle, FileText, Lock, Chat, Clock, X, PencilSimple, ClockCounterClockwise, ArrowsOut, CaretDown, CaretLeft, CaretUp, Circle as CircleIcon, Lightbulb, Stack, Shield, Warning, ArrowBendUpLeft, Copy, Check, Trash, UsersThree, type Icon } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
 import { AlignmentMatrixCard } from '@/components/curriculum/AlignmentMatrixCard'
 
@@ -48,7 +48,8 @@ import { Ds13Renderer } from './structured/Ds13Renderer'
 import { Ds21Renderer } from './structured/Ds21Renderer'
 import { Ds22Renderer } from './structured/Ds22Renderer'
 import { TrainingForm } from '@/components/training/TrainingForm'
-import { isTrainingActivity } from '@/lib/training/trainingMode'
+import { isTrainingActivity, isTrainingProject } from '@/lib/training/trainingMode'
+import { canOpenCoeditFromPanel } from '@/lib/artifacts/coeditEntry'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { effectiveProjectMode, isSoloProject } from '@/lib/project/projectMode'
 import { displayArtifactContent, isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
@@ -84,28 +85,29 @@ function EmptyState({ activityLabel, sections, sectionVariant, stageLight, stage
     ? '이 활동에서 꼭 채워야 할 내용'
     : '이 활동에서 채우면 좋은 내용'
   return (
-    <div className="flex flex-col items-center text-[#9AA0A6] gap-2.5 px-4 py-4">
+    // 아래 '저장된 산출물' 카드와 같은 폭·글자 크기(전체 폭, 12px 제목·11px 설명)
+    <div className="flex flex-col items-center text-[#9AA0A6] gap-3 py-4">
       <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', stageLight)}>
         <FileText size={22} weight="duotone" className={stageText} />
       </div>
       <div className="text-center">
-        <p className="text-[13px] font-semibold text-[#5F6368]">아직 산출물이 없습니다</p>
-        <p className="text-[10px] text-[#9AA0A6] mt-0.5 leading-snug">
+        <p className="text-[14px] font-semibold text-[#5F6368]">아직 산출물이 없습니다</p>
+        <p className="text-[11px] text-[#5F6368] mt-1 leading-snug">
           [{activityLabel}] 활동에서 AI와 대화하면 초안이 자동 생성됩니다
         </p>
       </div>
 
       {sections && sections.length > 0 && (
-        <div className="w-full rounded-xl border border-[#DADCE0] bg-white px-3 py-2">
-          <p className="text-[10px] font-bold text-[#5F6368] uppercase tracking-wider mb-1.5">
+        <div className="w-full rounded-2xl border border-[#DADCE0] bg-white p-4">
+          <p className="text-[12px] font-bold text-[#5F6368] mb-2">
             {sectionHeader}
           </p>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {sections.map(sec => (
               <span
                 key={sec.key}
                 className={cn(
-                  'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full',
+                  'inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-full',
                   stageLight, stageText
                 )}
               >
@@ -1054,6 +1056,10 @@ export function ArtifactPanel() {
 function InteractiveArtifactPanel() {
   const routeParams = useParams<{ id: string }>()
   const { currentArtifact, viewingActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
+  const currentActivityCode = useProjectStore(s => s.currentActivity)
+  const setCoeditOpenRequest = useProjectStore(s => s.setCoeditOpenRequest)
+  // 빈 산출물 화면의 '공동 편집으로 함께 작성하기' — 지금 진행 중인 활동이고 연수용이 아닐 때만
+  const canCoeditHere = !!project && canOpenCoeditFromPanel({ viewingActivity, currentActivity: currentActivityCode, trainingProject: isTrainingProject(project) })
   const activityMeta = ACTIVITY_META[viewingActivity]
   const [revisionNote, setRevisionNote] = useState('')
   const [showRevisionForm, setShowRevisionForm] = useState(false)
@@ -1818,16 +1824,34 @@ function InteractiveArtifactPanel() {
               stageLight={stageColor.light}
               stageText={stageColor.text}
             />
-            {isHost && (
-              <div className="px-2 pb-4 mt-4">
-                <button
-                  onClick={() => setShowDirectInput(true)}
-                  className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
-                    bg-[rgba(249,171,0,0.12)] hover:bg-[rgba(249,171,0,0.24)] text-[#B06000] text-sm font-semibold transition-colors"
-                >
-                  <PencilSimple size={16} weight="regular" />
-                  AI가 저장 안 했나요? 직접 입력하기
-                </button>
+            {(canCoeditHere || isHost) && (
+              <div className="pb-4 mt-2 space-y-2">
+                {/* 공동 편집으로 바로 — 팀원도 함께 적고, 기록 담당이 산출물로 보낸다(채팅 아래 공동 편집 버튼과 같은 창) */}
+                {canCoeditHere && (
+                  <button
+                    onClick={() => setCoeditOpenRequest(viewingActivity)}
+                    className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-3 rounded-2xl
+                      bg-[#1A73E8] hover:bg-[#1557B0] text-white text-sm font-semibold transition-colors"
+                  >
+                    <UsersThree size={18} weight="fill" />
+                    공동 편집으로 함께 작성하기
+                  </button>
+                )}
+                {canCoeditHere && (
+                  <p className="text-center text-[11px] text-[#5F6368] leading-snug">팀원과 같은 표에 함께 적고, 기록 담당이 산출물로 보내요.</p>
+                )}
+                {isHost && (
+                  <button
+                    onClick={() => setShowDirectInput(true)}
+                    className={canCoeditHere
+                      ? 'w-full flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-[#B06000] hover:underline'
+                      : `squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
+                    bg-[rgba(249,171,0,0.12)] hover:bg-[rgba(249,171,0,0.24)] text-[#B06000] text-sm font-semibold transition-colors`}
+                  >
+                    <PencilSimple size={canCoeditHere ? 14 : 16} weight="regular" />
+                    {canCoeditHere ? '혼자 간단히 직접 입력하기' : 'AI가 저장 안 했나요? 직접 입력하기'}
+                  </button>
+                )}
               </div>
             )}
           </>

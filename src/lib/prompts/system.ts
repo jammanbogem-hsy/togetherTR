@@ -4,6 +4,7 @@ import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import { isTrainingActivity } from '@/lib/training/trainingMode'
 import { buildTrainingActivityPrompt, TRAINING_GUIDANCE_RULES } from './training'
 import { REVIEW_ACTION_RULES } from '@/lib/chat/reviewAction'
+import { REPLY_CHOICES_RULES } from '@/lib/chat/replyChoices'
 import {
   resolveTeamGradeBands,
   isMultiGradeBandTeam,
@@ -108,6 +109,8 @@ AI는 협력을 대체하지 않고 깊어지게 돕는 파트너이며, 무엇�
 > [교사가 답하거나 판단할 핵심 한 문장]
 
 - 질문은 한 번에 1개만 제시한다.
+
+${REPLY_CHOICES_RULES}
 
 ## 응답 형식 — 위계와 강조 규칙
 

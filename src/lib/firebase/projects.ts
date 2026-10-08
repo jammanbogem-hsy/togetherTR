@@ -1,7 +1,7 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query,
   where, orderBy, limit, serverTimestamp, onSnapshot, type Unsubscribe, arrayUnion, arrayRemove, deleteField,
-  runTransaction, FieldPath, type QueryDocumentSnapshot, type DocumentData, Timestamp
+  runTransaction, writeBatch, FieldPath, type QueryDocumentSnapshot, type DocumentData, Timestamp
 } from 'firebase/firestore'
 import { auth, db } from './config'
 import type { ArtifactConfirmationEntry, Project, StageCode, ActivityCode, Artifact, Message, StageTransition, SkippedActionCard, KeyNote, CurriculumSheetRow, TeamVisionWorkspace, TeamVisionWorkspaceBlock, TeamVisionWorkspaceColumn, TeamVisionWorkspaceRow, IntegratedGoalWorkspace, IntegratedGoalWorkspaceBlock, IntegratedGoalWorkspaceColumn, IntegratedGoalWorkspaceRow, IntegratedGoalMethod } from '@/types'
@@ -3434,6 +3434,8 @@ export interface StreamingState {
   text: string
   senderUid: string
   isStreaming: boolean
+  /** 이 스트리밍이 저장될 AI 메시지 id — 받는 쪽은 그 메시지가 이미 도착했으면 진행 중 말풍선을 숨긴다 */
+  responseMessageId?: string
 }
 
 // 경로: streamingState/{activityCode}/{senderUid}
@@ -3443,12 +3445,43 @@ export async function setStreamingState(
   projectId: string,
   activityCode: ActivityCode,
   text: string,
-  senderUid: string
+  senderUid: string,
+  responseMessageId?: string,
 ): Promise<void> {
   await setDoc(
     doc(db, `projects/${projectId}/streamingState/${activityCode}/users/${senderUid}`),
-    { text, senderUid, isStreaming: true, updatedAt: Date.now() }
+    { text, senderUid, isStreaming: true, updatedAt: Date.now(), ...(responseMessageId ? { responseMessageId } : {}) },
   )
+}
+
+/**
+ * AI 답 저장과 '응답 중' 표시(요청자 본인의 스트리밍 문서) 삭제를 한 번에(writeBatch) 처리한다.
+ * 예전에는 저장 ack 뒤 따로 지워, 그 사이 다른 화면에 '최종 답 + 진행 중 말풍선'이 함께 보였다.
+ * 메시지 경로·undefined 제거·createdAt 유지 계약은 saveMessage 와 같다. 저장이 실패해도 스트리밍 문서는
+ * 지우고(3분 남는 좀비 방지) 오류는 다시 던져 호출부의 저장 실패 안내·재시도를 그대로 둔다.
+ */
+export async function saveAssistantMessageAndClearStreaming(
+  projectId: string,
+  activityCode: ActivityCode,
+  data: Omit<Message, 'id' | 'createdAt'>,
+  id: string,
+  senderUid: string,
+  createdAt?: Message['createdAt'],
+): Promise<string> {
+  const clean = Object.fromEntries(
+    Object.entries({ ...data, createdAt: createdAt ?? serverTimestamp() })
+      .filter(([, v]) => v !== undefined)
+  )
+  const batch = writeBatch(db)
+  batch.set(doc(db, `projects/${projectId}/conversations/${activityCode}/messages`, id), clean)
+  if (senderUid) batch.delete(doc(db, `projects/${projectId}/streamingState/${activityCode}/users/${senderUid}`))
+  try {
+    await batch.commit()
+    return id
+  } catch (error) {
+    if (senderUid) await clearStreamingState(projectId, activityCode, senderUid).catch(() => {})
+    throw error
+  }
 }
 
 // P2: 재시도 포함 — 실패해도 좀비 데이터 방지

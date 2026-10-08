@@ -132,7 +132,7 @@ function remarkReportCards({ stage, project }: { stage?: StageCode; project?: Pr
             cell.data = { ...cell.data, hProperties: { ...cell.data?.hProperties, 'data-report-min-ch': minCh, 'data-report-label': label, 'data-report-short': short ? 'true' : 'false' } }
           }
         })
-        node.data = { ...node.data, hProperties: { ...node.data?.hProperties, 'data-report-min-ch': tableWidth, 'data-report-columns': headers.length, 'data-report-print-cards': headers.length >= 7 || tableWidth > 100 ? 'true' : 'false' } }
+        node.data = { ...node.data, hProperties: { ...node.data?.hProperties, 'data-report-min-ch': tableWidth, 'data-report-columns': headers.length, 'data-report-dense': headers.length >= 7 || tableWidth > 100 ? 'true' : 'false' } }
         node.align ??= headers.map(() => null)
         node.align.forEach((_, i) => {
           const values = rows.map(row => reportNodeText(row.children?.[i] ?? { type: 'text', value: '' }).trim()).filter(value => value && value !== '—' && value !== '-')
@@ -302,9 +302,10 @@ export function ReportMarkdown({ content, stage, project }: { content: string; s
       },
       blockquote: ({ children }) => <aside role="note" aria-label="인사이트와 권고" className="report-callout"><Lightbulb size={18} aria-hidden="true" /><div>{children}</div></aside>,
       table: ({ children, node }) => {
-        const printCards = String(node?.properties?.['data-report-print-cards'] ?? node?.properties?.dataReportPrintCards) === 'true'
+        // 열이 많은 표도 카드로 펼치지 않고 같은 표 모양으로 둔다(보고서 표 디자인 통일). PDF 에서는 글자만 조금 줄인다.
+        const dense = String(node?.properties?.['data-report-dense'] ?? node?.properties?.dataReportDense) === 'true'
         const minCh = Number(node?.properties?.['data-report-min-ch'] ?? node?.properties?.dataReportMinCh)
-        return <div role="region" aria-label="보고서 표" tabIndex={0} className={`report-table-scroll${printCards ? ' report-table-wide' : ''}`}><table data-columns={node?.properties?.['data-report-columns'] ?? node?.properties?.dataReportColumns} style={minCh ? { minWidth: `${minCh}ch` } : undefined}>{children}</table></div>
+        return <div role="region" aria-label="보고서 표" tabIndex={0} className="report-table-scroll"><table data-dense={dense ? 'true' : undefined} data-columns={node?.properties?.['data-report-columns'] ?? node?.properties?.dataReportColumns} style={minCh ? { minWidth: `${minCh}ch` } : undefined}>{children}</table></div>
       },
       th: ({ children, style, node }) => {
         const minCh = Number(node?.properties?.['data-report-min-ch'] ?? node?.properties?.dataReportMinCh)

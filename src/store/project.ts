@@ -96,6 +96,9 @@ interface ProjectStore {
   // 산출물 패널 등에서 채팅 입력창에 프롬프트를 "주입 요청"할 때 사용 (ChatPanel이 consume 후 null로 리셋)
   chatInputRequest: string | null
   setChatInputRequest: (text: string | null) => void
+  // 산출물 패널 빈 상태에서 '공동 편집으로 함께 작성하기' — ChatPanel 이 받아 그 활동의 공동 편집 창을 열고 null 로 리셋
+  coeditOpenRequest: ActivityCode | null
+  setCoeditOpenRequest: (code: ActivityCode | null) => void
 
   // 프로젝트 전환 시 상태 초기화
   resetProjectState: () => void
@@ -201,6 +204,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
 
   chatInputRequest: null,
   setChatInputRequest: (text) => set({ chatInputRequest: text }),
+  coeditOpenRequest: null,
+  setCoeditOpenRequest: (code) => set({ coeditOpenRequest: code }),
 
   resetProjectState: () => set({
     pendingNavigation: null,
@@ -224,5 +229,6 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     teamDiscussionStartIdx: 0,
     pendingArtifactSave: null,
     chatInputRequest: null,
+    coeditOpenRequest: null,
   }),
 }))

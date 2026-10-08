@@ -26,6 +26,8 @@ import { createChatDraft } from '@/lib/chat/chatDraft'
 import { useResponseScroll } from './useResponseScroll'
 import { ChatMarkdownTable } from './ChatMarkdownTable'
 import { completeReviewAction, isReviewAction, appendReviewDraft } from '@/lib/chat/reviewAction'
+import { extractReplyChoices } from '@/lib/chat/replyChoices'
+import { ReplyChoices } from './ReplyChoices'
 import { ChatDraftBoundary, MessageList, useStableCallback, markChatInput } from './ChatRenderBoundary'
 import { samePresenceEntry } from '@/lib/coedit/presenceThrottle'
 
@@ -38,7 +40,7 @@ import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
-import { removeMember, syncProjectModeIfNeeded, saveMessage, saveMessageIfAbsent, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
+import { removeMember, syncProjectModeIfNeeded, saveMessage, saveAssistantMessageAndClearStreaming, saveMessageIfAbsent, generateMessageId, setTeamDiscussion, setOptionVote, closeOptionChoice, advanceActivity, returnToActivity, setActivityStatus, requestTeamDiscussion, clearTeamDiscussionRequest, setStreamingState, clearStreamingState, watchStreamingState, setProjectArtifact, setGraphOpen, recommendGraphCenter, setGraphCenter, saveGraphData, setGraphSelectionState, proposeArtifactToHost, clearArtifactProposal, recordActionCardSkip, updateMessageActionCardState, patchCurriculumSheet, updateCurriculumSheetSettings, patchTeamVisionWorkspace, setTeamVisionWorkspacePresence, watchTeamVisionWorkspacePresence, patchIntegratedGoalWorkspace, setIntegratedGoalWorkspacePresence, watchIntegratedGoalWorkspacePresence, patchLessonDesignDirectionWorkspace, setLessonDesignDirectionWorkspacePresence, watchLessonDesignDirectionWorkspacePresence, patchRoleDistributionWorkspace, setRoleDistributionWorkspacePresence, watchRoleDistributionWorkspacePresence, patchTeamRulesWorkspace, setTeamRulesWorkspacePresence, watchTeamRulesWorkspacePresence, patchTeamScheduleWorkspace, setTeamScheduleWorkspacePresence, watchTeamScheduleWorkspacePresence, patchTopicSelectionWorkspace, setTopicSelectionWorkspacePresence, watchTopicSelectionWorkspacePresence, patchEvaluationPlanWorkspace, setEvaluationPlanWorkspacePresence, watchEvaluationPlanWorkspacePresence, patchProblemSituationWorkspace, setProblemSituationWorkspacePresence, watchProblemSituationWorkspacePresence, patchLearningActivityWorkspace, setLearningActivityWorkspacePresence, watchLearningActivityWorkspacePresence, patchSupportToolWorkspace, setSupportToolWorkspacePresence, watchSupportToolWorkspacePresence, patchScaffoldingWorkspace, setScaffoldingWorkspacePresence, watchScaffoldingWorkspacePresence, patchMaterialDevWorkspace, setMaterialDevWorkspacePresence, watchMaterialDevWorkspacePresence, emptyMaterialDevWorkspace, patchLessonRecordWorkspace, setLessonRecordWorkspacePresence, watchLessonRecordWorkspacePresence, emptyLessonRecordWorkspace, patchLessonReflectionWorkspace, setLessonReflectionWorkspacePresence, watchLessonReflectionWorkspacePresence, emptyLessonReflectionWorkspace, patchCollaborationReflectionWorkspace, setCollaborationReflectionWorkspacePresence, watchCollaborationReflectionWorkspacePresence, emptyCollaborationReflectionWorkspace, buildCollaborationAgreementRows, updateTeamGradeBands, proposeTeamGradeBands, resolveTeamGradeBandProposal } from '@/lib/firebase/projects'
 import type { IntegratedGoalPresenceEntry, TeamVisionPresenceEntry, LessonDesignDirectionPresenceEntry, LessonDesignDirectionWorkspacePatch, RoleDistributionPresenceEntry, RoleDistributionWorkspacePatch, TeamRulesPresenceEntry, TeamRulesWorkspacePatch, TeamSchedulePresenceEntry, TeamScheduleWorkspacePatch, TopicSelectionPresenceEntry, TopicSelectionWorkspacePatch, EvaluationPlanPresenceEntry, EvaluationPlanWorkspacePatch, ProblemSituationPresenceEntry, ProblemSituationWorkspacePatch, LearningActivityPresenceEntry, LearningActivityWorkspacePatch, SupportToolPresenceEntry, SupportToolWorkspacePatch, ScaffoldingPresenceEntry, ScaffoldingWorkspacePatch, CoeditPresenceEntry, CoeditWorkspacePatch } from '@/lib/firebase/projects'
 import type { TeamVisionWorkspacePatch, IntegratedGoalWorkspacePatch } from '@/lib/firebase/projects'
 import { Timestamp } from 'firebase/firestore'
@@ -1355,6 +1357,7 @@ function ChatPanelContent() {
     userProfile,
     setPendingStageMove,
     chatInputRequest, setChatInputRequest, pendingNavigation,
+    coeditOpenRequest, setCoeditOpenRequest,
   } = useProjectStore()
   const project = projectState!
   const checklistWritesRef = useRef(new Map<string, symbol>())
@@ -1460,6 +1463,26 @@ function ChatPanelContent() {
   const [lessonReflectionPresence, setLessonReflectionPresence] = useState<Record<string, CoeditPresenceEntry>>({})
   const [collaborationReflectionPresence, setCollaborationReflectionPresence] = useState<Record<string, CoeditPresenceEntry>>({})
   const [workspaceInitialView, setWorkspaceInitialView] = useState<'sheet' | 'graph'>('sheet')
+  // 산출물 패널 빈 상태의 '공동 편집으로 함께 작성하기' — 지금 활동의 공동 편집 창을 연다(연수용은 연수 양식을 쓰므로 열지 않음).
+  useEffect(() => {
+    if (!coeditOpenRequest) return
+    const code = coeditOpenRequest
+    setCoeditOpenRequest(null)
+    if (!project || code !== currentActivity || isTrainingProject(project)) return
+    const openers: Partial<Record<ActivityCode, () => void>> = {
+      'T-1-1': () => setShowTeamVisionWorkspace(true), 'T-1-2': () => setShowLessonDesignDirectionWorkspace(true),
+      'T-2-1': () => setShowRoleDistributionWorkspace(true), 'T-2-2': () => setShowTeamRulesWorkspace(true),
+      'T-2-3': () => setShowTeamScheduleWorkspace(true), 'A-1-2': () => setShowTopicSelectionWorkspace(true),
+      'A-2-1': () => { setWorkspaceInitialView('sheet'); setShowWorkspace(true) }, 'A-2-2': () => setShowIntegratedGoalWorkspace(true),
+      'Ds-1-1': () => setShowEvaluationPlanWorkspace(true), 'Ds-1-2': () => setShowProblemSituationWorkspace(true),
+      'Ds-1-3': () => setShowLearningActivityWorkspace(true), 'Ds-2-1': () => setShowSupportToolWorkspace(true),
+      'Ds-2-2': () => setShowScaffoldingWorkspace(true), 'DI-1-1': () => setShowMaterialDevWorkspace(true),
+      'DI-2-1': () => setShowLessonRecordWorkspace(true), 'E-1-1': () => setShowLessonReflectionWorkspace(true),
+      'E-2-1': () => setShowCollaborationReflectionWorkspace(true),
+    }
+    setCoeditHintActivity(null)
+    openers[code]?.()
+  }, [coeditOpenRequest, setCoeditOpenRequest, project, currentActivity])
   const [noteTooltip, setNoteTooltip] = useState<{ num: number; preview: string; x: number; y: number } | null>(null)
   // 우클릭 컨텍스트 메뉴 상태
   const [ctxMenu, setCtxMenu] = useState<null | {
@@ -1470,6 +1493,11 @@ function ChatPanelContent() {
   const [replyTo, setReplyTo] = useState<{ id: string; content: string; senderName?: string } | null>(null)
   const [remoteStreamingText, setRemoteStreamingText] = useState('')
   const [isRemoteLoading, setIsRemoteLoading] = useState(false) // 다른 팀원이 AI 요청 중
+  // 다른 팀원 스트리밍이 저장될 메시지 id — 그 답이 이미 도착했으면 진행 중 말풍선·기다림 표시를 숨긴다
+  const [remoteResponseMessageId, setRemoteResponseMessageId] = useState<string | null>(null)
+  const remoteAnswered = !!remoteResponseMessageId && messages.some(m => m.id === remoteResponseMessageId)
+  // 다른 선생님 질문에 AI 가 답하는 중 — 이때 보내면 AI 가 두 번 불려 답이 2개 생긴다(대기열로 보낸다)
+  const remoteBusy = isRemoteLoading && !remoteAnswered
   // HELP_CARD: 마지막 AI 응답에 대한 도움 메시지 (messageId → helpMessage)
   const [helpCardMap, setHelpCardMap] = useState<Record<string, string>>({})
   const [showGraphPanel, setShowGraphPanel] = useState(false)
@@ -1876,8 +1904,9 @@ function ChatPanelContent() {
       const active = states.length > 0
       setIsRemoteLoading(active)
       setRemoteStreamingText(active ? states[0].text : '')
+      setRemoteResponseMessageId(active ? states[0].responseMessageId ?? null : null)
     })
-    return () => { unsub(); setRemoteStreamingText(''); setIsRemoteLoading(false) }
+    return () => { unsub(); setRemoteStreamingText(''); setIsRemoteLoading(false); setRemoteResponseMessageId(null) }
   }, [project?.id, currentActivity, userProfile?.uid])
 
   // A-2-2 통합 수업목표 워크스페이스 presence subcollection 구독 — IGW와 TVW 동일 패턴.
@@ -2928,6 +2957,9 @@ ${discussionSummary}
 
 ⚠️ [ARTIFACT_UPDATE] 신호를 이 응답에 직접 출력하는 것 금지 — 교사가 primary 버튼을 눌러야만 다음 턴에서 방출한다.`
 
+    // 토의 분석도 다른 화면에 '응답 중'을 알리고(그동안 보낸 메시지는 대기열), 저장될 답 id 를 함께 싣는다.
+    const plannedAnalysisMessageId = generateMessageId(proj.id, currentActivity)
+    if (userProfile?.uid) setStreamingState(proj.id, currentActivity, '', userProfile.uid, plannedAnalysisMessageId).catch(() => {})
     try {
       await streamFromAPI(
         [...messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
@@ -2954,7 +2986,7 @@ ${discussionSummary}
           // 신호 블록은 displayText에서 strip (raw 텍스트 노출 방지) — Phase 1-b 메인 파서와 동일 처리.
           const parsedActionCardAnalysis = completeReviewAction(parseActionCard(text1d), text1d, currentActivity)
           const displayText = (parsedActionCardAnalysis ? parsedActionCardAnalysis.cleanText : text1d).trimEnd()
-          const newMsgIdAnalysis = Date.now().toString()
+          const newMsgIdAnalysis = plannedAnalysisMessageId
           addMessage({
             id: newMsgIdAnalysis,
             role: 'assistant',
@@ -2966,12 +2998,15 @@ ${discussionSummary}
             ...(parsedActionCardAnalysis ? { actionCard: parsedActionCardAnalysis.card, actionCardState: 'pending' as const } : {}),
           })
           clearStreamingText()
-          saveMessage(proj.id, currentActivity, {
+          saveAssistantMessageAndClearStreaming(proj.id, currentActivity, {
             role: 'assistant', content: displayText,
             activityCode: currentActivity, activityType: '성찰', agentType: 'orchestrator',
             cycleNumber: proj.currentCycle ?? 1,
             ...(parsedActionCardAnalysis ? { actionCard: parsedActionCardAnalysis.card, actionCardState: 'pending' as const } : {}),
-          }, newMsgIdAnalysis).catch(console.error)
+          }, newMsgIdAnalysis, userProfile?.uid ?? '').catch((err) => {
+            console.error(err)
+            setChatError('토의 분석 결과를 저장하지 못했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.')
+          })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
           return newMsgIdAnalysis
@@ -2981,6 +3016,7 @@ ${discussionSummary}
       console.error('Analysis error:', err)
       setChatError('팀 토의 분석 중 오류가 발생했습니다. 다시 시도해 주세요.')
       clearStreamingText()
+      if (userProfile?.uid) clearStreamingState(proj.id, currentActivity, userProfile.uid).catch(() => {})
     }
     finally { setIsAnalyzing(false) }
   }
@@ -3945,17 +3981,21 @@ ${discussionSummary}
     return () => window.removeEventListener(TRAINING_SEND_EVENT, onTrainingSend)
   }, [enqueueTrainingSend])
   useEffect(() => {
-    if (isLoading || isAnalyzing || !messagesLoaded) return
+    if (isLoading || isAnalyzing || remoteBusy || !messagesLoaded) return
     const next = trainingQueueRef.current.shift()
     if (!next) return
     setQueuedSends([...trainingQueueRef.current])
     // 고정 응답 경로는 isLoading 을 바꾸지 않으므로, 끝나면 다음 항목을 위해 한 번 더 깨운다.
     void sendMessageDirectly(next).finally(() => setTrainingQueueTick(tick => tick + 1))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sendMessageDirectly 는 렌더마다 새로 만들어지는 함수
-  }, [isLoading, isAnalyzing, messagesLoaded, trainingQueueTick])
+  }, [isLoading, isAnalyzing, remoteBusy, messagesLoaded, trainingQueueTick])
 
   async function sendMessageDirectly(text: string, retryExistingMessage = false) {
     if (!text.trim() || isLoading || isAnalyzing || !project) return
+    // 다른 선생님 질문에 AI 가 답하는 중이면 대기열로 — 답이 끝나면 대기열 effect 가 보낸다(재시도·팀 자유 토론은 그대로).
+    if (remoteBusy && !retryExistingMessage && !isTeamMode) { enqueueTrainingSend(text); return }
+    // 재시도도 다른 선생님 답이 끝난 뒤에 — 원래 메시지·재시도 상태(failedChatRequest)는 그대로 둔다.
+    if (remoteBusy && retryExistingMessage) { setFlowNotice('다른 선생님 질문에 AI가 답하는 중이에요. 답이 끝난 뒤 다시 시도해 주세요.'); return }
     setIsIdle(false)
     setChatError(null)
     const retryRequest = retryExistingMessage ? getRetryRequest() : null
@@ -4009,10 +4049,12 @@ ${discussionSummary}
     setIsLoading(true)
     clearStreamingText()
     streamingAccumRef.current = ''
-    if (userProfile?.uid) setStreamingState(proj.id, currentActivity, '', userProfile.uid).catch(() => {})
+    // 저장될 답의 id 를 미리 정해 스트리밍 상태에 싣는다(받는 쪽 중복 숨김). 재시도는 기존 id 를 그대로 쓴다.
+    const plannedAssistantMessageId = responseMessageId ?? generateMessageId(proj.id, currentActivity)
+    if (userProfile?.uid) setStreamingState(proj.id, currentActivity, '', userProfile.uid, plannedAssistantMessageId).catch(() => {})
     streamingFlushRef.current = setInterval(() => {
       if (streamingAccumRef.current && userProfile?.uid) {
-        setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid).catch(() => {})
+        setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid, plannedAssistantMessageId).catch(() => {})
       }
     }, 800)
     try {
@@ -4054,7 +4096,7 @@ ${discussionSummary}
           const finalText = appendSaveGateNotice(parsedActionCardD ? parsedActionCardD.cleanText : t2e.replace(/\n*\[ACTION_CARD:[^\]]+\]\n?/, '').trimEnd(), saveNotices)
           if (streamingFlushRef.current) { clearInterval(streamingFlushRef.current); streamingFlushRef.current = null }
           const replacingResponse = !!responseMessageId
-          const newMsgId = responseMessageId ?? generateMessageId(proj.id, currentActivity)
+          const newMsgId = responseMessageId ?? plannedAssistantMessageId
           responseMessageId = newMsgId
           // 재시도로 끊긴 부분 답을 대체할 때는 원래 작성 시각을 유지해 대화 위치가 바뀌지 않게 한다.
           const replacedCreatedAt = replacingResponse ? messages.find(m => m.id === newMsgId)?.createdAt : undefined
@@ -4069,13 +4111,18 @@ ${discussionSummary}
           if (hm) setHelpCardMap(prev => ({ ...prev, [newMsgId]: hm }))
           clearStreamingText()
           // 메시지 저장 완료 후 streaming 상태 삭제 → B 화면에서 공백 없이 메시지로 전환
-          saveMessage(proj.id, currentActivity, {
+          // 답 저장과 내 '응답 중' 표시 삭제를 한 번에(받는 화면에 최종 답과 진행 중 말풍선이 겹치지 않게)
+          saveAssistantMessageAndClearStreaming(proj.id, currentActivity, {
             role: 'assistant', content: finalText, activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
             cycleNumber: proj.currentCycle ?? 1,
             ...(parsedActionCardD ? { actionCard: parsedActionCardD.card, actionCardState: 'pending' as const } : {}),
-          }, newMsgId, replacedCreatedAt)
-            .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
-            .catch(console.error)
+          }, newMsgId, userProfile?.uid ?? '', replacedCreatedAt)
+            .catch((err) => {
+              console.error(err)
+              // 저장 실패도 알리고 같은 답 id 로 다시 시도할 수 있게 남긴다(handleSend 와 같은 안내).
+              setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.')
+              setFailedChatRequest({ activityCode: currentActivity, userId: userProfile?.uid, messages: requestMessages, assistantMessageId: newMsgId })
+            })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
           const onlyConfirmedNoops = await processArtifactSignals(upd, cCodes, finalText)
@@ -4171,7 +4218,9 @@ ${discussionSummary}
       return
     }
     // AI 가 답하는 중이면 버리지 않고 대기열에 넣어 '보내는 중'으로 보여 주고, 답이 끝나면 보낸다(#T10).
-    if (isLoading && !isTeamMode && !isWaitingForChoice) {
+    // 다른 선생님 질문에 답하는 중(remoteBusy)도 같다 — 바로 보내면 AI 가 두 번 불려 답이 2개 생겼다.
+    if ((isLoading || remoteBusy) && !isTeamMode && !isWaitingForChoice) {
+      if (remoteBusy && !isLoading) setFlowNotice('다른 선생님 질문에 AI가 답하는 중이라, 답이 끝나면 이어서 보낼게요.')
       const queuedReply = replyTo
         ? `[답장: "${(replyTo.content.replace(/\[.*?\]/g, '').replace(/[#*_~`>]/g, '').trim().split(/[.!?\n]/)[0]?.trim() || replyTo.content.slice(0, 60)).slice(0, 80)}"]\n`
         : ''
@@ -4251,14 +4300,17 @@ ${discussionSummary}
     setIsLoading(true)
     clearStreamingText()
     streamingAccumRef.current = ''
+    // 저장될 답의 id 를 미리 정해 스트리밍 상태에 싣는다 — 받는 쪽은 그 답이 도착하면 진행 중 말풍선을 숨긴다.
+    // (responseMessageId 는 그대로 비워 둬 '교체 여부(replacingResponse)' 판정이 바뀌지 않게 한다)
+    const plannedAssistantMessageId = generateMessageId(proj.id, currentActivity)
     // 즉시 빈 텍스트로 상태 전송 → 팀원 화면에 "대화를 기다리고 있어요" 즉시 표시
     if (userProfile?.uid) {
-      setStreamingState(proj.id, currentActivity, '', userProfile.uid).catch(() => {})
+      setStreamingState(proj.id, currentActivity, '', userProfile.uid, plannedAssistantMessageId).catch(() => {})
     }
     // 800ms 간격으로 스트리밍 텍스트를 Firestore에 동기화 (다른 팀원도 볼 수 있도록)
     streamingFlushRef.current = setInterval(() => {
       if (userProfile?.uid) {
-        setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid).catch(() => {})
+        setStreamingState(proj.id, currentActivity, streamingAccumRef.current, userProfile.uid, plannedAssistantMessageId).catch(() => {})
       }
     }, 800)
     let responseMessageId: string | undefined
@@ -4313,7 +4365,7 @@ ${discussionSummary}
             clearInterval(streamingFlushRef.current)
             streamingFlushRef.current = null
           }
-          const newMsgId = generateMessageId(proj.id, currentActivity)
+          const newMsgId = plannedAssistantMessageId
           responseMessageId = newMsgId
           addMessage({
             id: newMsgId,
@@ -4328,13 +4380,13 @@ ${discussionSummary}
           if (helpMessage) setHelpCardMap(prev => ({ ...prev, [newMsgId]: helpMessage }))
           clearStreamingText()
           // 메시지 저장 완료 후 streaming 상태 삭제 → B 화면에서 공백 없이 메시지로 전환
-          saveMessage(proj.id, currentActivity, {
+          // 답 저장과 내 '응답 중' 표시 삭제를 한 번에(받는 화면에 최종 답과 진행 중 말풍선이 겹치지 않게)
+          saveAssistantMessageAndClearStreaming(proj.id, currentActivity, {
             role: 'assistant', content: displayText,
             activityCode: currentActivity, activityType: '생성', agentType: 'orchestrator',
             cycleNumber: proj.currentCycle ?? 1,
             ...(parsedActionCard ? { actionCard: parsedActionCard.card, actionCardState: 'pending' as const } : {}),
-          }, newMsgId)
-            .then(() => clearStreamingState(proj.id, currentActivity, userProfile?.uid ?? ''))
+          }, newMsgId, userProfile?.uid ?? '')
             .catch((err) => { console.error(err); setChatError('메시지 저장에 실패했습니다. 내용은 화면에 표시되지만 새로고침 시 사라질 수 있습니다.') })
           if (signal) setPendingTeamDiscussion({ topic: signal.topic })
           if (gradeBandsSignal) await handleTeamGradeBandsSignal(gradeBandsSignal.bands)
@@ -4501,6 +4553,26 @@ ${discussionSummary}
     void handleEndDiscussion()
   }
 
+  // Reply options are ordinary teacher messages, not artifact approval or navigation.
+  async function handleReplyChoice(msg: Message, option: string) {
+    if (sendBlockReason || isLoading || isAnalyzing || remoteBusy || isTeamMode || msg.activityCode !== currentActivity) return
+    if (visibleMessages.at(-1)?.id !== msg.id || msg.actionCard || helpCardMap[msg.id]) return
+    if (!extractReplyChoices(msg.content)?.options.includes(option)) return
+    await sendMessageDirectly(option)
+  }
+
+  function focusReplyInput() {
+    setSlashQuery(null)
+    requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input]')
+      input?.focus({ preventScroll: true })
+      if (input) input.setSelectionRange(input.value.length, input.value.length)
+    })
+  }
+
+  const handleReplyChoiceStable = useStableCallback(handleReplyChoice)
+  const focusReplyInputStable = useStableCallback(focusReplyInput)
+  const latestReplyMessageId = visibleMessages.at(-1)?.id
   const handleActionCardClickStable = useStableCallback(handleActionCardClick)
   const handleRestartOptionDiscussionStable = useStableCallback(handleRestartOptionDiscussion)
   const sendMessageDirectlyStable = useStableCallback(sendMessageDirectly)
@@ -4616,6 +4688,11 @@ ${discussionSummary}
             : []
           const hasStandardsTable = msgStdCodes.length >= 2
 
+          const replyChoices = msg.role === 'assistant' && !isTeamMode
+            && msg.id === latestReplyMessageId && msg.activityCode === currentActivity
+            && !msg.actionCard && !helpCardMap[msg.id]
+            ? extractReplyChoices(msg.content) : null
+
           // A-2-1: 산출물 저장 버튼 표시 조건
           // — A-2-1 AI 메시지에 핵심아이디어+성취기준 분석표가 있고 방장인 경우
           const isA21TableMsg = msg.role === 'assistant' && msg.activityCode === 'A-2-1' && !!extractA21TableForSave(msg.content)
@@ -4674,6 +4751,10 @@ ${discussionSummary}
                   senderName: msg.role === 'user' ? senderName : 'AI',
                 })}
               />
+              {replyChoices && <div className="mb-4 ml-10 max-w-3xl">
+                <ReplyChoices {...replyChoices} disabled={!!sendBlockReason || isLoading || isAnalyzing || remoteBusy}
+                  onSelect={option => handleReplyChoiceStable(msg, option)} onCustom={focusReplyInputStable} />
+              </div>}
               {/* 성취기준 코드가 2개 이상인 AI 메시지 → 지식 그래프 반영 + 산출물 저장 버튼 */}
               {(hasStandardsTable && GRAPH_ACTIVITIES.includes(currentActivity) && isHost) || (isA21TableMsg && isHost) ? (
                 <div className="flex justify-start pl-10 -mt-1 mb-2 gap-2 flex-wrap">
@@ -4773,7 +4854,7 @@ ${discussionSummary}
 
   }, [proj, project.memberInfo, userProfile, currentActivity, lastAIMsg?.id, isLoading, isAnalyzing, isHost,
     trainingUserTexts, helpCardMap, setInput, setPendingArtifactSave, handleActionCardClickStable, handleRestartOptionDiscussionStable,
-    sendMessageDirectlyStable, toggleChecklistItemStable, pushGraphSelectionStateStable])
+    sendMessageDirectlyStable, toggleChecklistItemStable, pushGraphSelectionStateStable, isTeamMode, remoteBusy, latestReplyMessageId, sendBlockReason, handleReplyChoiceStable, focusReplyInputStable])
   const cornerColor = STAGE_CORNER[project?.currentStage ?? 'T']
 
   return (
@@ -6122,8 +6203,8 @@ ${discussionSummary}
         {/* 스트리밍 - 내가 보낸 경우 (로컬) */}
         {streamingText && <div data-ai-stream="local" data-ai-revision={streamingText.length}><StreamingBubble text={streamingText} isAnalysis={isAnalyzing} stage={ACTIVITY_META[currentActivity]?.stage} /></div>}
         {/* 스트리밍 - 다른 팀원이 보낸 경우 (Firestore 공유) */}
-        {!isLoading && isRemoteLoading && !remoteStreamingText && <AIIdleBubble />}
-        {!isLoading && remoteStreamingText && (
+        {!isLoading && isRemoteLoading && !remoteAnswered && !remoteStreamingText && <AIIdleBubble />}
+        {!isLoading && !remoteAnswered && remoteStreamingText && (
           <div data-ai-stream="remote" data-ai-revision={remoteStreamingText.length}><StreamingBubble text={remoteStreamingText} isAnalysis={false} stage={ACTIVITY_META[currentActivity]?.stage} /></div>
         )}
         {(isLoading || isAnalyzing) && !streamingText && (
