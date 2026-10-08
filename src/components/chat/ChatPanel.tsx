@@ -27,6 +27,7 @@ import { useResponseScroll } from './useResponseScroll'
 import { ChatMarkdownTable } from './ChatMarkdownTable'
 import { completeReviewAction, isReviewAction, appendReviewDraft } from '@/lib/chat/reviewAction'
 import { extractReplyChoices } from '@/lib/chat/replyChoices'
+import { currentArtifactForChat } from '@/lib/chat/currentArtifactForChat'
 import { ReplyChoices } from './ReplyChoices'
 import { ChatDraftBoundary, MessageList, useStableCallback, markChatInput } from './ChatRenderBoundary'
 import { samePresenceEntry } from '@/lib/coedit/presenceThrottle'
@@ -2312,6 +2313,10 @@ function ChatPanelContent() {
     armTimer()
     let response: Response
     try {
+      const latestState = useProjectStore.getState()
+      const requestProject = latestState.project?.id === proj.id ? latestState.project : proj
+      const requestArtifact = currentArtifactForChat(requestProject, currentActivity,
+        latestState.project?.id === proj.id ? latestState.currentArtifact : null)
       response = await fetch('/api/chat/stream', {
         signal: controller.signal,
       method: 'POST',
@@ -2340,7 +2345,7 @@ function ChatPanelContent() {
           trainingMode: proj.trainingMode,
         },
         // 현재 활동의 기존 산출물 내용 전달 (AI가 수정 시 참조)
-        currentArtifact: proj.artifacts?.[currentActivity] ?? null,
+        currentArtifact: requestArtifact,
         // 이전 활동 산출물 전달: 내용이 있는 모든 과거 활동을 status와 함께 포함.
         // 같은 단계 내 진행(A-2-1 → A-2-2 등)에서도 in_review 초안을 다음 활동의 입력으로 사용해야 함.
         // AI는 함께 전달된 status('confirmed'/'in_review'/'ai_draft' 등)로 확정/검토중을 구분한다.
