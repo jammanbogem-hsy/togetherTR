@@ -29,9 +29,11 @@ test('채팅의 공동 편집 버튼이 있는 활동은 모두 패널 요청으
   assert.match(store, /chatInputRequest: null,\n\s*coeditOpenRequest: null,\n\s*\}\),/, '프로젝트 전환 시 초기화')
 })
 
-test('빈 산출물 화면: 공동 편집이 주 버튼, 직접 입력은 기록 담당 보조 링크, 폭·글자 크기는 아래 카드와 같게', () => {
-  assert.match(panel, /onClick=\{\(\) => setCoeditOpenRequest\(viewingActivity\)\}[\s\S]{0,600}공동 편집으로 함께 작성하기/)
-  assert.match(panel, /canCoeditHere \? '혼자 간단히 직접 입력하기' : 'AI가 저장 안 했나요\? 직접 입력하기'/)
+test('빈 산출물 화면: 지원 활동은 기존 공동 편집만 열고 보조 직접 입력 오버레이는 없다', () => {
+  assert.match(panel, /onClick=\{\(\) => setCoeditOpenRequest\(viewingActivity\)\}[\s\S]{0,600}공동 편집으로 작성하기/)
+  assert.doesNotMatch(panel, /혼자 간단히 직접 입력하기|showDirectInput|absolute inset-0 z-10 bg-white/)
+  assert.match(panel, /canCoeditHere \? \([\s\S]*?공동 편집으로 작성하기[\s\S]*?\) : isHost && directInputKey/)
+  assert.match(panel, /<DirectArtifactInput[\s\S]*?key=\{directInputKey\}/)
   assert.match(panel, /<div className="flex flex-col items-center text-\[#9AA0A6\] gap-3 py-4">/, '좌우 안쪽 여백 없이 전체 폭')
   assert.match(panel, /<div className="w-full rounded-2xl border border-\[#DADCE0\] bg-white p-4">\n\s*<p className="text-\[12px\] font-bold/, '채울 내용 상자 = 아래 카드와 같은 모서리·여백·12px 제목')
   assert.match(panel, /'inline-flex items-center gap-1 text-\[12px\] font-semibold px-2\.5 py-1 rounded-full'/)

@@ -1058,6 +1058,72 @@ export function ArtifactPanel() {
   return <InteractiveArtifactPanel />
 }
 
+// 공동 편집기가 없는 활동의 간단한 입력은 패널의 문서 흐름 안에 둔다.
+function DirectArtifactInput({ activityLabel, onSave, onClose }: {
+  activityLabel: string
+  onSave: (text: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [text, setText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const inFlight = useRef(false)
+
+  async function save() {
+    if (inFlight.current || !text.trim()) return
+    inFlight.current = true
+    setSaving(true)
+    setError('')
+    try {
+      await onSave(text.trim())
+      onClose()
+    } catch {
+      setError('저장하지 못했습니다. 입력한 내용은 그대로 있으니 다시 시도해 주세요.')
+    } finally {
+      inFlight.current = false
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form
+      aria-label={`${activityLabel} 직접 입력`}
+      onSubmit={event => { event.preventDefault(); void save() }}
+      className="rounded-2xl border border-[#C4C7C5] bg-[#F8FAFD] p-4 space-y-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-[#1F1F1F]">{activityLabel} 작성</h3>
+          <p className="mt-1 text-sm leading-6 text-[#444746]">논의한 내용을 적고 산출물에 저장하세요.</p>
+        </div>
+        <button type="button" onClick={onClose} disabled={saving} aria-label="직접 입력 닫기"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#444746] hover:bg-[#E8EAED] focus-visible:outline-2 focus-visible:outline-[#0B57D0] disabled:opacity-40">
+          <X size={22} />
+        </button>
+      </div>
+      <label className="block text-sm font-medium text-[#444746]">
+        산출물 내용
+        <textarea
+          value={text}
+          onChange={event => setText(event.target.value)}
+          disabled={saving}
+          autoFocus
+          placeholder={`${activityLabel}에서 정리한 내용을 입력하세요.`}
+          rows={8}
+          className="mt-2 w-full rounded-xl border border-[#747775] bg-white px-3 py-3 text-base leading-7 text-[#1F1F1F] focus:outline-2 focus:outline-[#0B57D0] resize-y"
+        />
+      </label>
+      {error && <p role="alert" className="text-sm leading-6 text-[#B3261E]">{error}</p>}
+      <div className="flex flex-wrap justify-end gap-2">
+        <MD3Button onClick={onClose} disabled={saving} variant="text" size="md">취소</MD3Button>
+        <MD3Button type="submit" disabled={saving || !text.trim()} variant="filled" size="md">
+          {saving ? '저장 중…' : '산출물에 저장'}
+        </MD3Button>
+      </div>
+    </form>
+  )
+}
+
 function InteractiveArtifactPanel() {
   const routeParams = useParams<{ id: string }>()
   const { currentArtifact, viewingActivity, setCurrentArtifact, project, userProfile } = useProjectStore()
@@ -1069,8 +1135,8 @@ function InteractiveArtifactPanel() {
   const [revisionNote, setRevisionNote] = useState('')
   const [showRevisionForm, setShowRevisionForm] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [showDirectInput, setShowDirectInput] = useState(false)
-  const [directInputText, setDirectInputText] = useState('')
+  const [directInputTarget, setDirectInputTarget] = useState<string | null>(null)
+  const directInputKey = project ? `${project.id}/${viewingActivity}` : null
   const [previewModal, setPreviewModal] = useState<ArtifactPreviewModalState | null>(null)
   const [showCumulativeReport, setShowCumulativeReport] = useState(false)
   const [artifactError, setArtifactError] = useState<string | null>(null)
@@ -1414,36 +1480,25 @@ function InteractiveArtifactPanel() {
     }
   }
 
-  async function handleDirectSave() {
-    if (!project || !directInputText.trim()) return
-    setIsSaving(true)
-    try {
-      const content = { [activityMeta.label]: directInputText.trim() }
-      if (effectiveProjectMode(project) === 'collaborative' && !isHost) {
-        await proposeArtifactToHost(
-          project.id,
-          viewingActivity,
-          content,
-          userProfile?.uid ?? '',
-          userProfile?.displayName ?? '팀원',
-        )
-        setShowDirectInput(false)
-        setDirectInputText('')
-        return
-      }
-      await setProjectArtifact(project.id, viewingActivity, {
-        status: 'in_review',
-        title: `${activityMeta.label} - 직접 입력`,
+  async function handleDirectSave(text: string) {
+    if (!project || !text.trim()) throw new Error('저장할 프로젝트와 내용이 필요합니다.')
+    const content = { [activityMeta.label]: text.trim() }
+    if (effectiveProjectMode(project) === 'collaborative' && !isHost) {
+      await proposeArtifactToHost(
+        project.id,
+        viewingActivity,
         content,
-        version: (displayArtifact?.currentVersion ?? 0) + 1,
-      })
-      setShowDirectInput(false)
-      setDirectInputText('')
-    } catch (err) {
-      console.error('직접 입력 저장 실패:', err)
-    } finally {
-      setIsSaving(false)
+        userProfile?.uid ?? '',
+        userProfile?.displayName ?? '팀원',
+      )
+      return
     }
+    await setProjectArtifact(project.id, viewingActivity, {
+      status: 'in_review',
+      title: `${activityMeta.label} - 직접 입력`,
+      content,
+      version: (displayArtifact?.currentVersion ?? 0) + 1,
+    })
   }
 
   const displayContent =
@@ -1729,49 +1784,6 @@ function InteractiveArtifactPanel() {
         </div>
       </div>
 
-      {/* 직접 입력 폼 (오버레이) */}
-      {showDirectInput && (
-        <div className="absolute inset-0 z-10 bg-white flex flex-col">
-          <div className="px-5 py-4 border-b border-[#DADCE0] bg-[#FEF7E0] flex items-center justify-between flex-shrink-0">
-            <div>
-              <p className="text-sm font-bold text-[#B06000]">산출물 직접 입력</p>
-              <p className="text-xs text-[#B06000] opacity-70 mt-0.5">AI가 저장하지 못한 경우 직접 입력하세요</p>
-            </div>
-            <button onClick={() => setShowDirectInput(false)}
-              className="text-[#9AA0A6] hover:text-[#5F6368] rounded-full p-1 hover:bg-[#F1F3F4] transition-colors">
-              <X size={16} weight="regular" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-            <p className="text-xs text-[#5F6368]">현재 활동: <span className="font-semibold text-[#202124]">{activityMeta.label}</span></p>
-            <textarea
-              value={directInputText}
-              onChange={e => setDirectInputText(e.target.value)}
-              placeholder={`예: "학생들이 협력하여 실생활 문제를 해결하는 경험을 만드는 교육"`}
-              rows={8}
-              className="w-full text-sm border border-[#DADCE0] rounded-2xl px-4 py-3 resize-none
-                focus:outline-none focus:ring-2 focus:ring-[#1A73E8] focus:border-transparent leading-relaxed"
-            />
-          </div>
-          <div className="px-5 py-4 border-t border-[#DADCE0] bg-[#F8F9FA] flex gap-2 flex-shrink-0">
-            <button
-              onClick={handleDirectSave}
-              disabled={isSaving || !directInputText.trim()}
-              className="flex-1 py-2.5 rounded-full bg-[#FBBC04] text-[#202124] text-sm font-bold
-                hover:bg-[#F9AB00] disabled:opacity-50 transition-colors shadow-sm"
-            >
-              {isSaving ? '저장 중...' : '산출물에 저장'}
-            </button>
-            <button
-              onClick={() => setShowDirectInput(false)}
-              className="px-5 py-2.5 rounded-full border border-[#DADCE0] text-[#5F6368] text-sm hover:bg-[#F1F3F4] transition-colors"
-            >
-              취소
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 내용 — 스펙 §7-3: 현재 활동 산출물이 먼저, 누적 산출물은 아래 */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
         {/* §7-3.12 — active_return 재검토 배너 (본문 상단) */}
@@ -1823,31 +1835,35 @@ function InteractiveArtifactPanel() {
             />
             {(canCoeditHere || isHost) && (
               <div className="pb-4 mt-2 space-y-2">
-                {/* 공동 편집으로 바로 — 팀원도 함께 적고, 기록 담당이 산출물로 보낸다(채팅 아래 공동 편집 버튼과 같은 창) */}
-                {canCoeditHere && (
-                  <button
-                    onClick={() => setCoeditOpenRequest(viewingActivity)}
-                    className="squid-btn morph-btn w-full flex items-center justify-center gap-2 py-3 rounded-2xl
-                      bg-[#1A73E8] hover:bg-[#1557B0] text-white text-sm font-semibold transition-colors"
-                  >
-                    <UsersThree size={18} weight="fill" />
-                    공동 편집으로 함께 작성하기
-                  </button>
-                )}
-                {canCoeditHere && (
-                  <p className="text-center text-[11px] text-[#5F6368] leading-snug">팀원과 같은 표에 함께 적고, 기록 담당이 산출물로 보내요.</p>
-                )}
-                {isHost && (
-                  <button
-                    onClick={() => setShowDirectInput(true)}
-                    className={canCoeditHere
-                      ? 'w-full flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-[#B06000] hover:underline'
-                      : `squid-btn morph-btn w-full flex items-center justify-center gap-2 py-2.5
-                    bg-[rgba(249,171,0,0.12)] hover:bg-[rgba(249,171,0,0.24)] text-[#B06000] text-sm font-semibold transition-colors`}
-                  >
-                    <PencilSimple size={canCoeditHere ? 14 : 16} weight="regular" />
-                    {canCoeditHere ? '혼자 간단히 직접 입력하기' : 'AI가 저장 안 했나요? 직접 입력하기'}
-                  </button>
+                {canCoeditHere ? (
+                  <>
+                    <MD3Button
+                      onClick={() => setCoeditOpenRequest(viewingActivity)}
+                      variant="filled" size="md" fullWidth
+                      icon={<UsersThree size={22} weight="fill" />}
+                      className="h-auto min-h-14 py-3 whitespace-normal"
+                    >
+                      공동 편집으로 작성하기
+                    </MD3Button>
+                    <p className="text-center text-sm text-[#5F6368] leading-6">혼자 작성하거나 팀원과 함께 편집할 수 있습니다.</p>
+                  </>
+                ) : isHost && directInputKey && (
+                  directInputTarget === directInputKey ? (
+                    <DirectArtifactInput
+                      key={directInputKey}
+                      activityLabel={activityMeta.label}
+                      onSave={handleDirectSave}
+                      onClose={() => setDirectInputTarget(current => current === directInputKey ? null : current)}
+                    />
+                  ) : (
+                    <MD3Button
+                      onClick={() => setDirectInputTarget(directInputKey)}
+                      variant="tonal" size="md" fullWidth
+                      icon={<PencilSimple size={22} />}
+                    >
+                      직접 입력하기
+                    </MD3Button>
+                  )
                 )}
               </div>
             )}
