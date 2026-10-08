@@ -13,6 +13,7 @@ export interface UserProfile {
   displayName: string
   email?: string
   photoURL?: string
+  avatarId?: string
   color: string
   emoji: string
   createdAt: number

@@ -2,6 +2,7 @@
 
 import { Sparkle } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
+import { profileAvatarSrc } from '@/lib/profile/avatars'
 
 // ─── Google 계정 프로필 스타일 아바타 ─────────────────────
 // Google Workspace(Gmail·Drive·Docs) 아바타 규칙:
@@ -49,6 +50,8 @@ export function Avatar({
   title,
   className,
   ai = false,
+  avatarId,
+  photoURL,
 }: {
   /** 표시 이름 — 첫 글자만 사용 */
   name?: string
@@ -62,7 +65,10 @@ export function Avatar({
   className?: string
   /** AI 아바타 — Google 블루 + 스파클 마크 (Gemini 계열 관례) */
   ai?: boolean
+  avatarId?: string
+  photoURL?: string
 }) {
+  const imageSrc = ai ? undefined : profileAvatarSrc(avatarId) ?? (avatarId ? undefined : photoURL)
   const bg = ai ? '#1A73E8' : googleAvatarTone(color)
   const initial = label ?? (name?.trim()?.[0]?.toUpperCase() ?? '?')
 
@@ -75,7 +81,7 @@ export function Avatar({
       style={{
         width: size,
         height: size,
-        backgroundColor: bg,
+        backgroundColor: imageSrc ? 'transparent' : bg,
         color: '#FFFFFF',
         fontSize: Math.round(size * 0.45),
         lineHeight: 1,
@@ -83,7 +89,11 @@ export function Avatar({
       title={title ?? (ai ? 'AI 공동설계자' : name)}
       aria-hidden="true"
     >
-      {ai
+      {imageSrc
+        // Small, pre-optimized local avatar assets do not need a remote image transform.
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={imageSrc} alt="" width={size} height={size} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="h-full w-full rounded-full object-contain" />
+        : ai
         ? <Sparkle size={Math.round(size * 0.5)} weight="fill" />
         : initial}
     </div>

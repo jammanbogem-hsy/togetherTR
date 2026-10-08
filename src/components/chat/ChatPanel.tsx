@@ -113,6 +113,7 @@ import { cn } from '@/lib/utils'
 import { GraphWorkspaceHeader } from '@/components/knowledge-graph/GraphWorkspaceHeader'
 import { MD3Button, MD3_ICON } from '@/components/ui/MD3Button'
 import { Avatar, AvatarChip } from '@/components/ui/Avatar'
+import { ProfileAvatarButton } from '@/components/profile/ProfileAvatarButton'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { remarkShortColumns } from '@/lib/markdown/tableColumnWidth'
@@ -1040,12 +1041,13 @@ function ContextMenuWrapper({ children, className, asArticle = false, ariaLabel 
 }
 
 // ─── 메시지 버블 ──────────────────────────────────────
-export function MessageBubble({ role, content, activityType, senderName, senderColor, isSelf, replyTo, onReply, stage, standardTextMap, simulated = false, checklist }: {
+export function MessageBubble({ role, content, activityType, senderName, senderColor, senderAvatarId, isSelf, replyTo, onReply, stage, standardTextMap, simulated = false, checklist }: {
   role: 'user' | 'assistant'
   content: string
   activityType?: ActivityType
   senderName?: string
   senderColor?: string
+  senderAvatarId?: string
   senderEmoji?: string
   isSelf?: boolean
   replyTo?: { id: string; content: string; senderName?: string }
@@ -1082,6 +1084,7 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
         className="chat-avatar-animated self-start"
         name={senderName}
         color={avatarColor}
+        avatarId={senderAvatarId}
         size={40}
         ai={!isUser}
         title={senderName}
@@ -4671,17 +4674,20 @@ ${discussionSummary}
           const isSelf = msg.role === 'user' && msg.userId === userProfile?.uid
           let senderName: string | undefined
           let senderColor: string | undefined
+          let senderAvatarId: string | undefined
           let senderEmoji: string | undefined
 
           if (msg.role === 'user') {
             if (isSelf) {
               senderName = userProfile?.displayName
               senderColor = userProfile?.color
+              senderAvatarId = userProfile?.avatarId
               senderEmoji = userProfile?.displayName?.[0] || '?'
             } else {
               const info = msg.userId ? project.memberInfo?.[msg.userId] : undefined
               senderName = info?.displayName ?? msg.userId?.slice(0, 6) ?? '팀원'
               senderColor = info?.color ?? '#6B7280'
+              senderAvatarId = info?.avatarId
               senderEmoji = info?.displayName?.[0] || '?'
             }
           }
@@ -4739,6 +4745,7 @@ ${discussionSummary}
                 senderName={senderName}
                 senderColor={senderColor}
                 senderEmoji={senderEmoji}
+                senderAvatarId={senderAvatarId}
                 isSelf={isSelf}
                 replyTo={msg.replyTo}
                 stage={ACTIVITY_META[msg.activityCode]?.stage}
@@ -5065,7 +5072,7 @@ ${discussionSummary}
             </div>
           )}
           {userProfile && (
-            <AvatarChip name={userProfile.displayName} color={userProfile.color} size={32} />
+            (proj.demoExperience?.scenarioId ? <AvatarChip name={userProfile.displayName} color={userProfile.color} size={32} /> : <ProfileAvatarButton profile={userProfile} projectId={proj.id} size={32} showName />)
           )}
           {isTeamMode && (
             <span className="text-[12px] bg-[#CDE9E5] text-[#00564C] px-3 h-8 inline-flex items-center rounded-full font-medium">

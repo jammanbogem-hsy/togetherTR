@@ -348,6 +348,7 @@ export interface Project {
     displayName: string
     color: string
     emoji: string
+    avatarId?: string
     joinedAt: number
     role?: string
     expertise?: string

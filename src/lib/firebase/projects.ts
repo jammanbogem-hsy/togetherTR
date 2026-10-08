@@ -222,7 +222,7 @@ export async function joinProject(
   projectId: string,
   uid: string,
   inviteCode: string,
-  memberInfo?: { displayName: string; color: string; emoji: string }
+  memberInfo?: { displayName: string; color: string; emoji: string; avatarId?: string }
 ): Promise<void> {
   const ref = doc(db, 'projects', projectId)
   const snap = await getDoc(ref)
@@ -248,7 +248,7 @@ export async function joinProject(
     updatedAt: serverTimestamp(),
   }
   if (memberInfo) {
-    updates[`memberInfo.${uid}`] = { ...memberInfo, uid, joinedAt: Date.now() }
+    updates[`memberInfo.${uid}`] = { ...data.memberInfo?.[uid], ...memberInfo, uid, joinedAt: data.memberInfo?.[uid]?.joinedAt ?? Date.now() }
   }
   await updateDoc(ref, updates)
   addJoinedProjectId(projectId)
@@ -257,7 +257,7 @@ export async function joinProject(
 export async function ensureProjectMemberUid(
   projectId: string,
   uid: string,
-  memberInfo?: { displayName: string; color: string; emoji: string }
+  memberInfo?: { displayName: string; color: string; emoji: string; avatarId?: string }
 ): Promise<void> {
   const updates: Record<string, unknown> = {
     memberUids: arrayUnion(uid),

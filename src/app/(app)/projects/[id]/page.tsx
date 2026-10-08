@@ -172,7 +172,7 @@ function WaitingRoom({
                 const isThisHost = project.hostUid === mUid || project.createdBy === mUid
                 return (
                   <div key={mUid} className="flex min-w-0 items-center gap-3 py-1">
-                    <Avatar name={info?.displayName} color={info?.color ?? '#9AA0A6'} size={40} />
+                    <Avatar avatarId={info?.avatarId} name={info?.displayName} color={info?.color ?? '#9AA0A6'} size={40} />
                     <div className="flex-1 min-w-0">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="min-w-0 break-words text-base font-medium leading-6 text-[var(--md-sys-on-surface)]">
@@ -243,7 +243,7 @@ function WaitingRoom({
               const isSelf = msg.uid === uid
               return (
                 <div key={msg.id} className={cn('flex gap-2.5', isSelf ? 'flex-row-reverse' : 'flex-row')}>
-                  <Avatar name={msg.displayName} color={msg.color} size={36} />
+                  <Avatar avatarId={memberInfo[msg.uid]?.avatarId} name={msg.displayName} color={msg.color} size={36} />
                   <div className={cn('flex min-w-0 max-w-[80%] flex-col space-y-1', isSelf ? 'items-end' : 'items-start')}>
                     {!isSelf && (
                       <span className="px-1 text-base font-medium leading-6 text-[var(--md-sys-on-surface-variant)]" >
@@ -732,16 +732,17 @@ export default function ProjectPage() {
     const uid = userProfile.uid
     const stored = project.memberInfo?.[uid]
     // 미등록이거나 색상이 현재 프로필과 다르면 업데이트
-    if (stored && stored.color === userProfile.color) return
+    if (stored && stored.color === userProfile.color && stored.avatarId === userProfile.avatarId && stored.displayName === userProfile.displayName) return
     // 이 경로는 이미 멤버인 사용자의 프로필 갱신 — joinProject 내부에서
     // memberUids 포함 여부를 확인하고 inviteCode 검증을 스킵한다. 빈 문자열 OK.
     joinProject(projectId, uid, project.inviteCode ?? '', {
       displayName: userProfile.displayName,
       color: userProfile.color ?? '#A0BCE8',
       emoji: userProfile.emoji ?? '👤',
+      ...(userProfile.avatarId ? { avatarId: userProfile.avatarId } : {}),
     }).catch(console.error)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id, userProfile?.uid, userProfile?.color])
+  }, [project?.id, userProfile?.uid, userProfile?.color, userProfile?.avatarId, userProfile?.displayName])
 
   if (!project) {
     if (projectLoadError) {
@@ -1105,10 +1106,10 @@ export default function ProjectPage() {
                           <span
                             key={mUid}
                             className="relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold text-white ring-2 ring-white select-none"
-                            style={{ backgroundColor: avatarBg }}
+                            style={{ backgroundColor: info?.avatarId ? undefined : avatarBg }}
                             title={info?.displayName ?? mUid.slice(0, 8)}
                           >
-                            {(info?.displayName?.[0] ?? '?').toUpperCase()}
+                            <Avatar name={info?.displayName} color={avatarBg} avatarId={info?.avatarId} size={24} />
                             {isThisHost && (
                               <Crown size={8} weight="fill" className="absolute -top-1 -right-0.5 text-[#F9AB00] drop-shadow" />
                             )}
@@ -1287,7 +1288,7 @@ export default function ProjectPage() {
                   const isHostMember = mUid === (project.hostUid ?? project.createdBy)
                   return (
                     <div key={mUid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8F9FA]">
-                      <Avatar name={displayName} color={color} size={36} />
+                      <Avatar avatarId={info?.avatarId} name={displayName} color={color} size={36} />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-semibold text-[#202124] truncate">
                           {displayName}

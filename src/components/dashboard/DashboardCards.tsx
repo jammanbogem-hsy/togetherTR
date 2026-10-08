@@ -7,6 +7,7 @@
 
 import { useId, useRef, useState } from 'react'
 import { ProjectCardMenu } from './ProjectCardMenu'
+import { Avatar } from '@/components/ui/Avatar'
 import type { Project } from '@/types'
 import type { DashboardFolder } from '@/lib/firebase/projects'
 import { formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
@@ -235,14 +236,7 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide, onMove
               <>
                 <div className="flex -space-x-2">
                   {members.slice(0, 3).map((m) => (
-                    <div
-                      key={m.uid}
-                      className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-[12px] font-bold text-white shadow-sm"
-                      style={{ backgroundColor: m.color || '#9AA0A6' }}
-                      title={m.displayName}
-                    >
-                      {m.displayName?.[0] || '?'}
-                    </div>
+                    <Avatar key={m.uid} name={m.displayName} color={m.color} avatarId={m.avatarId} size={32} className="ring-2 ring-white" />
                   ))}
                   {members.length > 3 && (
                     <div className="w-8 h-8 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[12px] font-bold text-gray-600 shadow-sm">

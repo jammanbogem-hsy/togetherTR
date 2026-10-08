@@ -1,5 +1,7 @@
 'use client'
 
+import { ProfileAvatarButton } from '@/components/profile/ProfileAvatarButton'
+
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -128,22 +130,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             {userProfile && (
               <div className="flex items-center gap-2">
-                {userProfile.photoURL ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={userProfile.photoURL}
-                    alt=""
-                    className="w-10 h-10 rounded-full shadow-md flex-shrink-0"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div
-                    className="w-10 h-10 rounded-full text-white text-[15px] font-extrabold flex items-center justify-center shadow-md flex-shrink-0 select-none"
-                    style={{ backgroundColor: userProfile.color }}
-                  >
-                    {userProfile.displayName?.[0]?.toUpperCase() ?? '?'}
-                  </div>
-                )}
+                <ProfileAvatarButton profile={userProfile} />
                 <div className="hidden sm:block">
                   <p className="text-[13px] font-bold text-[#202124]">{userProfile.displayName}</p>
                   {userProfile.schoolName && (
