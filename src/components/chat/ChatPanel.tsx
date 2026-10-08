@@ -1289,7 +1289,7 @@ const SLASH_COMMANDS = [
   {
     id: 'next',
     label: '다음 단계로',
-    desc: '저장·확정 후 이동할지 확인 창을 바로 띄움',
+    desc: '저장한 내용을 바탕으로 다음 단계로 이동',
     keywords: ['다음', '전진', 'next', '이동', '진행'],
     hostOnly: true,
   },
@@ -2512,7 +2512,7 @@ function ChatPanelContent() {
     let currentStatus = localArtifact?.status ?? fsArtifact?.status
 
     if (pendingForCurrent) {
-      // "확정 후 다음 단계로" 경로는 저장 카드 수락 없이 pending 섹션을 곧바로 confirmed까지
+      // "다음 단계로" 경로는 저장 카드 수락 없이 pending 섹션을 곧바로 confirmed까지
       // 밀어넣으므로, 선택지·절차 문구 정화를 반드시 거친다 (verbatim 병합 금지).
       sourceContent = { ...sourceContent, ...sanitizeArtifactSections(pendingForCurrent.sections) }
       sourceVersion = (fsArtifact?.version ?? localArtifact?.currentVersion ?? 0) + 1
@@ -6026,7 +6026,7 @@ ${discussionSummary}
                 <CheckCircle size={18} weight="fill" className="text-[#34A853] mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm font-bold text-[#1E4620]">산출물이 저장되었습니다</p>
-                  <p className="text-xs text-[#1E8C3A] mt-0.5">우측 산출물을 확인하고 확정한 후 다음 단계로 넘어가세요. 수정이 필요하면 계속 대화할 수 있습니다.</p>
+                  <p className="text-xs text-[#1E8C3A] mt-0.5">저장된 내용으로 다음 단계로 넘어갈 수 있습니다. 수정이 필요하면 계속 대화하세요.</p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -6044,12 +6044,12 @@ ${discussionSummary}
                       await handleActivityAdvance(pendingAdvance)
                       setPendingAdvance(null)
                     } catch {
-                      setChatError('산출물 확정 저장에 실패했습니다. 다시 시도해주세요.')
+                      setChatError('다음 단계로 이동하지 못했습니다. 다시 시도해 주세요.')
                     }
                   }}
                   className="flex-1 py-2 rounded-full bg-[#34A853] text-white text-xs font-bold hover:bg-[#2d9248] transition-colors"
                 >
-                  확정 후 다음 단계로 →
+                  다음 단계로 →
                 </button>
               </div>
             </div>
