@@ -56,7 +56,7 @@ function panelFixture(training = true, current = 'A-1-1', stored = artifacts) {
   `, {
     project, viewingActivity: current, isTrainingActivity, previousArtifacts,
     RELATION_STYLE: execute(`exports.value = ${variable('RELATION_STYLE').initializer.getText(tree)}`, {}).exports.value,
-    cn: (...values) => values.filter(Boolean).join(' '), Stack: () => null, CaretLeft: () => null, ArrowsOut: () => null,
+    CheckCircle: () => null, cn: (...values) => values.filter(Boolean).join(' '), Stack: () => null, CaretLeft: () => null, ArrowsOut: () => null,
     firestoreArtifact: stored[current], displayContent: stored[current]?.content ?? {}, displayArtifact: null, hasContent: false,
     effectiveStatus: 'in_review', activityMeta: ACTIVITY_META[current], routeParams: { id: 'room' }, observationOnly: false,
     isHost: false, isConfirmed: false, isSaving: false, artifactError: '', previewModal: null,
@@ -119,4 +119,21 @@ test('A1 history: 다른 연수 활동도 같은 목록을 사용하며 저장 �
   assert.deepEqual(Array.from(other.previousArtifacts, item => item.code), ['A-1-2', 'A-1-1', 'T-2-3', 'T-1-1'])
   assert.doesNotMatch(panelFixture(true, 'A-1-1', {}).html(), /저장된 산출물 \(이전 활동\)/)
   assert.deepEqual(artifacts, before)
+})
+
+test('saved training record presents one save workflow with no separate confirmation or cancellation action', () => {
+  const fixture = panelFixture(true)
+  fixture.context.isHost = true
+  fixture.context.hasContent = true
+  fixture.context.displayArtifact = { title: '연수 기록' }
+  fixture.context.handleConfirm = () => { throw new Error('Separate confirmation should not be presented') }
+  fixture.context.handleRedraft = () => {}
+  for (const status of ['in_review', 'confirmed']) {
+    fixture.context.effectiveStatus = status
+    fixture.context.isConfirmed = status === 'confirmed'
+    const html = fixture.html()
+    assert.match(html, /저장됨/)
+    assert.doesNotMatch(html, /산출물 확정하기|확정 취소|재검토/)
+    assert.ok(fixture.formContent)
+  }
 })

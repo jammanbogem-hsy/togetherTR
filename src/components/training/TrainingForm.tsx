@@ -9,7 +9,7 @@ import { useProjectStore } from '@/store/project'
 import { artifactContentEquals } from '@/lib/chat/artifactSignalBatch'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import { MD3Button } from '@/components/ui/MD3Button'
-import { buildTrainingFormContent, trainingFormValues, trainingSaveAdviceSuffix } from './trainingFormState'
+import { buildTrainingFormContent, createTrainingDraft, editTrainingDraft, loadSavedTrainingFields, syncTrainingDraft, trainingSaveAdviceSuffix } from './trainingFormState'
 import { useTrainingAdvice } from './useTrainingAdvice'
 import { TrainingFieldInput } from './TrainingFieldInput'
 
@@ -42,14 +42,15 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
     else setStoredAdvice(enabled)
   }
   const sourceKey = JSON.stringify(content)
-  const [draft, setDraft] = useState(() => ({ sourceKey, values: trainingFormValues(activityCode, content), dirty: {} as Record<string, boolean> }))
+  const [draft, setDraft] = useState(() => createTrainingDraft(activityCode, content))
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [error, setError] = useState('')
   // 실시간 갱신은 손대지 않은 칸만 반영한다. 이미 적는 중인 칸은 보존한다.
   if (draft.sourceKey !== sourceKey) {
-    const incoming = trainingFormValues(activityCode, content)
-    setDraft({ ...draft, sourceKey, values: Object.fromEntries(Object.entries(incoming).map(([key, value]) => [key, draft.dirty[key] ? draft.values[key] : value])) })
+    setDraft(syncTrainingDraft(draft, activityCode, content))
+    setError('')
+    setFeedback('')
   }
 
   const def = TRAINING_ACTIVITIES[activityCode]
@@ -99,7 +100,7 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
         await proposeArtifactToHost(project.id, activityCode, sections, user.uid, user.displayName)
         setFeedback('기록 담당에게 저장을 제안했습니다. 기록 담당이 수락하면 팀 산출물에 반영됩니다.')
       }
-      setDraft(previous => ({ ...previous, dirty: {} }))
+      setDraft(previous => ({ ...previous, dirty: {}, conflicts: [] }))
     } catch {
       setError('저장하지 못했습니다. 입력한 내용은 그대로입니다. 다시 시도해 주세요.')
     } finally { setSaving(false) }
@@ -111,6 +112,11 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
         <h3 className="text-base font-semibold text-[#202124]">{displayActivityCode(activityCode)} {ACTIVITY_META[activityCode].label}</h3>
         <p className="mt-1 text-sm leading-relaxed text-[#5F6368]">오프라인에서 정리한 내용을 옮겨 적으세요. 선택 칸은 비워도 됩니다.</p>
       </div>
+      {draft.conflicts.length > 0 && <div role="status" className="space-y-2 rounded-xl bg-[#E8F0FE] p-3 text-sm text-[#0842A0]">
+        <p>저장된 내용이 바뀌었습니다. 작성 중인 글은 유지했습니다.</p>
+        <MD3Button type="button" size="sm" variant="outlined" disabled={saving || readOnly || !user}
+          onClick={() => { setDraft(previous => loadSavedTrainingFields(previous)); setError(''); setFeedback('저장된 내용을 불러왔습니다.') }}>저장된 내용 불러오기</MD3Button>
+      </div>}
       <form onSubmit={event => { event.preventDefault(); void save() }} className="space-y-4">
         <fieldset disabled={saving || readOnly || !user} className="min-w-0 space-y-4">
           {def.fields.map(field => (
@@ -120,8 +126,8 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
                 <span className={`rounded-full px-2 py-0.5 text-xs ${field.tier === 'A' ? 'bg-[#D3E3FD] text-[#0842A0]' : 'bg-[#F1F3F4] text-[#5F6368]'}`}>{field.tier === 'A' ? '필수' : '선택'}</span>
               </span>
               <TrainingFieldInput id={`training-${activityCode}-${field.key}`} label={field.label}
-                value={draft.values[field.key] ?? ''} columns={field.tableColumns} placeholder={field.placeholder}
-                onChange={value => { setFeedback(''); setDraft(previous => ({ ...previous, values: { ...previous.values, [field.key]: value }, dirty: { ...previous.dirty, [field.key]: true } })) }} />
+                value={draft.values[field.key] ?? ''} placeholder={field.placeholder}
+                onChange={value => { setFeedback(''); setDraft(previous => editTrainingDraft(previous, field.key, value)) }} />
               {field.reason && <span className="mt-1 block text-xs leading-relaxed text-[#5F6368]">{field.reason}</span>}
             </div>
           ))}

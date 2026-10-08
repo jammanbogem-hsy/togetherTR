@@ -2556,6 +2556,8 @@ function ChatPanelContent() {
       setChatError('현재 활동에 저장할 산출물이 없습니다. /산출물로 먼저 저장하거나 우측 패널에 직접 입력해주세요.')
       return false
     }
+    // 연수용 기록은 저장으로 마무리한다. 별도 확정 쓰기·정식 필수 섹션 관문을 반복하지 않는다.
+    if (isTrainingActivity(proj, currentActivity)) return true
     if (
       currentMeta.requiredSections?.length
       && !validateRequiredSections(sourceContent, currentMeta.requiredSections)

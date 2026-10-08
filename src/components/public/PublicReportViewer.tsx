@@ -1,8 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
-import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
+import { ReportMarkdown, reportSummary } from '@/components/modals/ReportMarkdown'
+import { reportStageColors } from '@/components/modals/reportDashboardStyles'
+import { cleanReportMarkdown } from '@/lib/markdown/reportDisplay'
+import { MD3Button } from '@/components/ui/MD3Button'
+import { UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy, BookOpen, CalendarBlank, Copy, Printer, type Icon } from '@phosphor-icons/react'
 import type { PublicReport, StageCode } from '@/types'
 import { STAGES } from '@/types'
 import { STAGE_LABELS, STAGE_COLOR } from '@/lib/ui/stageColors'
@@ -14,146 +17,30 @@ import { PublicOntologySection } from '@/components/ontology/ProjectOntologyModa
  * - 로그인 상태 무관 (공개 URL 접근)
  * - 탭 구조: 단계별 보고서(T/A/Ds/DI/E 중 존재하는 것) + 최종 결과서(종합 보고서)
  * - URL 해시(`#T`, `#final` 등)로 탭 상태 보존·공유 가능
- * - PDF 친화적 렌더 (표 가로 스크롤 없이 wrap)
+ * - 내부 보고서와 같은 ReportMarkdown으로 표시·인쇄 (공개 스냅샷만 사용)
  */
 
-function normalizeMarkdown(content: string): string {
-  return content
-    .replace(/~~([\s\S]+?)~~/g, '$1')
-    .split('\n')
-    .map(line => line.startsWith('|')
-      ? line.replace(/<br\s*\/?>/gi, '\u2028')
-      : line.replace(/<br\s*\/?>/gi, '\n')
-    )
-    .join('\n')
-}
+const STAGE_ICONS: Record<StageCode, Icon> = { T: UsersThree, A: ChartLineUp, Ds: PencilRuler, DI: RocketLaunch, E: Trophy }
 
-const markdownComponents: Components = {
-  h1: ({ children }) => (
-    <h1 className="text-[22px] font-extrabold text-[#202124] mt-10 mb-4 pb-2 border-b-2 border-[#E8EAED]">{children}</h1>
-  ),
-  h2: ({ children }) => (
-    <h2 className="text-[18px] font-extrabold text-[#202124] mt-8 mb-3 pl-3 border-l-4 border-[#1A73E8]">{children}</h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="text-[15px] font-bold text-[#3C4043] mt-5 mb-2">{children}</h3>
-  ),
-  p: ({ children }) => (
-    <p className="text-[14px] text-[#3C4043] leading-[1.8] mb-3">{children}</p>
-  ),
-  ul: ({ children }) => <ul className="space-y-1.5 my-3 pl-1">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal ml-6 my-3 space-y-1 text-[14px] text-[#3C4043] leading-[1.8]">{children}</ol>,
-  li: ({ children }) => (
-    <li className="flex items-start gap-2 text-[14px] text-[#3C4043] leading-[1.8]">
-      <span className="mt-[0.55rem] w-[7px] h-[7px] rounded-full bg-[#1A73E8] flex-shrink-0" />
-      <span>{children}</span>
-    </li>
-  ),
-  blockquote: ({ children }) => (
-    <blockquote className="my-4 px-4 py-3 bg-[#F1F8FF] border-l-4 border-[#1A73E8] rounded-r-lg text-[#1F3D70] font-semibold">
-      {children}
-    </blockquote>
-  ),
-  strong: ({ children }) => <strong className="font-bold text-[#202124]">{children}</strong>,
-  em: ({ children }) => <em className="italic text-[#5F6368]">{children}</em>,
-  hr: () => <hr className="my-8 border-0 border-t border-[#E8EAED]" />,
-  table: ({ children }) => (
-    <div className="my-5 rounded-xl border border-[#DADCE0] overflow-hidden shadow-sm">
-      <table className="w-full border-collapse text-[14px]" style={{ tableLayout: 'auto' }}>{children}</table>
-    </div>
-  ),
-  thead: ({ children }) => <thead className="bg-gradient-to-r from-[#1A73E8] to-[#1557B0] text-white">{children}</thead>,
-  th: ({ children }) => (
-    <th className="px-4 py-3 text-left font-bold text-[13px] align-top" style={{ wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
-      {children}
-    </th>
-  ),
-  tr: ({ children }) => <tr className="border-t border-[#F1F3F4]">{children}</tr>,
-  td: ({ children }) => {
-    const baseStyle: React.CSSProperties = { wordBreak: 'keep-all', overflowWrap: 'anywhere' }
-    const text = typeof children === 'string' ? children : null
-    if (text && text.includes('\u2028')) {
-      return (
-        <td className="px-4 py-3 text-[14px] text-[#3C4043] leading-[1.7] align-top" style={baseStyle}>
-          {text.split('\u2028').filter(Boolean).map((line, i) => (
-            <span key={i} className="block">{line}</span>
-          ))}
-        </td>
-      )
-    }
-    return (
-      <td className="px-4 py-3 text-[14px] text-[#3C4043] leading-[1.7] align-top" style={baseStyle}>
-        {children}
-      </td>
-    )
-  },
-  code: ({ children }) => (
-    <code className="px-1.5 py-0.5 bg-[#F1F3F4] border border-[#DADCE0] rounded text-[13px] text-[#202124]">{children}</code>
-  ),
-}
-
-function StageReportSection({ stage, content, savedAt }: {
-  stage: StageCode
-  content: string
-  savedAt: number
+function PublicReportSection({ stage, content, savedAt }: {
+  stage?: StageCode; content: string; savedAt: number;
 }) {
-  const color = STAGE_COLOR[stage]
-  const normalized = useMemo(() => normalizeMarkdown(content), [content])
-  return (
-    <section>
-      <header className="mb-5 flex items-center gap-3">
-        <span
-          className="w-11 h-11 rounded-2xl flex items-center justify-center text-white text-[15px] font-extrabold flex-shrink-0"
-          style={{ backgroundColor: color.hex }}
-        >
-          {stage}
-        </span>
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: color.hex }}>
-            단계 보고서
-          </p>
-          <h2 className="text-[20px] font-extrabold text-[#202124] leading-tight">
-            {STAGE_LABELS[stage]}
-          </h2>
+  const colors = reportStageColors(stage ? STAGE_COLOR[stage].hex : '#E65100')
+  const HeadingIcon = stage ? STAGE_ICONS[stage] : BookOpen
+  const { summary } = reportSummary(cleanReportMarkdown(content))
+  return <section aria-label={stage ? `${STAGE_LABELS[stage]} 보고서` : '최종 결과서'}>
+    <header className="report-hero">
+      <div className="report-hero-banner" style={{ backgroundColor: colors.container, color: colors.band }}>
+        <div className="report-hero-title">
+          <span className="report-stage-icon"><HeadingIcon size={24} weight="duotone" aria-hidden="true" /></span>
+          <div><p className="report-eyebrow">{stage ? `${stage} · 단계 분석 보고서` : '최종 결과서'}</p><h2 className="m-0 text-xl font-bold">{stage ? `${STAGE_LABELS[stage]} 단계` : 'T → DI 통합 설계안'}</h2></div>
         </div>
-        <span className="ml-auto text-[11px] text-[#9AA0A6] tabular-nums flex-shrink-0">
-          {new Date(savedAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
-        </span>
-      </header>
-      <article className="prose-none">
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
-          {normalized}
-        </ReactMarkdown>
-      </article>
-    </section>
-  )
-}
-
-function FinalReportSection({ content, savedAt }: { content: string; savedAt: number }) {
-  const normalized = useMemo(() => normalizeMarkdown(content), [content])
-  return (
-    <section>
-      <header className="mb-5 flex items-center gap-3">
-        <span className="w-11 h-11 rounded-2xl flex items-center justify-center text-white text-[18px] font-extrabold flex-shrink-0 bg-gradient-to-br from-[#E65100] to-[#BF360C]">
-          ∑
-        </span>
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#E65100]">최종 결과서</p>
-          <h2 className="text-[20px] font-extrabold text-[#202124] leading-tight">
-            T → DI 통합 설계안
-          </h2>
-        </div>
-        <span className="ml-auto text-[11px] text-[#9AA0A6] tabular-nums flex-shrink-0">
-          {new Date(savedAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
-        </span>
-      </header>
-      <article className="prose-none">
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
-          {normalized}
-        </ReactMarkdown>
-      </article>
-    </section>
-  )
+        {summary && <p className="report-hero-summary">{summary}</p>}
+        <div className="report-dates"><span><CalendarBlank size={14} aria-hidden="true" /> 생성일 · {new Date(savedAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}</span></div>
+      </div>
+    </header>
+    <ReportMarkdown content={content} stage={stage} />
+  </section>
 }
 
 type Tab =
@@ -243,63 +130,55 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="public-report-viewer min-h-screen bg-[#F8FAFD]">
       {/* 상단 — 프로젝트 메타 */}
-      <header className="bg-gradient-to-br from-[#E8F0FE] via-white to-white border-b border-[#DADCE0]">
-        <div className="max-w-4xl mx-auto px-6 py-10">
+      <header className="bg-white border-b border-[#C4C7C5]">
+        <div className="max-w-[1200px] mx-auto px-4 py-8 sm:px-8">
           <p className="text-[11px] font-bold text-[#1A73E8] uppercase tracking-widest mb-2">
             T-CID2.0 협력적 수업설계
           </p>
           <h1 className="text-[28px] font-extrabold text-[#202124] leading-tight mb-4">
             {report.projectTitle}
           </h1>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-[#5F6368]">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-[#5F6368]">
             <span className="flex items-center gap-1.5">
-              <span className="text-[#9AA0A6]">학교급</span>
+              <span className="text-[#5F6368]">학교급</span>
               <span className="font-semibold text-[#3C4043]">{report.schoolLevel}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="text-[#9AA0A6]">학년군</span>
+              <span className="text-[#5F6368]">학년군</span>
               <span className="font-semibold text-[#3C4043]">{report.targetGradeGroup}</span>
             </span>
             {report.targetSubjects?.length > 0 && (
               <span className="flex items-center gap-1.5">
-                <span className="text-[#9AA0A6]">교과</span>
+                <span className="text-[#5F6368]">교과</span>
                 <span className="font-semibold text-[#3C4043]">{report.targetSubjects.join(', ')}</span>
               </span>
             )}
             <span className="flex items-center gap-1.5">
-              <span className="text-[#9AA0A6]">팀</span>
+              <span className="text-[#5F6368]">팀</span>
               <span className="font-semibold text-[#3C4043]">{report.memberCount}명 협력 설계</span>
             </span>
             {report.cycleCount > 1 && (
               <span className="flex items-center gap-1.5">
-                <span className="text-[#9AA0A6]">주기</span>
+                <span className="text-[#5F6368]">주기</span>
                 <span className="font-semibold text-[#3C4043]">{report.cycleCount}차</span>
               </span>
             )}
             <span className="flex items-center gap-1.5">
-              <span className="text-[#9AA0A6]">공개일</span>
+              <span className="text-[#5F6368]">공개일</span>
               <span className="font-semibold text-[#3C4043] tabular-nums">
                 {new Date(report.publishedAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
               </span>
             </span>
           </div>
           <div className="mt-6 flex flex-wrap gap-2 no-print">
-            <button
-              type="button"
-              onClick={copyLink}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold rounded-full bg-[#1A73E8] text-white hover:bg-[#1557B0] transition-colors"
-            >
-              {copied ? '링크 복사됨 ✓' : '공유 링크 복사'}
-            </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold rounded-full bg-white text-[#5F6368] border border-[#DADCE0] hover:border-[#1A73E8] hover:text-[#1A73E8] transition-colors"
-            >
+            <MD3Button variant="filled" size="sm" className="min-h-11 text-sm" onClick={copyLink} icon={<Copy size={18} aria-hidden="true" />}>
+              {copied ? '링크 복사됨' : '공유 링크 복사'}
+            </MD3Button>
+            <MD3Button variant="outlined" size="sm" className="min-h-11 text-sm" onClick={() => window.print()} icon={<Printer size={18} aria-hidden="true" />}>
               인쇄 / PDF 저장
-            </button>
+            </MD3Button>
           </div>
         </div>
       </header>
@@ -307,7 +186,7 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
       {/* 탭 네비게이션 (2개 이상일 때만) */}
       {showTabBar && (
         <nav className="border-b border-[#E8EAED] bg-white/90 backdrop-blur-sm sticky top-0 z-10 no-print">
-          <div className="max-w-4xl mx-auto px-2 sm:px-6 flex overflow-x-auto">
+          <div className="max-w-[1200px] mx-auto px-2 sm:px-8 flex overflow-x-auto">
             {tabs.map(tab => {
               const isActive = tab.key === activeKey
               return (
@@ -317,8 +196,8 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
                   onClick={() => changeTab(tab.key)}
                   aria-current={isActive ? 'page' : undefined}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-3 text-[13px] font-semibold whitespace-nowrap border-b-[3px] transition-all flex-shrink-0',
-                    isActive ? 'text-[#202124]' : 'text-[#9AA0A6] hover:text-[#3C4043]',
+                    'flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-[3px] transition-colors focus-visible:outline-2 focus-visible:outline-[#0B57D0] focus-visible:outline-offset-[-4px] flex-shrink-0',
+                    isActive ? 'text-[#202124]' : 'text-[#5F6368] hover:text-[#3C4043]',
                   )}
                   style={{
                     borderBottomColor: isActive ? tab.color : 'transparent',
@@ -334,9 +213,9 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
       )}
 
       {/* 본문 — 활성 탭 내용 (또는 탭 1개면 그 내용만) */}
-      <main className="max-w-4xl mx-auto px-6 py-10">
+      <main className="max-w-[1200px] mx-auto px-4 py-8 sm:px-8">
         {tabs.length === 0 ? (
-          <div className="text-center py-20 text-[#9AA0A6] text-sm">
+          <div className="text-center py-20 text-[#5F6368] text-sm">
             아직 공개된 보고서가 없습니다.
           </div>
         ) : (
@@ -348,19 +227,19 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
                   {tab.type === 'structure'
                     ? <PublicOntologySection stageReports={report.stageReports as Record<string, unknown>} />
                     : tab.type === 'stage'
-                      ? <StageReportSection stage={tab.stage} content={tab.data.content} savedAt={tab.data.savedAt} />
-                      : <FinalReportSection content={tab.data.content} savedAt={tab.data.savedAt} />}
+                      ? <PublicReportSection stage={tab.stage} content={tab.data.content} savedAt={tab.data.savedAt} />
+                      : <PublicReportSection content={tab.data.content} savedAt={tab.data.savedAt} />}
                 </div>
               ))}
             </div>
             {/* 화면에서는 활성 탭만 */}
-            <div className="screen-only">
+            <div className="screen-only rounded-2xl border border-[#DADCE0] bg-white p-4 sm:p-6">
               {activeTab && (
                 activeTab.type === 'structure'
                   ? <PublicOntologySection stageReports={report.stageReports as Record<string, unknown>} />
                   : activeTab.type === 'stage'
-                    ? <StageReportSection stage={activeTab.stage} content={activeTab.data.content} savedAt={activeTab.data.savedAt} />
-                    : <FinalReportSection content={activeTab.data.content} savedAt={activeTab.data.savedAt} />
+                    ? <PublicReportSection stage={activeTab.stage} content={activeTab.data.content} savedAt={activeTab.data.savedAt} />
+                    : <PublicReportSection content={activeTab.data.content} savedAt={activeTab.data.savedAt} />
               )}
             </div>
           </>
@@ -369,23 +248,25 @@ export function PublicReportViewer({ report }: { report: PublicReport }) {
 
       {/* 푸터 */}
       <footer className="border-t border-[#DADCE0] bg-[#F8F9FA] py-8 text-center no-print">
-        <p className="text-[12px] text-[#9AA0A6]">
+        <p className="text-[12px] text-[#5F6368]">
           T-CID2.0 협력적 수업설계 AI 공동설계자로 제작된 보고서입니다.
         </p>
-        <p className="text-[10px] text-[#BDC1C6] mt-1">
+        <p className="text-[10px] text-[#5F6368] mt-1">
           본 보고서는 팀에서 공개 설정한 내용만 포함하며, 원본 설계 과정·채팅·팀원 정보는 포함되지 않습니다.
         </p>
       </footer>
 
       {/* 화면/인쇄 분기용 CSS — 탭 하나만 보는 스크린뷰 vs 인쇄 시 전체 나열 */}
-      <style jsx global>{`
-        .print-only { display: none; }
-        .screen-only { display: block; }
+      <style>{`
+        .public-report-viewer .print-only { display: none; }
+        .public-report-viewer .screen-only { display: block; }
         @media print {
-          .no-print { display: none !important; }
-          .print-only { display: block; }
-          .screen-only { display: none; }
-          .print-section { page-break-inside: avoid; }
+          .public-report-viewer .no-print { display: none !important; }
+          .public-report-viewer .print-only { display: block; }
+          .public-report-viewer .screen-only { display: none; }
+          .public-report-viewer .print-section { break-inside: auto; page-break-inside: auto; }
+          .public-report-viewer .print-section + .print-section { break-before: page; page-break-before: always; }
+          .public-report-viewer main { max-width: none; padding: 0; }
           body { background: white; }
         }
       `}</style>

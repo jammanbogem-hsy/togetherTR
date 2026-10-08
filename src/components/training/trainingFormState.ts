@@ -52,3 +52,43 @@ export function trainingSaveAdviceSuffix(quiet: boolean, advice: boolean): strin
   if (!advice) return TRAINING_ADVICE_OFF
   return quiet ? TRAINING_ADVICE_ONCE : TRAINING_ADVICE_ON
 }
+
+
+export interface TrainingDraft {
+  sourceKey: string
+  sourceValues: Record<string, string>
+  values: Record<string, string>
+  dirty: Record<string, boolean>
+  conflicts: string[]
+}
+
+export function createTrainingDraft(code: ActivityCode, content: Record<string, unknown>): TrainingDraft {
+  const values = trainingFormValues(code, content)
+  return { sourceKey: JSON.stringify(content), sourceValues: values, values, dirty: {}, conflicts: [] }
+}
+
+/** 실질적인 미저장 수정만 보호한다. 원래 값으로 되돌린 칸은 최신 AI/팀 저장값을 받는다. */
+export function syncTrainingDraft(draft: TrainingDraft, code: ActivityCode, content: Record<string, unknown>): TrainingDraft {
+  const incoming = createTrainingDraft(code, content)
+  for (const [key, value] of Object.entries(incoming.values)) {
+    const edited = draft.dirty[key] && draft.values[key] !== draft.sourceValues[key]
+    if (edited && draft.values[key] !== value) {
+      incoming.values = { ...incoming.values, [key]: draft.values[key] }
+      incoming.dirty[key] = true
+      if (value !== draft.sourceValues[key] || draft.conflicts.includes(key)) incoming.conflicts.push(key)
+    }
+  }
+  return incoming
+}
+
+export function editTrainingDraft(draft: TrainingDraft, key: string, value: string): TrainingDraft {
+  const dirty = value !== draft.sourceValues[key]
+  return { ...draft, values: { ...draft.values, [key]: value }, dirty: { ...draft.dirty, [key]: dirty },
+    conflicts: dirty ? draft.conflicts : draft.conflicts.filter(field => field !== key) }
+}
+
+export function loadSavedTrainingFields(draft: TrainingDraft): TrainingDraft {
+  const values = { ...draft.values }, dirty = { ...draft.dirty }
+  for (const key of draft.conflicts) { values[key] = draft.sourceValues[key]; dirty[key] = false }
+  return { ...draft, values, dirty, conflicts: [] }
+}

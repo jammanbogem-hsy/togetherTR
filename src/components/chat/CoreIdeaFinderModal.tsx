@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { Check, ArrowRight } from '@phosphor-icons/react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Check, ArrowRight, Copy } from '@phosphor-icons/react'
 import { CurriculumFinderDialog, FINDER_CHIP, FINDER_ACTIVE, FINDER_INACTIVE } from './CurriculumFinderDialog'
 import { cn } from '@/lib/utils'
 
@@ -38,10 +38,14 @@ export function CoreIdeaFinderModal({ open, onClose, onInsert }: Props) {
   const [requestNumber, setRequestNumber] = useState(open ? 1 : 0)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
+  const [copyFeedback, setCopyFeedback] = useState<{ key: string; kind: 'success' | 'error' } | null>(null)
+  const [copyingKey, setCopyingKey] = useState<string | null>(null)
+  const copyInFlightRef = useRef(false)
 
   if (prevOpen !== open) {
     setPrevOpen(open)
     if (open) {
+      setCopyFeedback(null)
       setLoading(true)
       setRequestNumber(requestNumber + 1)
     }
@@ -71,6 +75,23 @@ export function CoreIdeaFinderModal({ open, onClose, onInsert }: Props) {
     return result
   }, [items, selectedSubject, searchText])
 
+  async function handleCopy(idea: string, key: string) {
+    if (copyInFlightRef.current) return
+    copyInFlightRef.current = true
+    setCopyingKey(key)
+    setCopyFeedback(null)
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard-unavailable')
+      await navigator.clipboard.writeText(idea.replace(/\s+/g, ' ').trim())
+      setCopyFeedback({ key, kind: 'success' })
+    } catch {
+      setCopyFeedback({ key, kind: 'error' })
+    } finally {
+      copyInFlightRef.current = false
+      setCopyingKey(null)
+    }
+  }
+
   function handleSelect(item: ContentItem, coreIdea: string) {
     const parts = [`[${item.subject} · ${item.area}]`]
     parts.push(`핵심 아이디어: ${coreIdea}`)
@@ -82,7 +103,7 @@ export function CoreIdeaFinderModal({ open, onClose, onInsert }: Props) {
 
   return <CurriculumFinderDialog
     open={open} onClose={onClose} title="핵심아이디어 찾기"
-    description="교과와 영역의 핵심아이디어를 확인하고, 원하는 내용을 눌러 채팅에 넣으세요."
+    description="교과와 영역의 핵심아이디어를 확인하고, 문장을 복사하거나 채팅에 넣으세요."
     filters={<>
       <div>
         <p className="mb-2 text-sm font-medium text-[#444746]">교과</p>
@@ -95,7 +116,7 @@ export function CoreIdeaFinderModal({ open, onClose, onInsert }: Props) {
         <input aria-label="핵심아이디어 검색" value={searchText} onChange={event => setSearchText(event.target.value)} placeholder="영역·핵심아이디어·지식·이해 검색" className="mt-1 min-h-12 w-full rounded-xl border border-[#747775] bg-white px-4 text-base text-[#1F1F1F] placeholder:text-[#5F6368] focus:outline-2 focus:outline-[#0B57D0]" />
       </label>
     </>}
-    footer={<p className="text-[#444746]">검색 결과 <strong className="text-[#0842A0]">{filtered.length}</strong>개 영역 · 핵심아이디어를 누르면 채팅에 넣습니다.</p>}
+    footer={<p className="text-[#444746]">검색 결과 <strong className="text-[#0842A0]">{filtered.length}</strong>개 영역 · 채팅에 넣기 버튼으로 원하는 내용을 보낼 수 있습니다.</p>}
   >
     {loading ? <p role="status" className="py-12 text-center text-base text-[#444746]">내용체계를 불러오는 중…</p>
       : filtered.length === 0 ? <p className="py-12 text-center text-base text-[#444746]">검색 결과가 없습니다.</p>
@@ -104,12 +125,29 @@ export function CoreIdeaFinderModal({ open, onClose, onInsert }: Props) {
           <h3 className="text-lg font-semibold text-[#1F1F1F]">{item.subject} · {item.area}</h3>
           {item.gradeBands.length > 0 && <span className="text-sm text-[#444746]">{item.gradeBands.join(', ')}</span>}
         </div>
-        <div className="space-y-3">{item.coreIdeas.map((idea, index) => <button key={index} onClick={() => handleSelect(item, idea)} className="group w-full rounded-2xl border border-[#C4C7C5] bg-white p-4 text-left transition-colors hover:border-[#0B57D0] hover:bg-[#E8F0FE] focus-visible:outline-2 focus-visible:outline-[#0B57D0]">
-          <p className="text-base leading-relaxed text-[#1F1F1F] sm:text-lg [word-break:keep-all] [overflow-wrap:anywhere]">{idea}</p>
-          {item.knowledge.length > 0 && <p className="mt-3 text-sm leading-relaxed text-[#444746]"><span className="font-semibold text-[#0842A0]">지식·이해</span> · {item.knowledge.slice(0, 4).join(' · ')}</p>}
-          {item.functions.length > 0 && <p className="mt-2 text-sm leading-relaxed text-[#444746]"><span className="font-semibold text-[#0D652D]">과정·기능</span> · {item.functions.slice(0, 3).join(' · ')}</p>}
-          <span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[#0842A0]">채팅에 넣기 <ArrowRight size={18} /></span>
-        </button>)}</div>
+        <div className="space-y-3">{item.coreIdeas.map((idea, index) => {
+          const key = `${item.id}:${index}`
+          return <article key={index} data-testid="core-idea-card" className="w-full rounded-2xl border border-[#C4C7C5] bg-white p-4 text-left transition-colors hover:border-[#0B57D0] hover:bg-[#F8FBFF]">
+            <div className="flex items-start gap-3">
+              <p className="min-w-0 flex-1 text-base leading-relaxed text-[#1F1F1F] sm:text-lg [word-break:keep-all] [overflow-wrap:anywhere]">{idea}</p>
+              <button type="button" onClick={() => void handleCopy(idea, key)} disabled={copyingKey !== null} aria-busy={copyingKey === key}
+                title="핵심아이디어 복사" aria-label={`${item.subject} ${item.area} 핵심아이디어 ${index + 1} 복사`} data-testid="core-idea-copy"
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full bg-[#E8F0FE] px-3 text-sm font-semibold text-[#0842A0] hover:bg-[#D3E3FD] focus-visible:outline-2 focus-visible:outline-[#0B57D0] disabled:opacity-50">
+                <Copy size={18} /><span>{copyingKey === key ? '복사 중…' : '복사'}</span>
+              </button>
+            </div>
+            {item.knowledge.length > 0 && <p className="mt-3 text-sm leading-relaxed text-[#444746]"><span className="font-semibold text-[#0842A0]">지식·이해</span> · {item.knowledge.slice(0, 4).join(' · ')}</p>}
+            {item.functions.length > 0 && <p className="mt-2 text-sm leading-relaxed text-[#444746]"><span className="font-semibold text-[#0D652D]">과정·기능</span> · {item.functions.slice(0, 3).join(' · ')}</p>}
+            {copyFeedback?.key === key && <p role={copyFeedback.kind === 'success' ? 'status' : 'alert'} aria-live={copyFeedback.kind === 'success' ? 'polite' : 'assertive'}
+              className={`mt-2 text-sm ${copyFeedback.kind === 'success' ? 'text-[#137333]' : 'text-[#C5221F]'}`}>
+              {copyFeedback.kind === 'success' ? '핵심아이디어를 복사했어요.' : '복사하지 못했어요. 문장을 선택해 직접 복사해 주세요.'}
+            </p>}
+            <button type="button" onClick={() => handleSelect(item, idea)} data-testid="core-idea-insert"
+              className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-semibold text-[#0842A0] hover:bg-[#E8F0FE] focus-visible:outline-2 focus-visible:outline-[#0B57D0]">
+              채팅에 넣기 <ArrowRight size={18} />
+            </button>
+          </article>
+        })}</div>
       </section>)}</div>}
   </CurriculumFinderDialog>
 }

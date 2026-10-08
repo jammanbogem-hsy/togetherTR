@@ -1523,21 +1523,14 @@ function InteractiveArtifactPanel() {
       <div className="flex h-full min-w-0 flex-col overflow-hidden bg-white">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#DADCE0] bg-[#E8F0FE] px-4 py-3">
           <span className="text-sm font-semibold text-[#0842A0]">연수 기록</span>
-          {displayArtifact && <StatusBadge status={effectiveStatus} />}
-          {hasContent && <MD3Button variant="text" size="xs" onClick={() => openArtifactPreview({ title: displayArtifact?.title ?? activityMeta.label, content: trainingContent, status: effectiveStatus, stageCode: activityMeta.stage, activityCode: viewingActivity })} aria-label="산출물 전체 보기" icon={<ArrowsOut size={16} />}>전체 보기</MD3Button>}
+          {hasContent && <span className="inline-flex items-center gap-1 rounded-full bg-[#D7EBDD] px-2.5 py-1 text-xs font-semibold text-[#0D652D]"><CheckCircle size={14} weight="fill" aria-hidden="true" />저장됨</span>}
+          {hasContent && <MD3Button variant="text" size="xs" onClick={() => openArtifactPreview({ title: displayArtifact?.title ?? activityMeta.label, content: trainingContent, subtitle: '저장된 연수 기록', stageCode: activityMeta.stage, activityCode: viewingActivity })} aria-label="산출물 전체 보기" icon={<ArrowsOut size={16} />}>전체 보기</MD3Button>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <TrainingForm project={project} activityCode={viewingActivity} content={trainingContent}
             loaded={project.id === routeParams.id} readOnly={observationOnly} />
           {previousArtifactList}
         </div>
-        {!observationOnly && isHost && hasContent && (
-          <div className="shrink-0 border-t border-[#DADCE0] p-4">
-            {artifactError && <p role="alert" className="mb-2 text-sm text-[#C5221F]">{artifactError}</p>}
-            <MD3Button size="sm" variant={isConfirmed ? 'outlined' : 'filled'} disabled={isSaving}
-              onClick={isConfirmed ? handleRedraft : handleConfirm}>{isSaving ? '저장 중…' : isConfirmed ? '확정 취소 · 재검토' : '산출물 확정하기'}</MD3Button>
-          </div>
-        )}
         {artifactPreview}
       </div>
     )

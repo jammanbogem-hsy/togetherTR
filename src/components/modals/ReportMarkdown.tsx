@@ -9,7 +9,7 @@ import { REPORT_SECTIONS, findReportSection } from '@/lib/report/reportSections'
 import { STAGES, displayActivityCode, type Project, type StageCode } from '@/types'
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
 import { REPORT_DASHBOARD_CSS, reportStageColors } from './reportDashboardStyles'
-import { Target, ListChecks, Exam, ThumbsUp, Wrench, ArrowRight, Lightbulb, Database, Question, CheckCircle, CalendarBlank, Clock, UsersThree, ChartLineUp, ChartBar, ArrowsClockwise, PencilRuler, RocketLaunch, Trophy, type Icon } from '@phosphor-icons/react'
+import { Target, ListChecks, Exam, ThumbsUp, Wrench, ArrowRight, Lightbulb, Database, Question, CheckCircle, CalendarBlank, Clock, UsersThree, ChartLineUp, ChartBar, ArrowsClockwise, PencilRuler, RocketLaunch, Trophy, Eye, Compass, Scales, Funnel, BookOpen, Student, PuzzlePiece, Toolbox, Stairs, Package, ChalkboardTeacher, Tag, type Icon } from '@phosphor-icons/react'
 
 const SECTION_ICONS: Record<string, Icon> = { Target, ListChecks, Exam, ThumbsUp, Wrench, ArrowRight, Lightbulb, Database, Question, ChartBar, UsersThree, ArrowsClockwise }
 const STAGE_ICONS: Record<StageCode, Icon> = { T: UsersThree, A: ChartLineUp, Ds: PencilRuler, DI: RocketLaunch, E: Trophy }
@@ -76,7 +76,8 @@ function remarkReportCards({ stage, project }: { stage?: StageCode; project?: Pr
     for (const card of cards) {
       const cardBody = card.children![1]
       const kind = card.data!.hProperties!['data-report-kind']
-      if (kind === 'activities') {
+      // 부록도 활동별로 묶어 '활동 제목 → 하위 항목 → 내용' 위계를 표시한다.
+      if (kind === 'activities' || kind === 'appendix') {
         let activity: ReportNode | undefined
         const activityNodes: ReportNode[] = []
         const intro: ReportNode[] = []
@@ -131,7 +132,7 @@ function remarkReportCards({ stage, project }: { stage?: StageCode; project?: Pr
             cell.data = { ...cell.data, hProperties: { ...cell.data?.hProperties, 'data-report-min-ch': minCh, 'data-report-label': label, 'data-report-short': short ? 'true' : 'false' } }
           }
         })
-        node.data = { ...node.data, hProperties: { ...node.data?.hProperties, 'data-report-min-ch': tableWidth, 'data-report-columns': headers.length, 'data-report-print-cards': headers.length >= 6 || tableWidth > 100 ? 'true' : 'false' } }
+        node.data = { ...node.data, hProperties: { ...node.data?.hProperties, 'data-report-min-ch': tableWidth, 'data-report-columns': headers.length, 'data-report-print-cards': headers.length >= 7 || tableWidth > 100 ? 'true' : 'false' } }
         node.align ??= headers.map(() => null)
         node.align.forEach((_, i) => {
           const values = rows.map(row => reportNodeText(row.children?.[i] ?? { type: 'text', value: '' }).trim()).filter(value => value && value !== '—' && value !== '-')
@@ -235,9 +236,39 @@ function reportStandardContent(text: string): ReactNode {
 }
 
 /** 화면과 PDF가 공유하는 MD3 대시보드 본문. 예전 보고서의 내용도 유지한다. */
+// 활동 제목(표시 번호)·하위 항목 이름별 아이콘 — 보고서 본문과 부록에서 내용 구분·강조점으로 쓴다(PDF 에도 SVG 로 남는다).
+const ACTIVITY_ICONS: Record<string, Icon> = {
+  'T-1': Eye, 'T-2': Compass, 'T-3': UsersThree, 'T-4': Scales, 'T-5': CalendarBlank,
+  'A-1': Funnel, 'A-2': Lightbulb, 'A-3': BookOpen, 'A-4': Target, 'A-5': Student,
+  'Ds-1': Exam, 'Ds-2': PuzzlePiece, 'Ds-3': ListChecks, 'Ds-4': Toolbox, 'Ds-5': Stairs,
+  'DI-1': Package, 'DI-2': ChalkboardTeacher, 'E-1': ChartLineUp, 'E-2': ArrowsClockwise,
+}
+export function activityHeadingIcon(title: string): Icon | null {
+  const code = title.match(/\((T|A|Ds|DI|E)-(\d)\)/)
+  return code ? ACTIVITY_ICONS[`${code[1]}-${code[2]}`] ?? null : null
+}
+const SUBHEAD_ICONS: Array<[RegExp, Icon]> = [
+  [/비전/, Eye], [/키워드/, Tag], [/원칙|방향/, Compass], [/역할/, UsersThree], [/규칙/, Scales], [/일정/, CalendarBlank],
+  [/평가|루브릭/, Exam], [/문제\s*상황/, PuzzlePiece], [/활동/, ListChecks], [/자료|도구/, Toolbox], [/스캐폴딩|지원/, Stairs],
+  [/목표/, Target], [/성취기준|교육과정/, BookOpen], [/학습자/, Student], [/질문/, Question], [/점검|확인/, CheckCircle], [/주제/, Lightbulb],
+]
+export function subheadIcon(text: string): Icon | null {
+  return SUBHEAD_ICONS.find(([pattern]) => pattern.test(text))?.[1] ?? null
+}
+
+type HastLike = { type?: string; tagName?: string; value?: string; children?: HastLike[] }
+const hastText = (node: HastLike): string => node.value ?? (node.children ?? []).map(hastText).join('')
+/** 문단 전체가 굵은 글씨 하나뿐이고 짧으면 하위 항목 제목. */
+export function isSubheadParagraph(node: unknown): boolean {
+  const children = ((node as HastLike | undefined)?.children ?? []).filter(child => !(child.type === 'text' && !(child.value ?? '').trim()))
+  if (children.length !== 1 || children[0].tagName !== 'strong') return false
+  const text = hastText(children[0]).trim()
+  return !!text && text.length <= 40
+}
+
 export function ReportMarkdown({ content, stage, project }: { content: string; stage?: StageCode; project?: Project | null }) {
   const colors = stage ? reportStageColors(STAGE_COLOR[stage].hex) : undefined
-  return <div className="report-dashboard" style={colors ? { '--report-stage-band': colors.band, '--report-stage-container': colors.container } as CSSProperties : undefined}>
+  return <div className="report-dashboard" style={colors ? { '--report-stage-band': colors.band, '--report-stage-container': colors.container, '--report-stage-line': colors.line } as CSSProperties : undefined}>
     <style>{REPORT_DASHBOARD_CSS}</style>
     <ReactMarkdown remarkPlugins={[...REMARK_PLUGINS, [remarkReportCards, { stage, project }]]} components={{
       section: ({ children, node }) => {
@@ -250,9 +281,18 @@ export function ReportMarkdown({ content, stage, project }: { content: string; s
         const SectionIcon = sectionIcon(raw)
         return <h2><span className="report-section-icon"><SectionIcon size={22} weight="duotone" aria-hidden="true" /></span><span>{stripLeadingEmoji(raw) || children}</span></h2>
       },
-      h3: ({ children }) => <h3>{stripLeadingEmoji(reportHeadingText(children)) || children}</h3>,
+      h3: ({ children }) => {
+        const title = stripLeadingEmoji(reportHeadingText(children))
+        const ActivityIcon = activityHeadingIcon(title)
+        return <h3>{ActivityIcon && <span className="report-activity-icon"><ActivityIcon size={18} weight="duotone" aria-hidden="true" /></span>}{title || children}</h3>
+      },
       h4: ({ children }) => <h4>{stripLeadingEmoji(reportHeadingText(children)) || children}</h4>,
-      p: ({ children }) => <p>{children}</p>,
+      // 굵은 글씨 한 줄 문단('**개인 비전**')은 활동 안의 하위 항목 제목으로 표시한다.
+      p: ({ node, children }) => {
+        if (!isSubheadParagraph(node)) return <p>{children}</p>
+        const SubIcon = subheadIcon(hastText(node as HastLike))
+        return <p className="report-subhead" data-icon={SubIcon ? 'true' : undefined}>{SubIcon && <SubIcon size={16} weight="duotone" aria-hidden="true" />}{children}</p>
+      },
       strong: ({ children }) => <strong>{children}</strong>,
       ul: ({ children }) => <ul>{children}</ul>,
       ol: ({ children }) => <ol>{children}</ol>,
