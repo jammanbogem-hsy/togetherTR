@@ -284,7 +284,7 @@ export function ArtifactPreviewModal({
           </button>
         </div>
         <div className="flex-1 overflow-auto px-6 py-5">
-          <ArtifactContent content={modal.content} activityCode={modal.activityCode} />
+          <ArtifactContent content={modal.content} activityCode={modal.activityCode} expandedView />
         </div>
       </div>
     </div>,
@@ -857,7 +857,8 @@ export const ARTIFACT_STATUS_DOT: Record<ArtifactStatus, string> = {
 }
 
 // ─── 구조화된 산출물 렌더러 분기 ──────────────────────────────────────────
-function StructuredArtifactRenderer({ content, onDelete, onDeleteField }: {
+function StructuredArtifactRenderer({ content, onDelete, onDeleteField, expandedView = false }: {
+  expandedView?: boolean
   content: Record<string, unknown>
   onDelete?: () => void
   /** 구조화 산출물의 카드(필드) 단위 부분 삭제 — sentinel key `__field:<name>`로 호출자에게 전달 */
@@ -908,10 +909,13 @@ function StructuredArtifactRenderer({ content, onDelete, onDeleteField }: {
   }
   if (schema && renderers[schema]) inner = renderers[schema]()
 
+  // 상세 보기 모달은 이미 확대된 화면이므로 다시 확대하는 작업 막대를 만들지 않는다.
+  if (expandedView) return inner
   return <ExpandableWrapper title={label} onDelete={onDelete}>{inner}</ExpandableWrapper>
 }
 
-function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand, recentlyUpdatedKeys }: {
+function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitle, artifactStatus, stageCode, activityCode, allowTableExpand, recentlyUpdatedKeys, expandedView = false }: {
+  expandedView?: boolean
   content: Record<string, unknown>
   onDeleteSection?: (key: string) => void
   onOpenPreview?: (modal: ArtifactPreviewModalState) => void
@@ -932,6 +936,7 @@ function ArtifactContent({ content, onDeleteSection, onOpenPreview, artifactTitl
   if (effectiveContent._schema) {
     return <StructuredArtifactRenderer
       content={effectiveContent}
+      expandedView={expandedView}
       onDelete={onDeleteSection ? () => {
         // 구조화 산출물 전체를 빈 객체로 교체 (한 번에 삭제)
         onDeleteSection('__clear_all__')
@@ -1663,9 +1668,9 @@ function InteractiveArtifactPanel() {
           )}
         </div>
 
-        {/* 2행 + 3행 — stage 배경 유지, 액션 동일선상 */}
-        <div className={cn(stageColor.light, 'px-5 pt-3 pb-4')}>
-          <div className="flex items-center gap-3 mb-2">
+        {/* 활동 이름과 주요 작업 */}
+        <div className={cn(stageColor.light, 'px-5 py-3')}>
+          <div className="flex items-center gap-3">
             <div
               className={cn('w-11 h-11 flex items-center justify-center flex-shrink-0', stageColor.bg)}
               style={{
@@ -1715,20 +1720,12 @@ function InteractiveArtifactPanel() {
             )}
           </div>
 
-          {/* 제목 + 잠금 안내 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {displayArtifact && hasContent && (
-              <p className="text-[12px] font-semibold text-[#5F6368] truncate flex-1 min-w-0">
-                {displayArtifact.title}
-              </p>
-            )}
-            {!isHost && displayArtifact && (
-              <div className="flex items-center gap-1.5 bg-white/60 rounded-full px-3 py-1 flex-shrink-0">
-                <Lock size={14} weight="fill" className="text-[#5F6368]" />
-                <span className="text-[10px] text-[#5F6368] font-medium">팀장이 확정합니다</span>
-              </div>
-            )}
-          </div>
+          {!isHost && displayArtifact && (
+            <div className="mt-2 flex items-center gap-1.5 w-fit bg-white/60 rounded-full px-3 py-1">
+              <Lock size={14} weight="fill" className="text-[#5F6368]" />
+              <span className="text-[10px] text-[#5F6368] font-medium">팀장이 확정합니다</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1857,17 +1854,6 @@ function InteractiveArtifactPanel() {
           </>
         ) : (
           <div className="space-y-5">
-            {/* 현재 산출물 메타 (제목은 상단 밴드로 이동, 여기선 부메타만) */}
-            <div className="pb-3 border-b border-[#F1F3F4] flex items-center justify-between gap-2">
-              <p className="text-[11px] text-[#9AA0A6] tabular-nums">
-                버전 {displayArtifact.currentVersion} · {displayArtifact.artifactType}
-              </p>
-              <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest', stageColor.text)}>
-                <Stack size={12} weight="fill" />
-                현재 활동
-              </span>
-            </div>
-
             {effectiveStatus === 'in_review' && displayArtifact.aiDraft && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 mb-3">
