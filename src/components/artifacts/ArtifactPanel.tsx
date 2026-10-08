@@ -1862,15 +1862,7 @@ function InteractiveArtifactPanel() {
                     {isHost ? '내용을 확인하고 확정하세요' : '팀장이 확정 대기 중'}
                   </span>
                 </div>
-                <div className="border-l-4 border-[#1A73E8] pl-2">
-                  {(ACTIVITY_META[viewingActivity].requiredSections
-                    || ACTIVITY_META[viewingActivity].recommendedSections) && (
-                    <RequiredSectionsChecklist
-                      activityCode={viewingActivity}
-                      content={displayArtifact.aiDraft as Record<string, unknown>}
-                      schemaVersion={firestoreArtifact?._schemaVersion}
-                    />
-                  )}
+                <div className="space-y-4 border-l-4 border-[#1A73E8] pl-2">
                   <ArtifactContent
                     content={displayArtifact.aiDraft!}
                     onDeleteSection={isHost ? handleDeleteSection : undefined}
@@ -1882,20 +1874,20 @@ function InteractiveArtifactPanel() {
                     allowTableExpand
                     recentlyUpdatedKeys={recentlyUpdatedKeys}
                   />
+                  {(ACTIVITY_META[viewingActivity].requiredSections
+                    || ACTIVITY_META[viewingActivity].recommendedSections) && (
+                    <RequiredSectionsChecklist
+                      activityCode={viewingActivity}
+                      content={displayArtifact.aiDraft as Record<string, unknown>}
+                      schemaVersion={firestoreArtifact?._schemaVersion}
+                    />
+                  )}
                 </div>
               </div>
             )}
 
             {effectiveStatus !== 'in_review' && (
               <>
-                {(ACTIVITY_META[viewingActivity].requiredSections
-                  || ACTIVITY_META[viewingActivity].recommendedSections) && (
-                  <RequiredSectionsChecklist
-                    activityCode={viewingActivity}
-                    content={displayContent as Record<string, unknown>}
-                    schemaVersion={firestoreArtifact?._schemaVersion}
-                  />
-                )}
                 <ArtifactContent
                   content={displayContent}
                   onDeleteSection={isHost ? handleDeleteSection : undefined}
@@ -1907,6 +1899,14 @@ function InteractiveArtifactPanel() {
                   allowTableExpand
                   recentlyUpdatedKeys={recentlyUpdatedKeys}
                 />
+                {(ACTIVITY_META[viewingActivity].requiredSections
+                  || ACTIVITY_META[viewingActivity].recommendedSections) && (
+                  <RequiredSectionsChecklist
+                    activityCode={viewingActivity}
+                    content={displayContent as Record<string, unknown>}
+                    schemaVersion={firestoreArtifact?._schemaVersion}
+                  />
+                )}
               </>
             )}
 

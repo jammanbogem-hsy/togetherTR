@@ -9,7 +9,7 @@ import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
 import { FOLDER_COLORS, FolderCard, ProjectCard } from '@/components/dashboard/DashboardCards'
 import { cn } from '@/lib/utils'
-import { Plus, BookOpen, Loader2, LogOut, UserPlus, Play, FolderPlus, Folder, ArrowLeft, Network } from 'lucide-react'
+import { Plus, BookOpen, Loader2, LogOut, UserPlus, Play, FolderPlus, Folder, ArrowLeft, Network, X } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 
 
@@ -29,15 +29,43 @@ export default function DashboardPage() {
   const [folderName, setFolderName] = useState('')
   const [folderColor, setFolderColor] = useState(FOLDER_COLORS[0])
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<DashboardFolder | null>(null)
-  const folderSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const foldersRef = useRef<DashboardFolder[]>([])
+  const savedFoldersRef = useRef<DashboardFolder[]>([])
+  const folderSaveQueue = useRef<Promise<void>>(Promise.resolve())
+  const moveNoticeId = useRef(0)
+  const [folderNotice, setFolderNotice] = useState<{ kind: 'saving' | 'success' | 'error'; text: string } | null>(null)
 
-  const persistFolders = useCallback((next: DashboardFolder[]) => {
+  const persistFolders = useCallback((update: DashboardFolder[] | ((current: DashboardFolder[]) => DashboardFolder[])) => {
+    const next = typeof update === 'function' ? update(foldersRef.current) : update
+    foldersRef.current = next
     setFolders(next)
-    if (folderSaveTimeout.current) clearTimeout(folderSaveTimeout.current)
-    folderSaveTimeout.current = setTimeout(() => {
-      if (userProfile?.uid) saveUserFolders(userProfile.uid, next).catch(console.error)
-    }, 500)
+    // Keep folder edits in order, including a move immediately after a drag/rename.
+    const saving = folderSaveQueue.current.then(() => {
+      if (!userProfile?.uid) throw new Error('로그인이 필요합니다.')
+      return saveUserFolders(userProfile.uid, next)
+    })
+    folderSaveQueue.current = saving.then(() => {
+      savedFoldersRef.current = next
+    }, err => {
+      console.error('폴더 저장 실패:', err)
+      if (foldersRef.current === next) {
+        foldersRef.current = savedFoldersRef.current
+        setFolders(savedFoldersRef.current)
+        setFolderNotice({ kind: 'error', text: '폴더 변경을 저장하지 못했습니다. 이전 위치로 복원했습니다. 다시 시도해 주세요.' })
+      }
+    })
+    return saving
   }, [userProfile])
+
+  function moveProjectToMain(project: Project) {
+    const noticeId = ++moveNoticeId.current
+    setFolderNotice({ kind: 'saving', text: `‘${project.title}’을 메인 화면으로 이동 중입니다.` })
+    void persistFolders(current => current.map(folder => ({ ...folder, projectIds: folder.projectIds.filter(id => id !== project.id) })))
+      .then(() => {
+        if (moveNoticeId.current === noticeId) setFolderNotice({ kind: 'success', text: `‘${project.title}’을 메인 화면으로 이동했습니다.` })
+      })
+      .catch(() => { /* persistFolders restores the last confirmed location and reports the error. */ })
+  }
 
   useEffect(() => {
     if (!userProfile) return
@@ -46,7 +74,7 @@ export default function DashboardPage() {
       getUserFolders(userProfile.uid),
       getUserHiddenProjects(userProfile.uid),
     ])
-      .then(([p, f, h]) => { setLoadError(false); setProjects(p); setFolders(f); setHiddenIds(h) })
+      .then(([p, f, h]) => { setLoadError(false); setProjects(p); foldersRef.current = f; savedFoldersRef.current = f; setFolders(f); setHiddenIds(h) })
       .catch((err) => { console.error('프로젝트 로딩 실패:', err); setLoadError(true); setProjects([]) })
       .finally(() => setLoading(false))
   }, [userProfile])
@@ -172,7 +200,7 @@ export default function DashboardPage() {
           <div>
             {openFolderId ? (
               <div className="flex items-center gap-3">
-                <button onClick={() => setOpenFolderId(null)} className="text-[#5F6368] hover:text-[#202124] transition-colors">
+                <button aria-label="메인 화면으로 돌아가기" onClick={() => setOpenFolderId(null)} className="text-[#5F6368] hover:text-[#202124] transition-colors">
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div>
@@ -278,6 +306,7 @@ export default function DashboardPage() {
                     <ProjectCard
                       project={p}
                       isHost={host}
+                      onMoveToMain={openFolderId ? () => moveProjectToMain(p) : undefined}
                       onClick={() => router.push(`/projects/${p.id}`)}
                       onDelete={host ? () => setDeleteTarget(p) : undefined}
                       onHide={!host ? () => {
@@ -313,6 +342,12 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {folderNotice && <div className="fixed inset-x-4 bottom-4 z-[210] mx-auto flex max-w-xl items-center gap-3 rounded-2xl bg-[#303030] px-4 py-3 text-white shadow-lg">
+        <p role={folderNotice.kind === 'error' ? 'alert' : 'status'} className="min-w-0 flex-1 text-base leading-6">{folderNotice.text}</p>
+        {folderNotice.kind === 'success' && openFolderId && <button type="button" onClick={() => setOpenFolderId(null)} className="shrink-0 rounded-lg px-2 py-3 text-sm font-semibold text-[#A8C7FA] hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[#A8C7FA]">메인 화면 보기</button>}
+        <button type="button" aria-label="알림 닫기" onClick={() => setFolderNotice(null)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-white/10"><X className="h-5 w-5" /></button>
+      </div>}
 
       {/* 폴더 생성/이름변경 모달 */}
       {folderModal && (

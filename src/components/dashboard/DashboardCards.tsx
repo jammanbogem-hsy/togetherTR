@@ -5,12 +5,13 @@
 // 강조·확대되게 해 달라 → 제목 두 줄·19px, 진행 단계 5칸 막대, 아이콘 메타 줄(14px),
 // 초대코드 이름표, 호버 시 떠오름·확대·테마색 그림자·'열기 →', 폴더는 안의 프로젝트 미리보기.
 
-import { useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { ProjectCardMenu } from './ProjectCardMenu'
 import type { Project } from '@/types'
 import type { DashboardFolder } from '@/lib/firebase/projects'
 import { formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { cn } from '@/lib/utils'
-import { BookOpen, User, Crown, Folder, FolderOpen, Pencil, Trash2, GraduationCap, Clock, EyeOff } from 'lucide-react'
+import { BookOpen, User, Crown, Folder, FolderOpen, Pencil, Trash2, GraduationCap, Clock, EyeOff, MoreHorizontal } from 'lucide-react'
 
 const STAGE_LABELS = { T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가' }
 
@@ -104,9 +105,21 @@ function MetaRow({ icon: Icon, children }: { icon: React.ComponentType<{ classNa
   )
 }
 
-export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
-  project: Project; onClick: () => void; isHost?: boolean; onDelete?: () => void; onHide?: () => void
+export function ProjectCard({ project, onClick, isHost, onDelete, onHide, onMoveToMain }: {
+  project: Project; onClick: () => void; isHost?: boolean; onDelete?: () => void; onHide?: () => void; onMoveToMain?: () => void
 }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const menuId = useId()
+  const openerRef = useRef<HTMLElement | null>(null)
+  function closeMenu() {
+    setMenu(null)
+    if (openerRef.current?.isConnected) openerRef.current.focus({ preventScroll: true })
+  }
+  function openMenu(target: HTMLElement, x?: number, y?: number) {
+    openerRef.current = target
+    const rect = target.getBoundingClientRect()
+    setMenu({ x: x ?? rect.left, y: y ?? rect.bottom + 4 })
+  }
   const s = pickCardTheme(project.id ?? project.title ?? 'default')
   const members = Object.values(project.memberInfo ?? {})
   const grade = formatGradeBandList(project.teamGradeBands) || project.targetGradeGroup
@@ -114,6 +127,16 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
 
   return (
     <div
+      onContextMenu={onMoveToMain ? e => {
+        e.preventDefault(); e.stopPropagation()
+        const target = (e.target as HTMLElement).closest('button') ?? e.currentTarget.querySelector('button')!
+        openMenu(target, e.clientX || undefined, e.clientY || undefined)
+      } : undefined}
+      onKeyDown={onMoveToMain ? e => {
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+          e.preventDefault(); e.stopPropagation(); openMenu(e.target as HTMLElement)
+        }
+      } : undefined}
       className="project-card w-full min-h-[320px] sm:min-h-0 sm:aspect-square text-left overflow-hidden rounded-2xl group relative flex flex-col cursor-pointer transition-[transform,box-shadow,border-width] duration-200 ease-out motion-safe:hover:-translate-y-1.5 motion-safe:hover:scale-[1.035] hover:z-10 focus-within:z-10"
       style={{
         '--cc': s.cc,
@@ -132,8 +155,23 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
         aria-label={`${project.title} 프로젝트 열기`}
       />
 
+      {onMoveToMain && <>
+        <button
+          type="button"
+          aria-label={`${project.title} 프로젝트 메뉴`}
+          aria-haspopup="menu"
+          aria-expanded={menu !== null}
+          aria-controls={menu ? menuId : undefined}
+          title="프로젝트 메뉴"
+          className="absolute right-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-[#C4C7C5] bg-[#F0F4F9] text-[#444746] hover:bg-[#D3E3FD] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0B57D0]"
+          onClick={e => { e.stopPropagation(); if (menu) closeMenu(); else openMenu(e.currentTarget) }}
+          onDragStart={e => { e.preventDefault(); e.stopPropagation() }}
+        ><MoreHorizontal className="h-5 w-5" aria-hidden="true" /></button>
+        {menu && <ProjectCardMenu id={menuId} title={project.title} {...menu} onClose={closeMenu} onMoveToMain={onMoveToMain} onDelete={isHost ? onDelete : undefined} onHide={!isHost ? onHide : undefined} />}
+      </>}
+
       {/* 호스트: 삭제 / 팀원: 대시보드에서 숨김 (호버 시 노출) */}
-      {isHost && onDelete && (
+      {!onMoveToMain && isHost && onDelete && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete() }}
           className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-red-50 border border-gray-200 hover:border-red-300 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-red-500"
@@ -143,7 +181,7 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide }: {
           <Trash2 className="w-4 h-4" />
         </button>
       )}
-      {!isHost && onHide && (
+      {!onMoveToMain && !isHost && onHide && (
         <button
           onClick={(e) => { e.stopPropagation(); onHide() }}
           className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-gray-100 border border-gray-200 hover:border-gray-400 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-gray-600"

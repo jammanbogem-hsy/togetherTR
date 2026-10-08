@@ -53,33 +53,33 @@ export function PendingConfirmationBanner() {
       <div
         role="status"
         data-testid="pending-confirmation-banner"
-        className="fixed left-1/2 top-3 z-[80] w-[min(92vw,440px)] -translate-x-1/2 rounded-2xl border border-[#FFE0B2] bg-white p-3 shadow-lg"
+        className="fixed left-1/2 top-3 z-[80] w-[calc(100vw-2rem)] max-w-[748px] max-h-[calc(100dvh-2rem)] overflow-y-auto -translate-x-1/2 rounded-3xl border border-[#FFE0B2] bg-white p-5 sm:p-6 shadow-lg"
       >
-        <p className="text-[12px] font-bold text-[#202124] leading-snug" style={{ wordBreak: 'keep-all' }}>
+        <p className="text-[18px] font-bold text-[#202124] leading-snug" style={{ wordBreak: 'keep-all' }}>
           팀장이 {displayActivityCode(code)}·{label}{objectParticle} 정리했어요. 내용을 확인해 주세요.
         </p>
-        <p className="mt-0.5 text-[10px] text-[#9AA0A6]">
+        <p className="mt-1.5 text-[14px] leading-relaxed text-[#5F6368]">
           내가 대화에 없을 때 저장된 산출물이에요{pending.length > 1 ? ` · 확인할 산출물 ${pending.length}건` : ''}
         </p>
         {mode === 'reason' ? (
-          <div className="mt-2 space-y-1.5">
+          <div className="mt-4 space-y-3">
             <textarea
               value={reason}
               onChange={event => setReason(event.target.value)}
-              rows={2}
+              rows={3}
               placeholder="다시 논의하고 싶은 점을 짧게 적어 주세요"
-              className="w-full resize-none rounded-lg border border-[#DADCE0] px-2 py-1.5 text-[12px] focus:outline-none focus:border-[#1A73E8]"
+              className="w-full resize-none rounded-lg border border-[#DADCE0] px-3 py-2.5 text-[16px] leading-relaxed focus:outline-none focus:border-[#1A73E8]"
             />
-            <div className="flex justify-end gap-1.5">
+            <div className="flex flex-wrap justify-end gap-3">
               <button type="button" onClick={() => { setMode('idle'); setReason('') }} disabled={busy}
-                className="rounded-full px-3 py-1 text-[11px] font-semibold text-[#5F6368] hover:bg-[#F1F3F4]">취소</button>
+                className="rounded-full min-h-11 px-5 py-2.5 text-[16px] font-semibold text-[#5F6368] hover:bg-[#F1F3F4]">취소</button>
               <button type="button" onClick={() => void respond({ type: 'rediscuss', reason, cycleNumber: project.currentCycle ?? 1 })}
                 disabled={busy || !reason.trim()}
-                className="rounded-full bg-[#C5221F] px-3 py-1 text-[11px] font-bold text-white disabled:opacity-40">요청 보내기</button>
+                className="rounded-full bg-[#C5221F] min-h-11 px-5 py-2.5 text-[16px] font-bold text-white disabled:opacity-40">요청 보내기</button>
             </div>
           </div>
         ) : (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             {artifact && (
               <button type="button"
                 onClick={() => setPreview({
@@ -90,21 +90,21 @@ export function PendingConfirmationBanner() {
                   stageCode: ACTIVITY_META[code]?.stage ?? '',
                   activityCode: code,
                 })}
-                className="inline-flex items-center gap-1 rounded-full border border-[#DADCE0] px-3 py-1 text-[11px] font-semibold text-[#1A73E8] hover:bg-[#F8FBFF]">
-                <Eye size={12} weight="bold" /> 산출물 보기
+                className="inline-flex items-center gap-2 rounded-full border border-[#DADCE0] min-h-11 px-5 py-2.5 text-[16px] font-semibold text-[#1A73E8] hover:bg-[#F8FBFF]">
+                <Eye size={18} weight="bold" /> 산출물 보기
               </button>
             )}
             <button type="button" onClick={() => void respond({ type: 'confirmed' })} disabled={busy}
-              className="inline-flex items-center gap-1 rounded-full bg-[#1A73E8] px-3 py-1 text-[11px] font-bold text-white disabled:opacity-40">
-              <CheckCircle size={12} weight="fill" /> 확인했어요
+              className="inline-flex items-center gap-2 rounded-full bg-[#1A73E8] min-h-11 px-5 py-2.5 text-[16px] font-bold text-white disabled:opacity-40">
+              <CheckCircle size={18} weight="fill" /> 확인했어요
             </button>
             <button type="button" onClick={() => setMode('reason')} disabled={busy}
-              className="inline-flex items-center gap-1 rounded-full border border-[#F4C7C3] px-3 py-1 text-[11px] font-semibold text-[#C5221F] hover:bg-[#FCE8E6]">
-              <ChatCircleDots size={12} weight="bold" /> 다시 논의 요청
+              className="inline-flex items-center gap-2 rounded-full border border-[#F4C7C3] min-h-11 px-5 py-2.5 text-[16px] font-semibold text-[#C5221F] hover:bg-[#FCE8E6]">
+              <ChatCircleDots size={18} weight="bold" /> 다시 논의 요청
             </button>
           </div>
         )}
-        {error && <p className="mt-1.5 text-[11px] text-[#C5221F]">{error}</p>}
+        {error && <p className="mt-3 text-[14px] text-[#C5221F]">{error}</p>}
       </div>
       <ArtifactPreviewModal modal={preview} onClose={() => setPreview(null)} />
     </>

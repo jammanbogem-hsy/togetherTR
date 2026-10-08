@@ -170,7 +170,6 @@ function WaitingRoom({
               {memberUids.map(mUid => {
                 const info = memberInfo[mUid]
                 const isThisHost = project.hostUid === mUid || project.createdBy === mUid
-                const isSelf = mUid === uid
                 return (
                   <div key={mUid} className="flex min-w-0 items-center gap-3 py-1">
                     <Avatar name={info?.displayName} color={info?.color ?? '#9AA0A6'} size={40} />
@@ -179,12 +178,6 @@ function WaitingRoom({
                         <span className="min-w-0 break-words text-base font-medium leading-6 text-[var(--md-sys-on-surface)]">
                           {info?.displayName ?? mUid.slice(0, 8)}
                         </span>
-                        {isSelf && (
-                          <span className="rounded-full bg-[var(--md-sys-primary-container)] px-2.5 py-0.5 text-base font-medium text-[var(--md-sys-on-primary-container)]">나</span>
-                        )}
-                        {isThisHost && (
-                          <Crown size={14} weight="fill" className="text-[var(--md-sys-primary)]" />
-                        )}
                       </div>
                       {isThisHost && (
                         <p className="mt-0.5 text-base leading-6 text-[var(--md-sys-on-surface-variant)]">기록</p>

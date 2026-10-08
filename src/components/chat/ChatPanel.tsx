@@ -1,5 +1,7 @@
 'use client'
 
+import { SlashCommandPalette } from './SlashCommandPalette'
+import { normalizeChatStructure } from '@/lib/markdown/chatStructure'
 import { ModalLoading } from '@/components/ui/ModalLoading'
 const StandardsFinderModal = dynamic(() => import('./StandardsFinderModal').then(module => module.StandardsFinderModal), { ssr: false, loading: ModalLoading })
 const CoreIdeaFinderModal = dynamic(() => import('./CoreIdeaFinderModal').then(module => module.CoreIdeaFinderModal), { ssr: false, loading: ModalLoading })
@@ -660,7 +662,7 @@ function MarkdownContent({ text, dark = false, standardTextMap, checklist }: { t
   // AI가 <br> 태그를 생성하는 경우 줄바꿈으로 치환
   // AI가 첫 줄에 [탐색] [팀+AI] 같은 활동유형/행위주체 태그를 출력하는 경우 제거
   // 표 셀 안의 <br/>은 ', '로, 표 밖은 줄바꿈으로
-  const sanitized = text
+  const sanitized = normalizeChatStructure(text)
     .replace(/\[(?:ARTIFACT_UPDATE|ARTIFACT_CONFIRM|ACTION_CARD|ACTIVITY_ADVANCE|ACTIVITY_RETURN|HELP_CARD|TEAM_DISCUSSION_READY|TEAM_GRADE_BANDS|STANDARD_SEARCH)[^\]]*\]/g, '')
     .replace(/\[ARTIFACT_UPDATE\]/g, '')
     .replace(/(\|[^|\n]*)<br\s*\/?>/gi, '$1, ')
@@ -6271,34 +6273,13 @@ ${discussionSummary}
           return <>
         {/* 슬래시 커맨드 팔레트 */}
         {slashQuery !== null && filteredSlashCmds.length > 0 && (
-          <div className="mb-2 bg-white rounded-2xl shadow-md border border-[#DADCE0] overflow-hidden">
-            <div className="px-3 pt-2.5 pb-1.5 border-b border-[#F1F3F4] flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-[#9AA0A6] uppercase tracking-wider">커맨드</span>
-              {replyTo && (
-                <span className="text-[11px] text-[#1A73E8] font-semibold bg-[#E8F0FE] px-1.5 py-0.5 rounded-full">
-                  선택된 메시지에 적용
-                </span>
-              )}
-            </div>
-            {filteredSlashCmds.map((cmd, i) => (
-              <button
-                key={cmd.id}
-                className={cn(
-                  'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-[#F1F3F4] last:border-0',
-                  i === slashCmdIdx ? 'bg-[#E8F0FE]' : 'hover:bg-[#F8F9FA]'
-                )}
-                onMouseDown={(e) => { e.preventDefault(); void executeSlashCommand(cmd.id) }}
-                onMouseEnter={() => setSlashCmdIdx(i)}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-[#202124]">{cmd.label}</p>
-                  <p className="text-xs text-[#9AA0A6]">{cmd.desc}</p>
-                </div>
-                <span className="text-[11px] text-[#DADCE0] font-mono flex-shrink-0">/{cmd.keywords[0]}</span>
-              </button>
-            ))}
-            <p className="px-4 py-2 text-[11px] text-[#DADCE0]">↑↓ 이동 · Enter 실행 · Esc 닫기</p>
-          </div>
+          <SlashCommandPalette
+            commands={filteredSlashCmds}
+            selectedIndex={slashCmdIdx}
+            onSelectIndex={setSlashCmdIdx}
+            onExecute={id => { void executeSlashCommand(id) }}
+            hasReply={!!replyTo}
+          />
         )}
 
         {/* 저장된 지식 그래프 확인 바 */}

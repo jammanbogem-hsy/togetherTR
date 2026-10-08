@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ArrowsOut, Trash } from '@phosphor-icons/react'
+import { MD3Button } from '@/components/ui/MD3Button'
 
 interface Props {
   title: string
@@ -18,28 +20,24 @@ export function ExpandableWrapper({ title, children, onDelete }: Props) {
     <>
       <div className="space-y-2">
         {/* 산출물 전체 버튼 막대 — 카드 외부에 둬서 섹션별 버튼과 혼동되지 않도록 함 */}
-        <div className="flex items-center justify-end gap-1">
-          <button
+        <div className="flex flex-wrap items-center justify-end gap-2" role="group" aria-label="산출물 전체 작업">
+          <MD3Button
             onClick={() => setExpanded(true)}
-            className="inline-flex items-center gap-1 rounded-lg border border-[#DADCE0] bg-white hover:bg-[#E8F0FE] hover:border-[#1A73E8] px-2 py-1 text-[11px] font-bold text-[#5F6368] hover:text-[#1A73E8] transition-colors"
-            title="이 산출물 전체를 크게 보기"
+            variant="tonal" tone="blue" size="sm" className="min-h-11 text-base"
+            title="이 산출물 전체를 크게 보기" aria-label="산출물 확대 보기"
+            icon={<ArrowsOut size={20} aria-hidden="true" />}
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-            </svg>
-            확대
-          </button>
+            확대 보기
+          </MD3Button>
           {onDelete && (
-            <button
+            <MD3Button
               onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded-lg border border-[#DADCE0] bg-white hover:bg-[#FFEBEE] hover:border-[#C62828] px-2 py-1 text-[11px] font-bold text-[#9AA0A6] hover:text-[#C62828] transition-colors"
-              title="산출물 전체를 삭제 (섹션별 부분 수정은 편집 모달에서)"
+              variant="outlined" tone="red" size="sm" className="min-h-11 text-base"
+              title="산출물 전체 내용 삭제" aria-label="산출물 내용 전체 삭제"
+              icon={<Trash size={20} aria-hidden="true" />}
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-              전체 삭제
-            </button>
+              내용 삭제
+            </MD3Button>
           )}
         </div>
         {children}
@@ -59,7 +57,8 @@ export function ExpandableWrapper({ title, children, onDelete }: Props) {
               <span className="text-sm font-bold text-[#202124]">{title}</span>
               <button
                 onClick={() => setExpanded(false)}
-                className="text-[#5F6368] hover:text-[#202124] text-xl leading-none"
+                aria-label="확대 보기 닫기"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#444746] hover:bg-[#E8EAED] text-2xl focus-visible:outline-2 focus-visible:outline-[#0B57D0]"
               >
                 ×
               </button>

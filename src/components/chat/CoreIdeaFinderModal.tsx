@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { createPortal } from 'react-dom'
+import { Check, ArrowRight } from '@phosphor-icons/react'
+import { CurriculumFinderDialog, FINDER_CHIP, FINDER_ACTIVE, FINDER_INACTIVE } from './CurriculumFinderDialog'
+import { cn } from '@/lib/utils'
 
 interface ContentItem {
   id: string
@@ -78,89 +80,36 @@ export function CoreIdeaFinderModal({ open, onClose, onInsert }: Props) {
     onClose()
   }
 
-  if (!open || typeof document === 'undefined') return null
-
-  return createPortal(
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden flex flex-col"
-        style={{ maxWidth: 720, maxHeight: '85vh' }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* 헤더 */}
-        <div className="px-5 py-4 border-b border-[#DADCE0] bg-[#F8F9FA]">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-bold text-[#202124]">핵심아이디어 찾기</h2>
-            <button onClick={onClose} className="text-[#5F6368] hover:text-[#202124] text-xl">×</button>
-          </div>
-          {/* 교과 칩 */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            <button
-              onClick={() => setSelectedSubject(null)}
-              className={`px-2.5 py-1 rounded-full text-xs font-semibold transition ${!selectedSubject ? 'bg-[#1A73E8] text-white' : 'bg-[#F1F3F4] text-[#5F6368] hover:bg-[#E8EAED]'}`}
-            >
-              전체
-            </button>
-            {SUBJECT_CHIPS.map(s => (
-              <button
-                key={s.id}
-                onClick={() => setSelectedSubject(s.id === selectedSubject ? null : s.id)}
-                className={`px-2.5 py-1 rounded-full text-xs font-semibold transition ${selectedSubject === s.id ? 'bg-[#1A73E8] text-white' : 'bg-[#F1F3F4] text-[#5F6368] hover:bg-[#E8EAED]'}`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-          {/* 검색 */}
-          <input
-            type="text"
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            placeholder="영역, 핵심아이디어, 지식·이해 검색..."
-            className="w-full px-3 py-2 rounded-lg border border-[#DADCE0] text-sm focus:outline-none focus:border-[#1A73E8]"
-          />
-        </div>
-
-        {/* 목록 */}
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="py-12 text-center text-sm text-[#9AA0A6]">내용체계 로딩 중...</div>
-          ) : filtered.length === 0 ? (
-            <div className="py-12 text-center text-sm text-[#9AA0A6]">검색 결과가 없습니다</div>
-          ) : (
-            <div className="divide-y divide-[#F1F3F4]">
-              {filtered.map(item => (
-                <div key={item.id} className="px-5 py-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E8F0FE] text-[#1A73E8]">{item.subject}</span>
-                    <span className="text-xs font-semibold text-[#5F6368]">{item.area}</span>
-                    {item.gradeBands.length > 0 && <span className="text-[10px] text-[#9AA0A6]">{item.gradeBands.join(', ')}</span>}
-                  </div>
-                  {/* 핵심아이디어 */}
-                  {item.coreIdeas.slice(0, 3).map((ci, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleSelect(item, ci)}
-                      className="w-full text-left mb-2 p-3 rounded-xl border border-[#DADCE0] hover:border-[#1A73E8] hover:bg-[#F8FBFF] transition group"
-                    >
-                      <p className="text-sm text-[#202124] leading-relaxed mb-1.5 group-hover:text-[#1A73E8]">{ci}</p>
-                      <div className="flex flex-wrap gap-1">
-                        {item.knowledge.slice(0, 4).map((k, j) => (
-                          <span key={`k-${j}`} className="text-[10px] px-1.5 py-0.5 rounded bg-[#E8F0FE] text-[#1A73E8]">{k}</span>
-                        ))}
-                        {item.functions.slice(0, 3).map((f, j) => (
-                          <span key={`f-${j}`} className="text-[10px] px-1.5 py-0.5 rounded bg-[#E6F4EA] text-[#137333]">{f}</span>
-                        ))}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
+  return <CurriculumFinderDialog
+    open={open} onClose={onClose} title="핵심아이디어 찾기"
+    description="교과와 영역의 핵심아이디어를 확인하고, 원하는 내용을 눌러 채팅에 넣으세요."
+    filters={<>
+      <div>
+        <p className="mb-2 text-sm font-medium text-[#444746]">교과</p>
+        <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
+          <button onClick={() => setSelectedSubject(null)} aria-pressed={!selectedSubject} className={cn(FINDER_CHIP, !selectedSubject ? FINDER_ACTIVE : FINDER_INACTIVE)}>{!selectedSubject && <Check size={16} />}전체</button>
+          {SUBJECT_CHIPS.map(subject => <button key={subject.id} onClick={() => setSelectedSubject(subject.id === selectedSubject ? null : subject.id)} aria-pressed={selectedSubject === subject.id} className={cn(FINDER_CHIP, selectedSubject === subject.id ? FINDER_ACTIVE : FINDER_INACTIVE)}>{selectedSubject === subject.id && <Check size={16} />}{subject.label}</button>)}
         </div>
       </div>
-    </div>,
-    document.body
-  )
+      <label className="block text-sm font-medium text-[#444746]">검색
+        <input aria-label="핵심아이디어 검색" value={searchText} onChange={event => setSearchText(event.target.value)} placeholder="영역·핵심아이디어·지식·이해 검색" className="mt-1 min-h-12 w-full rounded-xl border border-[#747775] bg-white px-4 text-base text-[#1F1F1F] placeholder:text-[#5F6368] focus:outline-2 focus:outline-[#0B57D0]" />
+      </label>
+    </>}
+    footer={<p className="text-[#444746]">검색 결과 <strong className="text-[#0842A0]">{filtered.length}</strong>개 영역 · 핵심아이디어를 누르면 채팅에 넣습니다.</p>}
+  >
+    {loading ? <p role="status" className="py-12 text-center text-base text-[#444746]">내용체계를 불러오는 중…</p>
+      : filtered.length === 0 ? <p className="py-12 text-center text-base text-[#444746]">검색 결과가 없습니다.</p>
+      : <div className="space-y-6">{filtered.map(item => <section key={item.id}>
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-[#E9EEF6] px-4 py-3">
+          <h3 className="text-lg font-semibold text-[#1F1F1F]">{item.subject} · {item.area}</h3>
+          {item.gradeBands.length > 0 && <span className="text-sm text-[#444746]">{item.gradeBands.join(', ')}</span>}
+        </div>
+        <div className="space-y-3">{item.coreIdeas.map((idea, index) => <button key={index} onClick={() => handleSelect(item, idea)} className="group w-full rounded-2xl border border-[#C4C7C5] bg-white p-4 text-left transition-colors hover:border-[#0B57D0] hover:bg-[#E8F0FE] focus-visible:outline-2 focus-visible:outline-[#0B57D0]">
+          <p className="text-base leading-relaxed text-[#1F1F1F] sm:text-lg [word-break:keep-all] [overflow-wrap:anywhere]">{idea}</p>
+          {item.knowledge.length > 0 && <p className="mt-3 text-sm leading-relaxed text-[#444746]"><span className="font-semibold text-[#0842A0]">지식·이해</span> · {item.knowledge.slice(0, 4).join(' · ')}</p>}
+          {item.functions.length > 0 && <p className="mt-2 text-sm leading-relaxed text-[#444746]"><span className="font-semibold text-[#0D652D]">과정·기능</span> · {item.functions.slice(0, 3).join(' · ')}</p>}
+          <span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[#0842A0]">채팅에 넣기 <ArrowRight size={18} /></span>
+        </button>)}</div>
+      </section>)}</div>}
+  </CurriculumFinderDialog>
 }

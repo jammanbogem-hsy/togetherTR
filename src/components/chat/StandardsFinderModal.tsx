@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { X, MagnifyingGlass, Check, PaperPlaneRight } from '@phosphor-icons/react'
+import { Copy, Check, PaperPlaneRight } from '@phosphor-icons/react'
+import { CurriculumFinderDialog, FINDER_CHIP, FINDER_ACTIVE, FINDER_INACTIVE } from './CurriculumFinderDialog'
+import { MD3Button } from '@/components/ui/MD3Button'
+import { groupStandardsByArea, standardClipboardLine } from '@/lib/curriculum/standardFinder'
 import { cn } from '@/lib/utils'
 import { fetchCurriculumJson } from '@/lib/curriculum/curriculumFilters'
 
@@ -77,6 +79,8 @@ export function StandardsFinderModal({
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
+  const [area, setArea] = useState('')
+  const [copyFeedback, setCopyFeedback] = useState<{ code: string; error: boolean; message: string } | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -155,6 +159,7 @@ export function StandardsFinderModal({
   }, [pool, gradeBand, query])
 
   function toggleSubject(s: string) {
+    setArea('')
     setActiveSubjects(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
   }
 
@@ -176,192 +181,72 @@ export function StandardsFinderModal({
     onClose()
   }
 
-  if (!open || typeof document === 'undefined') return null
+  const groups = useMemo(() => groupStandardsByArea(filtered), [filtered])
+  const visibleGroups = area ? groups.filter(group => group.key === area) : groups
 
-  return createPortal(
-    <div className="fixed inset-0 z-[240] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div
-        className="relative bg-white rounded-2xl shadow-2xl w-[96vw] max-w-[960px] max-h-[90vh] flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* 헤더 */}
-        <div className="bg-gradient-to-br from-[#E8F0FE] to-white px-5 py-4 flex items-center gap-3 border-b border-[#DADCE0] flex-shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-[#1A73E8] flex items-center justify-center flex-shrink-0">
-            <MagnifyingGlass size={20} weight="bold" className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-bold text-[#1A73E8] uppercase tracking-widest">성취기준 찾기</p>
-            <h3 className="text-[15px] font-bold text-[#202124]">
-              교과·학년군으로 필터 · 다중 선택 후 채팅에 인용
-            </h3>
-          </div>
-          <button onClick={onClose} aria-label="닫기" className="p-1.5 rounded-full hover:bg-white text-[#5F6368] transition-colors">
-            <X size={18} />
-          </button>
-        </div>
+  async function copyStandard(st: FlatStandard) {
+    try {
+      await navigator.clipboard.writeText(standardClipboardLine(st.code, st.text))
+      setCopyFeedback({ code: st.code, error: false, message: `${st.code} 코드와 성취기준을 복사했습니다.` })
+    } catch {
+      setCopyFeedback({ code: st.code, error: true, message: '복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해 주세요.' })
+    }
+  }
 
-        {/* 필터 영역 */}
-        <div className="px-5 py-3 border-b border-[#F1F3F4] bg-[#FAFBFC] flex-shrink-0 space-y-2.5">
-          {/* 교과 */}
-          <div>
-            <p className="text-[10px] font-bold text-[#9AA0A6] uppercase tracking-widest mb-1.5">교과 (복수 선택)</p>
-            <div className="flex flex-wrap gap-1.5">
-              {SUBJECTS.map(s => {
-                const active = activeSubjects.includes(s)
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => toggleSubject(s)}
-                    className={cn(
-                      'px-2.5 py-1 text-[12px] font-semibold rounded-full transition-colors',
-                      active
-                        ? 'bg-[#1A73E8] text-white hover:bg-[#1557B0]'
-                        : 'bg-white text-[#5F6368] border border-[#DADCE0] hover:bg-[#E8F0FE] hover:text-[#1A73E8]',
-                    )}
-                  >
-                    {s}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-          {/* 학년군 */}
-          <div>
-            <p className="text-[10px] font-bold text-[#9AA0A6] uppercase tracking-widest mb-1.5">학년군 (단일 선택)</p>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setGradeBand('')}
-                className={cn(
-                  'px-2.5 py-1 text-[12px] font-semibold rounded-full transition-colors',
-                  gradeBand === ''
-                    ? 'bg-[#5F6368] text-white'
-                    : 'bg-white text-[#5F6368] border border-[#DADCE0] hover:bg-[#F1F3F4]',
-                )}
-              >
-                전체
-              </button>
-              {GRADE_BANDS.map(g => {
-                const active = gradeBand === g
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => setGradeBand(g)}
-                    className={cn(
-                      'px-2.5 py-1 text-[12px] font-semibold rounded-full transition-colors',
-                      active
-                        ? 'bg-[#1A73E8] text-white hover:bg-[#1557B0]'
-                        : 'bg-white text-[#5F6368] border border-[#DADCE0] hover:bg-[#E8F0FE] hover:text-[#1A73E8]',
-                    )}
-                  >
-                    {g}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-          {/* 키워드 검색 */}
-          <div className="flex items-center gap-2 bg-white border border-[#DADCE0] rounded-full px-3 py-1.5">
-            <MagnifyingGlass size={14} weight="regular" className="text-[#9AA0A6] flex-shrink-0" />
-            <input
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="성취기준 내용·코드·영역 키워드 검색"
-              className="flex-1 text-[13px] bg-transparent outline-none text-[#202124] placeholder:text-[#9AA0A6]"
-            />
-            {query && (
-              <button onClick={() => setQuery('')} className="text-[#9AA0A6] hover:text-[#5F6368]"><X size={14} /></button>
-            )}
-          </div>
-        </div>
-
-        {/* 결과 리스트 */}
-        <div className="flex-1 overflow-y-auto px-5 py-3">
-          {activeSubjects.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center text-[#9AA0A6] py-10">
-              <p className="text-[13px] font-semibold mb-1">교과를 선택해 주세요</p>
-              <p className="text-[11px]">위에서 교과를 하나 이상 선택하면 해당 성취기준이 로드됩니다.</p>
-            </div>
-          ) : loading ? (
-            <div className="h-full flex items-center justify-center text-[#9AA0A6] text-[12px]">
-              불러오는 중…
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-[#9AA0A6] text-[12px]">
-              조건에 맞는 성취기준이 없습니다.
-            </div>
-          ) : (
-            <ul className="divide-y divide-[#F1F3F4]">
-              {filtered.map(st => {
-                const checked = selected.has(st.code)
-                return (
-                  <li key={st.code}>
-                    <button
-                      type="button"
-                      onClick={() => toggleStandard(st.code)}
-                      className={cn(
-                        'w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[#F8F9FA] transition-colors text-left',
-                        checked && 'bg-[#E8F0FE]',
-                      )}
-                    >
-                      <span className={cn(
-                        'flex items-center justify-center w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5',
-                        checked ? 'bg-[#1A73E8] border-[#1A73E8] text-white' : 'border-[#DADCE0] bg-white',
-                      )}>
-                        {checked && <Check size={12} weight="bold" />}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <span className="text-[11px] font-bold font-mono text-[#1A73E8]">{st.code}</span>
-                          <span className="text-[10px] text-[#9AA0A6]">{st.subject} · {st.gradeBand}</span>
-                          {st.area && <span className="text-[10px] text-[#9AA0A6]">· {st.area}</span>}
-                        </div>
-                        <p className="text-[12px] text-[#3C4043] leading-relaxed" style={{ wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
-                          {st.text}
-                        </p>
-                      </div>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
-
-        {/* 하단 액션 */}
-        <div className="border-t border-[#E8EAED] bg-[#F8F9FA] px-5 py-3 flex items-center gap-3 flex-shrink-0">
-          <span className="text-[12px] text-[#5F6368]">
-            선택 <strong className="text-[#1A73E8] tabular-nums">{selected.size}</strong>개
-            {pool.length > 0 && <span className="text-[#9AA0A6]"> · 전체 {pool.length}개</span>}
-          </span>
-          <span className="flex-1" />
-          {selected.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="px-2.5 py-1 text-[11px] font-semibold text-[#5F6368] hover:bg-[#E8EAED] rounded-full transition-colors"
-            >
-              선택 해제
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={insertSelected}
-            disabled={selected.size === 0}
-            className={cn(
-              'flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-bold rounded-full transition-colors flex-shrink-0',
-              'bg-[#1A73E8] text-white hover:bg-[#1557B0] disabled:opacity-40 disabled:cursor-not-allowed',
-            )}
-          >
-            <PaperPlaneRight size={13} weight="fill" />
-            채팅에 보내기
-          </button>
+  return <CurriculumFinderDialog
+    open={open} onClose={onClose} title="성취기준 찾기"
+    description="교과·학년군·영역으로 찾고, 여러 개를 선택해 채팅에 인용하세요."
+    filters={<>
+      <div>
+        <p className="mb-2 text-sm font-medium text-[#444746]">교과 · 복수 선택</p>
+        <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
+          {SUBJECTS.map(subject => <button key={subject} type="button" aria-pressed={activeSubjects.includes(subject)} onClick={() => toggleSubject(subject)} className={cn(FINDER_CHIP, activeSubjects.includes(subject) ? FINDER_ACTIVE : FINDER_INACTIVE)}>{activeSubjects.includes(subject) && <Check size={16} />}{subject}</button>)}
         </div>
       </div>
-    </div>,
-    document.body,
-  )
+      <div>
+        <p className="mb-2 text-sm font-medium text-[#444746]">학년군 · 단일 선택</p>
+        <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
+          {['', ...GRADE_BANDS].map(grade => <button key={grade} type="button" aria-pressed={gradeBand === grade} onClick={() => { setGradeBand(grade); setArea('') }} className={cn(FINDER_CHIP, gradeBand === grade ? FINDER_ACTIVE : FINDER_INACTIVE)}>{gradeBand === grade && <Check size={16} />}{grade || '전체'}</button>)}
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_2fr]">
+        <label className="text-sm font-medium text-[#444746]">영역
+          <select aria-label="성취기준 영역" value={area} onChange={event => setArea(event.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-[#747775] bg-white px-3 text-base text-[#1F1F1F] focus:outline-2 focus:outline-[#0B57D0]">
+            <option value="">전체 영역</option>
+            {groups.map(group => <option key={group.key} value={group.key}>{group.subject} · {group.area} ({group.standards.length})</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-[#444746]">검색
+          <input aria-label="성취기준 검색" value={query} onChange={event => { setQuery(event.target.value); setArea('') }} placeholder="성취기준 내용·코드·영역 검색" className="mt-1 min-h-12 w-full rounded-xl border border-[#747775] bg-white px-4 text-base text-[#1F1F1F] placeholder:text-[#5F6368] focus:outline-2 focus:outline-[#0B57D0]" />
+        </label>
+      </div>
+    </>}
+    footer={<>
+      <div className="w-full min-w-0 text-[#444746] sm:w-auto sm:flex-1">선택 <strong className="text-[#0842A0]">{selected.size}</strong>개 · 결과 {visibleGroups.reduce((sum, group) => sum + group.standards.length, 0)}개
+        {copyFeedback && <p role={copyFeedback.error ? 'alert' : 'status'} className={cn('mt-1 text-sm', copyFeedback.error ? 'text-[#8C1D18]' : 'text-[#0D652D]')}>{copyFeedback.message}</p>}
+      </div>
+      {selected.size > 0 && <MD3Button variant="text" tone="neutral" className="min-h-11 text-base" onClick={() => setSelected(new Set())}>선택 해제</MD3Button>}
+      <MD3Button variant="filled" className="min-h-12 text-base" disabled={selected.size === 0} onClick={insertSelected} icon={<PaperPlaneRight size={20} />}>채팅에 보내기</MD3Button>
+    </>}
+  >
+    {activeSubjects.length === 0 ? <p className="py-12 text-center text-base text-[#444746]">교과를 하나 이상 선택해 주세요.</p>
+      : loading ? <p role="status" className="py-12 text-center text-base text-[#444746]">성취기준을 불러오는 중…</p>
+      : visibleGroups.length === 0 ? <p className="py-12 text-center text-base text-[#444746]">조건에 맞는 성취기준이 없습니다.</p>
+      : <div className="space-y-6">{visibleGroups.map(group => <section key={group.key} aria-label={`${group.subject} ${group.area}`}>
+        <h3 className="mb-3 rounded-xl bg-[#E9EEF6] px-4 py-3 text-lg font-semibold text-[#1F1F1F]">{group.subject} · {group.area} <span className="ml-2 text-sm font-medium text-[#444746]">{group.standards.length}개</span></h3>
+        <ul className="space-y-2">{group.standards.map(st => {
+          const checked = selected.has(st.code)
+          return <li key={st.code} className={cn('flex items-start gap-1 rounded-2xl border p-2 transition-colors', checked ? 'border-[#0B57D0] bg-[#E8F0FE]' : 'border-[#C4C7C5] bg-white')}>
+            <button type="button" role="checkbox" aria-checked={checked} aria-label={`${st.code} ${st.text}`} onClick={() => toggleStandard(st.code)} className="flex min-w-0 flex-1 items-start gap-3 rounded-xl p-2 text-left hover:bg-[#F0F4F9] focus-visible:outline-2 focus-visible:outline-[#0B57D0] sm:p-3">
+              <span aria-hidden="true" className={cn('mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded border-2', checked ? 'border-[#0B57D0] bg-[#0B57D0] text-white' : 'border-[#747775] bg-white')}>{checked && <Check size={18} weight="bold" />}</span>
+              <span className="min-w-0 flex-1">
+                <span className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-base font-semibold text-[#0842A0]">{st.code}</span><span className="text-sm text-[#444746]">{st.gradeBand}</span></span>
+                <span className="block text-base leading-relaxed text-[#1F1F1F] sm:text-lg [word-break:keep-all] [overflow-wrap:anywhere]">{st.text}</span>
+              </span>
+            </button>
+            <MD3Button variant="text" size="sm" className="min-h-11 shrink-0 px-2 text-sm sm:px-3 sm:text-base" aria-label={`${st.code} 코드와 성취기준 복사`} onClick={() => { void copyStandard(st) }} icon={copyFeedback?.code === st.code && !copyFeedback.error ? <Check size={20} /> : <Copy size={20} />}>{copyFeedback?.code === st.code && !copyFeedback.error ? '복사됨' : '복사'}</MD3Button>
+          </li>
+        })}</ul>
+      </section>)}</div>}
+  </CurriculumFinderDialog>
 }

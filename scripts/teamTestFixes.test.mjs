@@ -1,3 +1,4 @@
+import { normalizeChatStructure } from '../src/lib/markdown/chatStructure.ts'
 import { TRAINING_GUIDANCE_RULES } from '../src/lib/prompts/training.ts'
 import { REVIEW_ACTION_RULES } from '../src/lib/chat/reviewAction.ts'
 // node --experimental-strip-types --import ./scripts/lib/register-ts-hooks.mjs --test scripts/teamTestFixes.test.mjs
@@ -2602,16 +2603,32 @@ test('T7: buildSystemPrompt — 연수용 활동에만 규칙 주입(일반 규�
   assert.match(route, /trainingStepByStep: isStepByStepActive\(messages\.filter\(m => m\.role === 'user'\)/)
 })
 
-// TASK-T9 이후 허용된 유일한 차이: 단계 종료 체크리스트의 팀 확인 칸 '□' → '☐' 와 그 형식 안내 한 줄.
+// 사용자 승인 변경만 반영: 목록 시각화·검토 행동 안내와 단계 종료 체크리스트의 팀 확인 칸 '□' → '☐' 와 그 형식 안내 한 줄.
 function withChecklistFormat(text) {
   return text
+    .replace(`**유형 B — 마인드맵형 텍스트** (키워드 군집화 시)
+🎯 [주제/비전]
+├── [군집1명]
+│   ├── [선생님A] "[발언 요약]"
+│   └── [선생님C] "[발언 요약]"
+└── [군집2명]
+    └── [선생님B] "[발언 요약]"`, `**유형 B — 들여쓰기 목록** (키워드 군집화 시)
+**[주제/비전]**
+
+- **[군집1명]**
+  - [선생님A]: “[발언 요약]”
+  - [선생님C]: “[발언 요약]”
+- **[군집2명]**
+  - [선생님B]: “[발언 요약]”
+
+각 항목은 반드시 별도 줄에 쓰고, 목록 앞뒤에는 빈 줄을 둔다. 하위 목록은 두 칸 들여쓰며 깊이는 두 단계까지만 사용한다. 가지 선 문자(├, └, │)나 공백 정렬로 트리를 그리지 않는다. 모바일에서도 군집 제목과 해당 의견을 순서대로 읽을 수 있게 한다.`)
     .replace('## 행동 제안 카드 (ACTION_CARD)\n\n', '## 행동 제안 카드 (ACTION_CARD)\n\n' + REVIEW_ACTION_RULES)
     .replaceAll('| □ |', '| ☐ |')
     .replace('**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").', '**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").\n**팀 확인** 칸에는 \'☐\' 한 글자만 쓴다 — 선생님들이 화면에서 직접 눌러 체크한다(✅·□·설명 글 쓰지 않기).')
     .replace('아래 **축약 체크리스트**를 표로 출력한다:\n', '아래 **축약 체크리스트**를 표로 출력한다(확인 칸에는 \'☐\' 한 글자만 — 선생님이 화면에서 직접 체크):\n')
 }
 
-test('T8: 일반 프롬프트는 승인된 체크리스트 형식·검토 행동 안내 외에 연수용 도입 전과 같다', async t => {
+test('T8: 일반 프롬프트는 승인된 목록 시각화·체크리스트·검토 행동 안내 외에 연수용 도입 전과 같다', async t => {
   let source
   try {
     source = execFileSync('git', ['show', 'pre-training-mode-2026-10-04:src/lib/prompts/system.ts'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname })
@@ -3652,7 +3669,7 @@ test('T16d: 렌더 — 진짜 체크박스, 저장 상태·체크한 사람 이�
     REMARK_PLUGINS, ReactMarkdown, cn: (...c) => c.filter(Boolean).join(' '),
     markdownHeadingComponents: {}, HighlightedStrong: ({ children }) => React.createElement('strong', null, children),
     INTERNAL_ACTIVITY_CODE_RE: /$^/g, displayActivityCode: c => c, splitGuideLines: () => null,
-    childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
+    normalizeChatStructure, childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
     CHAT_REMARK_PLUGINS: [...REMARK_PLUGINS, tableWidthLib.remarkShortColumns],
     CHECKER_COLORS: ['#1A73E8', '#188038'], ...checklistLib, ChatMarkdownTable: ({ children }) => React.createElement('div', null, React.createElement('table', null, children)),
   }, ['MarkdownContent', 'ChecklistBox', 'shortCellStyle', 'checkerColor', 'checkedAtText'])
@@ -3988,7 +4005,7 @@ test('C1: 체크 칸은 체크박스+첫 글자 배지 한 줄, 짧은 열(단�
     REMARK_PLUGINS, ReactMarkdown, cn: (...c) => c.filter(Boolean).join(' '),
     markdownHeadingComponents: {}, HighlightedStrong: ({ children }) => React.createElement('strong', null, children),
     INTERNAL_ACTIVITY_CODE_RE: /$^/g, displayActivityCode: c => c, splitGuideLines: () => null,
-    childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
+    normalizeChatStructure, childrenToText: () => '', prepareChecklistMarkdown: checklistLib.prepareChecklistMarkdown, parseChecklistMark: checklistLib.parseChecklistMark,
     CHAT_REMARK_PLUGINS: [...REMARK_PLUGINS, tableWidthLib.remarkShortColumns], CHECKER_COLORS: ['#1A73E8', '#188038'], ...checklistLib, ChatMarkdownTable: ({ children }) => React.createElement('div', null, React.createElement('table', null, children)),
   }, ['MarkdownContent', 'ChecklistBox', 'shortCellStyle', 'checkerColor', 'checkedAtText'])
   const text = '| 단계 | 핵심 점검 항목 | AI 분석 | 팀 확인 |\n|---|---|---|---|\n| T-3 역할 배분 | 팀원 각자의 강점, 관심사, 현재 업무 여력을 충분히 고려하여 균형 있게 역할을 배분하였는가? 그리고 기록하였는가? | ✅ | ☐ |'
