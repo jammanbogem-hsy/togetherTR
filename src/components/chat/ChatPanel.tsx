@@ -1071,7 +1071,7 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
     return (r * 299 + g * 587 + b * 114) / 1000 > 160
   })()
   const textOnColor = isLightColor ? '#374151' : '#ffffff'
-  const accessibleSender = isUser ? (senderName ?? '팀원') : 'AI 공동설계자'
+  const accessibleSender = isUser ? (senderName?.trim() || '팀원') : 'AI 공동설계자'
   const messageAriaLabel = `${accessibleSender}의 메시지${!isUser && activityType ? ` · ${activityType}` : ''}`
 
   return (
@@ -1081,26 +1081,31 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
       onReply={onReply}
       className={cn('flex gap-2 mb-3', alignRight ? 'flex-row-reverse' : 'flex-row')}
     >
-      {/* 아바타 — 상단 정렬, Google 프로필 스타일(플랫 원형) */}
-      <Avatar
-        className="chat-avatar-animated self-start"
-        name={senderName}
-        color={avatarColor}
-        avatarId={senderAvatarId}
-        size={40}
-        ai={!isUser}
-        title={senderName}
-      />
+      {/* 모든 사용자 메시지에 이름 표시 — 본인·연속 메시지도 생략하지 않는다. */}
+      <div className={cn('flex shrink-0 flex-col items-center self-start gap-1', isUser && 'w-14')}>
+        <Avatar
+          className="chat-avatar-animated"
+          name={senderName}
+          color={avatarColor}
+          avatarId={senderAvatarId}
+          size={40}
+          ai={!isUser}
+          title={senderName}
+        />
+        {isUser && (
+          <span className="block w-full truncate text-center text-xs font-semibold leading-4 text-[#3C4043]" title={accessibleSender}>
+            {accessibleSender}
+          </span>
+        )}
+        {isUser && simulated && <span className="text-[10px] leading-3 text-[#3C4043]">교사 AI</span>}
+      </div>
 
       <div className={cn(
         'min-w-0 space-y-0.5',
-        isUser ? 'max-w-[72%]' : 'w-fit max-w-[min(88%,46rem)]',
+        isUser ? 'max-w-[min(72%,calc(100%_-_4rem))]' : 'w-fit max-w-[min(88%,46rem)]',
         alignRight ? 'items-end' : 'items-start',
         'flex flex-col',
       )}>
-        {isUser && !isSelf && senderName && (
-          <span className="text-xs font-bold px-1 text-gray-700">{senderName}{simulated && ' · 교사 AI'}</span>
-        )}
         {!isUser && (
           <div className="flex items-center gap-1.5 px-1">
             <span className="text-xs font-bold text-[#3C4043]">{simulated ? '총괄 AI' : 'AI 공동설계자'}</span>
@@ -4684,13 +4689,13 @@ ${discussionSummary}
 
           if (msg.role === 'user') {
             if (isSelf) {
-              senderName = userProfile?.displayName
+              senderName = msg.displayName?.trim() || userProfile?.displayName?.trim() || '팀원'
               senderColor = userProfile?.color
               senderAvatarId = userProfile?.avatarId
               senderEmoji = userProfile?.displayName?.[0] || '?'
             } else {
               const info = msg.userId ? project.memberInfo?.[msg.userId] : undefined
-              senderName = info?.displayName ?? msg.userId?.slice(0, 6) ?? '팀원'
+              senderName = msg.displayName?.trim() || info?.displayName?.trim() || '팀원'
               senderColor = info?.color ?? '#6B7280'
               senderAvatarId = info?.avatarId
               senderEmoji = info?.displayName?.[0] || '?'

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
 import {
   UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy,
-  CheckCircle, Warning, Clock, Shield, Star, CaretRight, ChartBar, Crown, ArrowBendUpLeft, type Icon,
+  CheckCircle, Warning, Clock, Shield, Star, ChartBar, Crown, ArrowBendUpLeft, type Icon,
 } from '@phosphor-icons/react'
 
 import { TrainingStepGuide } from '@/components/training/TrainingStepGuide'
@@ -246,56 +246,56 @@ function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtif
   // 산출물 확정됐거나, 건너뜀(warning) + 산출물 있으면 완료로 간주
   const effectiveStatus: StageStatus = artifactConfirmed || (status === 'warning' && hasArtifact) ? 'completed' : status
   const badge = STATUS_BADGE[effectiveStatus]
+  const color = STAGE_COLOR[meta.stage]
+  const stageTonal = effectiveStatus === 'completed' || effectiveStatus === 'in_progress'
+  const compactLabel = effectiveStatus === 'warning' ? '복귀 필요' : effectiveStatus === 'active_return' ? '개선 중' : badge.label
 
   return (
     <button
       type="button"
       onClick={onClick}
+      title={`${meta.label} — ${badge.label}`}
       aria-label={`${meta.label} — ${badge.label}${isViewing ? ' (선택됨)' : ''}`}
       aria-current={isViewing ? 'step' : undefined}
       className={cn(
-        'group flex min-h-24 w-full items-start gap-3 rounded-[20px] px-3 py-3 text-left transition-colors motion-reduce:transition-none',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0B57D0]',
-        isViewing
-          ? 'bg-[#C2E7FF] text-[#001D35]'
-          : isHostCurrent && !isHost
-            ? 'bg-[#FEF7E0] text-[#1F1F1F] hover:bg-[#FCE8B2]'
-            : 'text-[#1F1F1F] hover:bg-[#E9EEF6]'
+        'group grid min-h-[60px] w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 rounded-2xl px-2.5 py-2 text-left transition-colors motion-reduce:transition-none',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
+        isViewing ? color.light : isHostCurrent && !isHost ? 'bg-[#FEF7E0] hover:bg-[#FCE8B2]' : 'hover:bg-[#E9EEF6]',
+        color.doneText,
       )}
     >
       <span aria-hidden="true" className={cn(
-        'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
-        isViewing ? 'bg-[#001D35] text-white' : 'bg-[#E2E7EE] text-[#444746]'
-      )}>{index + 1}</span>
-      <span className="min-w-0 flex-1">
-        <span className={cn('block break-keep text-sm leading-5', isViewing ? 'font-bold' : 'font-medium')}>{meta.label}</span>
-        {isHostCurrent && !isHost && !isViewing && (
-          <span className="mt-1 block text-xs leading-4 text-[#6D4100]">기록 담당 진행 중</span>
-        )}
-        <span className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex min-h-6 items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-medium leading-4"
-            style={{ color: badge.fg, backgroundColor: badge.bg, borderColor: badge.border }}>
-            <badge.icon size={14} weight="fill" aria-hidden="true" />{badge.label}
-          </span>
-          {meta.isGuardrailSource && (
-            <span title="가드레일 출처" className="inline-flex size-6 items-center justify-center rounded-lg bg-[#EADDFF] text-[#4F378B]">
-              <Shield size={14} weight="fill" aria-label="가드레일 출처" />
-            </span>
-          )}
-          {meta.isBackwardDesignFirst && (
-            <span title="평가 먼저 설계" className="inline-flex size-6 items-center justify-center rounded-lg bg-[#FFDEB6] text-[#6D4100]">
-              <Star size={14} weight="fill" aria-label="평가 먼저 설계" />
-            </span>
-          )}
-          {isHostCurrent && !isHost && (
-            <span title="기록 담당 현재 위치" className="inline-flex size-6 items-center justify-center rounded-lg bg-[#FFDEB6] text-[#6D4100]">
-              <Crown size={14} weight="fill" aria-label="기록 담당 현재 위치" />
-            </span>
-          )}
-        </span>
-        <span className="mt-1 block min-h-4 text-[11px] leading-4 text-[#444746]">{connectorLabel}</span>
+        'flex size-7 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold',
+        color.doneText, !isViewing && color.light,
+      )} style={isViewing ? { backgroundColor: 'currentColor' } : undefined}>
+        <span className={isViewing ? 'text-white' : undefined}>{index + 1}</span>
       </span>
-      {isViewing && <CaretRight size={16} className="mt-1 shrink-0" aria-hidden="true" />}
+      <span className={cn('min-w-0 truncate text-[13px] leading-5', isViewing ? 'font-bold' : 'font-medium text-[#1F1F1F]')}>{meta.label}</span>
+      <span title={badge.label}
+        className={cn('inline-flex min-h-6 shrink-0 items-center gap-1 rounded-lg border px-1.5 text-[11px] font-medium leading-4', stageTonal && [color.light, color.doneText, 'border-transparent'])}
+        style={stageTonal ? undefined : { color: badge.fg, backgroundColor: badge.bg, borderColor: badge.border }}>
+        <badge.icon size={13} weight="fill" aria-hidden="true" />{compactLabel}
+      </span>
+      <span className="col-span-2 col-start-2 flex min-h-4 min-w-0 items-center gap-1">
+        <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-[#525754]">
+          {isHostCurrent && !isHost && !isViewing ? '기록 담당 진행 중' : connectorLabel}
+        </span>
+        {meta.isGuardrailSource && (
+          <span title="가드레일 출처" className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded', color.light, color.doneText)}>
+            <Shield size={12} weight="fill" aria-label="가드레일 출처" />
+          </span>
+        )}
+        {meta.isBackwardDesignFirst && (
+          <span title="평가 먼저 설계" className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded', color.light, color.doneText)}>
+            <Star size={12} weight="fill" aria-label="평가 먼저 설계" />
+          </span>
+        )}
+        {isHostCurrent && !isHost && (
+          <span title="기록 담당 현재 위치" className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-[#FFDEB6] text-[#6D4100]">
+            <Crown size={12} weight="fill" aria-label="기록 담당 현재 위치" />
+          </span>
+        )}
+      </span>
     </button>
   )
 }
@@ -360,24 +360,24 @@ export function ActivitySidebar() {
     <div className="flex h-full w-80 max-w-full shrink-0 flex-col overflow-hidden bg-[#F8FAFD]">
 
       {/* 단계 카드: 장식 없이 단계명·목표·진행률을 한 표면에 표시 */}
-      <section aria-label={`${currentStageInfo.label} 단계 진행`} className={cn('mx-3 mt-3 shrink-0 rounded-[24px] p-4', color.light)}>
-        <div className="mb-3 flex items-center gap-3">
-          <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white', color.doneText)}>
-            {(() => { const StageIcon = STAGE_ICON_MAP[currentStage]; return <StageIcon size={26} weight="duotone" aria-hidden="true" /> })()}
+      <section aria-label={`${currentStageInfo.label} 단계 진행`} className={cn('mx-2 mt-2 shrink-0 rounded-[20px] p-3', color.light)}>
+        <div className="mb-2 flex items-center gap-2.5">
+          <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-2xl bg-white', color.doneText)}>
+            {(() => { const StageIcon = STAGE_ICON_MAP[currentStage]; return <StageIcon size={22} weight="duotone" aria-hidden="true" /> })()}
           </div>
           <div className="min-w-0">
             <p className={cn('mb-0.5 text-xs font-semibold', color.doneText)}>{currentStage} 단계</p>
-            <h2 className="text-xl font-bold leading-7 text-[#1F1F1F]">{currentStageInfo.label}</h2>
+            <h2 className="text-lg font-bold leading-6 text-[#1F1F1F]">{currentStageInfo.label}</h2>
           </div>
         </div>
-        <p className="mb-4 text-[13px] leading-5 text-[#444746]">{guide.goal}</p>
-        <div className="mb-2 flex items-center justify-between text-xs text-[#444746]">
+        <p className="mb-2 text-xs leading-4 text-[#444746]">{guide.goal}</p>
+        <div className="mb-1 flex items-center justify-between text-xs text-[#444746]">
           <span>활동 완료</span>
           <span className="font-semibold tabular-nums text-[#1F1F1F]">{completedCount}/{totalCount}</span>
         </div>
         <div role="progressbar" aria-label={`${currentStageInfo.label} 활동 완료`} aria-valuemin={0} aria-valuemax={totalCount} aria-valuenow={completedCount}
-          className="h-2 overflow-hidden rounded-full bg-white">
-          <div className={cn('h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none', color.bg)} style={{ width: `${progressPct}%` }} />
+          className="h-1.5 overflow-hidden rounded-full bg-white">
+          <div className={cn('h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none', color.doneText)} style={{ width: `${progressPct}%`, backgroundColor: 'currentColor' }} />
         </div>
       </section>
 
@@ -423,10 +423,10 @@ export function ActivitySidebar() {
       )}
 
       {/* 활동 목록 — 단계 내부 서브그룹(T-1-x / T-2-x)을 헤더로 구분해 시각 계층 강화 */}
-      <div className="flex-1 min-h-0 overflow-y-scroll panel-scroll px-2 py-3">
-        <h3 className="mb-2 px-3 text-xs font-semibold text-[#444746]">활동</h3>
+      <div className="flex-1 min-h-0 overflow-y-scroll panel-scroll px-2 py-2">
+        <h3 className="mb-1 px-2.5 text-xs font-semibold text-[#444746]">활동</h3>
         <nav aria-label={`${currentStageInfo.label} 활동 목록`}>
-        <ul className="space-y-1.5">
+        <ul className="space-y-1">
           {visibleActivities.map((code, idx) => {
             // 표시 체계는 가이드 문서(260619)의 평면 번호(T-1~T-5 등)를 따름 — 내부 서브그룹(T-1-x/T-2-x) 헤더는 표시하지 않는다.
             const prevCode = idx > 0 ? visibleActivities[idx - 1] : null
@@ -465,15 +465,15 @@ export function ActivitySidebar() {
           const showWarningHint = viewingEffective === 'warning' && !!info.warningRecoveryHint
           return (
             <TrainingStepGuide project={project} activityCode={viewingActivity}>
-            <div className="mt-3 mx-1 rounded-2xl border border-[#AECBFA] bg-[#E8F0FE] px-3.5 py-3">
-              <p className="text-[12px] font-bold text-[#174EA6] mb-1.5">{info.title}</p>
+            <div className={cn('mt-3 mx-1 rounded-2xl border px-3.5 py-3', color.border, color.light)}>
+              <p className={cn('text-[12px] font-bold mb-1.5', color.doneText)}>{info.title}</p>
               <p className="text-[11px] text-[#3C4043] leading-snug whitespace-pre-line mb-2">{info.body}</p>
               <p className="text-[11px] text-[#5F6368] italic leading-snug mb-2">{info.example}</p>
 
               {/* whyNow — 직전 산출물 연결 */}
               {info.whyNow && (
-                <div className="mt-2 pt-2 border-t border-[#AECBFA]/60 flex items-start gap-1.5">
-                  <span className="text-[10px] font-bold text-[#174EA6] mt-0.5 flex-shrink-0">왜 지금?</span>
+                <div className={cn('mt-2 pt-2 border-t flex items-start gap-1.5', color.border)}>
+                  <span className={cn('text-[10px] font-bold mt-0.5 flex-shrink-0', color.doneText)}>왜 지금?</span>
                   <p className="text-[11px] text-[#3C4043] leading-snug">{info.whyNow}</p>
                 </div>
               )}
@@ -514,7 +514,7 @@ export function ActivitySidebar() {
                 setShowAnalysis(true)
                 if (project?.id) setAnalysisOpen(project.id, true).catch(console.error)
               }}
-              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-[#0B57D0] px-4 py-3 text-sm font-semibold text-white hover:bg-[#0842A0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0B57D0]"
+              className={cn('flex min-h-11 w-full items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-semibold hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current', color.light, color.doneText)}
             >
               <ChartBar size={16} weight="fill" />
               현재 단계 분석하기
@@ -524,15 +524,15 @@ export function ActivitySidebar() {
       </div>
 
       {/* 범례 */}
-      <div className="flex shrink-0 flex-wrap gap-2 border-t border-[#C4C7C5] bg-[#F8FAFD] px-4 py-3">
+      <div className="flex shrink-0 flex-wrap gap-1.5 border-t border-[#C4C7C5] bg-[#F8FAFD] px-3 py-2">
         <Tooltip text="A-2-3 학습자·맥락 분석 산출물이 이후 설계 단계의 가드레일로 활용됩니다. 설계 단계에서 이 분석 결과가 반드시 반영되어야 합니다.">
-          <div className="flex min-h-7 cursor-help items-center gap-1.5 rounded-lg bg-[#E9EEF6] px-2 text-xs text-[#444746]">
+          <div className="flex min-h-6 cursor-help items-center gap-1.5 rounded-lg bg-[#E9EEF6] px-2 text-xs text-[#444746]">
             <Shield size={16} weight="fill" className="text-[#7B1FA2]" />
             <span>가드레일</span>
           </div>
         </Tooltip>
         <Tooltip text="백워드 설계(Backward Design) 원칙에 따라 평가를 먼저 계획합니다. 수업 활동보다 평가 기준을 먼저 확정함으로써 목표 중심 수업설계를 구현합니다.">
-          <div className="flex min-h-7 cursor-help items-center gap-1.5 rounded-lg bg-[#E9EEF6] px-2 text-xs text-[#444746]">
+          <div className="flex min-h-6 cursor-help items-center gap-1.5 rounded-lg bg-[#E9EEF6] px-2 text-xs text-[#444746]">
             <Star size={16} weight="fill" className="text-[#6D4100]" />
             <span>평가 먼저</span>
           </div>
