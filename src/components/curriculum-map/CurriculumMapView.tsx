@@ -54,8 +54,6 @@ export interface CurriculumMapViewProps {
   SendDialog?: React.ComponentType<SendDialogProps>
 }
 
-const SNACKBAR_MS = 4000
-
 export function CurriculumMapView({
   mode = 'page',
   standalone = false,
@@ -76,7 +74,6 @@ export function CurriculumMapView({
   const [focusRequest, setFocusRequest] = useState<{ id: string; nonce: number } | null>(null)
   const [hoverCardId, setHoverCardId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [snackbar, setSnackbar] = useState<string | null>(null)
   const [fusionShowWeak, setFusionShowWeak] = useState(false)
   const [fusionFocusId, setFusionFocusId] = useState<string | null>(null)
   const initialAppliedRef = useRef(false)
@@ -266,11 +263,6 @@ export function CurriculumMapView({
     if (item) basket.toggle(pickFromItem(item, null))
   }, [basket, map.nodeById, map.related.items, map.search.results, map.search.weak])
 
-  const showSnackbar = useCallback((message: string) => {
-    setSnackbar(message)
-    window.setTimeout(() => setSnackbar(current => (current === message ? null : current)), SNACKBAR_MS)
-  }, [])
-
   const onPrimary = useCallback(() => {
     if (mode === 'embedded') {
       onApply?.(basket.picks)
@@ -280,11 +272,11 @@ export function CurriculumMapView({
     setDialogOpen(true)
   }, [basket, mode, onApply])
 
-  const onSent = useCallback((rows: number) => {
+  // 결과 안내와 "시트로 이동"은 대화상자가 맡는다(작은 띠는 놓치기 쉬웠다).
+  const onSent = useCallback(() => {
     setDialogOpen(false)
     basket.clear()
-    showSnackbar(`${rows}개 성취기준을 분석시트에 추가했습니다`)
-  }, [basket, showSnackbar])
+  }, [basket])
 
   const onBack = useCallback(() => {
     if (mode === 'embedded') onClose?.()
@@ -480,16 +472,6 @@ export function CurriculumMapView({
           onClose={() => setDialogOpen(false)}
           onDone={onSent}
         />
-      )}
-
-      {snackbar && (
-        <div
-          role="status"
-          className="fixed bottom-20 left-1/2 z-[230] -translate-x-1/2 rounded-lg bg-[#322F35] px-4 py-3 text-[14px] text-[#F5EFF7]"
-          style={{ boxShadow: '0 2px 6px rgba(0,0,0,0.25)' }}
-        >
-          {snackbar}
-        </div>
       )}
     </div>
   )

@@ -1,10 +1,13 @@
 'use client'
 
 // page 모드 "시트로 보내기" — 내 프로젝트를 골라 분석시트에 성취기준을 추가한다.
+// 추가가 끝나면 결과를 알리고 "시트로 이동"(그 프로젝트의 분석 시트를 펼침)과 "계속 찾기"를 묻는다.
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { appendMapPicksToSheet, getUserProjects } from '@/lib/firebase/projects'
+import { buildSheetOpenHref, sheetSentMessage } from '@/lib/curriculum/sheetOpenLink'
 import type { Project } from '@/types'
 import type { MapPick } from './types'
 
@@ -18,7 +21,14 @@ export interface SendToSheetDialogProps {
   onDone: (rowsAdded: number) => void
 }
 
-type Status = 'loading' | 'ready' | 'error' | 'sending'
+type Status = 'loading' | 'ready' | 'error' | 'sending' | 'done'
+
+interface SentResult {
+  projectId: string
+  projectTitle: string
+  added: number
+  firstRowId?: string
+}
 
 export default function SendToSheetDialog({
   open,
@@ -32,6 +42,8 @@ export default function SendToSheetDialog({
   const [status, setStatus] = useState<Status>('loading')
   const [error, setError] = useState<string | null>(null)
   const [chosen, setChosen] = useState<string | null>(null)
+  const [sent, setSent] = useState<SentResult | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     if (!open) return
@@ -57,14 +69,66 @@ export default function SendToSheetDialog({
 
   const send = (): void => {
     if (!chosen) return
+    const projectId = chosen
+    const projectTitle = projects.find(p => p.id === projectId)?.title || '선택한'
     setStatus('sending')
     setError(null)
-    appendMapPicksToSheet(chosen, picks, displayName)
-      .then(rows => onDone(rows))
+    appendMapPicksToSheet(projectId, picks, displayName)
+      .then(({ added, rowIds }) => {
+        setSent({ projectId, projectTitle, added, firstRowId: rowIds[0] })
+        setStatus('done')
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : '분석시트에 추가하지 못했습니다.')
         setStatus('ready')
       })
+  }
+
+  if (status === 'done' && sent) {
+    // 다음에 다시 열 때 목록부터 새로 불러오도록 결과 상태를 비운다(닫혀도 컴포넌트는 남아 있다).
+    const finish = (): void => {
+      setSent(null)
+      setStatus('loading')
+      onDone(sent.added)
+    }
+    const keepSearching = finish
+    const goToSheet = (): void => {
+      finish()
+      router.push(buildSheetOpenHref(sent.projectId, sent.firstRowId))
+    }
+    return (
+      <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 p-4" onClick={keepSearching} role="presentation">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="sent-to-sheet-title"
+          aria-describedby="sent-to-sheet-body"
+          className="w-full max-w-md rounded-[28px] bg-[var(--md-surface-container-low)] p-6"
+          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.2), 0 16px 40px rgba(0,0,0,0.16)' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <span className="material-symbols-rounded mb-3 block text-[28px] leading-none text-[var(--md-primary)]" aria-hidden>
+            {sent.added > 0 ? 'task_alt' : 'info'}
+          </span>
+          <h2 id="sent-to-sheet-title" className="mb-2 text-[22px] font-normal text-[var(--md-on-surface)]">
+            {sent.added > 0 ? '시트에 넣었습니다' : '넣은 성취기준이 없습니다'}
+          </h2>
+          <p id="sent-to-sheet-body" className="mb-6 text-[15px] leading-[1.6] text-[var(--md-on-surface-variant)]">
+            {sheetSentMessage(sent.projectTitle, sent.added, picks.length)}
+            <br />
+            교육과정 분석 시트로 이동하시겠습니까?
+          </p>
+          <div className="flex justify-end gap-2">
+            <MD3Button variant="text" size="sm" tone="neutral" onClick={keepSearching}>
+              계속 찾기
+            </MD3Button>
+            <MD3Button variant="filled" size="sm" onClick={goToSheet} autoFocus>
+              시트로 이동
+            </MD3Button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -1097,13 +1097,13 @@ export async function patchCurriculumSheet(
  * 분석맵(독립 페이지)에서 고른 성취기준을 시트에 새 줄로 추가한다.
  * 시트 모달과 같은 계획 함수(planMapPickApplication)를 대상 줄 없이 돌려
  * 교과·핵심아이디어·학년군별로 한 줄씩 upsert-row로 저장한다(동시 편집 안전).
- * 반환값은 추가된 줄 수. undefined 필드는 cleanCurriculumSheetRow가 제거한다.
+ * 반환값은 추가된 줄 수와 새 줄 id(시트로 이동 뒤 스크롤용). undefined 필드는 cleanCurriculumSheetRow가 제거한다.
  */
 export async function appendMapPicksToSheet(
   projectId: string,
   picks: MapPickLike[],
   updatedBy?: string,
-): Promise<number> {
+): Promise<{ added: number; rowIds: string[] }> {
   const snap = await getDoc(doc(db, 'projects', projectId))
   if (!snap.exists()) throw new Error('project-not-found')
   const data = snap.data() as Project
@@ -1112,7 +1112,7 @@ export async function appendMapPicksToSheet(
   const sheetBand = resolveSheetGradeBand(data.curriculumSheetGradeBand, data.targetGradeGroup)
   const plan = planMapPickApplication(currentRows, picks, undefined, mode, sheetBand)
 
-  let added = 0
+  const rowIds: string[] = []
   for (const newRow of plan.newRows) {
     const row: CurriculumSheetRow = {
       id: `cs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -1128,9 +1128,9 @@ export async function appendMapPicksToSheet(
       description: '',
     }
     await patchCurriculumSheet(projectId, { type: 'upsert-row', row, ...(updatedBy ? { updatedBy } : {}) })
-    added += 1
+    rowIds.push(row.id)
   }
-  return added
+  return { added: rowIds.length, rowIds }
 }
 
 /**
