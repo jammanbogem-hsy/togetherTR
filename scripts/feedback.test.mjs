@@ -210,3 +210,35 @@ test('inbox newest first and cursor retrieves older submissions including equal 
  assert.equal(new Set([...first.items,...last.items].map(item=>item.id)).size,56)
  assert.equal((await route.GET(request('GET','teacher',null,`?cursor=${first.nextCursor}`))).status,403)
 })
+
+test('화면 캡처: 끌기 영역 정규화·경계 고정·원본 픽셀 환산·작은 선택은 무시', async () => {
+  const cap = await import('../src/lib/feedback/screenCapture.ts')
+  const bounds = { width: 800, height: 450 }
+  assert.deepEqual(cap.normalizeCrop({ x: 500, y: 300 }, { x: 100, y: 50 }, bounds), { x: 100, y: 50, width: 400, height: 250 })
+  assert.deepEqual(cap.normalizeCrop({ x: -20, y: 10 }, { x: 9000, y: 900 }, bounds), { x: 0, y: 10, width: 800, height: 440 })
+  assert.equal(cap.isUsableCrop({ x: 0, y: 0, width: 5, height: 300 }), false)
+  assert.equal(cap.isUsableCrop(null), false)
+  assert.equal(cap.isUsableCrop({ x: 0, y: 0, width: 40, height: 40 }), true)
+  // 화면에 절반 크기로 보인 이미지에서 고른 영역은 원본에서 두 배
+  assert.deepEqual(cap.cropToSource({ x: 100, y: 50, width: 400, height: 250 }, bounds, { width: 1600, height: 900 }), { x: 200, y: 100, width: 800, height: 500 })
+  // 원본 밖으로 넘치지 않음
+  assert.deepEqual(cap.cropToSource({ x: 700, y: 400, width: 100, height: 50 }, bounds, { width: 1601, height: 901 }), { x: 1401, y: 801, width: 200, height: 100 })
+  assert.equal(cap.canCaptureScreen(undefined), false)
+  assert.equal(cap.canCaptureScreen({ mediaDevices: {} }), false)
+  assert.equal(cap.canCaptureScreen({ mediaDevices: { getDisplayMedia() {} } }), true)
+  assert.match(cap.captureErrorMessage(Object.assign(new Error('x'), { name: 'NotAllowedError' })), /취소/)
+  assert.match(cap.captureErrorMessage(new Error('boom')), /캡처하지 못했어요/)
+})
+
+test('화면 캡처 연결: 지원 브라우저만 버튼, 찍는 동안 창·말풍선 숨김, 고른 부분을 기존 압축 경로로 넣음', () => {
+  const button = fs.readFileSync(new URL('../src/components/feedback/FeedbackButton.tsx', import.meta.url), 'utf8')
+  const capture = fs.readFileSync(new URL('../src/lib/feedback/screenCapture.ts', import.meta.url), 'utf8')
+  assert.match(button, /captureSupported && \(\s*<button[\s\S]{0,120}startScreenCapture/)
+  assert.match(button, /const dialogShown = open && !capturing/)
+  assert.match(button, /capturing && 'invisible'/)
+  assert.match(button, /const locked = busy \|\| preparing \|\| capturing/)
+  assert.match(button, /await addFiles\(\[new File\(\[blob\]/, '압축·장수 제한을 지나는 기존 addFiles 경로')
+  assert.match(button, /<CaptureCropper src=\{captureShot\.url\}/)
+  assert.match(capture, /preferCurrentTab: true/)
+  assert.match(capture, /for \(const track of stream\.getTracks\(\)\) track\.stop\(\)/, '찍은 뒤 화면 공유를 바로 끔')
+})

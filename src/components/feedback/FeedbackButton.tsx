@@ -2,18 +2,21 @@
 
 // 화면 오른쪽 아래 피드백 버튼 — 글과 오류 화면(붙여넣기·끌어 놓기·파일)을 보내면 관리자 메일·피드백함으로 간다.
 // 현재 화면 위치(주소·프로젝트·활동)와 최근 오류 기록을 함께 담는다.
+// '화면 캡처'는 별도 캡처 프로그램 없이 브라우저 화면 공유로 지금 탭을 찍고, 보낼 부분을 골라 넣는다.
 // 평소엔 작은 말풍선, hover/focus 때 글자가 펼쳐지고, 끌어서 옮길 수 있다(위치는 이 브라우저에 기억).
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChatCircleText, ImageSquare, PaperPlaneRight, Trash, X } from '@phosphor-icons/react'
+import { Camera, ChatCircleText, ImageSquare, PaperPlaneRight, Trash, X } from '@phosphor-icons/react'
 import { auth } from '@/lib/firebase/config'
 import { useProjectStore } from '@/store/project'
 import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { FEEDBACK_LIMITS } from '@/lib/feedback/feedbackModel'
 import { installClientErrorLog, recentClientErrors } from '@/lib/feedback/errorLog'
 import { cn } from '@/lib/utils'
+import { canCaptureScreen, captureCurrentTab, captureErrorMessage, cropImageBlob, type CropRect } from '@/lib/feedback/screenCapture'
+import { CaptureCropper } from './CaptureCropper'
 import {
   LAUNCHER_SIZE, LAUNCHER_STORAGE_KEY, clampLauncherPosition, exceededDragThreshold, expandsLeftward,
   launcherStyle, parseStoredLauncherPosition, type LauncherPoint, type Viewport,
@@ -53,7 +56,11 @@ export function FeedbackButton() {
   const processing = useRef(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const locked = busy || preparing
+  // 화면 캡처 중에는 피드백 창과 말풍선을 숨겨 찍히지 않게 하고, 찍은 뒤 고르기 화면을 띄운다.
+  const [capturing, setCapturing] = useState(false)
+  const [captureShot, setCaptureShot] = useState<{ blob: Blob; url: string } | null>(null)
+  const [captureSupported, setCaptureSupported] = useState(false)
+  const locked = busy || preparing || capturing
   function close() {
     if (inFlight.current || processing.current) return
     setOpen(false)
@@ -63,7 +70,12 @@ export function FeedbackButton() {
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => { installClientErrorLog() }, [])
+  useEffect(() => {
+    installClientErrorLog()
+    const frame = requestAnimationFrame(() => setCaptureSupported(canCaptureScreen()))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+  useEffect(() => () => { if (captureShot) URL.revokeObjectURL(captureShot.url) }, [captureShot])
 
   // ─── 끌어서 옮기기 ───
   // placed 가 null 이면 기본 자리(오른쪽 아래, 프로젝트 화면 넓은 폭은 오른쪽 가운데). 옮긴 자리는 접힌 원의 왼쪽 위 좌표.
@@ -149,13 +161,14 @@ export function FeedbackButton() {
     try { window.localStorage.removeItem(LAUNCHER_STORAGE_KEY) } catch { /* storage blocked */ }
   }
   const leftward = placed && viewport ? expandsLeftward(placed, viewport) : true
+  const dialogShown = open && !capturing
   useEffect(() => {
-    if (!open) return
+    if (!dialogShown) return
     const dialog = dialogRef.current
     dialog?.showModal()
     textRef.current?.focus()
     return () => { dialog?.close() }
-  }, [open])
+  }, [dialogShown])
 
   const inProject = /^\/projects\/(?!new|join)[^/]+/.test(pathname)
   const projectId = inProject ? pathname.split('/')[2] : undefined
@@ -176,6 +189,37 @@ export function FeedbackButton() {
     }
     setImages(current => [...current, ...added].slice(0, FEEDBACK_LIMITS.imagesMax))
     processing.current = false; setPreparing(false)
+  }
+
+  async function startScreenCapture() {
+    if (inFlight.current || processing.current || capturing) return
+    if (images.length >= FEEDBACK_LIMITS.imagesMax) { setNotice({ tone: 'error', text: `캡처는 ${FEEDBACK_LIMITS.imagesMax}장까지 붙일 수 있어요.` }); return }
+    setNotice(null)
+    setCapturing(true)
+    // 창이 닫히고 화면이 다시 그려진 뒤에 찍는다.
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    try {
+      const blob = await captureCurrentTab()
+      setCaptureShot({ blob, url: URL.createObjectURL(blob) })
+    } catch (error) {
+      setCapturing(false)
+      setNotice({ tone: 'error', text: captureErrorMessage(error) })
+    }
+  }
+  function finishScreenCapture() {
+    setCaptureShot(null)
+    setCapturing(false)
+  }
+  async function insertCapturedShot(crop: CropRect | null) {
+    const shot = captureShot
+    finishScreenCapture()
+    if (!shot) return
+    try {
+      const blob = await cropImageBlob(shot.blob, crop)
+      await addFiles([new File([blob], `screen-${Date.now()}.png`, { type: 'image/png' })])
+    } catch {
+      setNotice({ tone: 'error', text: '캡처를 넣지 못했어요. 다시 시도해 주세요.' })
+    }
   }
 
   function onPaste(event: ClipboardEvent) {
@@ -226,6 +270,7 @@ export function FeedbackButton() {
       style={placed && viewport ? launcherStyle(placed, viewport) : undefined}
       className={cn('fixed z-[90] flex h-[44px] w-[44px] touch-none select-none items-center overflow-hidden rounded-full bg-[var(--md-sys-primary-container)] text-[14px] font-semibold text-[var(--md-sys-on-primary-container)] shadow-[0_2px_8px_rgba(0,0,0,0.16)] transition-[width,box-shadow] duration-200 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-sys-primary)] motion-reduce:transition-none',
         leftward && 'flex-row-reverse',
+        capturing && 'invisible',
         dragging ? 'cursor-grabbing shadow-lg' : 'cursor-pointer hover:w-[168px] hover:shadow-md focus-visible:w-[168px]',
         // Default spot: bottom-right. On project screens that corner holds the composer (mobile) and the
         // artifact footer actions (desktop: confirm/delete), so there it sits above the composer / at mid-height.
@@ -233,7 +278,8 @@ export function FeedbackButton() {
       <span className="flex h-[44px] w-[44px] shrink-0 items-center justify-center" aria-hidden="true"><ChatCircleText size={22} weight="fill" /></span>
       <span aria-hidden="true" className={cn('shrink-0 whitespace-nowrap', leftward ? 'pl-4' : 'pr-4')}>피드백 보내기</span>
     </button>
-    {open && typeof document !== 'undefined' && createPortal(
+    {captureShot && <CaptureCropper src={captureShot.url} onConfirm={crop => { void insertCapturedShot(crop) }} onCancel={finishScreenCapture} />}
+    {dialogShown && typeof document !== 'undefined' && createPortal(
       <dialog ref={dialogRef} aria-labelledby="feedback-title" onCancel={event => { event.preventDefault(); close() }}
         onClick={event => { if (event.target === event.currentTarget) close() }}
         className="m-auto max-h-[calc(100dvh-32px)] w-[calc(100vw-24px)] max-w-lg overflow-y-auto rounded-[28px] border-0 bg-[#F8FAFD] p-0 text-[#1F1F1F] shadow-xl backdrop:bg-black/40">
@@ -244,7 +290,7 @@ export function FeedbackButton() {
             <h2 id="feedback-title" className="flex-1 text-[22px] font-semibold leading-7">피드백 보내기</h2>
             <button type="button" onClick={close} disabled={locked} aria-label="닫기" className="rounded-full p-2 text-[#444746] hover:bg-black/5"><X size={20} /></button>
           </div>
-          <p className="mt-1 text-[14px] text-[#444746]">오류나 불편한 점을 적고, 오류 화면은 캡처해서 여기에 붙여 넣어 주세요(Ctrl+V · 끌어 놓기).</p>
+          <p className="mt-1 text-[14px] text-[#444746]">오류나 불편한 점을 적고, 오류 화면은 {captureSupported ? '‘화면 캡처’로 바로 찍거나 ' : ''}캡처해서 붙여 넣어 주세요(Ctrl+V · 끌어 놓기).</p>
           <textarea aria-label="피드백 내용" disabled={locked} ref={textRef} value={message} onChange={event => setMessage(event.target.value)} maxLength={FEEDBACK_LIMITS.messageMax} rows={5}
             placeholder="예: A-4에서 저장을 눌렀는데 표가 사라졌어요."
             className="mt-4 w-full resize-y rounded-xl border border-[#C4C7C5] bg-white px-4 py-3 text-[15px] leading-6 outline-none focus:border-[#0B57D0] focus:ring-2 focus:ring-[#0B57D0]/20" />
@@ -257,9 +303,14 @@ export function FeedbackButton() {
                   className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-[#B3261E]"><Trash size={14} /></button>
               </div>
             ))}
+            {images.length < FEEDBACK_LIMITS.imagesMax && captureSupported && (
+              <button type="button" disabled={locked} onClick={() => { void startScreenCapture() }} className="flex h-20 w-28 flex-col items-center justify-center gap-1 rounded-lg border border-[#0B57D0]/40 bg-[#D3E3FD]/50 text-[12px] font-semibold text-[#0842A0] hover:bg-[#D3E3FD]">
+                <Camera size={20} aria-hidden="true" /> 화면 캡처
+              </button>
+            )}
             {images.length < FEEDBACK_LIMITS.imagesMax && (
               <button type="button" disabled={locked} onClick={() => fileRef.current?.click()} className="flex h-20 w-28 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[#747775] text-[12px] text-[#444746] hover:bg-black/5">
-                <ImageSquare size={20} aria-hidden="true" /> 캡처 추가
+                <ImageSquare size={20} aria-hidden="true" /> 파일 추가
               </button>
             )}
             <input ref={fileRef} disabled={locked} type="file" accept="image/*" multiple hidden onChange={event => { if (event.target.files) void addFiles(event.target.files); event.target.value = '' }} />
