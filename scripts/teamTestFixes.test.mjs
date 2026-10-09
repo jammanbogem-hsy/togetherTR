@@ -2581,9 +2581,9 @@ test('T5: 메시지 형식 — 양식 저장 알림·AI 도움·단계별 진행
 test('T6: 연수용 활동 프롬프트 — 규칙·한글 칸 목록·의존 질문·도움 버튼, 영어 키·분류 기호 노출 금지 규칙', () => {
   const p = trainingPrompt.buildTrainingActivityPrompt('Ds-2-1')
   assert.match(p, /연수용 약식 진행 규칙 \[이 활동에 적용 — 아래 역할·말투·절차 규칙보다 우선\]/)
-  assert.match(p, /필수 칸[\s\S]*- 도구 연결 \(활동·도구·담당\)/)
-  assert.match(p, /한 번 묻기 칸[\s\S]*- 학생·AI·교사의 역할 경계 — 이유: /)
-  assert.match(p, /생략 칸[\s\S]*- AI 점검/)
+  assert.match(p, /하나의 활동 기록[\s\S]*- 도구 연결 \(활동·도구·담당\)/)
+  assert.match(p, /- 학생·AI·교사의 역할 경계/)
+  assert.doesNotMatch(p, /필수 칸|한 번 묻기 칸|생략 칸/)
   assert.match(p, /Ds-3 학습활동 설계 산출물이 없으면 "도구가 필요한 학습 활동 이름"만 한 번 묻는다/)
   assert.match(p, /\[AI 도움: 도구 추천\]/)
   assert.match(p, /팀원 의견을 다시 묻거나/)
@@ -2692,6 +2692,7 @@ test('T9: ChatPanel·저장 흐름 — 이벤트 수신, 개입 금지 저장은
 })
 
 // ─── TASK-T2: 연수용 생성·설정·양식·채팅 막대 ───
+const trainingRecord = await import('../src/lib/training/trainingRecord.ts')
 const trainingUiState = await import('../src/components/training/trainingFormState.ts')
 const trainingUi = await import('../src/lib/training/trainingMode.ts')
 const trainingUiProject = { id: 'training-ui', title: '연수', mode: 'collaborative', createdBy: 'host', hostUid: 'host', currentStage: 'T', trainingMode: { enabled: true, coreFormal: true } }
@@ -2703,7 +2704,7 @@ const { TrainingFieldInput } = loadArtifactTsx('../src/components/training/Train
 const trainingNavigation = await import('../src/lib/training/navigation.ts')
 const trainingUiBindings = {
   ...trainingNavigation,
-  ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES, isSoloProject, TrainingFieldInput,
+  ...trainingRecord, ...trainingUi, ...trainingUiState, ACTIVITY_META, STAGES, isSoloProject, TrainingFieldInput,
   SOLO_HIDDEN_ACTIVITIES: ['T-2-1', 'T-2-2', 'T-2-3', 'E-2-1'],
   useState: value => [typeof value === 'function' ? value() : value, () => {}],
   useEffect: () => {}, useId: () => 'training-bar-help', useRef: value => ({ current: value }),
@@ -2777,7 +2778,7 @@ test('T13: 막대 도움·필수 칸 상태·방장만 이동·마지막 보고�
   const sent = [], moved = []
   const props = { project: trainingUiProject, activityCode: 'Ds-1-1', content: { '평가 계획': '계획' }, loaded: true, isHost: true, busy: false, onSend: text => sent.push(text), onNext: code => moved.push(code) }
   const element = TrainingModeBar(props)
-  assert.match(renderToStaticMarkup(element), /필수 칸 1\/1/)
+  assert.match(renderToStaticMarkup(element), /기록 저장됨/)
   const buttons = trainingUiElements(element, trainingUiButton)
   buttons[0].props.onClick()
   assert.equal(sent[0], trainingUi.formatTrainingHelpRequest(trainingUi.TRAINING_ACTIVITIES['Ds-1-1'].help[0]))
@@ -2804,7 +2805,7 @@ test('T14: 방장 양식 직접 저장·팀원 제안·조언 체크에 따른 �
     const latest = { project, currentActivity: 'Ds-1-1', viewingActivity: changedActivity ? 'Ds-1-2' : 'Ds-1-1', setCurrentArtifact: value => drafts.push(value) }
     const save = loadChatFunction('save', {
       ...trainingUiBindings, project, activityCode: 'Ds-1-1', user: { uid, displayName: '교사' }, saving: false, readOnly: false,
-      draft: { values: { '평가 계획': '평가 표' } }, content: {}, advice, quiet,
+      draft: { text: '## 평가 계획\n평가 표' }, content: unchanged ? project.artifacts['Ds-1-1'].content : {}, savingRef: { current: false }, advice, quiet,
       useProjectStore: { getState: () => latest }, artifactContentEquals,
       setSaving() {}, setError: value => errors.push(value), setFeedback: value => feedback.push(value), setDraft() {}, setOneSaveAdvice: value => adviceResets.push(value),
       setProjectArtifact: async (...args) => { if (reject) throw Error('저장 실패'); writes.push(['save', ...args]) },
@@ -2924,11 +2925,11 @@ test('T11: isTrainingQuiet — 그 활동의 사용자 메시지만 시간순으
 test('T12: 연수용 첫 안내는 AI 없이 정의로 만든 짧은 고정 안내, 저장 알림은 칩 문구', () => {
   const w = training.buildTrainingWelcome('T-2-1')
   assert.match(w, /^\*\*T-3 역할 배분\*\* — 누가 무엇을 언제까지 맡을지 적어요\./)
-  assert.match(w, /- 필수 칸: 역할 배분 \(누가·무엇을·언제까지\)/)
+  assert.doesNotMatch(w, /필수 칸|선택 칸/)
   assert.match(w, /- 도움이 필요하면 위 버튼: 역할 표로 정리/)
-  assert.match(w, /토의한 결과를 오른쪽 양식에 옮겨 적고 저장하세요\.$/)
+  assert.match(w, /토의한 결과를 오른쪽 활동 기록에 한 번에 적고 저장하세요\.$/)
   assert.doesNotMatch(w, /오늘 함께할 순서|자신 있으신가요|\n\n\n/)
-  assert.match(training.buildTrainingWelcome('A-2-2'), /- 있으면 좋은 칸: 탐구 질문 \(학생 언어\)/)
+  assert.doesNotMatch(training.buildTrainingWelcome('A-2-2'), /필수 칸|있으면 좋은 칸/)
   assert.doesNotMatch(training.buildTrainingWelcome('T-2-1'), /있으면 좋은 칸/)
   for (const code of T_ALL) assert.ok(training.TRAINING_INTRO[code], code)
   assert.equal(training.trainingSaveNoticeChip('[연수 양식 저장: T-3 역할 배분] 조언해 주세요'), 'T-3 역할 배분 양식을 저장했어요')
@@ -3091,17 +3092,18 @@ test('T8a: 필수 칸이 없는 연수 막대는 0/0 상태를 생략하고 불�
   }, ['TrainingModeBar'])
   const props = { project: trainingUiProject, activityCode: 'T-2-1', loaded: true, isHost: true, busy: false, onSend: () => {}, onNext: () => {} }
   const html = renderToStaticMarkup(React.createElement(EmptyRequiredBar, props))
-  assert.doesNotMatch(html, /필수 칸|0\/0|role="status"/)
+  assert.doesNotMatch(html, /필수 칸|0\/0/)
+  assert.match(html, /아직 기록 없음/)
   assert.match(html, /연수용 모드/)
   assert.match(renderToStaticMarkup(React.createElement(EmptyRequiredBar, { ...props, loaded: false })), /내용을 불러오는 중/)
 })
 
 // ─── TASK-T11: 연수 막대 도움말 — hover·키보드·모바일·Esc ───
 const trainingBarHelpText = [
-  '이 활동에서 꼭 채울 칸을 몇 개 채웠는지 보여 줘요. 다 못 채워도 다음 활동으로 넘어갈 수 있어요.',
+  '이 활동에 저장한 기록이 있는지 보여 줘요. 오른쪽 입력창 하나에 자유롭게 적고 저장하세요.',
   '이 활동에서 막히기 쉬운 일 하나만 AI가 도와줘요. 다른 질문은 덧붙이지 않아요.',
   '이 활동만 AI가 단계마다 묻고 이끌어 주는 방식으로 바꿔요. 채팅에 "직접 적을게요"라고 쓰면 다시 간단히 옮겨 적는 방식으로 돌아와요.',
-  '다음 활동으로 넘어가요. 기록 담당만 누를 수 있고, 비어 있는 칸은 나중에 돌아와 채울 수 있어요.',
+  '다음 활동으로 넘어가요. 기록 담당만 누를 수 있고, 기록은 나중에 돌아와 이어 쓸 수 있어요.',
   '도움이 필요 없으면 채팅에 "개입하지 마세요"라고 쓰면 AI가 조언하지 않아요.',
 ]
 

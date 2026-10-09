@@ -14,8 +14,8 @@ test('saved training prose is complete for every activity without an AI advance/
     const content = Object.fromEntries(definition.fields.filter(f => f.tier === 'A').map(f => [f.key, '교사가 글로 정리한 결과입니다.']))
     const artifacts = { [code]: art(content) }
     assert.equal(isEffectivelyDone(code, { [code]: 'in_progress' }, artifacts, training), true, code)
-    delete content[definition.fields.find(f => f.tier === 'A').key]
-    assert.equal(isEffectivelyDone(code, { [code]: 'completed' }, artifacts, training), false, code + ' missing field')
+    for (const key of Object.keys(content)) delete content[key]
+    assert.equal(isEffectivelyDone(code, { [code]: 'completed' }, artifacts, training), false, code + ' empty record')
   }
 })
 test('text, table and structured roles use the same completed-state rule; draft-only and rejected are incomplete', () => {

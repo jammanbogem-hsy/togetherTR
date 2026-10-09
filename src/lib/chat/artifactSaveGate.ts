@@ -2,6 +2,7 @@
 //  ① 근거 코드(#39): 허용 목록 밖 코드를 '(근거: …)' 묶음에서 뺀다 (evidenceCodeGate).
 //  ② 행 누락(#40): '표는 그대로'라 했는데 이전 표의 행이 빠졌고 사용자가 지우라고 하지 않았으면 그 섹션 저장을 보류한다.
 // 대상은 Ds-1-1 평가 계획·Ds-1-3 학습 활동뿐이며, 다른 활동·섹션은 그대로 통과한다.
+import { trainingRecordText } from '@/lib/training/trainingRecord'
 import type { ArtifactUpdateItem } from './signals'
 import { EVIDENCE_GATED_SECTIONS, evidenceGateNotice, gateEvidenceCodes } from './evidenceCodeGate'
 import { findDroppedTableRows, userAskedToDeleteRows } from './tableRowGuard'
@@ -63,7 +64,9 @@ type StructuredRow = Record<string, unknown>
 export function previousSectionText(content: unknown, activityCode: string, sectionKey: string): string {
   if (!content || typeof content !== 'object') return ''
   const record = content as Record<string, unknown>
+  if (sectionKey === '연수 기록' && (activityCode === 'Ds-1-1' || activityCode === 'Ds-1-3')) return trainingRecordText(activityCode, record)
   if (typeof record[sectionKey] === 'string') return record[sectionKey] as string
+  if (typeof record['연수 기록'] === 'string') return record['연수 기록']
   const rows = activityCode === 'Ds-1-1' ? record.rubric : activityCode === 'Ds-1-3' ? record.activities : null
   const field = activityCode === 'Ds-1-1' ? 'checkpoint' : 'order'
   if (!Array.isArray(rows) || !rows.length) return ''

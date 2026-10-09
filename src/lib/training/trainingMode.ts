@@ -416,20 +416,16 @@ export function trainingMessageChip(text: string, senderName?: string): string |
 }
 
 /**
- * 연수용 활동의 첫 안내(AI 없이 고정) — 할 일 한 줄, 필수 칸, 한 번 묻는 칸, 도움 버튼, 저장 안내.
+ * 연수용 활동의 첫 안내(AI 없이 고정) — 할 일 한 줄, 하나의 기록 입력창, 도움 버튼, 저장 안내.
  * 일반 환영(ACTIVITY_WELCOME) 대신 쓴다.
  */
 export function buildTrainingWelcome(code: ActivityCode): string {
   const def = TRAINING_ACTIVITIES[code]
-  const required = def.fields.filter(field => field.tier === 'A').map(field => field.label)
-  const askOnce = def.fields.filter(field => field.tier === 'B').map(field => field.label)
   return [
     `**${displayActivityCode(code)} ${ACTIVITY_META[code].label}** — ${TRAINING_INTRO[code]}`,
-    required.length ? `- 필수 칸: ${required.join(', ')}` : '',
-    askOnce.length ? `- 있으면 좋은 칸: ${askOnce.join(', ')}` : '',
     def.help.length ? `- 도움이 필요하면 위 버튼: ${def.help.map(action => action.label).join(', ')}` : '',
     '',
-    '토의한 결과를 오른쪽 양식에 옮겨 적고 저장하세요.',
+    '토의한 결과를 오른쪽 활동 기록에 한 번에 적고 저장하세요.',
   ].filter((line, index, lines) => line !== '' || (index > 0 && lines[index - 1] !== '')).join('\n')
 }
 

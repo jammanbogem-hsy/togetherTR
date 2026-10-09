@@ -13,8 +13,8 @@
 import type { ActivityCode, Project, StageStatus } from '@/types'
 import { ACTIVITY_META } from '@/types'
 import { validateRequiredSections } from './requiredSections'
-import { isTrainingActivity, trainingStatus } from '@/lib/training/trainingMode'
-import { trainingFormValues } from '@/components/training/trainingFormState'
+import { isTrainingActivity } from '@/lib/training/trainingMode'
+import { trainingRecordText } from '@/lib/training/trainingRecord'
 
 export { validateRequiredSections } from './requiredSections'
 
@@ -37,12 +37,10 @@ export function isEffectivelyDone(
   const artifact = artifacts?.[code]
   const hasArtifact = !!artifact
 
-  // The training form saves its result without an AI advance signal. Use the same
-  // normalized fields as the form, whether entered as prose, Markdown or structured data.
+  // 연수용 활동은 하나의 기록을 저장하면 완료한다. 기존 섹션/표 저장도 동일하게 읽는다.
   if (isTrainingActivity(project, code)) {
     if (!artifact || artifact.status === 'rejected') return false
-    const result = trainingStatus(code, trainingFormValues(code, artifact.content ?? {}))
-    return result.requiredTotal > 0 && result.missingRequired.length === 0
+    return !!trainingRecordText(code, artifact.content ?? {}).trim()
   }
 
   // 기존 로직 (non-E 활동은 여기서 판정 종료)

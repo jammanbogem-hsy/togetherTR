@@ -165,3 +165,5 @@ function structuredText(value: unknown, code: ActivityCode): string {
 export function trainingFormText(value: unknown, code: ActivityCode): string {
   return typeof value === 'string' ? legacyTableText(value, code) : structuredText(value, code)
 }
+
+export { columnLabel as trainingFieldLabel }

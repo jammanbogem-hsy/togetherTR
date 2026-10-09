@@ -4,8 +4,8 @@ import type { ArtifactUpdateItem } from './signals'
 
 /** 근거 코드를 검사하는 활동·섹션. 다른 활동·섹션은 그대로 저장한다. */
 export const EVIDENCE_GATED_SECTIONS: Readonly<Record<string, readonly string[]>> = {
-  'Ds-1-1': ['평가 계획', '평가계획'],
-  'Ds-1-3': ['학습 활동'],
+  'Ds-1-1': ['평가 계획', '평가계획', '연수 기록'],
+  'Ds-1-3': ['학습 활동', '연수 기록'],
 }
 
 /** 근거 표기를 프롬프트로 요구하는 활동 — 허용 코드 목록을 주입한다. */

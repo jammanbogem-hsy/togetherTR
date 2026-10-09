@@ -8,10 +8,10 @@ const StageAnalysisModal = dynamic(() => import('@/components/modals/StageAnalys
 import { useEffect, useId, useRef, useState } from 'react'
 import { CheckCircle, ArrowRight, Question, X } from '@phosphor-icons/react'
 import { ACTIVITY_META, type ActivityCode, type Project } from '@/types'
-import { TRAINING_ACTIVITIES, TRAINING_STEP_BY_STEP, formatTrainingHelpRequest, isTrainingActivity, trainingStatus } from '@/lib/training/trainingMode'
+import { TRAINING_ACTIVITIES, TRAINING_STEP_BY_STEP, formatTrainingHelpRequest, isTrainingActivity } from '@/lib/training/trainingMode'
 
 import { MD3Button } from '@/components/ui/MD3Button'
-import { trainingFormValues } from './trainingFormState'
+import { trainingRecordText } from '@/lib/training/trainingRecord'
 import { nextTrainingActivity } from '@/lib/training/navigation'
 
 export interface TrainingModeBarProps {
@@ -34,10 +34,10 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
   const helpCloseRef = useRef<HTMLButtonElement>(null)
   const helpPanelRef = useRef<HTMLDivElement>(null)
   const help = {
-    required: '이 활동에서 꼭 채울 칸을 몇 개 채웠는지 보여 줘요. 다 못 채워도 다음 활동으로 넘어갈 수 있어요.',
+    record: '이 활동에 저장한 기록이 있는지 보여 줘요. 오른쪽 입력창 하나에 자유롭게 적고 저장하세요.',
     ai: '이 활동에서 막히기 쉬운 일 하나만 AI가 도와줘요. 다른 질문은 덧붙이지 않아요.',
     steps: '이 활동만 AI가 단계마다 묻고 이끌어 주는 방식으로 바꿔요. 채팅에 "직접 적을게요"라고 쓰면 다시 간단히 옮겨 적는 방식으로 돌아와요.',
-    next: '다음 활동으로 넘어가요. 기록 담당만 누를 수 있고, 비어 있는 칸은 나중에 돌아와 채울 수 있어요.',
+    next: '다음 활동으로 넘어가요. 기록 담당만 누를 수 있고, 기록은 나중에 돌아와 이어 쓸 수 있어요.',
     quiet: '도움이 필요 없으면 채팅에 "개입하지 마세요"라고 쓰면 AI가 조언하지 않아요.',
   }
   useEffect(() => {
@@ -61,18 +61,17 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
     }
   }, [showHelp])
   if (!isTrainingActivity(project, activityCode)) return null
-  const status = trainingStatus(activityCode, trainingFormValues(activityCode, content))
+  const hasRecord = !!trainingRecordText(activityCode, content).trim()
   const next = nextTrainingActivity(project, activityCode)
   const blocked = !loaded || busy
   return (
     <aside aria-label="연수용 모드" className="relative shrink-0 border-b border-[#DADCE0] bg-[#F3F7FE] px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         <span className="font-semibold text-[#0842A0]">연수용 모드</span>
-        {(!loaded || status.requiredTotal > 0) && <span role="status" title={help.required} className="flex items-center gap-1 text-[#3C4043]">
+        <span role="status" title={help.record} className="flex items-center gap-1 text-[#3C4043]">
           <CheckCircle size={16} aria-hidden="true" />
-          {!loaded ? '내용을 불러오는 중…' : `필수 칸 ${status.requiredTotal - status.missingRequired.length}/${status.requiredTotal}`}
-        </span>}
-        {loaded && status.missingRequired.length > 0 && <span className="text-xs text-[#8A3D00]">미입력: {status.missingRequired.map(field => field.label).join(' · ')}</span>}
+          {!loaded ? '내용을 불러오는 중…' : hasRecord ? '기록 저장됨' : '아직 기록 없음'}
+        </span>
         <button ref={helpButtonRef} type="button" aria-label="연수 막대 도움말" title="연수 막대 도움말"
           aria-expanded={showHelp} aria-controls={helpId} aria-haspopup="dialog"
           className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#0842A0] hover:bg-[#D3E3FD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B57D0] focus-visible:ring-offset-2"
@@ -104,7 +103,7 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
             onClick={() => { setShowHelp(false); helpButtonRef.current?.focus() }}><X size={16} aria-hidden="true" /></button>
         </div>
         <div className="space-y-2">
-          <p><strong className="text-[#202124]">필수 칸</strong> — {help.required}</p>
+          <p><strong className="text-[#202124]">활동 기록</strong> — {help.record}</p>
           <p><strong className="text-[#202124]">AI 도움</strong> — {help.ai}</p>
           <p><strong className="text-[#202124]">단계별로 함께 진행</strong> — {help.steps}</p>
           <p><strong className="text-[#202124]">다음 활동</strong> — {help.next}</p>

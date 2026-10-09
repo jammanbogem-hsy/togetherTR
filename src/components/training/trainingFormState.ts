@@ -3,7 +3,7 @@ import { trainingFormText } from './trainingFormText'
 import type { ActivityCode } from '@/types'
 
 // 일반 모드의 구조화 산출물도 입력칸에 불러와 기존 기록을 이어 쓴다.
-const STRUCTURED_FIELDS: Partial<Record<ActivityCode, Record<string, string[]>>> = {
+export const STRUCTURED_FIELDS: Partial<Record<ActivityCode, Record<string, string[]>>> = {
   'T-1-1': { '팀 공통 비전': ['teamVision'], '핵심 키워드': ['coreKeywords'], '개인 비전': ['personalVisions'] },
   'T-1-2': { '설계 방향': ['designPrinciples'] },
   'T-2-1': { '역할 배분': ['roles'] },

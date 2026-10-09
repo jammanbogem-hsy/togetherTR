@@ -1,5 +1,7 @@
 'use client'
 
+import { mergeTrainingRecordUpdate } from '@/lib/training/trainingRecord'
+
 import { SlashCommandPalette } from './SlashCommandPalette'
 import { normalizeChatStructure } from '@/lib/markdown/chatStructure'
 import { ModalLoading } from '@/components/ui/ModalLoading'
@@ -1706,7 +1708,9 @@ function ChatPanelContent() {
     const baseContent = existing?.aiDraft ?? firestoreContent
     // 구조화 산출물: 새 데이터의 빈 필드는 기존 값 유지, 채워진 필드만 업데이트
     let merged: Record<string, unknown>
-    if ((sections as Record<string, unknown>)._schema && (baseContent as Record<string, unknown>)._schema === (sections as Record<string, unknown>)._schema) {
+    if (isTrainingActivity(proj, targetActivity)) {
+      merged = mergeTrainingRecordUpdate(targetActivity, baseContent, sections)
+    } else if ((sections as Record<string, unknown>)._schema && (baseContent as Record<string, unknown>)._schema === (sections as Record<string, unknown>)._schema) {
       // 같은 스키마끼리 → 빈 필드는 기존 유지
       merged = { ...baseContent }
       for (const [k, v] of Object.entries(sections)) {
@@ -2772,7 +2776,8 @@ function ChatPanelContent() {
       enrichedSections = buildA23Structured(enrichedSections, ctxMsgs) as unknown as Record<string, string>
     }
     // 구조화 제안은 방장 직접 전송(onSendArtifact)처럼 내용 전체를 교체 — 옛 문자열 섹션이 표를 가리지 않게
-    const merged = isStructuredProposal ? { ...enrichedSections } : { ...baseContent, ...enrichedSections }
+    const merged = isStructuredProposal ? { ...enrichedSections } : isTrainingActivity(proj, targetActivity)
+      ? mergeTrainingRecordUpdate(targetActivity, baseContent, enrichedSections) : { ...baseContent, ...enrichedSections }
     const newVersion = (existing?.currentVersion ?? (project?.artifacts?.[targetActivity]?.version ?? 0)) + 1
 
     // 우측 패널을 대상 활동으로 먼저 전환

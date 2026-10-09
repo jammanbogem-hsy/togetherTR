@@ -4,7 +4,7 @@
 export function TrainingFieldInput({ id, label, value, onChange, placeholder }: {
   id: string; label: string; value: string; onChange: (value: string) => void; placeholder?: string;
 }) {
-  return <textarea id={id} aria-label={label} value={value} rows={4} placeholder={placeholder ?? '정리한 내용을 적어 주세요.'}
+  return <textarea id={id} aria-label={label} value={value} rows={12} placeholder={placeholder ?? '정리한 내용을 적어 주세요.'}
     onChange={event => onChange(event.target.value)}
-    className="block w-full min-w-0 resize-y rounded-lg border border-[#C4C7C5] bg-white px-3 py-2 text-base leading-relaxed text-[#202124] focus:border-[#0B57D0] focus:outline-none focus:ring-2 focus:ring-[#D3E3FD] disabled:bg-[#F8F9FA]" />
+    className="block w-full min-w-0 min-h-72 resize-y rounded-2xl border border-[#C4C7C5] bg-white px-4 py-3 text-base leading-relaxed text-[#202124] focus:border-[#0B57D0] focus:outline-none focus:ring-2 focus:ring-[#D3E3FD] disabled:bg-[#F8F9FA]" />
 }

@@ -1,15 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Timestamp } from 'firebase/firestore'
 import { ACTIVITY_META, displayActivityCode, type ActivityCode, type ArtifactStatus, type Project } from '@/types'
-import { TRAINING_ACTIVITIES, formatTrainingSaveNotice, isTrainingActivity, isTrainingQuiet, isTrainingSystemText, requestTrainingChatSend, trainingStatus } from '@/lib/training/trainingMode'
+import { formatTrainingSaveNotice, isTrainingActivity, isTrainingQuiet, isTrainingSystemText, requestTrainingChatSend } from '@/lib/training/trainingMode'
 import { proposeArtifactToHost, setProjectArtifact } from '@/lib/firebase/projects'
 import { useProjectStore } from '@/store/project'
 import { artifactContentEquals } from '@/lib/chat/artifactSignalBatch'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import { MD3Button } from '@/components/ui/MD3Button'
-import { buildTrainingFormContent, createTrainingDraft, editTrainingDraft, loadSavedTrainingFields, syncTrainingDraft, trainingSaveAdviceSuffix } from './trainingFormState'
+import { trainingSaveAdviceSuffix } from './trainingFormState'
+import { TRAINING_RECORD_KEY, buildTrainingRecordContent, createTrainingRecordDraft, syncTrainingRecordDraft, trainingRecordText } from '@/lib/training/trainingRecord'
 import { useTrainingAdvice } from './useTrainingAdvice'
 import { TrainingFieldInput } from './TrainingFieldInput'
 
@@ -42,35 +43,35 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
     else setStoredAdvice(enabled)
   }
   const sourceKey = JSON.stringify(content)
-  const [draft, setDraft] = useState(() => createTrainingDraft(activityCode, content))
+  const [draft, setDraft] = useState(() => createTrainingRecordDraft(activityCode, content))
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [feedback, setFeedback] = useState('')
   const [error, setError] = useState('')
-  // 실시간 갱신은 손대지 않은 칸만 반영한다. 이미 적는 중인 칸은 보존한다.
+  // AI/팀 저장은 바로 불러오되 작성 중인 전체 글은 보존한다.
   if (draft.sourceKey !== sourceKey) {
-    setDraft(syncTrainingDraft(draft, activityCode, content))
+    setDraft(syncTrainingRecordDraft(draft, activityCode, content))
     setError('')
     setFeedback('')
   }
 
-  const def = TRAINING_ACTIVITIES[activityCode]
-  const status = trainingStatus(activityCode, draft.values)
   const steps = getDemoActivityContract(activityCode).steps
 
   async function save() {
-    if (saving || readOnly || !user) return
+    if (savingRef.current || readOnly || !user) return
     const latest = useProjectStore.getState()
     if (latest.project?.id !== project.id || latest.viewingActivity !== activityCode
       || !isTrainingActivity(latest.project, activityCode)) return
     const host = latest.project.hostUid === user.uid || latest.project.createdBy === user.uid
+    savingRef.current = true
     setSaving(true)
     setError('')
     setFeedback('')
     try {
       const prior = latest.project.artifacts?.[activityCode]
-      const savedContent = buildTrainingFormContent(activityCode, (prior?.content ?? content) as Record<string, unknown>, draft.values)
-      if (!Object.keys(savedContent).some(key => !key.startsWith('_') && key !== 'manualWorkspace' && String(savedContent[key] ?? '').trim())) {
-        setError('저장할 내용을 한 칸 이상 입력해 주세요.')
+      const savedContent = buildTrainingRecordContent(activityCode, content, draft.text)
+      if (!trainingRecordText(activityCode, savedContent).trim()) {
+        setError('저장할 기록을 입력해 주세요.')
         return
       }
       if (host) {
@@ -89,50 +90,40 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
             meta: { author: user.displayName, createdAt: Timestamp.now(), updatedAt: Timestamp.now(), evidence: '연수 양식', approvalStatus: 'pending' },
           })
         }
-        setFeedback('저장했습니다. 채운 내용은 팀과 공유됩니다.')
+        setFeedback('저장했습니다. 기록은 팀과 공유됩니다.')
         if (current.project?.id === project.id && current.currentActivity === activityCode) {
           requestTrainingChatSend(formatTrainingSaveNotice(activityCode) + trainingSaveAdviceSuffix(quiet, advice))
         }
         setOneSaveAdvice(null)
       } else {
-        const sections = Object.fromEntries(Object.entries(draft.values).filter(([, text]) => text.trim()).map(([key, text]) => [key, text.trim()]))
-        if (!Object.keys(sections).length) { setError('제안할 내용을 한 칸 이상 입력해 주세요.'); return }
+        const sections = { [TRAINING_RECORD_KEY]: draft.text.trim() }
         await proposeArtifactToHost(project.id, activityCode, sections, user.uid, user.displayName)
         setFeedback('기록 담당에게 저장을 제안했습니다. 기록 담당이 수락하면 팀 산출물에 반영됩니다.')
       }
-      setDraft(previous => ({ ...previous, dirty: {}, conflicts: [] }))
+      setDraft(previous => ({ ...previous, sourceText: draft.text, conflict: false }))
     } catch {
       setError('저장하지 못했습니다. 입력한 내용은 그대로입니다. 다시 시도해 주세요.')
-    } finally { setSaving(false) }
+    } finally { savingRef.current = false; setSaving(false) }
   }
 
   return (
     <section className="min-w-0 space-y-4" aria-label="연수용 산출물 입력 양식">
       <div>
         <h3 className="text-base font-semibold text-[#202124]">{displayActivityCode(activityCode)} {ACTIVITY_META[activityCode].label}</h3>
-        <p className="mt-1 text-sm leading-relaxed text-[#5F6368]">오프라인에서 정리한 내용을 옮겨 적으세요. 선택 칸은 비워도 됩니다.</p>
+        <p className="mt-1 text-sm leading-relaxed text-[#5F6368]">토의한 내용과 결정한 내용을 한곳에 자유롭게 적고 저장하세요.</p>
       </div>
-      {draft.conflicts.length > 0 && <div role="status" className="space-y-2 rounded-xl bg-[#E8F0FE] p-3 text-sm text-[#0842A0]">
+      {draft.conflict && <div role="status" className="space-y-2 rounded-xl bg-[#E8F0FE] p-3 text-sm text-[#0842A0]">
         <p>저장된 내용이 바뀌었습니다. 작성 중인 글은 유지했습니다.</p>
         <MD3Button type="button" size="sm" variant="outlined" disabled={saving || readOnly || !user}
-          onClick={() => { setDraft(previous => loadSavedTrainingFields(previous)); setError(''); setFeedback('저장된 내용을 불러왔습니다.') }}>저장된 내용 불러오기</MD3Button>
+          onClick={() => { setDraft(previous => ({ ...previous, text: previous.sourceText, conflict: false })); setError(''); setFeedback('저장된 내용을 불러왔습니다.') }}>저장된 내용 불러오기</MD3Button>
       </div>}
       <form onSubmit={event => { event.preventDefault(); void save() }} className="space-y-4">
         <fieldset disabled={saving || readOnly || !user} className="min-w-0 space-y-4">
-          {def.fields.map(field => (
-            <div key={field.key} role="group" aria-label={field.label} className="min-w-0">
-              <span className="mb-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#202124]">
-                {field.label}
-                <span className={`rounded-full px-2 py-0.5 text-xs ${field.tier === 'A' ? 'bg-[#D3E3FD] text-[#0842A0]' : 'bg-[#F1F3F4] text-[#5F6368]'}`}>{field.tier === 'A' ? '필수' : '선택'}</span>
-              </span>
-              <TrainingFieldInput id={`training-${activityCode}-${field.key}`} label={field.label}
-                value={draft.values[field.key] ?? ''} placeholder={field.placeholder}
-                onChange={value => { setFeedback(''); setDraft(previous => editTrainingDraft(previous, field.key, value)) }} />
-              {field.reason && <span className="mt-1 block text-xs leading-relaxed text-[#5F6368]">{field.reason}</span>}
-            </div>
-          ))}
+          <label htmlFor={`training-${activityCode}-record`} className="block text-sm font-medium text-[#202124]">활동 기록</label>
+          <TrainingFieldInput id={`training-${activityCode}-record`} label="활동 기록"
+            value={draft.text} placeholder="토의한 내용, 결정한 내용, 메모를 여기에 함께 적어 주세요."
+            onChange={text => { setFeedback(''); setError(''); setDraft(previous => ({ ...previous, text, conflict: text === previous.sourceText ? false : previous.conflict })) }} />
         </fieldset>
-        {status.missingRequired.length > 0 && <p className="text-xs leading-relaxed text-[#8A3D00]">아직 비어 있는 필수 칸: {status.missingRequired.map(field => field.label).join(' · ')}</p>}
         {isHost && (
           <div className="space-y-1">
             <label className="flex items-start gap-2 text-sm text-[#3C4043]">
