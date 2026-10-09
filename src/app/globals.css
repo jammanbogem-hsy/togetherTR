@@ -1057,3 +1057,16 @@ textarea[data-block-input]::placeholder {
     box-shadow: 4px 0 12px rgb(0 0 0 / 10%);
   }
 }
+
+/* Super admin observer mode: the real project screen is read-only.
+   Firestore rules and the fetch guard are the real protection; this only stops typing. */
+[data-admin-observer] textarea,
+[data-admin-observer] input:not([type="checkbox"]):not([type="radio"]),
+[data-admin-observer] [contenteditable="true"] {
+  pointer-events: none;
+  caret-color: transparent;
+}
+[data-admin-observer] input[type="checkbox"],
+[data-admin-observer] input[type="radio"] {
+  pointer-events: none;
+}

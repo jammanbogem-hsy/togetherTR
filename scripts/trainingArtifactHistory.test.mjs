@@ -58,7 +58,7 @@ function panelFixture(training = true, current = 'A-1-1', stored = artifacts) {
     RELATION_STYLE: execute(`exports.value = ${variable('RELATION_STYLE').initializer.getText(tree)}`, {}).exports.value,
     CheckCircle: () => null, cn: (...values) => values.filter(Boolean).join(' '), Stack: () => null, CaretLeft: () => null, ArrowsOut: () => null,
     firestoreArtifact: stored[current], displayContent: stored[current]?.content ?? {}, displayArtifact: null, hasContent: false,
-    effectiveStatus: 'in_review', activityMeta: ACTIVITY_META[current], routeParams: { id: 'room' }, observationOnly: false,
+    effectiveStatus: 'in_review', activityMeta: ACTIVITY_META[current], routeParams: { id: 'room' }, observationOnly: false, adminObserverView: false,
     isHost: false, isConfirmed: false, isSaving: false, artifactError: '', previewModal: null,
     StatusBadge: () => null, MD3Button: ({ children }) => React.createElement('button', {}, children),
     TrainingForm: ({ content }) => { formContent = content; return React.createElement('textarea', { readOnly: true, defaultValue: content['주제 선정 기준'] ?? '' }) },

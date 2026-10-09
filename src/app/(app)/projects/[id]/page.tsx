@@ -55,6 +55,9 @@ import { HostTransferButton } from '@/components/members/HostTransferButton'
 import { HostRequestButton } from '@/components/members/HostRequestButton'
 import { HostRequestBanner } from '@/components/members/HostRequestBanner'
 import { isSoloProject } from '@/lib/project/projectMode'
+import { auth } from '@/lib/firebase/config'
+import { isAdminObserver, installObserverFetchGuard } from '@/lib/admin/observer'
+import { useAdminObserver } from '@/components/admin/useAdminObserver'
 
 function hasMemberHost(project: Project): boolean {
   const members = project.memberUids ?? Object.keys(project.memberInfo ?? {})
@@ -541,6 +544,13 @@ export default function ProjectPage() {
     setMembersPopoverPos({ top: rect.bottom + 8, left: rect.left })
   }, [showMembers])
   const [projectLoadError, setProjectLoadError] = useState<string | null>(null)
+  // Super admin observing a room they are not part of: read-only, never joins.
+  const adminObserver = useAdminObserver()
+  const [observerNotice, setObserverNotice] = useState(false)
+  useEffect(() => {
+    if (!adminObserver) return
+    return installObserverFetchGuard(() => setObserverNotice(true))
+  }, [adminObserver])
   // Task #34: 레이아웃 패널 접기/펼치기 (localStorage 영속). projectId별 독립.
   const layout = useLayoutToggle(projectId)
 
@@ -730,6 +740,9 @@ export default function ProjectPage() {
     if (!project || !userProfile) return
     if (project.demoExperience?.scenarioId) return
     const uid = userProfile.uid
+    // The page passes the room's own invite code, so this would add an observing super admin
+    // as a member. Check the live auth user synchronously instead of waiting for a hook.
+    if (isAdminObserver(project, auth.currentUser)) return
     const stored = project.memberInfo?.[uid]
     // 미등록이거나 색상이 현재 프로필과 다르면 업데이트
     if (stored && stored.color === userProfile.color && stored.avatarId === userProfile.avatarId && stored.displayName === userProfile.displayName) return
@@ -824,7 +837,14 @@ export default function ProjectPage() {
   }
 
   return (
-    <div className="flex h-screen bg-[#F8F9FA] overflow-hidden p-3 gap-2">
+    <div className="flex h-screen bg-[#F8F9FA] overflow-hidden p-3 gap-2" data-admin-observer={adminObserver ? '' : undefined}>
+      {adminObserver && (
+        <div role="status" className="fixed left-1/2 top-2 z-[70] flex max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-2 rounded-full bg-[#1F1F1F] px-4 py-2 text-sm font-medium text-white shadow-lg">
+          <span className="material-symbols-rounded text-[18px] leading-none" aria-hidden>visibility</span>
+          <span className="truncate">{observerNotice ? '관찰자 모드라서 저장·AI 실행은 하지 않았어요' : '관찰자 모드 · 읽기 전용 (팀에게 보이지 않아요)'}</span>
+          <a href={`/admin/projects/${projectId}`} className="ml-1 shrink-0 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold hover:bg-white/25">관리자로</a>
+        </div>
+      )}
 
       {/* ══ 좌측 컬럼: 내비 + ActivitySidebar (Task #34: 토글 가능) ══ */}
       <div

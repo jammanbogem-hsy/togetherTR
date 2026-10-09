@@ -38,6 +38,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { isDemoObservationOnly } from '@/lib/demo/observer'
+import { useAdminObserver } from '@/components/admin/useAdminObserver'
 import { hasDeferredDecision, deferredResponse, discussionContributions } from '@/lib/activity/conversation-flow'
 import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
@@ -104,6 +105,7 @@ import { appendSaveGateNotice } from '@/lib/chat/evidenceCodeGate'
 import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGate'
 import { CHECKLIST_ALL_DONE_NOTE, isChecklistChecked, checklistParticipants, checklistLegacyEntry, applyChecklistToggle, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
 import { buildAutofillContext, resolveAutofillTopic } from '@/lib/curriculum/autofillContext'
+import { readSheetOpenRequest, stripSheetOpenParams } from '@/lib/curriculum/sheetOpenLink'
 import { buildLessonTeachingContext } from '@/lib/curriculum/lessonAudience'
 import { buildTrainingWelcome, displayedMessageContent, isTrainingActivity, isTrainingProject, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { isMoveRequest, MOVE_NEEDS_RECORDER } from '@/lib/chat/moveRequest'
@@ -1356,6 +1358,7 @@ function InteractiveChatPanel() {
 
 function ChatPanelContent() {
   const chatFontScale = useChatFontScale()
+  const adminObserver = useAdminObserver()
   const {
     project: projectState, messages, streamingText, messagesLoaded, messagesLoadedByFallback,
     currentActivity, appendStreamingText, clearStreamingText, addMessage, replaceMessage,
@@ -1589,6 +1592,29 @@ function ChatPanelContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.graphOpen, project?.graphView, project?.graphKeyword])
+
+  // 대시보드 분석맵 "시트로 보내기" → "시트로 이동"(?open=curriculum-sheet&row=…) — 이 사람 화면에서만 시트를 펼친다.
+  // 팀 전체 열림(setGraphOpen)은 건드리지 않고, 주소에서 요청을 지워 새로고침 때 다시 열리지 않게 한다.
+  const sheetOpenHandledRef = useRef(false)
+  useEffect(() => {
+    if (!project?.id || sheetOpenHandledRef.current || typeof window === 'undefined') return
+    sheetOpenHandledRef.current = true
+    const request = readSheetOpenRequest(window.location.search)
+    if (!request) return
+    window.history.replaceState(window.history.state, '', stripSheetOpenParams(window.location.href))
+    setWorkspaceInitialView('sheet')
+    setShowWorkspace(true)
+    setShowGraphPanel(true)
+    if (!request.rowId) return
+    const targetId = request.rowId
+    let tries = 0
+    const timer = window.setInterval(() => {
+      const el = document.querySelector(`[data-row-id="${CSS.escape(targetId)}"]`)
+      tries += 1
+      if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (el || tries > 40) window.clearInterval(timer)
+    }, 150)
+  }, [project?.id])
 
   useEffect(() => {
     if (!project?.graphSelectionState) return
@@ -6290,7 +6316,7 @@ ${discussionSummary}
           onClose={() => setMemberCommand(null)}
         />
       )}
-      <div className="px-4 py-3 border-t"
+      <div className="px-4 py-3 border-t" hidden={adminObserver}
         style={isTeamMode
           ? { background: 'linear-gradient(90deg, #E0F2F1 0%, #F1F8F7 100%)', borderColor: '#80CBC4' }
           : { background: '#F8F9FA', borderColor: '#DADCE0' }}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { use, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Eye, RefreshCw } from 'lucide-react'
 import { AdminShell } from '@/components/admin/AdminShell'
 import { adminRead, adminButton, adminDate } from '@/components/admin/adminClient'
 import { ArtifactMarkdown } from '@/components/artifacts/ArtifactMarkdown'
@@ -27,7 +27,11 @@ function ProjectDetail({ id }: { id: string }) {
     return () => controller.abort()
   }, [id, revision])
   return <>
-    <Link href="/admin" className={adminButton}><ArrowLeft size={16} /> 전체 프로젝트</Link>
+    <div className="flex flex-wrap gap-2">
+      <Link href="/admin" className={adminButton}><ArrowLeft size={16} /> 전체 프로젝트</Link>
+      {/* Opens the team's real project screen in read-only observer mode. */}
+      <Link href={`/projects/${encodeURIComponent(id)}`} className={adminButton}><Eye size={16} /> 실제 화면 보기</Link>
+    </div>
     {error && <p role="alert" className="my-5 rounded-2xl bg-[#F9DEDC] p-4 text-[#8C1D18]">{error} <button type="button" onClick={() => setRevision(value => value + 1)} className="min-h-11 px-3 font-bold underline">다시 시도</button></p>}
     {!project && !error && <p role="status" className="mt-5">프로젝트를 불러오는 중…</p>}
     {project && <ProjectContent project={project} />}

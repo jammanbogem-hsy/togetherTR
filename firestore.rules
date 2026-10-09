@@ -41,6 +41,13 @@ service cloud.firestore {
         );
     }
 
+    // 최고관리자(개발자) 관찰 — 읽기 전용. 쓰기 규칙에는 절대 넣지 않는다.
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == 'jammanbogem@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
     // 서브컬렉션용: 부모 프로젝트 문서를 읽어 멤버십 확인
     function isMember(pid) {
       return isProjectMemberData(get(/databases/$(database)/documents/projects/$(pid)).data);
@@ -121,7 +128,7 @@ service cloud.firestore {
     match /projects/{pid} {
 
       // get: 멤버, 또는 createdBy(레거시), 또는 inviteCode를 가진 프로젝트(미리보기)
-      allow get: if isSignedIn()
+      allow get: if isSuperAdmin() || isSignedIn()
         && (
           isMemberOf(resource)
           || resource.data.createdBy == request.auth.uid
@@ -154,32 +161,37 @@ service cloud.firestore {
       // 09.md 3.8 spec은 conversations/{stage}/messages 였으나
       // 실제 코드는 conversations/{activityCode}/messages 사용 (projects.ts:559–605)
       match /conversations/{activity}/messages/{msg} {
-        allow read, write: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
+        allow write: if isMember(pid);
       }
 
       match /lobby/{msg} {
-        allow read, write: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
+        allow write: if isMember(pid);
       }
 
       // 중요 노트(포스트잇) — 프로젝트 문서 배열에서 subcollection으로 이전.
       // 노트당 문서 1개(각 1MiB)라 길이/개수 사실상 무제한 + 부모 문서 1MiB 압박 해소.
       match /keyNotes/{nid} {
-        allow read, write: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
+        allow write: if isMember(pid);
       }
 
       // 09.md 3.5 spec 경로 — 코드에서 saveArtifact/watchArtifact 정의는 있으나
       // 현재 호출 0건. 향후 활성화 대비.
       match /stages/{stage}/activities/{act}/artifacts/{aid} {
-        allow read, write: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
+        allow write: if isMember(pid);
         match /versions/{vid} {
-          allow read, write: if isMember(pid);
+          allow read: if isMember(pid) || isSuperAdmin();
+          allow write: if isMember(pid);
         }
       }
 
       // 09.md 3.9: 단계 전환 이력 — 생성만 허용, 수정/삭제 금지(이력 무결성)
       // initiatedBy 스푸핑 방지: 본인 uid만 기록 가능
       match /stage_transitions/{tid} {
-        allow read: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
         allow create: if isMember(pid)
           && request.resource.data.initiatedBy == request.auth.uid;
         allow update, delete: if false;
@@ -187,45 +199,48 @@ service cloud.firestore {
 
       // 09.md 3.10: 주기 이력 — 멤버 전용
       match /cycle_history/{cid} {
-        allow read, write: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
+        allow write: if isMember(pid);
       }
 
       // streamingState/{activityCode}/users/{uid} — 본인만 write, 멤버 read
       match /streamingState/{activity}/users/{uid} {
-        allow read: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
         allow write: if isMember(pid) && request.auth.uid == uid;
       }
 
       // RAG 자료 (spec 외 컬렉션, materials.ts)
       match /materials/{mid} {
-        allow read, write: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
+        allow write: if isMember(pid);
       }
       match /materialChunks/{cid} {
-        allow read, write: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
+        allow write: if isMember(pid);
       }
 
       // A-2-2 통합 수업목표 워크스페이스 presence — ephemeral cursor/포커스 상태
       // 부모 projects 문서를 건드리지 않도록 별도 서브컬렉션으로 분리 (트랜잭션 contention 회피)
       match /integratedGoalPresence/{uid} {
-        allow read: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
         allow create, update, delete: if isMember(pid) && request.auth.uid == uid;
       }
 
       // T-1-1 팀 비전 워크스페이스 presence — 같은 이유로 서브컬렉션 분리
       match /teamVisionPresence/{uid} {
-        allow read: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
         allow create, update, delete: if isMember(pid) && request.auth.uid == uid;
       }
 
       // T-2-1 역할 배분 워크스페이스 presence — 같은 패턴
       match /roleDistributionPresence/{uid} {
-        allow read: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
         allow create, update, delete: if isMember(pid) && request.auth.uid == uid;
       }
 
       // T-1-2 수업설계 방향 워크스페이스 presence — 같은 패턴
       match /lessonDesignDirectionPresence/{uid} {
-        allow read: if isMember(pid);
+        allow read: if isMember(pid) || isSuperAdmin();
         allow create, update, delete: if isMember(pid) && request.auth.uid == uid;
       }
 
@@ -235,7 +250,7 @@ service cloud.firestore {
       // 위의 명시적 rule들과 OR 평가되므로 안전(명시 rule이 있으면 그게 먼저 통과).
       // 보안 동일: 멤버만 read, 본인만 write.
       match /{presenceCol}/{uid} {
-        allow read: if isMember(pid) && presenceCol.matches('.*Presence');
+        allow read: if (isMember(pid) || isSuperAdmin()) && presenceCol.matches('.*Presence');
         allow create, update, delete: if isMember(pid) && request.auth.uid == uid && presenceCol.matches('.*Presence');
       }
 
@@ -243,7 +258,7 @@ service cloud.firestore {
       // 이름이 "PromptDraft"로 끝나는 subcollection 일괄 허용. presence와 동일 보안 모델:
       // 멤버 read, 본인만 write (각 팀원이 자기 행만 입력).
       match /{promptCol}/{uid} {
-        allow read: if isMember(pid) && promptCol.matches('.*PromptDraft');
+        allow read: if (isMember(pid) || isSuperAdmin()) && promptCol.matches('.*PromptDraft');
         allow create, update, delete: if isMember(pid) && request.auth.uid == uid && promptCol.matches('.*PromptDraft');
       }
 

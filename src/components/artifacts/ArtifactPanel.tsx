@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown'
 import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { useProjectStore } from '@/store/project'
 import { isDemoObservationOnly } from '@/lib/demo/observer'
+import { useAdminObserver } from '@/components/admin/useAdminObserver'
 import { ACTIVITY_META, STAGES, displayActivityCode, displaySectionLabel } from '@/types'
 import type { ActivityCode, ArtifactStatus, RequiredSection } from '@/types'
 import {
@@ -312,7 +313,8 @@ function RequiredSectionsChecklist({
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const setChatInputRequest = useProjectStore(s => s.setChatInputRequest)
-  const observationOnly = useProjectStore(s => isDemoObservationOnly(s.project))
+  const adminObserver = useAdminObserver()
+  const observationOnly = useProjectStore(s => isDemoObservationOnly(s.project)) || adminObserver
   const isSolo = useProjectStore(s => isSoloProject(s.project))
   const meta = ACTIVITY_META[activityCode]
   // required 우선, 없으면 recommended fallback (동시 존재 케이스 없음 — Task #9 설계 결정).
@@ -1144,7 +1146,8 @@ function InteractiveArtifactPanel() {
   const [showVersionMenu, setShowVersionMenu] = useState(false)
 
   const observationOnly = isDemoObservationOnly(project)
-  const isHost = !observationOnly && (project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid)
+  const adminObserverView = useAdminObserver()
+  const isHost = !observationOnly && !adminObserverView && (project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid)
   const stageColor = STAGE_COLOR[observationOnly ? activityMeta.stage : project?.currentStage ?? 'T']
 
   // 부재 팀원 확인 상태(#28) — 확인 대기는 모두에게, 다시 논의 요청은 방장에게 표시
@@ -1594,7 +1597,7 @@ function InteractiveArtifactPanel() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <TrainingForm project={project} activityCode={viewingActivity} content={trainingContent}
-            loaded={project.id === routeParams.id} readOnly={observationOnly} />
+            loaded={project.id === routeParams.id} readOnly={observationOnly || adminObserverView} />
           {previousArtifactList}
         </div>
         {artifactPreview}

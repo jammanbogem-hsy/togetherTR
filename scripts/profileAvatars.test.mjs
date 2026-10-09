@@ -60,7 +60,8 @@ test('프로젝트의 실제 프로필 동기화 effect는 저장한 아바타�
   const calls = []
   const profile = { uid: 'a', displayName: '김교사', color: '#blue', emoji: '👤', avatarId: 'heart' }
   const context = { projectId: 'room', project: { id: 'room', memberInfo: { a: { ...profile, avatarId: 'smile' } } }, userProfile: profile,
-    joinProject: async (...args) => { calls.push(args) }, console }
+    joinProject: async (...args) => { calls.push(args) }, console,
+    auth: { currentUser: null }, isAdminObserver: () => false }
   const js = ts.transpileModule(`(${effect})()`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   vm.runInNewContext(js, context)
   assert.equal(calls.length, 1)
