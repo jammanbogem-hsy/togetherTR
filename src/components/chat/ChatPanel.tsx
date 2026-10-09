@@ -5300,6 +5300,7 @@ ${discussionSummary}
           isHost={isHost}
           busy={isLoading || isAnalyzing}
           onSend={enqueueTrainingSend}
+          onNeedRecord={(input, notice) => { setChatInputRequest(input); setFlowNotice(notice) }}
           onNext={nextCode => handleActivityAdvance(nextCode)}
         />
       )}

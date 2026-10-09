@@ -8,7 +8,8 @@ const StageAnalysisModal = dynamic(() => import('@/components/modals/StageAnalys
 import { useEffect, useId, useRef, useState } from 'react'
 import { CheckCircle, ArrowRight, Question, X } from '@phosphor-icons/react'
 import { ACTIVITY_META, type ActivityCode, type Project } from '@/types'
-import { TRAINING_ACTIVITIES, TRAINING_STEP_BY_STEP, formatTrainingHelpRequest, isTrainingActivity } from '@/lib/training/trainingMode'
+import { TRAINING_ACTIVITIES, TRAINING_STEP_BY_STEP, formatTrainingHelpRequest, isTrainingActivity, planTrainingHelp, type TrainingHelpAction } from '@/lib/training/trainingMode'
+import { getTrainingDraftText } from '@/lib/training/recordDraftBridge'
 
 import { MD3Button } from '@/components/ui/MD3Button'
 import { trainingRecordText } from '@/lib/training/trainingRecord'
@@ -24,10 +25,20 @@ export interface TrainingModeBarProps {
   onSend: (text: string) => unknown
   onNext: (nextCode: ActivityCode) => unknown
   onReport?: () => unknown
+  /** Record is empty: prefill the chat input and say where to paste. */
+  onNeedRecord?: (input: string, notice: string) => unknown
 }
 
-export function TrainingModeBar({ project, activityCode, content = {}, loaded, isHost, busy, onSend, onNext, onReport }: TrainingModeBarProps) {
+export function TrainingModeBar({ project, activityCode, content = {}, loaded, isHost, busy, onSend, onNext, onReport, onNeedRecord }: TrainingModeBarProps) {
   const [showReport, setShowReport] = useState(false)
+  function askHelp(action: TrainingHelpAction) {
+    // The writer's unsaved draft wins over the saved record; both are the same input box.
+    const record = getTrainingDraftText(project.id, activityCode) ?? trainingRecordText(activityCode, content)
+    const plan = planTrainingHelp(action, record)
+    if (plan.kind === 'send') onSend(plan.text)
+    else if (onNeedRecord) onNeedRecord(plan.input, plan.notice)
+    else onSend(formatTrainingHelpRequest(action))
+  }
   const [showHelp, setShowHelp] = useState(false)
   const helpId = useId()
   const helpButtonRef = useRef<HTMLButtonElement>(null)
@@ -80,7 +91,7 @@ export function TrainingModeBar({ project, activityCode, content = {}, loaded, i
       <div className="mt-2 flex flex-wrap gap-2">
         {TRAINING_ACTIVITIES[activityCode].help.map(action => (
           <MD3Button key={action.label} type="button" variant="tonal" size="xs" disabled={blocked} title={help.ai}
-            icon={<Question size={16} />} onClick={() => onSend(formatTrainingHelpRequest(action))}>AI 도움: {action.label}</MD3Button>
+            icon={<Question size={16} />} onClick={() => askHelp(action)}>AI 도움: {action.label}</MD3Button>
         ))}
         <MD3Button type="button" variant="outlined" size="xs" disabled={blocked} title={help.steps}
           onClick={() => onSend(TRAINING_STEP_BY_STEP)}>단계별로 함께 진행</MD3Button>

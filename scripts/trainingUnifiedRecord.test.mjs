@@ -36,7 +36,7 @@ const { TrainingForm } = component('../src/components/training/TrainingForm.tsx'
   'firebase/firestore': {}, '@/types': types, '@/lib/training/trainingMode': mode, '@/lib/firebase/projects': {},
   '@/store/project': { useProjectStore: store }, '@/lib/chat/artifactSignalBatch': { artifactContentEquals },
   '@/lib/activity/demo-contracts': { getDemoActivityContract }, '@/components/ui/MD3Button': { MD3Button: ({ children }) => React.createElement('button', {}, children) },
-  './trainingFormState': state, '@/lib/training/trainingRecord': record, './useTrainingAdvice': { useTrainingAdvice: () => [true, () => {}] }, './TrainingFieldInput': { TrainingFieldInput },
+  './trainingFormState': state, '@/lib/training/trainingRecord': record, '@/lib/training/recordDraftBridge': { setTrainingDraftText() {}, clearTrainingDraftText() {} }, './useTrainingAdvice': { useTrainingAdvice: () => [true, () => {}] }, './TrainingFieldInput': { TrainingFieldInput },
 })
 
 test('all training activities render exactly one large named textarea without required/optional field groups', () => {

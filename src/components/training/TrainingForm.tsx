@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Timestamp } from 'firebase/firestore'
 import { ACTIVITY_META, displayActivityCode, type ActivityCode, type ArtifactStatus, type Project } from '@/types'
 import { formatTrainingSaveNotice, isTrainingActivity, isTrainingQuiet, isTrainingSystemText, requestTrainingChatSend } from '@/lib/training/trainingMode'
@@ -10,6 +10,7 @@ import { artifactContentEquals } from '@/lib/chat/artifactSignalBatch'
 import { getDemoActivityContract } from '@/lib/activity/demo-contracts'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { trainingSaveAdviceSuffix } from './trainingFormState'
+import { clearTrainingDraftText, setTrainingDraftText } from '@/lib/training/recordDraftBridge'
 import { TRAINING_RECORD_KEY, buildTrainingRecordContent, createTrainingRecordDraft, syncTrainingRecordDraft, trainingRecordText } from '@/lib/training/trainingRecord'
 import { useTrainingAdvice } from './useTrainingAdvice'
 import { TrainingFieldInput } from './TrainingFieldInput'
@@ -54,6 +55,10 @@ function TrainingFormEditor({ project, activityCode, content, readOnly }: {
     setError('')
     setFeedback('')
   }
+
+  // Let the chat panel's "AI 도움" buttons see what is being written before it is saved.
+  useEffect(() => { setTrainingDraftText(project.id, activityCode, draft.text) }, [project.id, activityCode, draft.text])
+  useEffect(() => () => clearTrainingDraftText(project.id, activityCode), [project.id, activityCode])
 
   const steps = getDemoActivityContract(activityCode).steps
 

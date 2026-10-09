@@ -342,6 +342,31 @@ export function formatTrainingHelpRequest(action: TrainingHelpAction): string {
   return `[AI 도움: ${action.label}] ${action.prompt}`
 }
 
+/** AI 도움 요청에 함께 보내는 활동 기록의 길이 상한(긴 붙여넣기가 요청을 막지 않게). */
+const TRAINING_HELP_RECORD_LIMIT = 6000
+export const TRAINING_PASTE_LABEL = '붙여 넣은 기록:'
+
+export type TrainingHelpPlan =
+  | { kind: 'send'; text: string }
+  | { kind: 'paste'; input: string; notice: string }
+
+/**
+ * AI 도움 버튼의 동작. 오른쪽 활동 기록(저장 전 작성 중인 글 포함)이 있으면 그 기록을 요청에 붙여
+ * AI가 다시 달라고 하지 않게 하고, 비어 있으면 AI를 부르지 않고 붙여 넣을 자리(채팅 입력창)를 알려 준다.
+ */
+export function planTrainingHelp(action: TrainingHelpAction, recordText: string): TrainingHelpPlan {
+  const record = recordText.trim()
+  if (record) {
+    const clipped = record.length > TRAINING_HELP_RECORD_LIMIT ? `${record.slice(0, TRAINING_HELP_RECORD_LIMIT)}\n…(이하 생략)` : record
+    return { kind: 'send', text: `${formatTrainingHelpRequest(action)}\n\n[현재 활동 기록]\n${clipped}` }
+  }
+  return {
+    kind: 'paste',
+    input: `${action.prompt}\n\n${TRAINING_PASTE_LABEL}\n`,
+    notice: `오른쪽 활동 기록이 비어 있어요. 아래 입력창의 '${TRAINING_PASTE_LABEL}' 다음 줄에 기록을 붙여 넣고 보내 주세요. 학생 실명·학번은 빼 주세요.`,
+  }
+}
+
 export function parseTrainingHelpRequest(text: string): { label: string; body: string } | null {
   const match = text.match(/^\s*\[AI 도움:\s*([^\]]+)\]\s*([\s\S]*)$/)
   return match ? { label: match[1].trim(), body: match[2].trim() } : null

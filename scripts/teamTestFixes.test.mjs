@@ -2710,6 +2710,7 @@ const trainingUiBindings = {
   useEffect: () => {}, useId: () => 'training-bar-help', useRef: value => ({ current: value }),
   MD3Button: trainingUiButton, CheckCircle: () => null, ArrowRight: () => null, Question: () => null, X: () => null,
   StageAnalysisModal: () => null,
+  getTrainingDraftText: () => undefined,
 }
 const { TrainingModeFields } = loadArtifactTsx('../src/components/training/TrainingModeFields.tsx', {}, ['TrainingModeFields'])
 const { TrainingModeBar } = loadArtifactTsx('../src/components/training/TrainingModeBar.tsx', trainingUiBindings, ['TrainingModeBar'])
@@ -2781,7 +2782,9 @@ test('T13: 막대 도움·필수 칸 상태·방장만 이동·마지막 보고�
   assert.match(renderToStaticMarkup(element), /기록 저장됨/)
   const buttons = trainingUiElements(element, trainingUiButton)
   buttons[0].props.onClick()
-  assert.equal(sent[0], trainingUi.formatTrainingHelpRequest(trainingUi.TRAINING_ACTIVITIES['Ds-1-1'].help[0]))
+  // The saved record now travels with the help request so the AI does not ask for it again.
+  assert.equal(sent[0], trainingUi.planTrainingHelp(trainingUi.TRAINING_ACTIVITIES['Ds-1-1'].help[0], trainingRecord.trainingRecordText('Ds-1-1', props.content)).text)
+  assert.ok(sent[0].startsWith(trainingUi.formatTrainingHelpRequest(trainingUi.TRAINING_ACTIVITIES['Ds-1-1'].help[0])))
   buttons.at(-2).props.onClick()
   assert.equal(sent[1], trainingUi.TRAINING_STEP_BY_STEP)
   buttons.at(-1).props.onClick()
