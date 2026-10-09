@@ -183,6 +183,13 @@ body {
   transition: --corner-pct 0.65s cubic-bezier(.4,0,.2,1);
 }
 .corner-wrap-sidebar:hover { --corner-pct: 50%; }
+@media (prefers-reduced-motion: reduce) {
+  .corner-wrap-sidebar,
+  .corner-wrap-sidebar:hover {
+    --corner-pct: 30%;
+    transition: none;
+  }
+}
 
 /* ChatPanel: 좌상단 + 우하단, 작게 시작 천천히 확장 */
 .corner-wrap-chat {

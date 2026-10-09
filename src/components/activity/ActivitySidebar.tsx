@@ -357,9 +357,10 @@ export function ActivitySidebar() {
   }
 
   return (
-    <div className="flex h-full w-80 max-w-full shrink-0 flex-col overflow-hidden bg-[#F8FAFD]">
+    <div className="corner-wrap-sidebar flex h-full w-80 max-w-full shrink-0 flex-col overflow-hidden"
+      style={{ '--cc': color.corner } as React.CSSProperties}>
 
-      {/* 단계 카드: 장식 없이 단계명·목표·진행률을 한 표면에 표시 */}
+      {/* 단계 카드: 배경 모션 위에 단계명·목표·진행률을 표시 */}
       <section aria-label={`${currentStageInfo.label} 단계 진행`} className={cn('mx-2 mt-2 shrink-0 rounded-[20px] p-3', color.light)}>
         <div className="mb-2 flex items-center gap-2.5">
           <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-2xl bg-white', color.doneText)}>
