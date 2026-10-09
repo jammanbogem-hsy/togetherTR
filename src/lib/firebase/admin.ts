@@ -19,11 +19,11 @@
 import { createRequire } from 'node:module'
 import type { Firestore, FieldValue as FieldValueNS } from 'firebase-admin/firestore'
 
-const nodeRequire = createRequire(import.meta.url)
+// Keep a genuine Node require: direct createRequire calls are analyzed by Turbopack,
+// which otherwise replaces the variable package path with a MODULE_NOT_FOUND stub.
+const nodeRequire = Reflect.apply(createRequire, undefined, [import.meta.url]) as NodeRequire
 
-// ⚠️ 리터럴 specifier를 쓰면 Turbopack이 nodeRequire('firebase-admin/app')을 정적 분석해
-//    해시 별칭(firebase-admin-<hash>)으로 외부화한다. 런타임에 조립한 문자열을 넘겨
-//    정적 분석을 우회 → Node가 실제 패키지명으로 resolve하게 한다.
+// Native Node resolution uses the installed package name, never a bundler hash alias.
 const ADMIN = ['firebase', 'admin'].join('-')
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function loadAdmin(sub: string): any {
