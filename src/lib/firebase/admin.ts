@@ -18,6 +18,7 @@
 
 import { createRequire } from 'node:module'
 import type { App } from 'firebase-admin/app'
+import type { Auth } from 'firebase-admin/auth'
 import type { Firestore, FieldValue as FieldValueNS } from 'firebase-admin/firestore'
 
 // Keep a genuine Node require: direct createRequire calls are analyzed by Turbopack,
@@ -85,7 +86,7 @@ function warnOnce(e: unknown): void {
 }
 
 /** 서버 전용 Auth(ID 토큰 검증) — getAdminDb 가 앱을 초기화한 뒤에만 쓸 수 있다. 없으면 null. */
-export function getAdminAuth(): { verifyIdToken: (token: string) => Promise<{ uid: string; email?: string; email_verified?: boolean; name?: string }> } | null {
+export function getAdminAuth(): Auth | null {
   if (!getAdminDb()) return null
   try {
     // Hosting may initialize a named app only; Auth must use the same app as Firestore.
