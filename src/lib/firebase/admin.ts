@@ -17,6 +17,7 @@
 //     배포 환경에서 자동 주입 (별도 설정 불필요)
 
 import { createRequire } from 'node:module'
+import type { App } from 'firebase-admin/app'
 import type { Firestore, FieldValue as FieldValueNS } from 'firebase-admin/firestore'
 
 // Keep a genuine Node require: direct createRequire calls are analyzed by Turbopack,
@@ -31,6 +32,7 @@ function loadAdmin(sub: string): any {
 }
 
 let cached: Firestore | null | undefined
+let cachedApp: App | undefined
 let warned = false
 
 export function getAdminDb(): Firestore | null {
@@ -46,6 +48,7 @@ export function getAdminDb(): Firestore | null {
           projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
         })
     cached = (getFirestore(app) as Firestore) ?? null
+    if (cached) cachedApp = app
   } catch (e) {
     warnOnce(e)
     cached = null
@@ -85,7 +88,8 @@ function warnOnce(e: unknown): void {
 export function getAdminAuth(): { verifyIdToken: (token: string) => Promise<{ uid: string; email?: string; email_verified?: boolean; name?: string }> } | null {
   if (!getAdminDb()) return null
   try {
-    return loadAdmin('auth').getAuth()
+    // Hosting may initialize a named app only; Auth must use the same app as Firestore.
+    return loadAdmin('auth').getAuth(cachedApp)
   } catch (e) {
     warnOnce(e)
     return null
