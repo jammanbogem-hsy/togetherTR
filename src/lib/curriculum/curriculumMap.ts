@@ -1066,6 +1066,36 @@ export function searchTokens(query: string, expansions: readonly string[] = []):
   return out
 }
 
+/**
+ * 질의 속 성취기준 코드. 대괄호·띄어쓰기가 빠져도('6사12-02', '6사 12-02') 같은 코드로 보고
+ * 항상 '[6사12-02]' 형태로 돌려준다. rest 는 코드를 뺀 나머지 질의다.
+ *
+ * 왜: 검색은 의미(임베딩)로만 순위를 매겨 '[6사12-02]' 는 우연히 맞고 '6사12-02' 는
+ * 수학 성취기준이 먼저 나왔다(2026-10-09 교사 피드백). 코드는 글자 그대로 찾아야 한다.
+ */
+const QUERY_CODE_RE = /\[?\s*(\d)\s*([가-힣]{1,3})\s*(\d{2})\s*[-–‐]\s*(\d{2})\s*\]?/g
+
+export function parseCodeQuery(query: string): { codes: string[]; rest: string } {
+  const codes: string[] = []
+  const rest = query.replace(QUERY_CODE_RE, (_match, grade: string, subject: string, unit: string, item: string) => {
+    const code = `[${grade}${subject}${unit}-${item}]`
+    if (!codes.includes(code)) codes.push(code)
+    return ' '
+  })
+  return { codes, rest: rest.replace(/[\s,·、;/]+/g, ' ').trim() }
+}
+
+/** 코드가 정확히 같은 성취기준(대괄호 유무 무시), 질의에 적은 순서대로. */
+export function findStandardsByCode<T extends { code: string }>(standards: readonly T[], codes: readonly string[]): T[] {
+  const bare = (code: string) => code.replace(/[\[\]\s]/g, '')
+  const out: T[] = []
+  for (const code of codes) {
+    const match = standards.find(std => bare(std.code) === bare(code))
+    if (match && !out.includes(match)) out.push(match)
+  }
+  return out
+}
+
 export interface KeywordHit {
   /** 실제로 걸린 토큰. */
   terms: string[]

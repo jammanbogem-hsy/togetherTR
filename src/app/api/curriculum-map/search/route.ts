@@ -37,6 +37,7 @@ import {
   expandShortQuery,
   expandedQuerySimilarity,
   filterStandards,
+  findStandardsByCode,
   isShortQuery,
   judgeTopicRelevanceChunked,
   keywordHit,
@@ -44,6 +45,7 @@ import {
   loadStandardLevelsById,
   matchedQueryTerms,
   mergeSearchPool,
+  parseCodeQuery,
   resolvePerBand,
   resolveVectorTables,
   searchTokens,
@@ -213,6 +215,36 @@ export async function POST(request: NextRequest) {
       elapsedMs: Math.round(performance.now() - startedAt),
     }, { headers: noStore })
 
+    // ── 0. 성취기준 코드 정확 일치 — 괄호가 없어도 그 코드를 맨 앞에 둔다 ──
+    // 교과·학년군 필터와 무관하게 전체에서 찾는다(코드를 직접 적었다면 그것을 원한 것이다).
+    const codeQuery = parseCodeQuery(query)
+    const exactCodeResults: SearchResult[] = findStandardsByCode(graph.achievementStandards, codeQuery.codes)
+      .map(std => ({
+        ...toStandardSummary(std, graph),
+        sim: 1,
+        score: 1,
+        level: levelForScore(1),
+        source: 'keyword' as const,
+        matchedTerms: [std.code],
+        keywordHit: { terms: [std.code], fields: ['성취기준 코드'] },
+        reason: '성취기준 코드 일치',
+      }))
+    if (exactCodeResults.length > 0 && !codeQuery.rest) {
+      const { byBand, emptyBands } = balanceByBand(exactCodeResults, targetBands, perBand)
+      return NextResponse.json({
+        results: exactCodeResults.slice(0, limit),
+        weak: [],
+        byBand,
+        emptyBands,
+        expandedTerms: [],
+        fusion: { hubs: [] },
+        judge: 'embedding',
+        embeddings: 'v1',
+        simSource: 'v1',
+        elapsedMs: Math.round(performance.now() - startedAt),
+      }, { headers: noStore })
+    }
+
     if (pool.length === 0) return emptyResponse('v1')
 
     // ── 1. 짧은 질의 확장 + 질의 임베딩 (동시 실행) ──
@@ -368,6 +400,12 @@ export async function POST(request: NextRequest) {
     }
     results.splice(limit)
     results.sort(compareJevFirst)
+    // 코드와 낱말을 섞어 적은 질의: 정확히 일치한 코드를 맨 앞에 둔다.
+    if (exactCodeResults.length > 0) {
+      const exactIds = new Set(exactCodeResults.map(item => item.id))
+      results.splice(0, results.length, ...exactCodeResults, ...results.filter(item => !exactIds.has(item.id)))
+      results.splice(limit)
+    }
     const weak = ranked.filter(item => item.score < WEAK_SCORE_CUTOFF).slice(0, limit)
 
     // ── 6. 융합 핵심 추천 — 판정한 후보 풀 전체(약함 포함)를 짝 후보로 본다 ──
