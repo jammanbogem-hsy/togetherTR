@@ -157,14 +157,39 @@ test('GET·PATCH: 관리자만 목록·상세(캡처)·처리 상태, 선생님�
   assert.equal(db.docs.get(`feedback/${id}`).status, 'done')
 })
 
-test('화면: 로그인한 모든 화면에 오른쪽 아래 버튼, 프로젝트 화면 좁은 폭에서는 채팅 입력과 겹치지 않게 위로', () => {
+test('화면: 작은 말풍선 기본 자리는 오른쪽 아래(프로젝트 화면은 입력창 위·넓은 폭은 오른쪽 가운데로 패널 버튼을 피함), hover·focus 때 글자 펼침', () => {
   const layout = fs.readFileSync(new URL('../src/app/(app)/layout.tsx', import.meta.url), 'utf8')
   assert.match(layout, /return <>\{children\}<FeedbackButton \/><\/>/)
   const button = fs.readFileSync(new URL('../src/components/feedback/FeedbackButton.tsx', import.meta.url), 'utf8')
-  assert.match(button, /fixed right-4 z-\[90\]/)
-  assert.match(button, /inProject \? 'bottom-28 lg:bottom-4' : 'bottom-4'/)
+  assert.match(button, /!placed && \(inProject \? 'bottom-28 right-3 lg:bottom-auto lg:top-\[calc\(50%-22px\)\]' : 'bottom-3 right-3'\)/)
+  assert.match(button, /h-\[44px\] w-\[44px\]/)
+  assert.match(button, /hover:w-\[168px\][^']*focus-visible:w-\[168px\]/)
+  assert.match(button, /transition-\[width,box-shadow\] duration-200/)
+  assert.match(button, /motion-reduce:transition-none/)
+  assert.match(button, /aria-label="피드백 보내기"/)
   assert.match(button, /onPaste=\{onPaste\}/)
   assert.match(button, /recentErrors: recentClientErrors\(\)/)
+})
+
+test('끌어 옮기기: 화면 안 고정·넓은 쪽으로 펼침·임계값·저장값 검사, 끌기 뒤 클릭은 창을 열지 않음', async () => {
+  const pos = await import('../src/components/feedback/launcherPosition.ts')
+  const vp = { width: 1200, height: 800 }
+  assert.deepEqual(pos.clampLauncherPosition({ x: -50, y: 5000 }, vp), { x: 8, y: 800 - 44 - 8 })
+  assert.deepEqual(pos.clampLauncherPosition({ x: 300.4, y: 200.6 }, vp), { x: 300, y: 201 })
+  assert.equal(pos.expandsLeftward({ x: 1100, y: 10 }, vp), true)
+  assert.equal(pos.expandsLeftward({ x: 20, y: 10 }, vp), false)
+  assert.deepEqual(pos.launcherStyle({ x: 1100, y: 40 }, vp), { top: 40, right: 56 })
+  assert.deepEqual(pos.launcherStyle({ x: 20, y: 40 }, vp), { top: 40, left: 20 })
+  assert.equal(pos.exceededDragThreshold({ x: 0, y: 0 }, { x: 3, y: 3 }), false)
+  assert.equal(pos.exceededDragThreshold({ x: 0, y: 0 }, { x: 6, y: 0 }), true)
+  assert.deepEqual(pos.parseStoredLauncherPosition('{"x":10,"y":20}'), { x: 10, y: 20 })
+  for (const bad of [null, '', 'oops', '{"x":"1","y":2}', '{"x":1}', '{"x":null,"y":1}']) assert.equal(pos.parseStoredLauncherPosition(bad), null)
+  const button = fs.readFileSync(new URL('../src/components/feedback/FeedbackButton.tsx', import.meta.url), 'utf8')
+  assert.match(button, /if \(suppressClickRef\.current\) \{ suppressClickRef\.current = false; return \}/)
+  assert.match(button, /setPointerCapture\(event\.pointerId\)/)
+  assert.match(button, /onPointerCancel=\{event => endLauncherDrag\(event, true\)\}/)
+  assert.match(button, /touch-none select-none/)
+  assert.match(button, /버튼 위치 처음으로/)
 })
 
 

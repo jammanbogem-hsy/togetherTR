@@ -2,7 +2,8 @@
 
 // 화면 오른쪽 아래 피드백 버튼 — 글과 오류 화면(붙여넣기·끌어 놓기·파일)을 보내면 관리자 메일·피드백함으로 간다.
 // 현재 화면 위치(주소·프로젝트·활동)와 최근 오류 기록을 함께 담는다.
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
+// 평소엔 작은 말풍선, hover/focus 때 글자가 펼쳐지고, 끌어서 옮길 수 있다(위치는 이 브라우저에 기억).
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -13,6 +14,10 @@ import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { FEEDBACK_LIMITS } from '@/lib/feedback/feedbackModel'
 import { installClientErrorLog, recentClientErrors } from '@/lib/feedback/errorLog'
 import { cn } from '@/lib/utils'
+import {
+  LAUNCHER_SIZE, LAUNCHER_STORAGE_KEY, clampLauncherPosition, exceededDragThreshold, expandsLeftward,
+  launcherStyle, parseStoredLauncherPosition, type LauncherPoint, type Viewport,
+} from './launcherPosition'
 
 /** 캡처를 긴 변 1600px·JPEG 로 줄여 data URL 로 — 서버 한도(약 600KB) 안에 들 때까지 품질을 낮춘다. */
 async function compressImage(file: Blob): Promise<string> {
@@ -59,6 +64,91 @@ export function FeedbackButton() {
   const textRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => { installClientErrorLog() }, [])
+
+  // ─── 끌어서 옮기기 ───
+  // placed 가 null 이면 기본 자리(오른쪽 아래, 프로젝트 화면 넓은 폭은 오른쪽 가운데). 옮긴 자리는 접힌 원의 왼쪽 위 좌표.
+  const [placed, setPlaced] = useState<LauncherPoint | null>(null)
+  const [viewport, setViewport] = useState<Viewport | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const dragRef = useRef<{ pointerId: number; start: LauncherPoint; origin: LauncherPoint; before: LauncherPoint | null; last: LauncherPoint | null; moved: boolean } | null>(null)
+  const suppressClickRef = useRef(false)
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const vp = { width: window.innerWidth, height: window.innerHeight }
+      setViewport(vp)
+      let stored: LauncherPoint | null = null
+      try { stored = parseStoredLauncherPosition(window.localStorage.getItem(LAUNCHER_STORAGE_KEY)) } catch { /* storage blocked */ }
+      if (stored) setPlaced(clampLauncherPosition(stored, vp))
+    })
+    // 창 크기가 바뀌면 화면 안으로 되돌린다(저장값은 그대로 두어 다시 커지면 원래 자리).
+    function onResize() {
+      const vp = { width: window.innerWidth, height: window.innerHeight }
+      setViewport(vp)
+      setPlaced(current => current && clampLauncherPosition(current, vp))
+    }
+    window.addEventListener('resize', onResize)
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', onResize) }
+  }, [])
+  useEffect(() => {
+    if (!dragging) return
+    // 끄는 동안 페이지 글자가 선택되지 않게.
+    const root = document.documentElement
+    const previous = root.style.userSelect
+    root.style.userSelect = 'none'
+    return () => { root.style.userSelect = previous }
+  }, [dragging])
+
+  function onLauncherPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const vp = { width: window.innerWidth, height: window.innerHeight }
+    const leftward = placed ? expandsLeftward(placed, vp) : true
+    dragRef.current = {
+      pointerId: event.pointerId,
+      start: { x: event.clientX, y: event.clientY },
+      origin: { x: leftward ? rect.right - LAUNCHER_SIZE : rect.left, y: rect.top },
+      before: placed, last: null, moved: false,
+    }
+    // 빠르게 끌어도 버튼 밖으로 놓치지 않게 누르는 순간부터 포인터를 잡는다(click 은 그대로 버튼에서 난다).
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
+  }
+  function onLauncherPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const current = { x: event.clientX, y: event.clientY }
+    if (!drag.moved) {
+      if (!exceededDragThreshold(drag.start, current)) return
+      drag.moved = true
+      setDragging(true)
+    }
+    event.preventDefault()
+    const vp = { width: window.innerWidth, height: window.innerHeight }
+    drag.last = clampLauncherPosition({ x: drag.origin.x + current.x - drag.start.x, y: drag.origin.y + current.y - drag.start.y }, vp)
+    setViewport(vp)
+    setPlaced(drag.last)
+  }
+  function endLauncherDrag(event: ReactPointerEvent<HTMLButtonElement>, cancelled: boolean) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    dragRef.current = null
+    try { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* ignore */ }
+    if (!drag.moved) return
+    setDragging(false)
+    if (cancelled) { setPlaced(drag.before); return }
+    // 키보드로 돌아온 포커스(focus-visible)가 남아 있으면 옮긴 뒤에도 펼쳐진 채라 놓아 준다.
+    event.currentTarget.blur()
+    // 끌기가 끝난 직후 따라오는 click 은 창을 열지 않는다.
+    suppressClickRef.current = true
+    window.setTimeout(() => { suppressClickRef.current = false }, 0)
+    if (drag.last) {
+      try { window.localStorage.setItem(LAUNCHER_STORAGE_KEY, JSON.stringify(drag.last)) } catch { /* storage blocked */ }
+    }
+  }
+  function resetLauncherPosition() {
+    setPlaced(null)
+    try { window.localStorage.removeItem(LAUNCHER_STORAGE_KEY) } catch { /* storage blocked */ }
+  }
+  const leftward = placed && viewport ? expandsLeftward(placed, viewport) : true
   useEffect(() => {
     if (!open) return
     const dialog = dialogRef.current
@@ -125,11 +215,23 @@ export function FeedbackButton() {
   }
 
   return <>
-    <button ref={triggerRef} type="button" onClick={() => { setNotice(null); setOpen(true) }} aria-label="피드백 보내기" title="오류·불편 신고"
-      className={cn('fixed right-4 z-[90] flex h-14 items-center gap-2 rounded-2xl bg-[#D3E3FD] pl-4 pr-5 text-[15px] font-semibold text-[#0842A0] shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition-colors hover:bg-[#C2D7F8]',
-        inProject ? 'bottom-28 lg:bottom-4' : 'bottom-4')}>
-      <ChatCircleText size={22} weight="fill" aria-hidden="true" />
-      <span>피드백 보내기</span>
+    {/* Compact 44px bubble; the label slides out on hover/keyboard focus toward the roomier side.
+        Drag (mouse/touch/pen) past a small threshold to move it; a drag never opens the dialog. */}
+    <button ref={triggerRef} type="button" aria-label="피드백 보내기" aria-haspopup="dialog" title="피드백 보내기 · 끌어서 옮길 수 있어요"
+      onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return } setNotice(null); setOpen(true) }}
+      onPointerDown={onLauncherPointerDown} onPointerMove={onLauncherPointerMove}
+      onPointerUp={event => endLauncherDrag(event, false)} onPointerCancel={event => endLauncherDrag(event, true)}
+      onDragStart={event => event.preventDefault()}
+      data-dragging={dragging || undefined}
+      style={placed && viewport ? launcherStyle(placed, viewport) : undefined}
+      className={cn('fixed z-[90] flex h-[44px] w-[44px] touch-none select-none items-center overflow-hidden rounded-full bg-[var(--md-sys-primary-container)] text-[14px] font-semibold text-[var(--md-sys-on-primary-container)] shadow-[0_2px_8px_rgba(0,0,0,0.16)] transition-[width,box-shadow] duration-200 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-sys-primary)] motion-reduce:transition-none',
+        leftward && 'flex-row-reverse',
+        dragging ? 'cursor-grabbing shadow-lg' : 'cursor-pointer hover:w-[168px] hover:shadow-md focus-visible:w-[168px]',
+        // Default spot: bottom-right. On project screens that corner holds the composer (mobile) and the
+        // artifact footer actions (desktop: confirm/delete), so there it sits above the composer / at mid-height.
+        !placed && (inProject ? 'bottom-28 right-3 lg:bottom-auto lg:top-[calc(50%-22px)]' : 'bottom-3 right-3'))}>
+      <span className="flex h-[44px] w-[44px] shrink-0 items-center justify-center" aria-hidden="true"><ChatCircleText size={22} weight="fill" /></span>
+      <span aria-hidden="true" className={cn('shrink-0 whitespace-nowrap', leftward ? 'pl-4' : 'pr-4')}>피드백 보내기</span>
     </button>
     {open && typeof document !== 'undefined' && createPortal(
       <dialog ref={dialogRef} aria-labelledby="feedback-title" onCancel={event => { event.preventDefault(); close() }}
@@ -167,6 +269,7 @@ export function FeedbackButton() {
           {notice && <p role={notice.tone === 'error' ? 'alert' : 'status'} className={cn('mt-3 text-[14px]', notice.tone === 'error' ? 'text-[#B3261E]' : 'text-[#146C2E]')}>{notice.text}</p>}
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
             <Link href="/feedback" aria-disabled={locked} onClick={event => { if (locked) event.preventDefault(); else close() }} className="mr-auto inline-flex min-h-11 items-center rounded-full px-2 text-sm font-semibold text-[#0842A0] underline">관리자 피드백함</Link>
+            {placed && <button type="button" onClick={resetLauncherPosition} className="h-11 rounded-full px-3 text-[13px] text-[#444746] hover:bg-black/5">버튼 위치 처음으로</button>}
             <button type="button" onClick={close} disabled={locked} className="h-11 rounded-full px-4 text-[14px] font-semibold text-[#0B57D0] hover:bg-[#0B57D0]/10">닫기</button>
             <button type="button" onClick={() => { void submit() }} disabled={locked}
               className="flex h-11 items-center gap-2 rounded-full bg-[#0B57D0] px-6 text-[14px] font-semibold text-white hover:bg-[#0842A0] disabled:opacity-60">
