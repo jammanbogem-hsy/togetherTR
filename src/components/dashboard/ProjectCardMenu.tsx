@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { EyeOff, Home, Trash2 } from 'lucide-react'
+import { EyeOff, Home, Pencil, Trash2 } from 'lucide-react'
 
 interface ProjectCardMenuProps {
   id: string
@@ -10,13 +10,14 @@ interface ProjectCardMenuProps {
   x: number
   y: number
   onClose: () => void
-  onMoveToMain: () => void
+  onMoveToMain?: () => void
+  onEdit?: () => void
   onDelete?: () => void
   onHide?: () => void
 }
 
 /** Portal keeps the menu outside the card's clipping/hover transform. */
-export function ProjectCardMenu({ id, title, x, y, onClose, onMoveToMain, onDelete, onHide }: ProjectCardMenuProps) {
+export function ProjectCardMenu({ id, title, x, y, onClose, onMoveToMain, onEdit, onDelete, onHide }: ProjectCardMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef(onClose)
   useLayoutEffect(() => { closeRef.current = onClose })
@@ -63,10 +64,13 @@ export function ProjectCardMenu({ id, title, x, y, onClose, onMoveToMain, onDele
         }}
       >
         <p className="truncate px-3 py-2 text-sm font-medium text-[#444746]" title={title}>{title}</p>
-        <button type="button" role="menuitem" tabIndex={-1} onClick={() => select(onMoveToMain)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-base font-medium hover:bg-[#D3E3FD] focus:bg-[#D3E3FD] focus:outline-none">
+        {onEdit && <button type="button" role="menuitem" tabIndex={-1} onClick={() => select(onEdit)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-base font-medium hover:bg-[#D3E3FD] focus:bg-[#D3E3FD] focus:outline-none">
+          <Pencil className="h-5 w-5 shrink-0" aria-hidden="true" /> 프로젝트 정보 변경
+        </button>}
+        {onMoveToMain && <button type="button" role="menuitem" tabIndex={-1} onClick={() => select(onMoveToMain)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-base font-medium hover:bg-[#D3E3FD] focus:bg-[#D3E3FD] focus:outline-none">
           <Home className="h-5 w-5 shrink-0" aria-hidden="true" /> 메인 화면으로 이동
-        </button>
-        {(onDelete || onHide) && <div role="separator" className="my-1 border-t border-[#C4C7C5]" />}
+        </button>}
+        {(onEdit || onMoveToMain) && (onDelete || onHide) && <div role="separator" className="my-1 border-t border-[#C4C7C5]" />}
         {onDelete && <button type="button" role="menuitem" tabIndex={-1} onClick={() => select(onDelete)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-base text-[#8C1D18] hover:bg-[#FADCD9] focus:bg-[#FADCD9] focus:outline-none"><Trash2 className="h-5 w-5 shrink-0" aria-hidden="true" /> 프로젝트 삭제</button>}
         {onHide && <button type="button" role="menuitem" tabIndex={-1} onClick={() => select(onHide)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-base hover:bg-[#DDE3EA] focus:bg-[#DDE3EA] focus:outline-none"><EyeOff className="h-5 w-5 shrink-0" aria-hidden="true" /> 대시보드에서 숨기기</button>}
       </div>

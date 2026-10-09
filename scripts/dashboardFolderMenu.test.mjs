@@ -27,6 +27,8 @@ function fixture() {
     },
     '@/store/project':{useProjectStore:()=>({userProfile:profile,setUserProfile:()=>{}})},
     '@/components/dashboard/DashboardCards':{ProjectCard:'ProjectCard',FolderCard:'FolderCard',FOLDER_COLORS:['#1A73E8']},
+    '@/components/dashboard/ProjectInfoDialog':{ProjectInfoDialog:'ProjectInfoDialog'},
+    '@/lib/firebase/projectInfo':{updateProjectInfo:()=>assert.fail('Moving must not change metadata')},
     '@/components/ui/MD3Button':{MD3Button:'MD3Button'},
     '@/components/profile/ProfileAvatarButton':{ProfileAvatarButton:'ProfileAvatarButton'},
     '@/lib/utils':{cn:(...s)=>s.join(' ')},'lucide-react':new Proxy({}, {get:(_t,key)=>key}), '@/lib/auth':{signOut:async()=>{}},

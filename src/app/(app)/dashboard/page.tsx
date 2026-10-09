@@ -11,6 +11,8 @@ import { useProjectStore } from '@/store/project'
 import type { Project } from '@/types'
 import { FOLDER_COLORS, FolderCard, ProjectCard } from '@/components/dashboard/DashboardCards'
 import { cn } from '@/lib/utils'
+import { ProjectInfoDialog } from '@/components/dashboard/ProjectInfoDialog'
+import { updateProjectInfo } from '@/lib/firebase/projectInfo'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { Plus, BookOpen, Loader2, LogOut, UserPlus, Play, FolderPlus, Folder, ArrowLeft, Network, X } from 'lucide-react'
 import { signOut } from '@/lib/auth'
@@ -22,6 +24,8 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [editTarget, setEditTarget] = useState<Project | null>(null)
+  const [projectNotice, setProjectNotice] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [hiddenIds, setHiddenIds] = useState<string[]>([])
 
@@ -219,6 +223,8 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {projectNotice && <p role="status" className="mb-4 rounded-xl bg-[#D7EBDD] px-4 py-3 text-base text-[#0D652D]">{projectNotice}</p>}
+
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-6 h-6 animate-spin text-[#9AA0A6]" />
@@ -296,6 +302,7 @@ export default function DashboardPage() {
                     <ProjectCard
                       project={p}
                       isHost={host}
+                      onEdit={host ? () => setEditTarget(p) : undefined}
                       onMoveToMain={openFolderId ? () => moveProjectToMain(p) : undefined}
                       onClick={() => router.push(`/projects/${p.id}`)}
                       onDelete={host ? () => setDeleteTarget(p) : undefined}
@@ -338,6 +345,13 @@ export default function DashboardPage() {
         {folderNotice.kind === 'success' && openFolderId && <button type="button" onClick={() => setOpenFolderId(null)} className="shrink-0 rounded-lg px-2 py-3 text-sm font-semibold text-[#A8C7FA] hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[#A8C7FA]">메인 화면 보기</button>}
         <button type="button" aria-label="알림 닫기" onClick={() => setFolderNotice(null)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-white/10"><X className="h-5 w-5" /></button>
       </div>}
+
+      {editTarget && <ProjectInfoDialog key={editTarget.id} project={editTarget} onClose={() => setEditTarget(null)}
+        onSave={async input => {
+          const patch = await updateProjectInfo(editTarget.id, input)
+          setProjects(current => current.map(project => project.id === editTarget.id ? { ...project, ...patch } : project))
+          setProjectNotice('프로젝트 정보를 저장했습니다.')
+        }} />}
 
       {/* 폴더 생성/이름변경 모달 */}
       {folderModal && (

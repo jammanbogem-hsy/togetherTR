@@ -80,3 +80,14 @@ function warnOnce(e: unknown): void {
     `로컬 개발: FIREBASE_SERVICE_ACCOUNT env(서비스 계정 JSON) 또는 gcloud ADC 설정 필요. 원인: ${msg}`
   )
 }
+
+/** 서버 전용 Auth(ID 토큰 검증) — getAdminDb 가 앱을 초기화한 뒤에만 쓸 수 있다. 없으면 null. */
+export function getAdminAuth(): { verifyIdToken: (token: string) => Promise<{ uid: string; email?: string; email_verified?: boolean; name?: string }> } | null {
+  if (!getAdminDb()) return null
+  try {
+    return loadAdmin('auth').getAuth()
+  } catch (e) {
+    warnOnce(e)
+    return null
+  }
+}

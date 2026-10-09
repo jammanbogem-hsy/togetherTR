@@ -12,7 +12,7 @@ import type { Project } from '@/types'
 import type { DashboardFolder } from '@/lib/firebase/projects'
 import { formatGradeBandList } from '@/lib/curriculum/teamGradeBands'
 import { cn } from '@/lib/utils'
-import { BookOpen, User, Crown, Folder, FolderOpen, Pencil, Trash2, GraduationCap, Clock, EyeOff, MoreHorizontal } from 'lucide-react'
+import { BookOpen, User, Crown, Folder, FolderOpen, Pencil, Trash2, GraduationCap, Clock, MoreHorizontal } from 'lucide-react'
 
 const STAGE_LABELS = { T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가' }
 
@@ -106,9 +106,10 @@ function MetaRow({ icon: Icon, children }: { icon: React.ComponentType<{ classNa
   )
 }
 
-export function ProjectCard({ project, onClick, isHost, onDelete, onHide, onMoveToMain }: {
-  project: Project; onClick: () => void; isHost?: boolean; onDelete?: () => void; onHide?: () => void; onMoveToMain?: () => void
+export function ProjectCard({ project, onClick, isHost, onDelete, onHide, onMoveToMain, onEdit }: {
+  project: Project; onClick: () => void; isHost?: boolean; onDelete?: () => void; onHide?: () => void; onMoveToMain?: () => void; onEdit?: () => void
 }) {
+  const hasMenu = !!(onMoveToMain || onEdit || onDelete || onHide)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const menuId = useId()
   const openerRef = useRef<HTMLElement | null>(null)
@@ -128,12 +129,12 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide, onMove
 
   return (
     <div
-      onContextMenu={onMoveToMain ? e => {
+      onContextMenu={hasMenu ? e => {
         e.preventDefault(); e.stopPropagation()
         const target = (e.target as HTMLElement).closest('button') ?? e.currentTarget.querySelector('button')!
         openMenu(target, e.clientX || undefined, e.clientY || undefined)
       } : undefined}
-      onKeyDown={onMoveToMain ? e => {
+      onKeyDown={hasMenu ? e => {
         if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
           e.preventDefault(); e.stopPropagation(); openMenu(e.target as HTMLElement)
         }
@@ -156,7 +157,7 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide, onMove
         aria-label={`${project.title} 프로젝트 열기`}
       />
 
-      {onMoveToMain && <>
+      {hasMenu && <>
         <button
           type="button"
           aria-label={`${project.title} 프로젝트 메뉴`}
@@ -168,30 +169,8 @@ export function ProjectCard({ project, onClick, isHost, onDelete, onHide, onMove
           onClick={e => { e.stopPropagation(); if (menu) closeMenu(); else openMenu(e.currentTarget) }}
           onDragStart={e => { e.preventDefault(); e.stopPropagation() }}
         ><MoreHorizontal className="h-5 w-5" aria-hidden="true" /></button>
-        {menu && <ProjectCardMenu id={menuId} title={project.title} {...menu} onClose={closeMenu} onMoveToMain={onMoveToMain} onDelete={isHost ? onDelete : undefined} onHide={!isHost ? onHide : undefined} />}
+        {menu && <ProjectCardMenu id={menuId} title={project.title} {...menu} onClose={closeMenu} onMoveToMain={onMoveToMain} onEdit={isHost ? onEdit : undefined} onDelete={isHost ? onDelete : undefined} onHide={!isHost ? onHide : undefined} />}
       </>}
-
-      {/* 호스트: 삭제 / 팀원: 대시보드에서 숨김 (호버 시 노출) */}
-      {!onMoveToMain && isHost && onDelete && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-red-50 border border-gray-200 hover:border-red-300 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-red-500"
-          title="프로젝트 삭제"
-          aria-label={`${project.title} 프로젝트 삭제`}
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      )}
-      {!onMoveToMain && !isHost && onHide && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onHide() }}
-          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-gray-100 border border-gray-200 hover:border-gray-400 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all text-gray-400 hover:text-gray-600"
-          title="대시보드에서 숨기기"
-          aria-label={`${project.title} 대시보드에서 숨기기`}
-        >
-          <EyeOff className="w-4 h-4" />
-        </button>
-      )}
 
       <div className="relative z-[1] flex flex-col flex-1 p-4 gap-2.5 sm:p-5 sm:gap-3 text-left">
         {/* 제목 — 두 줄까지 그대로 보인다 */}
