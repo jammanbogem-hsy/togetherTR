@@ -2,35 +2,63 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, X } from '@phosphor-icons/react'
+import Link from 'next/link'
+import { Check, X, UserCircle, ShieldCheck } from '@phosphor-icons/react'
 import { Avatar } from '@/components/ui/Avatar'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { PROFILE_AVATARS, isProfileAvatarId, type ProfileAvatarId } from '@/lib/profile/avatars'
 import { saveProfileAvatar } from '@/lib/profile/saveAvatar'
 import { saveLocalProfile, type UserProfile } from '@/lib/auth'
 import { useProjectStore } from '@/store/project'
+import { useAdminSession } from '@/components/admin/adminClient'
 
 export function ProfileAvatarButton({ profile, projectId, size = 40, showName = false }: {
   profile: UserProfile; projectId?: string; size?: number; showName?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const trigger = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // Only the super admin gets a menu; everyone else keeps the direct avatar picker.
+  const { uid: adminUid } = useAdminSession()
+  const isAdmin = !!adminUid && adminUid === profile.uid
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenuOpen(false); trigger.current?.focus() } }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [menuOpen])
   function close() {
     setOpen(false)
     requestAnimationFrame(() => trigger.current?.focus())
   }
-  return <>
-    <button ref={trigger} type="button" aria-label={`${profile.displayName} 프로필 이미지 변경`} title="프로필 이미지 변경"
+  function openPicker() { setMenuOpen(false); setNotice(''); setOpen(true) }
+  return <span className="relative inline-flex">
+    <button ref={trigger} type="button" aria-label={isAdmin ? `${profile.displayName} 프로필 메뉴` : `${profile.displayName} 프로필 이미지 변경`}
+      title={isAdmin ? '프로필 메뉴' : '프로필 이미지 변경'} aria-haspopup={isAdmin ? 'menu' : undefined} aria-expanded={isAdmin ? menuOpen : undefined}
       className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full p-1 hover:bg-[#E8F0FE] focus-visible:outline-2 focus-visible:outline-[#0B57D0]"
-      onClick={() => { setNotice(''); setOpen(true) }}>
+      onClick={() => { if (isAdmin) setMenuOpen(value => !value); else openPicker() }}>
       <Avatar name={profile.displayName} color={profile.color} avatarId={profile.avatarId} photoURL={profile.photoURL} size={size} />
       {showName && <span className="max-w-32 truncate pr-2 text-[13px] font-medium text-[#3C4043]">{profile.displayName}</span>}
     </button>
+    {isAdmin && menuOpen && <div ref={menuRef} role="menu" aria-label="프로필 메뉴"
+      className="absolute right-0 top-full z-[60] mt-2 w-56 overflow-hidden rounded-2xl border border-[#C4C7C5] bg-[#F3F6FC] py-2 shadow-[0_2px_6px_2px_rgba(0,0,0,0.15)]">
+      <button type="button" role="menuitem" onClick={openPicker}
+        className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm font-medium text-[#1F1F1F] hover:bg-[#E3E8F0] focus-visible:bg-[#E3E8F0] focus-visible:outline-none">
+        <UserCircle size={20} aria-hidden="true" className="text-[#444746]" />프로필 이미지 변경</button>
+      <Link href="/admin" role="menuitem" onClick={() => setMenuOpen(false)}
+        className="flex min-h-12 w-full items-center gap-3 px-4 text-sm font-medium text-[#0842A0] hover:bg-[#E3E8F0] focus-visible:bg-[#E3E8F0] focus-visible:outline-none">
+        <ShieldCheck size={20} aria-hidden="true" />관리자</Link>
+    </div>}
     <span className="sr-only" role="status">{notice}</span>
     {open && createPortal(<ProfileAvatarPicker profile={profile} projectId={projectId} onClose={close}
       onSaved={() => { setNotice('프로필 이미지를 저장했습니다.'); close() }} />, document.body)}
-  </>
+  </span>
 }
 
 export function ProfileAvatarPicker({ profile, projectId, onClose, onSaved }: {

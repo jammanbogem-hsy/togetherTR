@@ -1,7 +1,6 @@
 'use client'
 
 import { ProfileAvatarButton } from '@/components/profile/ProfileAvatarButton'
-import { AdminFolder } from '@/components/admin/AdminFolder'
 
 export const dynamic = 'force-dynamic'
 
@@ -226,7 +225,6 @@ export default function DashboardPage() {
 
         {projectNotice && <p role="status" className="mb-4 rounded-xl bg-[#D7EBDD] px-4 py-3 text-base text-[#0D652D]">{projectNotice}</p>}
 
-        {!openFolderId && <AdminFolder />}
 
         {loading ? (
           <div className="flex justify-center py-20">
