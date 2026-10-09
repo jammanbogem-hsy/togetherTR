@@ -1,6 +1,6 @@
-// In-app screen capture for the feedback dialog: grabs one frame of the current tab with the
-// browser's Screen Capture API (no extension or separate capture program), then lets the
-// teacher crop it. Crop math is pure so it can be tested without a DOM.
+// In-app screen capture for the feedback dialog: the teacher drags a region straight on the live
+// page, and one frame of this tab is taken with the browser's Screen Capture API (no extension or
+// separate capture program) and cropped to that region. Region math is pure for tests.
 
 export interface CropRect { x: number; y: number; width: number; height: number }
 export interface Size { width: number; height: number }
@@ -47,15 +47,25 @@ export function captureErrorMessage(error: unknown): string {
 }
 
 const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+export interface TabStream {
+  /** Takes one PNG frame of what the tab shows right now. */
+  grab: () => Promise<Blob>
+  /** Ends sharing; safe to call more than once. */
+  stop: () => void
+  /** Called if the teacher stops sharing from the browser's own bar. */
+  onEnded: (handler: () => void) => void
+}
 
 /**
- * Asks the browser to share this tab and returns one PNG frame of it. Chrome/Edge preselect
- * "this tab" (preferCurrentTab); other browsers show their normal picker. The stream is
- * stopped right after the frame is taken, so the "sharing" indicator disappears at once.
+ * Asks the browser to share this tab (Chrome/Edge preselect it via preferCurrentTab; other
+ * browsers show their picker) and keeps the stream open so the teacher can drag a region on
+ * the live page; `grab` then takes the frame and the caller stops the stream at once.
  */
-export async function captureCurrentTab(): Promise<Blob> {
+export async function openTabStream(): Promise<TabStream> {
   const options = {
-    video: { displaySurface: 'browser', frameRate: 5 },
+    video: { displaySurface: 'browser', frameRate: 30 },
     audio: false,
     preferCurrentTab: true,
     selfBrowserSurface: 'include',
@@ -63,26 +73,38 @@ export async function captureCurrentTab(): Promise<Blob> {
     monitorTypeSurfaces: 'exclude',
   } as DisplayMediaStreamOptions
   const stream = await navigator.mediaDevices.getDisplayMedia(options)
-  try {
-    const video = document.createElement('video')
-    video.muted = true
-    video.playsInline = true
-    video.srcObject = stream
-    await video.play()
-    // Let the first real frame arrive and the page settle after the permission prompt closes.
-    await new Promise(resolve => setTimeout(resolve, 350))
-    await nextFrame()
-    const width = video.videoWidth, height = video.videoHeight
-    if (!width || !height) throw new Error('empty-frame')
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    canvas.getContext('2d')!.drawImage(video, 0, 0, width, height)
-    video.srcObject = null
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('encode-failed')), 'image/png'))
-  } finally {
+  const video = document.createElement('video')
+  video.muted = true
+  video.playsInline = true
+  video.srcObject = stream
+  let stopped = false
+  const stop = () => {
+    if (stopped) return
+    stopped = true
     for (const track of stream.getTracks()) track.stop()
+    video.srcObject = null
   }
+  try { await video.play() } catch (error) { stop(); throw error }
+  return {
+    stop,
+    onEnded: handler => stream.getVideoTracks()[0]?.addEventListener('ended', handler, { once: true }),
+    async grab() {
+      // Let the page repaint without the selection overlay and a fresh frame arrive.
+      await nextFrame(); await nextFrame(); await wait(250)
+      const width = video.videoWidth, height = video.videoHeight
+      if (!width || !height) throw new Error('empty-frame')
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d')!.drawImage(video, 0, 0, width, height)
+      return await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('encode-failed')), 'image/png'))
+    },
+  }
+}
+
+/** Maps a region dragged on the viewport (CSS px) to pixels of the captured tab frame. */
+export function viewportRegionToFrame(rect: CropRect, viewport: Size, frame: Size): CropRect {
+  return cropToSource(rect, viewport, frame)
 }
 
 /** Crops `blob` to `rect` (source pixels); returns the original when no crop is given. */

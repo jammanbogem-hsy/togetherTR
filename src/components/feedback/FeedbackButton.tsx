@@ -2,7 +2,7 @@
 
 // 화면 오른쪽 아래 피드백 버튼 — 글과 오류 화면(붙여넣기·끌어 놓기·파일)을 보내면 관리자 메일·피드백함으로 간다.
 // 현재 화면 위치(주소·프로젝트·활동)와 최근 오류 기록을 함께 담는다.
-// '화면 캡처'는 별도 캡처 프로그램 없이 브라우저 화면 공유로 지금 탭을 찍고, 보낼 부분을 골라 넣는다.
+// '화면 캡처'는 별도 캡처 프로그램 없이, 지금 화면 위에서 바로 끌어 고른 영역을 브라우저 탭 공유로 찍어 넣는다.
 // 평소엔 작은 말풍선, hover/focus 때 글자가 펼쳐지고, 끌어서 옮길 수 있다(위치는 이 브라우저에 기억).
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -15,8 +15,8 @@ import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { FEEDBACK_LIMITS } from '@/lib/feedback/feedbackModel'
 import { installClientErrorLog, recentClientErrors } from '@/lib/feedback/errorLog'
 import { cn } from '@/lib/utils'
-import { canCaptureScreen, captureCurrentTab, captureErrorMessage, cropImageBlob, type CropRect } from '@/lib/feedback/screenCapture'
-import { CaptureCropper } from './CaptureCropper'
+import { canCaptureScreen, captureErrorMessage, cropImageBlob, openTabStream, viewportRegionToFrame, type CropRect, type TabStream } from '@/lib/feedback/screenCapture'
+import { ScreenRegionSelector } from './ScreenRegionSelector'
 import {
   LAUNCHER_SIZE, LAUNCHER_STORAGE_KEY, clampLauncherPosition, exceededDragThreshold, expandsLeftward,
   launcherStyle, parseStoredLauncherPosition, type LauncherPoint, type Viewport,
@@ -56,9 +56,10 @@ export function FeedbackButton() {
   const processing = useRef(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  // 화면 캡처 중에는 피드백 창과 말풍선을 숨겨 찍히지 않게 하고, 찍은 뒤 고르기 화면을 띄운다.
+  // 화면 캡처 중에는 피드백 창과 말풍선을 숨겨 찍히지 않게 하고, 화면 위에 영역 고르기 층을 띄운다.
   const [capturing, setCapturing] = useState(false)
-  const [captureShot, setCaptureShot] = useState<{ blob: Blob; url: string } | null>(null)
+  const [selectingRegion, setSelectingRegion] = useState(false)
+  const tabStreamRef = useRef<TabStream | null>(null)
   const [captureSupported, setCaptureSupported] = useState(false)
   const locked = busy || preparing || capturing
   function close() {
@@ -75,7 +76,7 @@ export function FeedbackButton() {
     const frame = requestAnimationFrame(() => setCaptureSupported(canCaptureScreen()))
     return () => cancelAnimationFrame(frame)
   }, [])
-  useEffect(() => () => { if (captureShot) URL.revokeObjectURL(captureShot.url) }, [captureShot])
+  useEffect(() => () => { tabStreamRef.current?.stop() }, [])
 
   // ─── 끌어서 옮기기 ───
   // placed 가 null 이면 기본 자리(오른쪽 아래, 프로젝트 화면 넓은 폭은 오른쪽 가운데). 옮긴 자리는 접힌 원의 왼쪽 위 좌표.
@@ -196,29 +197,42 @@ export function FeedbackButton() {
     if (images.length >= FEEDBACK_LIMITS.imagesMax) { setNotice({ tone: 'error', text: `캡처는 ${FEEDBACK_LIMITS.imagesMax}장까지 붙일 수 있어요.` }); return }
     setNotice(null)
     setCapturing(true)
-    // 창이 닫히고 화면이 다시 그려진 뒤에 찍는다.
-    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     try {
-      const blob = await captureCurrentTab()
-      setCaptureShot({ blob, url: URL.createObjectURL(blob) })
+      // 탭 공유 허락(브라우저가 한 번 묻는다) → 화면 위에서 영역을 끌어 고른다.
+      const stream = await openTabStream()
+      tabStreamRef.current = stream
+      stream.onEnded(() => { if (tabStreamRef.current === stream) cancelScreenCapture() })
+      setSelectingRegion(true)
     } catch (error) {
       setCapturing(false)
       setNotice({ tone: 'error', text: captureErrorMessage(error) })
     }
   }
-  function finishScreenCapture() {
-    setCaptureShot(null)
+  function cancelScreenCapture() {
+    tabStreamRef.current?.stop()
+    tabStreamRef.current = null
+    setSelectingRegion(false)
     setCapturing(false)
   }
-  async function insertCapturedShot(crop: CropRect | null) {
-    const shot = captureShot
-    finishScreenCapture()
-    if (!shot) return
+  async function captureRegion(region: CropRect | null) {
+    const stream = tabStreamRef.current
+    setSelectingRegion(false)
+    if (!stream) { setCapturing(false); return }
     try {
-      const blob = await cropImageBlob(shot.blob, crop)
+      // grab 은 고르기 층이 사라진 화면이 다시 그려진 뒤의 장면을 찍는다.
+      const frame = await stream.grab()
+      tabStreamRef.current = null
+      stream.stop()
+      const bitmap = await createImageBitmap(frame)
+      const frameSize = { width: bitmap.width, height: bitmap.height }
+      bitmap.close()
+      const crop = region ? viewportRegionToFrame(region, { width: window.innerWidth, height: window.innerHeight }, frameSize) : null
+      const blob = await cropImageBlob(frame, crop)
+      setCapturing(false)
       await addFiles([new File([blob], `screen-${Date.now()}.png`, { type: 'image/png' })])
-    } catch {
-      setNotice({ tone: 'error', text: '캡처를 넣지 못했어요. 다시 시도해 주세요.' })
+    } catch (error) {
+      cancelScreenCapture()
+      setNotice({ tone: 'error', text: captureErrorMessage(error) })
     }
   }
 
@@ -278,7 +292,7 @@ export function FeedbackButton() {
       <span className="flex h-[44px] w-[44px] shrink-0 items-center justify-center" aria-hidden="true"><ChatCircleText size={22} weight="fill" /></span>
       <span aria-hidden="true" className={cn('shrink-0 whitespace-nowrap', leftward ? 'pl-4' : 'pr-4')}>피드백 보내기</span>
     </button>
-    {captureShot && <CaptureCropper src={captureShot.url} onConfirm={crop => { void insertCapturedShot(crop) }} onCancel={finishScreenCapture} />}
+    {selectingRegion && <ScreenRegionSelector onSelect={region => { void captureRegion(region) }} onCancel={cancelScreenCapture} />}
     {dialogShown && typeof document !== 'undefined' && createPortal(
       <dialog ref={dialogRef} aria-labelledby="feedback-title" onCancel={event => { event.preventDefault(); close() }}
         onClick={event => { if (event.target === event.currentTarget) close() }}

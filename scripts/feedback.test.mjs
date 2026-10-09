@@ -230,15 +230,31 @@ test('화면 캡처: 끌기 영역 정규화·경계 고정·원본 픽셀 환�
   assert.match(cap.captureErrorMessage(new Error('boom')), /캡처하지 못했어요/)
 })
 
-test('화면 캡처 연결: 지원 브라우저만 버튼, 찍는 동안 창·말풍선 숨김, 고른 부분을 기존 압축 경로로 넣음', () => {
+test('화면 캡처 연결: 지원 브라우저만 버튼, 탭 공유 뒤 지금 화면 위에서 끌어 고른 영역만 찍어 기존 압축 경로로 넣음', () => {
   const button = fs.readFileSync(new URL('../src/components/feedback/FeedbackButton.tsx', import.meta.url), 'utf8')
   const capture = fs.readFileSync(new URL('../src/lib/feedback/screenCapture.ts', import.meta.url), 'utf8')
+  const selector = fs.readFileSync(new URL('../src/components/feedback/ScreenRegionSelector.tsx', import.meta.url), 'utf8')
   assert.match(button, /captureSupported && \(\s*<button[\s\S]{0,120}startScreenCapture/)
   assert.match(button, /const dialogShown = open && !capturing/)
   assert.match(button, /capturing && 'invisible'/)
   assert.match(button, /const locked = busy \|\| preparing \|\| capturing/)
+  // 찍고 나서 다시 자르는 단계 없이: 공유 허락 → 화면 위 영역 고르기 → 그 영역만 넣기
+  assert.doesNotMatch(button, /CaptureCropper/)
+  assert.ok(button.indexOf('await openTabStream()') < button.indexOf('setSelectingRegion(true)'))
+  assert.match(button, /<ScreenRegionSelector onSelect=\{region => \{ void captureRegion\(region\) \}\} onCancel=\{cancelScreenCapture\} \/>/)
+  assert.match(button, /setSelectingRegion\(false\)\n[\s\S]{0,200}const frame = await stream\.grab\(\)/, '고르기 층을 먼저 걷고 찍음')
+  assert.match(button, /viewportRegionToFrame\(region, \{ width: window\.innerWidth, height: window\.innerHeight \}, frameSize\)/)
   assert.match(button, /await addFiles\(\[new File\(\[blob\]/, '압축·장수 제한을 지나는 기존 addFiles 경로')
-  assert.match(button, /<CaptureCropper src=\{captureShot\.url\}/)
+  assert.match(button, /stream\.onEnded\(/, '브라우저 공유 중지 막대로 끊으면 취소')
   assert.match(capture, /preferCurrentTab: true/)
-  assert.match(capture, /for \(const track of stream\.getTracks\(\)\) track\.stop\(\)/, '찍은 뒤 화면 공유를 바로 끔')
+  assert.match(capture, /for \(const track of stream\.getTracks\(\)\) track\.stop\(\)/)
+  assert.match(selector, /if \(isUsableCrop\(region\)\) onSelect\(region\)/, '놓는 순간 바로 찍고, 그냥 클릭은 무시')
+  assert.match(selector, /event\.key === 'Escape'/)
+  assert.match(selector, /화면 전체/)
+})
+
+test('화면 캡처: 화면에서 고른 영역(CSS px)을 고해상도 탭 프레임 픽셀로 환산', async () => {
+  const cap = await import('../src/lib/feedback/screenCapture.ts')
+  // devicePixelRatio 2 화면: 프레임이 뷰포트의 두 배
+  assert.deepEqual(cap.viewportRegionToFrame({ x: 10, y: 20, width: 300, height: 150 }, { width: 1440, height: 800 }, { width: 2880, height: 1600 }), { x: 20, y: 40, width: 600, height: 300 })
 })
