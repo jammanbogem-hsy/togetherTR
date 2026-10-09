@@ -2,7 +2,7 @@
 
 // 화면 오른쪽 아래 피드백 버튼 — 글과 오류 화면(붙여넣기·끌어 놓기·파일)을 보내면 관리자 메일·피드백함으로 간다.
 // 현재 화면 위치(주소·프로젝트·활동)와 최근 오류 기록을 함께 담는다.
-// '화면 캡처'는 별도 캡처 프로그램 없이, 지금 화면 위에서 바로 끌어 고른 영역을 브라우저 탭 공유로 찍어 넣는다.
+// '화면 캡처'는 별도 캡처 프로그램·화면 공유 허락 없이, 지금 화면 위에서 바로 끌어 고른 영역을 그림으로 그려 넣는다.
 // 평소엔 작은 말풍선, hover/focus 때 글자가 펼쳐지고, 끌어서 옮길 수 있다(위치는 이 브라우저에 기억).
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -15,7 +15,7 @@ import { ACTIVITY_META, displayActivityCode } from '@/types'
 import { FEEDBACK_LIMITS } from '@/lib/feedback/feedbackModel'
 import { installClientErrorLog, recentClientErrors } from '@/lib/feedback/errorLog'
 import { cn } from '@/lib/utils'
-import { canCaptureScreen, captureErrorMessage, cropImageBlob, openTabStream, viewportRegionToFrame, type CropRect, type TabStream } from '@/lib/feedback/screenCapture'
+import { CAPTURE_EXCLUDE_ATTR, captureErrorMessage, captureViewportRegion, type CropRect } from '@/lib/feedback/screenCapture'
 import { ScreenRegionSelector } from './ScreenRegionSelector'
 import {
   LAUNCHER_SIZE, LAUNCHER_STORAGE_KEY, clampLauncherPosition, exceededDragThreshold, expandsLeftward,
@@ -59,8 +59,7 @@ export function FeedbackButton() {
   // 화면 캡처 중에는 피드백 창과 말풍선을 숨겨 찍히지 않게 하고, 화면 위에 영역 고르기 층을 띄운다.
   const [capturing, setCapturing] = useState(false)
   const [selectingRegion, setSelectingRegion] = useState(false)
-  const tabStreamRef = useRef<TabStream | null>(null)
-  const [captureSupported, setCaptureSupported] = useState(false)
+  const [renderingCapture, setRenderingCapture] = useState(false)
   const locked = busy || preparing || capturing
   function close() {
     if (inFlight.current || processing.current) return
@@ -71,12 +70,7 @@ export function FeedbackButton() {
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    installClientErrorLog()
-    const frame = requestAnimationFrame(() => setCaptureSupported(canCaptureScreen()))
-    return () => cancelAnimationFrame(frame)
-  }, [])
-  useEffect(() => () => { tabStreamRef.current?.stop() }, [])
+  useEffect(() => { installClientErrorLog() }, [])
 
   // ─── 끌어서 옮기기 ───
   // placed 가 null 이면 기본 자리(오른쪽 아래, 프로젝트 화면 넓은 폭은 오른쪽 가운데). 옮긴 자리는 접힌 원의 왼쪽 위 좌표.
@@ -192,47 +186,29 @@ export function FeedbackButton() {
     processing.current = false; setPreparing(false)
   }
 
-  async function startScreenCapture() {
+  function startScreenCapture() {
     if (inFlight.current || processing.current || capturing) return
     if (images.length >= FEEDBACK_LIMITS.imagesMax) { setNotice({ tone: 'error', text: `캡처는 ${FEEDBACK_LIMITS.imagesMax}장까지 붙일 수 있어요.` }); return }
     setNotice(null)
     setCapturing(true)
-    try {
-      // 탭 공유 허락(브라우저가 한 번 묻는다) → 화면 위에서 영역을 끌어 고른다.
-      const stream = await openTabStream()
-      tabStreamRef.current = stream
-      stream.onEnded(() => { if (tabStreamRef.current === stream) cancelScreenCapture() })
-      setSelectingRegion(true)
-    } catch (error) {
-      setCapturing(false)
-      setNotice({ tone: 'error', text: captureErrorMessage(error) })
-    }
+    setSelectingRegion(true)
   }
   function cancelScreenCapture() {
-    tabStreamRef.current?.stop()
-    tabStreamRef.current = null
+    if (renderingCapture) return
     setSelectingRegion(false)
     setCapturing(false)
   }
   async function captureRegion(region: CropRect | null) {
-    const stream = tabStreamRef.current
-    setSelectingRegion(false)
-    if (!stream) { setCapturing(false); return }
+    if (renderingCapture) return
+    setRenderingCapture(true)
     try {
-      // grab 은 고르기 층이 사라진 화면이 다시 그려진 뒤의 장면을 찍는다.
-      const frame = await stream.grab()
-      tabStreamRef.current = null
-      stream.stop()
-      const bitmap = await createImageBitmap(frame)
-      const frameSize = { width: bitmap.width, height: bitmap.height }
-      bitmap.close()
-      const crop = region ? viewportRegionToFrame(region, { width: window.innerWidth, height: window.innerHeight }, frameSize) : null
-      const blob = await cropImageBlob(frame, crop)
-      setCapturing(false)
+      const blob = await captureViewportRegion(region)
+      setSelectingRegion(false); setRenderingCapture(false); setCapturing(false)
       await addFiles([new File([blob], `screen-${Date.now()}.png`, { type: 'image/png' })])
     } catch (error) {
-      cancelScreenCapture()
-      setNotice({ tone: 'error', text: captureErrorMessage(error) })
+      console.warn('[feedback screen capture]', error)
+      setSelectingRegion(false); setRenderingCapture(false); setCapturing(false)
+      setNotice({ tone: 'error', text: captureErrorMessage() })
     }
   }
 
@@ -275,7 +251,7 @@ export function FeedbackButton() {
   return <>
     {/* Compact 44px bubble; the label slides out on hover/keyboard focus toward the roomier side.
         Drag (mouse/touch/pen) past a small threshold to move it; a drag never opens the dialog. */}
-    <button ref={triggerRef} type="button" aria-label="피드백 보내기" aria-haspopup="dialog" title="피드백 보내기 · 끌어서 옮길 수 있어요"
+    <button ref={triggerRef} type="button" {...{ [CAPTURE_EXCLUDE_ATTR]: '' }} aria-label="피드백 보내기" aria-haspopup="dialog" title="피드백 보내기 · 끌어서 옮길 수 있어요"
       onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return } setNotice(null); setOpen(true) }}
       onPointerDown={onLauncherPointerDown} onPointerMove={onLauncherPointerMove}
       onPointerUp={event => endLauncherDrag(event, false)} onPointerCancel={event => endLauncherDrag(event, true)}
@@ -292,9 +268,9 @@ export function FeedbackButton() {
       <span className="flex h-[44px] w-[44px] shrink-0 items-center justify-center" aria-hidden="true"><ChatCircleText size={22} weight="fill" /></span>
       <span aria-hidden="true" className={cn('shrink-0 whitespace-nowrap', leftward ? 'pl-4' : 'pr-4')}>피드백 보내기</span>
     </button>
-    {selectingRegion && <ScreenRegionSelector onSelect={region => { void captureRegion(region) }} onCancel={cancelScreenCapture} />}
+    {selectingRegion && <ScreenRegionSelector busy={renderingCapture} onSelect={region => { void captureRegion(region) }} onCancel={cancelScreenCapture} />}
     {dialogShown && typeof document !== 'undefined' && createPortal(
-      <dialog ref={dialogRef} aria-labelledby="feedback-title" onCancel={event => { event.preventDefault(); close() }}
+      <dialog ref={dialogRef} {...{ [CAPTURE_EXCLUDE_ATTR]: '' }} aria-labelledby="feedback-title" onCancel={event => { event.preventDefault(); close() }}
         onClick={event => { if (event.target === event.currentTarget) close() }}
         className="m-auto max-h-[calc(100dvh-32px)] w-[calc(100vw-24px)] max-w-lg overflow-y-auto rounded-[28px] border-0 bg-[#F8FAFD] p-0 text-[#1F1F1F] shadow-xl backdrop:bg-black/40">
         <div onClick={event => event.stopPropagation()} onPaste={onPaste}
@@ -304,7 +280,7 @@ export function FeedbackButton() {
             <h2 id="feedback-title" className="flex-1 text-[22px] font-semibold leading-7">피드백 보내기</h2>
             <button type="button" onClick={close} disabled={locked} aria-label="닫기" className="rounded-full p-2 text-[#444746] hover:bg-black/5"><X size={20} /></button>
           </div>
-          <p className="mt-1 text-[14px] text-[#444746]">오류나 불편한 점을 적고, 오류 화면은 {captureSupported ? '‘화면 캡처’로 바로 찍거나 ' : ''}캡처해서 붙여 넣어 주세요(Ctrl+V · 끌어 놓기).</p>
+          <p className="mt-1 text-[14px] text-[#444746]">오류나 불편한 점을 적고, 오류 화면은 ‘화면 캡처’로 바로 찍거나 캡처해서 붙여 넣어 주세요(Ctrl+V · 끌어 놓기).</p>
           <textarea aria-label="피드백 내용" disabled={locked} ref={textRef} value={message} onChange={event => setMessage(event.target.value)} maxLength={FEEDBACK_LIMITS.messageMax} rows={5}
             placeholder="예: A-4에서 저장을 눌렀는데 표가 사라졌어요."
             className="mt-4 w-full resize-y rounded-xl border border-[#C4C7C5] bg-white px-4 py-3 text-[15px] leading-6 outline-none focus:border-[#0B57D0] focus:ring-2 focus:ring-[#0B57D0]/20" />
@@ -317,8 +293,8 @@ export function FeedbackButton() {
                   className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-[#B3261E]"><Trash size={14} /></button>
               </div>
             ))}
-            {images.length < FEEDBACK_LIMITS.imagesMax && captureSupported && (
-              <button type="button" disabled={locked} onClick={() => { void startScreenCapture() }} className="flex h-20 w-28 flex-col items-center justify-center gap-1 rounded-lg border border-[#0B57D0]/40 bg-[#D3E3FD]/50 text-[12px] font-semibold text-[#0842A0] hover:bg-[#D3E3FD]">
+            {images.length < FEEDBACK_LIMITS.imagesMax && (
+              <button type="button" disabled={locked} onClick={startScreenCapture} className="flex h-20 w-28 flex-col items-center justify-center gap-1 rounded-lg border border-[#0B57D0]/40 bg-[#D3E3FD]/50 text-[12px] font-semibold text-[#0842A0] hover:bg-[#D3E3FD]">
                 <Camera size={20} aria-hidden="true" /> 화면 캡처
               </button>
             )}

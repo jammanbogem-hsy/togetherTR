@@ -211,7 +211,7 @@ test('inbox newest first and cursor retrieves older submissions including equal 
  assert.equal((await route.GET(request('GET','teacher',null,`?cursor=${first.nextCursor}`))).status,403)
 })
 
-test('화면 캡처: 끌기 영역 정규화·경계 고정·원본 픽셀 환산·작은 선택은 무시', async () => {
+test('화면 캡처: 끌기 영역 정규화·경계 고정·원본 픽셀 환산·작은 선택 무시·배율 상한', async () => {
   const cap = await import('../src/lib/feedback/screenCapture.ts')
   const bounds = { width: 800, height: 450 }
   assert.deepEqual(cap.normalizeCrop({ x: 500, y: 300 }, { x: 100, y: 50 }, bounds), { x: 100, y: 50, width: 400, height: 250 })
@@ -219,42 +219,35 @@ test('화면 캡처: 끌기 영역 정규화·경계 고정·원본 픽셀 환�
   assert.equal(cap.isUsableCrop({ x: 0, y: 0, width: 5, height: 300 }), false)
   assert.equal(cap.isUsableCrop(null), false)
   assert.equal(cap.isUsableCrop({ x: 0, y: 0, width: 40, height: 40 }), true)
-  // 화면에 절반 크기로 보인 이미지에서 고른 영역은 원본에서 두 배
-  assert.deepEqual(cap.cropToSource({ x: 100, y: 50, width: 400, height: 250 }, bounds, { width: 1600, height: 900 }), { x: 200, y: 100, width: 800, height: 500 })
-  // 원본 밖으로 넘치지 않음
+  // 화면(CSS px)에서 고른 영역 → 2배 그림 픽셀
+  assert.deepEqual(cap.cropToSource({ x: 10, y: 20, width: 300, height: 150 }, { width: 1440, height: 800 }, { width: 2880, height: 1600 }), { x: 20, y: 40, width: 600, height: 300 })
   assert.deepEqual(cap.cropToSource({ x: 700, y: 400, width: 100, height: 50 }, bounds, { width: 1601, height: 901 }), { x: 1401, y: 801, width: 200, height: 100 })
-  assert.equal(cap.canCaptureScreen(undefined), false)
-  assert.equal(cap.canCaptureScreen({ mediaDevices: {} }), false)
-  assert.equal(cap.canCaptureScreen({ mediaDevices: { getDisplayMedia() {} } }), true)
-  assert.match(cap.captureErrorMessage(Object.assign(new Error('x'), { name: 'NotAllowedError' })), /취소/)
-  assert.match(cap.captureErrorMessage(new Error('boom')), /캡처하지 못했어요/)
+  assert.equal(cap.captureScale(3), 2)
+  assert.equal(cap.captureScale(1.5), 1.5)
+  assert.equal(cap.captureScale(undefined), 1)
+  assert.equal(cap.isExcludedFromCapture({ nodeType: 1, hasAttribute: name => name === cap.CAPTURE_EXCLUDE_ATTR }), true)
+  assert.equal(cap.isExcludedFromCapture({ nodeType: 1, hasAttribute: () => false }), false)
+  assert.equal(cap.isExcludedFromCapture({ nodeType: 3 }), false)
 })
 
-test('화면 캡처 연결: 지원 브라우저만 버튼, 탭 공유 뒤 지금 화면 위에서 끌어 고른 영역만 찍어 기존 압축 경로로 넣음', () => {
+test('화면 캡처 연결: 공유 허락 없이 누르면 바로 화면 위 끌기, 피드백 UI는 그림에서 빼고 기존 압축 경로로 넣음', () => {
   const button = fs.readFileSync(new URL('../src/components/feedback/FeedbackButton.tsx', import.meta.url), 'utf8')
   const capture = fs.readFileSync(new URL('../src/lib/feedback/screenCapture.ts', import.meta.url), 'utf8')
   const selector = fs.readFileSync(new URL('../src/components/feedback/ScreenRegionSelector.tsx', import.meta.url), 'utf8')
-  assert.match(button, /captureSupported && \(\s*<button[\s\S]{0,120}startScreenCapture/)
+  assert.doesNotMatch(capture + button, /getDisplayMedia|openTabStream|preferCurrentTab/, '화면 공유 허락 경로를 쓰지 않음')
+  assert.match(capture, /import\('modern-screenshot'\)/, '캡처 라이브러리는 누를 때만 불러옴')
+  assert.match(capture, /filter: node => !isExcludedFromCapture\(node\)/)
+  assert.match(capture, /restoreScrollPosition: true/, '스크롤된 영역도 보이는 그대로')
+  assert.match(button, /function startScreenCapture\(\) \{[\s\S]{0,400}setSelectingRegion\(true\)/)
+  assert.match(button, /<button ref=\{triggerRef\} type="button" \{\.\.\.\{ \[CAPTURE_EXCLUDE_ATTR\]: '' \}\}/)
+  assert.match(button, /<dialog ref=\{dialogRef\} \{\.\.\.\{ \[CAPTURE_EXCLUDE_ATTR\]: '' \}\}/)
+  assert.match(selector, /\[CAPTURE_EXCLUDE_ATTR\]: ''/)
   assert.match(button, /const dialogShown = open && !capturing/)
-  assert.match(button, /capturing && 'invisible'/)
   assert.match(button, /const locked = busy \|\| preparing \|\| capturing/)
-  // 찍고 나서 다시 자르는 단계 없이: 공유 허락 → 화면 위 영역 고르기 → 그 영역만 넣기
-  assert.doesNotMatch(button, /CaptureCropper/)
-  assert.ok(button.indexOf('await openTabStream()') < button.indexOf('setSelectingRegion(true)'))
-  assert.match(button, /<ScreenRegionSelector onSelect=\{region => \{ void captureRegion\(region\) \}\} onCancel=\{cancelScreenCapture\} \/>/)
-  assert.match(button, /setSelectingRegion\(false\)\n[\s\S]{0,200}const frame = await stream\.grab\(\)/, '고르기 층을 먼저 걷고 찍음')
-  assert.match(button, /viewportRegionToFrame\(region, \{ width: window\.innerWidth, height: window\.innerHeight \}, frameSize\)/)
+  assert.match(button, /const blob = await captureViewportRegion\(region\)/)
   assert.match(button, /await addFiles\(\[new File\(\[blob\]/, '압축·장수 제한을 지나는 기존 addFiles 경로')
-  assert.match(button, /stream\.onEnded\(/, '브라우저 공유 중지 막대로 끊으면 취소')
-  assert.match(capture, /preferCurrentTab: true/)
-  assert.match(capture, /for \(const track of stream\.getTracks\(\)\) track\.stop\(\)/)
+  assert.match(button, /<ScreenRegionSelector busy=\{renderingCapture\}/)
   assert.match(selector, /if \(isUsableCrop\(region\)\) onSelect\(region\)/, '놓는 순간 바로 찍고, 그냥 클릭은 무시')
   assert.match(selector, /event\.key === 'Escape'/)
-  assert.match(selector, /화면 전체/)
-})
-
-test('화면 캡처: 화면에서 고른 영역(CSS px)을 고해상도 탭 프레임 픽셀로 환산', async () => {
-  const cap = await import('../src/lib/feedback/screenCapture.ts')
-  // devicePixelRatio 2 화면: 프레임이 뷰포트의 두 배
-  assert.deepEqual(cap.viewportRegionToFrame({ x: 10, y: 20, width: 300, height: 150 }, { width: 1440, height: 800 }, { width: 2880, height: 1600 }), { x: 20, y: 40, width: 600, height: 300 })
+  assert.match(selector, /캡처하는 중/)
 })
