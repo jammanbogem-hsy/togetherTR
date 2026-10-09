@@ -53,7 +53,7 @@ function workspacePayload(enabled) {
   const Workspace = loadFunction('src/components/chat/CurriculumWorkspaceModal.tsx', 'CurriculumWorkspaceModal', {
     useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect() {}, useCallback: fn => fn, useMemo: fn => fn(),
     useProjectStore: select => select({ project, messages, currentActivity: 'A-2-1' }),
-    buildAutofillContext: contextHelper.buildAutofillContext, CurriculumSheetModal: Sheet, createPortal: value => value, document: { body: {} },
+    buildAutofillContext: contextHelper.buildAutofillContext, resolveAutofillTopic: contextHelper.resolveAutofillTopic, loadTopicFromA12Chat: async () => '', CurriculumSheetModal: Sheet, createPortal: value => value, document: { body: {} },
     require(name) { if (name === 'react/jsx-runtime') return jsx; throw new Error(name) },
   })
   const element = Workspace({ open: true, onClose() {}, projectId: 'fixture', a12Artifact: { ...project.artifacts['A-1-2'].content, selectedTopic: undefined, targetSubjects: ['국어', '수학'] },

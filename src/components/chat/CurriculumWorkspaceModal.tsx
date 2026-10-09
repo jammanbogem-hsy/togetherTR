@@ -4,7 +4,8 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { CurriculumSheetModal } from './CurriculumSheetModal'
 import { useProjectStore } from '@/store/project'
-import { buildAutofillContext } from '@/lib/curriculum/autofillContext'
+import { buildAutofillContext, resolveAutofillTopic } from '@/lib/curriculum/autofillContext'
+import { loadTopicFromA12Chat } from '@/lib/curriculum/priorTopicFromChat'
 import type { CurriculumSheetRow } from '@/types'
 import type { CurriculumSheetPatch } from '@/lib/firebase/projects'
 import { buildGraphCodesFromSheet } from '@/lib/curriculum/graphSheetBridge'
@@ -61,10 +62,21 @@ export function CurriculumWorkspaceModal({
   const liveMessages = useProjectStore(state => state.messages)
   const activeActivity = useProjectStore(state => state.currentActivity)
   const matchingProject = projectId && liveProject?.id === projectId ? liveProject : undefined
+  // A-1-2 산출물에 주제가 없으면(저장 없이 다음 활동으로 온 팀) A-1-2 대화의 확정 주제 줄을 한 번 읽는다.
+  const [chatTopic, setChatTopic] = useState('')
+  const savedA12 = matchingProject?.artifacts?.['A-1-2']?.content as Record<string, unknown> | undefined
+  const needsChatTopic = open && !!projectId && !!matchingProject && !resolveAutofillTopic(savedA12 ?? a12Artifact)
+  useEffect(() => {
+    if (!needsChatTopic || !projectId) return
+    let cancelled = false
+    void loadTopicFromA12Chat(projectId).then(topic => { if (!cancelled) setChatTopic(topic) })
+    return () => { cancelled = true }
+  }, [needsChatTopic, projectId])
   const autofillContext = useMemo(() => buildAutofillContext({
     project: matchingProject, a12Artifact, chatContext,
     messages: matchingProject ? liveMessages : [], currentActivity: matchingProject ? activeActivity : undefined,
-  }), [matchingProject, liveMessages, activeActivity, a12Artifact, chatContext])
+    chatTopic: needsChatTopic ? chatTopic : undefined,
+  }), [matchingProject, liveMessages, activeActivity, a12Artifact, chatContext, needsChatTopic, chatTopic])
 
 
   // 시트 → 그래프 전환

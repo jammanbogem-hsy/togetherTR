@@ -39,6 +39,7 @@ import { normalizeTeamGradeBands, formatGradeBandList } from '@/lib/curriculum/t
 import { mergeAutofillRows, setCenterInGradeBand } from '@/lib/curriculum/collaborativeBands'
 import { canFillRowDescription, requestRowDescription } from '@/lib/curriculum/rowDescriptions'
 import { canAutoFillContentCells } from '@/lib/curriculum/sheetContentAutofill'
+import { DELETE_RETRY_LIMIT, withoutDeletedRows } from './curriculum-sheet/deletedRows'
 import { needsRowBridge, rowBridgeSource, canApplyRowBridge, rowBridgeSelection, filterContentByStandardCourse } from '@/lib/curriculum/rowBridge'
 import { AchievementLevelDisclosure } from '@/components/curriculum/AchievementLevelDisclosure'
 
@@ -527,6 +528,11 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   const pendingStructuralCountRef = useRef(0)
   const rowsRef = useRef<CurriculumSheetRow[]>([])
   const serverRowIdsRef = useRef<Set<string>>(new Set())
+  // 휴지통으로 지운 행의 묘비. 서버가 그 행이 없다고 확인할 때까지 남겨,
+  // 늦게 도착한 저장본·응답이 지운 행을 화면에 다시 끼워 넣지 못하게 한다.
+  // 늦은 upsert가 서버에 행을 되살리면 다시 지운다(최대 DELETE_RETRY_LIMIT번).
+  const deletedRowIdsRef = useRef<Map<string, { inFlight: boolean; attempts: number }>>(new Map())
+  const savedRowsRef = useRef<CurriculumSheetRow[]>(savedRows)
 
   // ─── 시트 학년군 모드·기준 학년군 ───
   // 프로젝트 문서에 저장된 값이 우선이고, 없으면 시트 내용으로 기본값을 판정한다
@@ -592,7 +598,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
 
   const mergeIncomingRows = useCallback((incomingRows: CurriculumSheetRow[], currentRows: CurriculumSheetRow[]) => {
     const { sheetMode: ctxMode, sheetBand: ctxBand } = gradeCtxRef.current
-    const incoming = (incomingRows.length > 0 ? incomingRows : [])
+    const incoming = withoutDeletedRows(incomingRows, deletedRowIdsRef.current)
       .map(row => normalizeRowGradePrefixes(row, ctxMode, ctxBand))
     const currentById = new Map(currentRows.map(row => [row.id, row]))
     const incomingIds = new Set(incoming.map(row => row.id))
@@ -637,7 +643,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       syncDirtyFromPending()
       return
     }
-    setRows((savedRows.length > 0 ? savedRows : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, sheetMode, sheetBand)))
+    const visible = withoutDeletedRows(savedRows, deletedRowIdsRef.current)
+    setRows((visible.length > 0 ? visible : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, sheetMode, sheetBand)))
     setDirty(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, savedRowsJson, dirty, hasPendingLocalChanges, mergeIncomingRows, syncDirtyFromPending])
@@ -645,7 +652,8 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   // 모달 열릴 때 초기 로드
   useEffect(() => {
     if (!open) return
-    setRows((savedRows.length > 0 ? savedRows : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, sheetMode, sheetBand)))
+    const visible = withoutDeletedRows(savedRows, deletedRowIdsRef.current)
+    setRows((visible.length > 0 ? visible : [emptyRow()]).map(row => normalizeRowGradePrefixes(row, sheetMode, sheetBand)))
     setDirty(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -732,15 +740,17 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     saveTimerRef.current = setTimeout(() => { onSave(r); setDirty(false) }, 1000)
   }, [onSave])
 
-  const saveStructuralPatch = useCallback(async (patch: CurriculumSheetPatch) => {
-    if (!onPatchSave) return
+  const saveStructuralPatch = useCallback(async (patch: CurriculumSheetPatch): Promise<boolean> => {
+    if (!onPatchSave) return false
     pendingStructuralCountRef.current += 1
     setDirty(true)
     try {
       const saved = await onPatchSave(patch)
       applySavedRows(saved)
+      return true
     } catch (e) {
       console.error('[curriculumSheet patch]', e)
+      return false
     } finally {
       pendingStructuralCountRef.current = Math.max(0, pendingStructuralCountRef.current - 1)
       syncDirtyFromPending()
@@ -792,7 +802,7 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
     patchTimersRef.current[timerKey] = setTimeout(async () => {
       delete patchTimersRef.current[timerKey]
       const fullRow = rowsRef.current.find(row => row.id === rowId)
-      if (!fullRow) { syncDirtyFromPending(); return }
+      if (!fullRow || deletedRowIdsRef.current.has(rowId)) { pendingRowIdsRef.current.delete(rowId); syncDirtyFromPending(); return }
       try {
         const saved = await onPatchSave({ type: 'upsert-row', row: fullRow, updatedBy: currentUserName })
         applySavedRows(saved)
@@ -804,6 +814,33 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       }
     }, 700)
   }, [applySavedRows, currentUserName, onPatchSave, syncDirtyFromPending])
+
+  const deleteRowOnServer = useCallback(async (id: string) => {
+    const tomb = deletedRowIdsRef.current.get(id)
+    if (!tomb || tomb.inFlight) return
+    if (tomb.attempts >= DELETE_RETRY_LIMIT) {
+      // 끝내 못 지웠으면 묘비를 걷고 서버 상태를 그대로 보여 준다(조용히 숨기지 않음).
+      deletedRowIdsRef.current.delete(id)
+      setRows(current => mergeIncomingRows(savedRowsRef.current, current))
+      return
+    }
+    tomb.inFlight = true
+    tomb.attempts += 1
+    await saveStructuralPatch({ type: 'delete-row', rowId: id })
+    tomb.inFlight = false
+  }, [mergeIncomingRows, saveStructuralPatch])
+
+  // 서버 저장본이 바뀔 때 묘비를 정리한다. 서버에 행이 없으면 삭제 확정,
+  // 삭제가 끝났는데도 행이 있으면 늦은 저장이 되살린 것이라 다시 지운다.
+  useEffect(() => {
+    savedRowsRef.current = savedRows
+    const serverIds = new Set(savedRows.map(row => row.id))
+    for (const [id, tomb] of [...deletedRowIdsRef.current]) {
+      if (tomb.inFlight) continue
+      if (!serverIds.has(id)) deletedRowIdsRef.current.delete(id)
+      else void deleteRowOnServer(id)
+    }
+  }, [savedRows, deleteRowOnServer])
 
   const clearPendingCellTimers = useCallback(() => {
     for (const timer of Object.values(patchTimersRef.current)) clearTimeout(timer)
@@ -1218,6 +1255,19 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
   }
 
   function removeRow(id: string) {
+    // 지울 행의 대기 중인 칸·행 저장을 먼저 끊는다. 남겨 두면 700ms 뒤 upsert가
+    // 지운 행을 서버에 다시 만든다.
+    for (const key of Object.keys(patchTimersRef.current)) {
+      if (key === `__row__:${id}` || key.startsWith(`${id}:`)) {
+        clearTimeout(patchTimersRef.current[key])
+        delete patchTimersRef.current[key]
+      }
+    }
+    for (const key of Object.keys(dirtyCellVersionsRef.current)) {
+      if (key.startsWith(`${id}:`)) delete dirtyCellVersionsRef.current[key]
+    }
+    pendingRowIdsRef.current.delete(id)
+    rowsRef.current = rowsRef.current.filter(r => r.id !== id)
     setRows(p => {
       const n = p.filter(r => r.id !== id)
       if (n.length === 0) n.push(emptyRow())
@@ -1225,7 +1275,10 @@ export function CurriculumSheetModal({ open, onClose, rows: savedRows, onSave, o
       if (!onPatchSave) triggerSave(n)
       return n
     })
-    if (onPatchSave) void saveStructuralPatch({ type: 'delete-row', rowId: id })
+    if (onPatchSave) {
+      deletedRowIdsRef.current.set(id, { inFlight: false, attempts: 0 })
+      void deleteRowOnServer(id)
+    }
   }
   // 드롭 — 핵심아이디어 묶음 전체를 대상 묶음의 대표 줄 앞으로 옮긴다.
   // (한 학년군 모드는 모든 묶음이 1줄이라 기존 동작과 같다.)
