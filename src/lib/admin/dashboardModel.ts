@@ -15,8 +15,8 @@ export interface DashboardProject extends AdminProject {
   /** Stage codes with a saved stage report, plus 'all' for the cumulative report. */
   reports: string[]
   messageCount: number | null
-  /** 시험판 나눔 기록지를 만든 방인지, 이 방의 보고서 형식 선호 표. */
-  hasLessonSheet: boolean
+  /** 단계별 테스트 보고서(시험판)를 만든 단계 수, 이 방의 보고서 형식 선호 표. */
+  testReportCount: number
   reportVotes: { stage: number; sheet: number }
   materialCount: number | null
   flags: DashboardFlag[]
@@ -75,7 +75,7 @@ export function dashboardProject(id: string, data: Record<string, unknown>, now:
     artifacts,
     reports,
     messageCount: null,
-    hasLessonSheet: Object.keys(recordValue(data.lessonSheetReport)).length > 0,
+    testReportCount: Object.values(recordValue(data.testReports)).filter(value => Object.keys(recordValue(value)).length > 0).length,
     reportVotes,
     materialCount: null,
     flags: [],
@@ -115,7 +115,7 @@ export function summarizeDashboard(projects: DashboardProject[], now: number, ex
     if (age <= 7 * DAY) activeWeek += 1
     reports += project.reports.length
     artifacts += Object.keys(project.artifacts).length
-    if (project.hasLessonSheet) lessonSheets += 1
+    lessonSheets += project.testReportCount
     reportVotes.stage += project.reportVotes.stage
     reportVotes.sheet += project.reportVotes.sheet
   }

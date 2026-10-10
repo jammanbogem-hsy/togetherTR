@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     ...ALL_ACTIVITIES.flatMap(code => [new FieldPath('artifacts', code, 'status'), new FieldPath('artifacts', code, 'version')]),
     ...STAGES.map(stage => new FieldPath('stageReports', stage.code, 'savedAt')),
     new FieldPath('cumulativeReport', 'savedAt'),
-    new FieldPath('lessonSheetReport', 'savedAt'),
+    ...STAGES.map(stage => new FieldPath('testReports', stage.code, 'savedAt')),
   ]
   try {
     const now = Date.now()

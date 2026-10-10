@@ -1,10 +1,11 @@
 /**
- * POST /api/report/lesson-sheet — 시험판 '수업 실행 나눔 기록지'를 스트리밍으로 만든다.
+ * POST /api/report/lesson-sheet — 단계별 '테스트 보고서'(기록지형 시험판)를 스트리밍으로 만든다.
  * 단계 보고서(/api/analyze/stage)와 같은 SSE 형식이라 화면은 같은 읽기 코드를 쓴다.
  */
 import OpenAI from 'openai'
 import { generationParams, logLlmUsage, resolveOpenAIModel } from '@/lib/llm/openai'
-import { buildLessonSheetPrompt, type LessonSheetInput } from '@/lib/report/lessonSheetPrompt'
+import { buildStageTestReportPrompt, type TestReportInput } from '@/lib/report/lessonSheetPrompt'
+import { STAGES } from '@/types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -12,15 +13,15 @@ export const maxDuration = 120
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 export async function POST(request: Request) {
-  let input: LessonSheetInput
+  let input: TestReportInput
   try {
-    const body = await request.json() as Partial<LessonSheetInput>
-    if (!body?.project?.title || !body.artifacts || typeof body.artifacts !== 'object') throw Error('invalid')
-    input = { project: body.project, members: Array.isArray(body.members) ? body.members.slice(0, 20) : [], artifacts: body.artifacts }
+    const body = await request.json() as Partial<TestReportInput>
+    if (!body?.project?.title || !body.artifacts || typeof body.artifacts !== 'object' || !STAGES.some(stage => stage.code === body.stage)) throw Error('invalid')
+    input = { stage: body.stage!, project: body.project, members: Array.isArray(body.members) ? body.members.slice(0, 20) : [], artifacts: body.artifacts }
   } catch {
     return Response.json({ error: 'Invalid request' }, { status: 400 })
   }
-  const prompt = buildLessonSheetPrompt(input)
+  const prompt = buildStageTestReportPrompt(input)
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {

@@ -1467,7 +1467,7 @@ function reportModalFixture(name, selected = false, isHost = true, content, pdfB
     '@/components/ui/MD3Button': { MD3Button: props => { callbacks.push(props); return React.createElement(MD3Button, props) } },
     './ReportMarkdown': { ReportMarkdown, ReportHero },
     '@/lib/report/stageReportState': stageReportState,
-    './LessonSheetModal': { LessonSheetCard: () => null, LessonSheetModal: () => null },
+    './LessonSheetModal': { LessonSheetCard: () => null, LessonSheetModal: () => null, TestReportRow: () => null },
     '@/lib/report/generateStageReport': { generateStageReport: async () => '' },
     './StageAnalysisModal': { StageAnalysisModal: () => null },
     '@/components/members/MemberActionDialog': { MemberActionDialog: () => null },

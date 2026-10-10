@@ -54,8 +54,8 @@ function StatCards({ data }: { data: DashboardData }) {
     { icon: Activity, label: '지금 활동 중', value: t.activeHour, sub: `오늘 ${t.activeDay} · 이번 주 ${t.activeWeek}` },
     { icon: Users, label: '회원', value: t.members, sub: '가입한 선생님' },
     { icon: MessagesSquare, label: '전체 대화', value: t.messages, sub: '모든 방의 메시지 수' },
-    { icon: FileText, label: '산출물 · 보고서', value: t.artifacts, sub: `단계 보고서 ${t.reports}개 · 나눔 기록지 ${t.lessonSheets}개` },
-    { icon: ThumbsUp, label: '보고서 형식 선호', value: t.reportVotes.stage + t.reportVotes.sheet, sub: `단계 보고서 ${t.reportVotes.stage} · 나눔 기록지 ${t.reportVotes.sheet}` },
+    { icon: FileText, label: '산출물 · 보고서', value: t.artifacts, sub: `단계 보고서 ${t.reports}개 · 테스트 보고서 ${t.lessonSheets}개` },
+    { icon: ThumbsUp, label: '보고서 형식 선호', value: t.reportVotes.stage + t.reportVotes.sheet, sub: `기본 보고서 ${t.reportVotes.stage} · 테스트 보고서 ${t.reportVotes.sheet}` },
   ]
   return <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:grid-cols-7">{cards.map(card => <li key={card.label} className="rounded-[24px] bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.12)]">
     <card.icon size={20} className="text-[#0842A0]" aria-hidden="true" />
