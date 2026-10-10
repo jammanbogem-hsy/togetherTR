@@ -59,3 +59,20 @@ test('wiring: composer attach/paste/drop, message save, AI history, server check
   assert.match(rules, /request\.auth\.uid == uid\n\s+&& request\.resource\.size < 20 \* 1024 \* 1024/)
   assert.match(rules, /allow update: if false;/)
 })
+
+test('attachment messages are context: they never advance unless the same message asks to move', async () => {
+  const { attachmentsBlockAdvance, hasAttachmentContext, ATTACHMENT_REVIEW_NOTE } = await import('../src/lib/chat/attachments.ts')
+  const files = [{ id: '1' }]
+  assert.equal(attachmentsBlockAdvance('저희의 대화 산출입니다. 체크해보겠어요?', files), true)
+  assert.equal(attachmentsBlockAdvance('사진 올렸어요', files), true)
+  assert.equal(attachmentsBlockAdvance('다음으로 가요', files), false, 'an explicit move still works')
+  assert.equal(attachmentsBlockAdvance('체크해보겠어요?', []), false, 'no attachments → normal rules')
+  assert.equal(hasAttachmentContext('[홍성용]: 체크\n\n[첨부 사진: a.png]\n메모'), true)
+  assert.equal(hasAttachmentContext('[홍성용]: 그냥 대화'), false)
+  assert.match(ATTACHMENT_REVIEW_NOTE, /\[ACTIVITY_ADVANCE\]를 내지 말고/)
+  const chat = fs.readFileSync('src/components/chat/ChatPanel.tsx', 'utf8')
+  assert.match(chat, /const advanceBlocked = !!parsedAdvance && attachmentsBlockAdvance\(userMessage, attachments\)/)
+  assert.match(chat, /if \(hasAttachmentContext\(mapped\[lastUserIdx \+ 1\]\.content\)\) mapped\.push\(\{ role: 'user', content: ATTACHMENT_REVIEW_NOTE \}\)/)
+  const system = fs.readFileSync('src/lib/prompts/system.ts', 'utf8')
+  assert.match(system, /"체크해 주세요".*이동 의사가 아니라 검토 요청이다/)
+})

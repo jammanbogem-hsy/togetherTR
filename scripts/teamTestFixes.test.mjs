@@ -450,7 +450,7 @@ test('B: 다른 팀원이 재시도해도 사용자 메시지는 추가·저장�
   assert.equal(requests[0][0].displayName, '홍성용')
   const buildApiMessages = loadChatFunction('buildApiMessages', {
     currentActivity: 'T-2-1', ACTIVITY_META, displayActivityCode,
-    confirmedArtifactReminder: () => '',
+    confirmedArtifactReminder: () => '', hasAttachmentContext: () => false,
   })
   const apiMessages = buildApiMessages(requests[0])
   assert.equal(apiMessages.at(-1).content, '[홍성용]: 다음으로 가요')
@@ -468,7 +468,7 @@ test('5b: 확정 상태에서만 매 요청 리마인더에 실제 다음 활동
       proj: { artifacts: { 'A-2-1': { status } } }, getNextActivityCode: () => 'A-2-2',
     })
     const build = loadChatFunction('buildApiMessages', {
-      currentActivity: 'A-2-1', ACTIVITY_META, displayActivityCode, confirmedArtifactReminder: reminder,
+      currentActivity: 'A-2-1', ACTIVITY_META, displayActivityCode, confirmedArtifactReminder: reminder, hasAttachmentContext: () => false,
     })
     const text = build([{ role: 'user', content: '다음 활동으로 가요' }])[0].content
     if (status === 'confirmed') {
@@ -2634,6 +2634,8 @@ function withChecklistFormat(text) {
 
 각 항목은 반드시 별도 줄에 쓰고, 목록 앞뒤에는 빈 줄을 둔다. 하위 목록은 두 칸 들여쓰며 깊이는 두 단계까지만 사용한다. 가지 선 문자(├, └, │)나 공백 정렬로 트리를 그리지 않는다. 모바일에서도 군집 제목과 해당 의견을 순서대로 읽을 수 있게 한다.`)
     .replace('## 행동 제안 카드 (ACTION_CARD)\n\n', '## 행동 제안 카드 (ACTION_CARD)\n\n' + REVIEW_ACTION_RULES)
+    // Approved 2026-10-10: review requests and attachment messages are not move intent.
+    .replace('- 팀이 아무 말 없이 AI만 말한 상황 → 금지\n', '- 팀이 아무 말 없이 AI만 말한 상황 → 금지\n- "체크해 주세요"·"검토해 주세요"·"봐 주세요"·"확인해 주세요"는 이동 의사가 아니라 검토 요청이다 → 금지\n- 선생님이 사진·파일을 올린 메시지([첨부 …] 블록이 붙은 메시지)는 맥락 추가다 → 이동 의사를 직접 밝히지 않았다면 금지\n')
     .replaceAll('| □ |', '| ☐ |')
     .replace('**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").', '**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").\n**팀 확인** 칸에는 \'☐\' 한 글자만 쓴다 — 선생님들이 화면에서 직접 눌러 체크한다(✅·□·설명 글 쓰지 않기).')
     .replace('아래 **축약 체크리스트**를 표로 출력한다:\n', '아래 **축약 체크리스트**를 표로 출력한다(확인 칸에는 \'☐\' 한 글자만 — 선생님이 화면에서 직접 체크):\n')

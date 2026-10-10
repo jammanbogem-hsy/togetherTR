@@ -39,7 +39,7 @@ import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { isDemoObservationOnly } from '@/lib/demo/observer'
 import { useAdminObserver } from '@/components/admin/useAdminObserver'
-import { ATTACHMENT_ACCEPT, ATTACHMENT_ONLY_TEXT, validateAttachment, withAttachmentContext, type ChatAttachment } from '@/lib/chat/attachments'
+import { ATTACHMENT_ACCEPT, ATTACHMENT_ONLY_TEXT, ATTACHMENT_REVIEW_FALLBACK, ATTACHMENT_REVIEW_NOTE, attachmentsBlockAdvance, hasAttachmentContext, validateAttachment, withAttachmentContext, type ChatAttachment } from '@/lib/chat/attachments'
 import { prepareAttachment } from '@/lib/chat/uploadAttachment'
 import { MessageAttachments, PendingAttachmentTray } from './ChatAttachments'
 import { hasDeferredDecision, deferredResponse, discussionContributions } from '@/lib/activity/conversation-flow'
@@ -2338,6 +2338,8 @@ function ChatPanelContent() {
     const lastUserIdx = mapped.map(m => m.role).lastIndexOf('user')
     if (lastUserIdx >= 0) {
       mapped.splice(lastUserIdx, 0, reminder)
+      // Attachments add context to this activity — review them, do not treat them as "done".
+      if (hasAttachmentContext(mapped[lastUserIdx + 1].content)) mapped.push({ role: 'user', content: ATTACHMENT_REVIEW_NOTE })
     }
     return mapped
   }
@@ -4416,8 +4418,15 @@ ${discussionSummary}
           const bodyText = gradeBandsSignal ? gradeBandsSignal.cleanText : fullText
           const signal = parseDiscussionSignal(bodyText)
           let text1 = signal ? signal.cleanText : bodyText
-          const advance = parseActivityAdvance(text1)
-          text1 = advance ? advance.cleanText : text1
+          const parsedAdvance = parseActivityAdvance(text1)
+          text1 = parsedAdvance ? parsedAdvance.cleanText : text1
+          // A message with photos/files is context for this activity; it never advances unless the
+          // same message explicitly asks to move (prompt rule + this code guard).
+          const advanceBlocked = !!parsedAdvance && attachmentsBlockAdvance(userMessage, attachments)
+          const advance = advanceBlocked ? null : parsedAdvance
+          if (advanceBlocked) {
+            text1 = text1.replace(/알겠습니다\.?\s*다음 활동으로 넘어가겠습니다\.?/g, '').trim() || ATTACHMENT_REVIEW_FALLBACK
+          }
           const ret = parseActivityReturn(text1)
           const text2 = ret ? ret.cleanText : text1
           const { codes: rawConfirmCodes2, cleanText: text2c } = parseArtifactConfirm(text2)

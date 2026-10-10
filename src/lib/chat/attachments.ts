@@ -1,3 +1,5 @@
+import { isMoveRequest } from './moveRequest'
+
 /**
  * Chat attachments — photos and files teachers add so the AI (and the team) get the context
  * of offline discussion: meeting notes, whiteboards, paper drafts, shared documents.
@@ -96,3 +98,31 @@ export const IMAGE_READ_PROMPT = [
   '4. 읽을 수 없는 부분은 "(읽기 어려움)"으로 표시하고 지어내지 않습니다.',
   '답은 한국어로, 머리말 없이 옮긴 내용과 설명만 씁니다.',
 ].join('\n')
+
+const ATTACHMENT_MARKER = /(^|\n)\[첨부 (사진|PDF|파일): /
+
+/** True when an AI-request message carries attachment context (see withAttachmentContext). */
+export function hasAttachmentContext(content: string): boolean {
+  return ATTACHMENT_MARKER.test(content)
+}
+
+/**
+ * Sent with a message that has attachments. Teachers upload photos/files to ADD context to the
+ * current activity ("체크해 주세요" = review it), not to finish the activity.
+ */
+export const ATTACHMENT_REVIEW_NOTE = [
+  '[시스템 안내] 방금 선생님이 사진·파일을 올렸습니다. 이것은 지금 활동에 맥락을 더하려는 것입니다.',
+  '1. 첨부에서 읽은 내용을 지금 활동의 목표와 지금까지의 대화·저장된 기록에 비추어 검토하세요.',
+  '2. 기존 내용과 겹치는 점, 새로 더해지는 점, 서로 다르거나 빠진 점을 짧게 정리하고, 기록에 반영할지 물으세요.',
+  '3. 선생님이 이번 메시지에서 이동을 직접 말하지 않았다면 [ACTIVITY_ADVANCE]를 내지 말고, 묻지 않고 저장([ARTIFACT_UPDATE])하지도 마세요.',
+].join('\n')
+
+/** Attachments are context: only an explicit move request in the same message may advance. */
+export function attachmentsBlockAdvance(userText: string, attachments: readonly unknown[] | undefined): boolean {
+  if (!attachments?.length) return false
+  const text = userText.replace(/^\[답장: "[^"]*"\]\n/, '')
+  return !isMoveRequest(text)
+}
+
+/** Fallback when the AI still answered with only the move line for an attachment message. */
+export const ATTACHMENT_REVIEW_FALLBACK = '올려 주신 자료를 받았어요. 지금 활동과 비교해 볼 부분(예: 빠진 내용, 기록에 더할 내용)을 알려 주시면 함께 살펴볼게요.'
