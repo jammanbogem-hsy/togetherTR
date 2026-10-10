@@ -1,3 +1,4 @@
+import { renameLegacyRubricHeader } from '@/lib/rubric/rubric'
 import type { ActivityCode } from '@/types'
 
 // 산출물 content 안의 내부 전용 키 — 화면·보고서·AI 입력·내보내기 어디에도 섹션으로 나열하지 않는다.
@@ -71,7 +72,9 @@ export type DisplayArtifactContent = {
 export function displayArtifactContent(content: Record<string, unknown> | null | undefined, activityCode?: string): DisplayArtifactContent {
   const source = content ?? {}
   if (typeof source._schema === 'string') return { content: source, derivedKeys: [] }
-  const visible = withoutInternalArtifactKeys(source)
+  // 예전 AI 루브릭 표 머리글 '평가 항목'은 '평가 요소'로 보여 준다(저장값은 그대로).
+  const visible = Object.fromEntries(Object.entries(withoutInternalArtifactKeys(source))
+    .map(([k, v]) => [k, typeof v === 'string' ? renameLegacyRubricHeader(v) : v]))
   const table = workspaceTableMarkdown(source.manualWorkspace)
   if (!table) return { content: visible, derivedKeys: [] }
   const key = WORKSPACE_SECTION_KEY[activityCode as ActivityCode] ?? WORKSPACE_FALLBACK_SECTION

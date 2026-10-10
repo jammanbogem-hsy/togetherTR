@@ -1106,6 +1106,8 @@ const { Ds12Renderer } = loadArtifactTsx('../src/components/artifacts/structured
   '@/lib/report/artifactToMarkdown': await import('../src/lib/report/artifactToMarkdown.ts'),
 })
 
+const rubricLib = await import('../src/lib/rubric/rubric.ts')
+
 test('030: Ds-2 패널·상세 모달은 저장 본문의 굵게·목록·표를 렌더하고 원문을 변경하지 않는다', () => {
   const content = {
     _schema: 'Ds-1-2',
@@ -1119,6 +1121,8 @@ test('030: Ds-2 패널·상세 모달은 저장 본문의 굵게·목록·표를
     document: { body: {} }, createPortal: children => children,
     STAGE_COLOR: { Ds: {} }, cn: (...values) => values.filter(Boolean).join(' '),
     FileText: () => null, Copy: () => null, Check: () => null, X: () => null, StatusBadge: () => null,
+    // 평가 루브릭(2026-10-10): 미리보기는 저장된 루브릭을 본문 아래에 붙인다 — 이 픽스처에는 루브릭이 없다.
+    useProjectStore: selector => selector({ project: null }), ...rubricLib, RubricBlock: () => null,
   }, ['ArtifactContent', 'ArtifactPreviewModal'])
   for (const element of [
     React.createElement(ArtifactContent, { content, activityCode: 'Ds-1-2' }),
@@ -2639,6 +2643,10 @@ function withChecklistFormat(text) {
     .replaceAll('| □ |', '| ☐ |')
     .replace('**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").', '**팀 확인** 열: 교사팀에게 직접 확인을 요청 ("각 항목을 확인해 주세요").\n**팀 확인** 칸에는 \'☐\' 한 글자만 쓴다 — 선생님들이 화면에서 직접 눌러 체크한다(✅·□·설명 글 쓰지 않기).')
     .replace('아래 **축약 체크리스트**를 표로 출력한다:\n', '아래 **축약 체크리스트**를 표로 출력한다(확인 칸에는 \'☐\' 한 글자만 — 선생님이 화면에서 직접 체크):\n')
+    // Approved 2026-10-10: Ds-1 rubric column is '평가 요소', not '평가 항목'.
+    .replace('| 평가 항목 | 근거 성취기준 | 평가 방법 | 평가 시점 | 상 | 중 | 하 |', '| 평가 요소 | 근거 성취기준 | 평가 방법 | 평가 시점 | 상 | 중 | 하 |')
+    .replace('- 각 평가 항목은 A-2-2의 각 수업목표와 1:1 대응\n- 결과 평가 + 과정 평가 항목이 모두 포함되어야 한다', '- 각 평가 요소는 A-2-2의 각 수업목표와 1:1 대응 (표 머리글은 \'평가 항목\'이 아니라 \'평가 요소\')\n- 결과 평가 + 과정 평가 요소가 모두 포함되어야 한다')
+    .replace('"A-4(통합 수업목표)에서 설정한 수업목표 [목표 수]개와 루브릭 평가 항목 [항목 수]개가', '"A-4(통합 수업목표)에서 설정한 수업목표 [목표 수]개와 루브릭 평가 요소 [요소 수]개가')
 }
 
 test('T8: 일반 프롬프트는 승인된 목록 시각화·체크리스트·검토 행동·짧은 선택 답변·입력 담당자 보존 안내 외에 연수용 도입 전과 같다', async t => {

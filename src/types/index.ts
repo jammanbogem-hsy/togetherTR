@@ -495,6 +495,8 @@ export interface Project {
   // single 모드의 시트 전체 학년군이자, multi 모드에서 행에 값이 없을 때의 기본값.
   // 없으면 targetGradeGroup을 라벨로 변환해 쓴다.
   curriculumSheetGradeBand?: string
+  /** 설계 단계(Ds-1~Ds-5) 평가 루브릭 — 산출물과 따로 저장, 산출물 아래에 붙여 보인다 (lib/rubric/rubric.ts) */
+  evaluationRubrics?: Partial<Record<ActivityCode, import('@/lib/rubric/rubric').ActivityRubric>>
   // 교육과정 시트 프레즌스 — 누가 어느 셀을 편집 중인지 실시간 표시
   curriculumSheetPresence?: Record<string, {
     uid: string

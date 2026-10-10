@@ -1134,6 +1134,26 @@ export async function appendMapPicksToSheet(
 }
 
 /**
+ * 설계 단계 평가 루브릭 저장. artifacts 는 방장만 쓸 수 있지만 이 필드는 팀원도 쓸 수 있어
+ * 누구나 루브릭을 작성·반영할 수 있다. 빈 표면 필드를 지운다.
+ */
+export async function setActivityRubric(
+  projectId: string,
+  activityCode: ActivityCode,
+  rows: import('@/lib/rubric/rubric').RubricRow[],
+  updatedBy?: string,
+): Promise<void> {
+  const field = `evaluationRubrics.${activityCode}`
+  if (rows.length === 0) {
+    await updateDoc(doc(db, 'projects', projectId), { [field]: deleteField() })
+    return
+  }
+  await updateDoc(doc(db, 'projects', projectId), {
+    [field]: { rows, updatedAt: Date.now(), ...(updatedBy ? { updatedBy } : {}) },
+  })
+}
+
+/**
  * 시트 학년군 설정(모드·기준 학년군) 저장. 시트는 공동 편집이라 팀원 누구나 바꿀 수 있고,
  * 프로젝트 문서에 저장되므로 onSnapshot으로 전원 화면에 동시 반영된다.
  * undefined 필드는 제거한다(Firestore는 undefined를 거부한다 — CLAUDE.md).

@@ -60,6 +60,8 @@ function panelFixture(training = true, current = 'A-1-1', stored = artifacts) {
     firestoreArtifact: stored[current], displayContent: stored[current]?.content ?? {}, displayArtifact: null, hasContent: false,
     effectiveStatus: 'in_review', activityMeta: ACTIVITY_META[current], routeParams: { id: 'room' }, observationOnly: false, adminObserverView: false,
     isHost: false, isConfirmed: false, isSaving: false, artifactError: '', previewModal: null,
+    // 평가 루브릭(2026-10-10): 연수 화면에도 버튼·표·편집 창 자리가 있다 — 이 픽스처에서는 비어 있다.
+    rubricButton: null, rubricSection: null, rubricEditor: null,
     StatusBadge: () => null, MD3Button: ({ children }) => React.createElement('button', {}, children),
     TrainingForm: ({ content }) => { formContent = content; return React.createElement('textarea', { readOnly: true, defaultValue: content['주제 선정 기준'] ?? '' }) },
     ArtifactPreviewModal: ({ modal, onClose }) => modal ? React.createElement('aside', { 'aria-label': '산출물 미리보기' }, modal.title, React.createElement('button', { onClick: onClose }, '닫기')) : null,
