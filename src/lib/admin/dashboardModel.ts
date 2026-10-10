@@ -15,6 +15,9 @@ export interface DashboardProject extends AdminProject {
   /** Stage codes with a saved stage report, plus 'all' for the cumulative report. */
   reports: string[]
   messageCount: number | null
+  /** 시험판 나눔 기록지를 만든 방인지, 이 방의 보고서 형식 선호 표. */
+  hasLessonSheet: boolean
+  reportVotes: { stage: number; sheet: number }
   materialCount: number | null
   flags: DashboardFlag[]
 }
@@ -28,6 +31,7 @@ export interface DashboardData {
     projects: number; training: number; collaborative: number; solo: number
     members: number | null; messages: number | null; reports: number; artifacts: number
     activeHour: number; activeDay: number; activeWeek: number
+    lessonSheets: number; reportVotes: { stage: number; sheet: number }
   }
   stageCounts: Record<string, number>
   attention: Array<{ id: string; title: string; flags: DashboardFlag[]; updatedAt: number | null }>
@@ -57,6 +61,8 @@ export function dashboardProject(id: string, data: Record<string, unknown>, now:
     .filter(([, value]) => timeValue(recordValue(value).savedAt) !== null || textValue(recordValue(value).content))
     .map(([stage]) => stage)
   if (Object.keys(recordValue(data.cumulativeReport)).length) reports.push('all')
+  const reportVotes = { stage: 0, sheet: 0 }
+  for (const vote of Object.values(recordValue(data.reportFormatVotes))) if (vote === 'stage' || vote === 'sheet') reportVotes[vote] += 1
   const hostUid = textValue(data.hostUid)
   const memberUids = Array.isArray(data.memberUids) ? data.memberUids.filter((uid): uid is string => typeof uid === 'string') : []
   const info = recordValue(data.memberInfo)
@@ -69,6 +75,8 @@ export function dashboardProject(id: string, data: Record<string, unknown>, now:
     artifacts,
     reports,
     messageCount: null,
+    hasLessonSheet: Object.keys(recordValue(data.lessonSheetReport)).length > 0,
+    reportVotes,
     materialCount: null,
     flags: [],
   }
@@ -96,7 +104,8 @@ export function isSoloRow(project: Pick<DashboardProject, 'mode' | 'memberCount'
 
 export function summarizeDashboard(projects: DashboardProject[], now: number, extra: { members: number | null; messages: number | null }): DashboardData {
   const stageCounts: Record<string, number> = Object.fromEntries([...STAGES.map(stage => [stage.code, 0]), ['none', 0]])
-  let activeHour = 0, activeDay = 0, activeWeek = 0, reports = 0, artifacts = 0
+  let activeHour = 0, activeDay = 0, activeWeek = 0, reports = 0, artifacts = 0, lessonSheets = 0
+  const reportVotes = { stage: 0, sheet: 0 }
   for (const project of projects) {
     const stage = STAGES.some(item => item.code === project.stage) && project.started ? project.stage as StageCode : 'none'
     stageCounts[stage] += 1
@@ -106,6 +115,9 @@ export function summarizeDashboard(projects: DashboardProject[], now: number, ex
     if (age <= 7 * DAY) activeWeek += 1
     reports += project.reports.length
     artifacts += Object.keys(project.artifacts).length
+    if (project.hasLessonSheet) lessonSheets += 1
+    reportVotes.stage += project.reportVotes.stage
+    reportVotes.sheet += project.reportVotes.sheet
   }
   const attention = projects
     .filter(project => project.flags.length > 0)
@@ -119,7 +131,7 @@ export function summarizeDashboard(projects: DashboardProject[], now: number, ex
       training: projects.filter(project => project.training).length,
       solo: projects.filter(isSoloRow).length,
       collaborative: projects.filter(project => !isSoloRow(project)).length,
-      members: extra.members, messages: extra.messages, reports, artifacts, activeHour, activeDay, activeWeek,
+      members: extra.members, messages: extra.messages, reports, artifacts, activeHour, activeDay, activeWeek, lessonSheets, reportVotes,
     },
     stageCounts,
     attention,

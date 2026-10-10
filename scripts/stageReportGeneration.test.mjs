@@ -110,6 +110,7 @@ function reportsFixture(p = project, uid = 'host') {
     './StageAnalysisModal': { StageAnalysisModal: props => { generationProps.push(props); return React.createElement('div', {}, 'shared generator') } },
     '@/components/members/MemberActionDialog': { MemberActionDialog: props => { callbacks.push(props); return React.createElement('div', {}, props.children) } },
     '@/lib/report/stageReportState': reportState,
+    './LessonSheetModal': { LessonSheetCard: () => null, LessonSheetModal: () => null },
   })
   return { callbacks, generationProps, render() { index = 0; callbacks.length = 0; return renderToStaticMarkup(React.createElement(StageReportsModal, { onClose() {} })) } }
 }

@@ -13,6 +13,7 @@ import { generateHwpx } from '@/lib/hwpx/generateHwpx'
 import { StageAnalysisModal } from './StageAnalysisModal'
 import { MemberActionDialog as ReportConfirmationDialog } from '@/components/members/MemberActionDialog'
 import { canGenerateStageReport, stageHasArtifacts, stageReportChanged } from '@/lib/report/stageReportState'
+import { LessonSheetCard, LessonSheetModal } from './LessonSheetModal'
 
 const STAGE_LABELS: Record<string, string> = {
   T: '팀준비', A: '분석', Ds: '설계', DI: '개발·실행', E: '평가',
@@ -25,6 +26,8 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   const [pdfError, setPdfError] = useState('')
   const [generationStage, setGenerationStage] = useState<StageCode | null>(null)
   const [confirmStage, setConfirmStage] = useState<StageCode | null>(null)
+  // 시험판 나눔 기록지: null 닫힘 · false 보기 · true 만들기
+  const [lessonSheet, setLessonSheet] = useState<boolean | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const selectedSavedAt = selectedStage ? project?.stageReports?.[selectedStage]?.savedAt : undefined
@@ -35,6 +38,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
   const isHost = canGenerateStageReport(project, userProfile?.uid)
 
   if (!project) return null
+  if (typeof lessonSheet === 'boolean') return <LessonSheetModal generate={lessonSheet} onBack={() => setLessonSheet(null)} onClose={onClose} />
   if (generationStage) return <StageAnalysisModal key={generationStage} reportStage={generationStage} forceGenerate isHost={isHost}
     onClose={() => { setGenerationStage(null); setSelectedStage(null) }} />
 
@@ -152,6 +156,7 @@ export function StageReportsModal({ onClose }: { onClose: () => void }) {
         {!selectedStage ? <div ref={scrollRef} style={{ overflowAnchor: 'none' }} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <p className="mb-4 text-[13px] text-[var(--md-sys-on-surface-variant)]">저장된 산출물로 단계 보고서를 만들거나 다시 생성할 수 있어요. 보고서를 선택하면 전체 내용을 볼 수 있어요.</p>
           <div className="grid grid-cols-1 gap-3">
+            <LessonSheetCard onOpen={generate => setLessonSheet(generate)} />
             {savedStages.map(stageInfo => {
               const report = stageReports[stageInfo.code]
               const changed = stageReportChanged(project, stageInfo.code)

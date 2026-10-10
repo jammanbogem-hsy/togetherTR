@@ -369,6 +369,10 @@ export interface Project {
     savedAt: number
     savedBy: string
   }
+  /** 시험판 보고서 — '수업 실행 나눔 기록지' 형식(lib/report/lessonSheet). 단계 보고서와 나란히 비교한다. */
+  lessonSheetReport?: { content: string; savedAt: number; savedBy?: string }
+  /** 보고서 형식 선호 — uid별 'stage'(단계 보고서) | 'sheet'(나눔 기록지). 인기 형식 채택 근거. */
+  reportFormatVotes?: Record<string, 'stage' | 'sheet'>
   currentActivity?: ActivityCode  // 현재 활동 (팀 전체 공유)
   activityStatuses?: Partial<Record<ActivityCode, StageStatus>>  // 활동별 상태 (팀 전체 공유)
   teamDiscussion?: {

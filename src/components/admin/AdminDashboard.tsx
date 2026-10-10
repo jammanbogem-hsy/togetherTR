@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { Activity, AlertTriangle, Eye, FileText, FolderOpen, GraduationCap, Megaphone, MessagesSquare, RefreshCw, Users } from 'lucide-react'
+import { Activity, AlertTriangle, Eye, FileText, FolderOpen, GraduationCap, Megaphone, MessagesSquare, RefreshCw, ThumbsUp, Users } from 'lucide-react'
 import { adminButton, adminDate, adminFetch, openNoticeComposer } from './adminClient'
 import { ALL_ACTIVITIES, isSoloRow, type DashboardData, type DashboardProject } from '@/lib/admin/dashboardModel'
 import { SOLO_HIDDEN_ACTIVITIES, STAGES, displayActivityCode, type StageCode } from '@/types'
@@ -54,9 +54,10 @@ function StatCards({ data }: { data: DashboardData }) {
     { icon: Activity, label: '지금 활동 중', value: t.activeHour, sub: `오늘 ${t.activeDay} · 이번 주 ${t.activeWeek}` },
     { icon: Users, label: '회원', value: t.members, sub: '가입한 선생님' },
     { icon: MessagesSquare, label: '전체 대화', value: t.messages, sub: '모든 방의 메시지 수' },
-    { icon: FileText, label: '산출물 · 보고서', value: t.artifacts, sub: `단계 보고서 ${t.reports}개` },
+    { icon: FileText, label: '산출물 · 보고서', value: t.artifacts, sub: `단계 보고서 ${t.reports}개 · 나눔 기록지 ${t.lessonSheets}개` },
+    { icon: ThumbsUp, label: '보고서 형식 선호', value: t.reportVotes.stage + t.reportVotes.sheet, sub: `단계 보고서 ${t.reportVotes.stage} · 나눔 기록지 ${t.reportVotes.sheet}` },
   ]
-  return <ul className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">{cards.map(card => <li key={card.label} className="rounded-[24px] bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.12)]">
+  return <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4 2xl:grid-cols-7">{cards.map(card => <li key={card.label} className="rounded-[24px] bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.12)]">
     <card.icon size={20} className="text-[#0842A0]" aria-hidden="true" />
     <p className="mt-2 text-sm font-semibold text-[#444746]">{card.label}</p>
     <p className="text-[28px] font-bold leading-9">{card.value === null ? '—' : card.value.toLocaleString()}</p>

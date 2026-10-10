@@ -15,7 +15,7 @@ const PROJECT_LIMIT = 500
 const COUNTED_ROOMS = 30
 
 const BASE_FIELDS = ['title', 'originalCreatedBy', 'createdBy', 'hostUid', 'schoolLevel', 'targetGradeGroup', 'teamGradeBands', 'targetSubjects',
-  'currentStage', 'currentActivity', 'status', 'currentCycle', 'trainingMode', 'memberUids', 'memberInfo', 'createdAt', 'updatedAt', 'mode', 'started']
+  'currentStage', 'currentActivity', 'status', 'currentCycle', 'trainingMode', 'memberUids', 'memberInfo', 'createdAt', 'updatedAt', 'mode', 'started', 'reportFormatVotes']
 
 async function countUsers(): Promise<number | null> {
   const auth = getAdminAuth()
@@ -41,6 +41,7 @@ export async function GET(request: Request) {
     ...ALL_ACTIVITIES.flatMap(code => [new FieldPath('artifacts', code, 'status'), new FieldPath('artifacts', code, 'version')]),
     ...STAGES.map(stage => new FieldPath('stageReports', stage.code, 'savedAt')),
     new FieldPath('cumulativeReport', 'savedAt'),
+    new FieldPath('lessonSheetReport', 'savedAt'),
   ]
   try {
     const now = Date.now()
