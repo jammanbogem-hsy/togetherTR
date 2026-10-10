@@ -10,6 +10,8 @@ import { STAGE_COLOR } from '@/lib/ui/stageColors'
 import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
 import { UsersThree, ChartLineUp, PencilRuler, RocketLaunch, Trophy, Check, Shield, ArrowsClockwise, type Icon } from '@phosphor-icons/react'
 import { isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
+import { browseActivityForStage } from '@/lib/activity/browse'
+import { isSoloProject } from '@/lib/project/projectMode'
 
 const STAGE_MORPH_DELAY: Record<StageCode, string> = {
   T: '0s', A: '-2.8s', Ds: '-5.6s', DI: '-8.4s', E: '-11.2s',
@@ -416,6 +418,8 @@ export function StageBar() {
                 onClick={() => {
                   if (project.demoRun) setViewingActivity(stage.activities[0])
                   else if (isHost && stage.code !== currentStage) setPendingStageMove(stage.code)
+                  // 팀원은 단계를 눌러 그 단계의 기록을 열람만 한다(팀은 이동하지 않음).
+                  else if (!isHost) setViewingActivity(browseActivityForStage(stage.code, project, project.currentActivity ?? viewingActivity, isSoloProject(project)))
                 }}
                 showGuardrail={stage.code === 'Ds' && hasGuardrail}
                 guardrailSummary={guardrailSummary}

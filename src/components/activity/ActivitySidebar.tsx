@@ -21,6 +21,7 @@ import {
 
 import { TrainingStepGuide } from '@/components/training/TrainingStepGuide'
 import { isSoloProject } from '@/lib/project/projectMode'
+import { browseActivityForStage, sidebarStage } from '@/lib/activity/browse'
 
 const STAGE_ICON_MAP: Record<string, Icon> = {
   T:  UsersThree,
@@ -325,7 +326,9 @@ export function ActivitySidebar() {
 
   const isHost = !project.demoRun && (project.hostUid === userProfile?.uid || project.createdBy === userProfile?.uid)
 
-  const currentStage = project.demoRun ? ACTIVITY_META[viewingActivity].stage : project.currentStage
+  // 팀원은 다른 단계의 기록도 열람할 수 있다 — 사이드바는 보고 있는 활동의 단계를 보여 준다(팀 이동 없음).
+  const currentStage = sidebarStage(isHost, !!project.demoRun, viewingActivity, project.currentStage)
+  const teamStage = project.currentStage
   const currentStageInfo = STAGES.find(s => s.code === currentStage)!
   const guide = STAGE_GUIDE[currentStage]
   const color = STAGE_COLOR[currentStage]
@@ -382,6 +385,31 @@ export function ActivitySidebar() {
         </div>
       </section>
 
+      {/* 팀원 단계 열람 — 앞뒤 단계의 활동 기록을 읽기만 한다(기록 담당의 진행 위치는 그대로) */}
+      {!isHost && !project.demoRun && (
+        <nav aria-label="다른 단계 기록 열람" className="mx-2 mt-2 flex shrink-0 items-center gap-1 rounded-2xl bg-white p-1">
+          {STAGES.map(stage => {
+            const selected = stage.code === currentStage
+            const isTeam = stage.code === teamStage
+            const stageColor = STAGE_COLOR[stage.code]
+            return <button key={stage.code} type="button" aria-pressed={selected}
+              title={`${stage.label} 단계 기록 보기${isTeam ? ' · 팀이 진행 중' : ''}`}
+              onClick={() => {
+                if (selected) return
+                const finish = startInteraction('activity-navigation')
+                setViewingActivity(browseActivityForStage(stage.code, project, currentActivity, isSolo))
+                finishAfterPaint(finish)
+              }}
+              className={cn('relative flex min-h-9 flex-1 items-center justify-center rounded-xl px-1 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-[#0B57D0]',
+                selected ? 'text-white' : 'text-[#444746] hover:bg-[#F1F4F9]')}
+              style={selected ? { backgroundColor: stageColor.hex } : undefined}>
+              {stage.code}
+              {isTeam && <span aria-hidden="true" className="absolute right-1 top-1 size-1.5 rounded-full" style={{ backgroundColor: selected ? '#FFFFFF' : stageColor.hex }} />}
+            </button>
+          })}
+        </nav>
+      )}
+
       {/* 팀이 할 일 — v1.1 §7-2 #8: viewingActivity 기준 1~2문장 동적 교체 (단계 고정 → 활동별 힌트 프리픽스) */}
       {(() => {
         // 구현: viewing 활동 매핑이 있으면 상단에 prefix로 배치하고 단계 고정 문장에서 중복 제거.
@@ -412,7 +440,7 @@ export function ActivitySidebar() {
         <div className="mx-3 mt-2 rounded-xl bg-[#FFF8E1] border border-[#FFD54F] px-3 py-2 flex items-center gap-2">
           <Crown size={14} weight="fill" className="text-[#6D4100] flex-shrink-0" />
           <p className="flex-1 text-[11px] text-[#6D4100] leading-snug">
-            {project.demoRun ? '다시 보기 — 선택한 활동의 대화·산출물을 표시합니다' : '탐색 중 — 채팅은 기록 담당 진행 활동에서 계속됩니다'}
+            {project.demoRun ? '다시 보기 — 선택한 활동의 대화·산출물을 표시합니다' : `열람 중 · ${displayActivityCode(viewingActivity)} — 기록은 읽기만 하고, 채팅은 기록 담당이 진행 중인 ${displayActivityCode(currentActivity)}에서 이어집니다`}
           </p>
           <button
             onClick={() => setViewingActivity(currentActivity)}
