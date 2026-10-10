@@ -5,7 +5,7 @@ import { auth, storage } from '@/lib/firebase/config'
 import { IMAGE_MAX_EDGE, attachmentPath, attachmentType, type ChatAttachment } from './attachments'
 
 /** Shrink large photos (phones take 4–8MB pictures). GIFs and small images stay as they are. */
-async function shrinkImage(file: File): Promise<Blob> {
+export async function shrinkImage(file: File): Promise<Blob> {
   if (file.type === 'image/gif' || typeof createImageBitmap !== 'function') return file
   try {
     const bitmap = await createImageBitmap(file)

@@ -89,3 +89,11 @@ test('admin APIs require the verified super admin; mark-read requires any signed
   assert.match(fs.readFileSync('src/app/api/notices/route.ts', 'utf8'), /verifyRequestUser\(request\)/)
   assert.match(fs.readFileSync('src/app/(app)/layout.tsx', 'utf8'), /<AdminNoticePopup \/>/)
 })
+
+test('vision compare is super admin only, runs OpenAI and Claude candidates, stores nothing', () => {
+  const route = fs.readFileSync('src/app/api/admin/vision-compare/route.ts', 'utf8')
+  assert.match(route, /const identity = await verifySuperAdminRequest\(request\)/)
+  for (const model of ['gpt-4o', 'gpt-5.6-luna', 'gpt-6-luna', 'claude-sonnet-5-5']) assert.ok(route.includes(`'${model}'`), model)
+  assert.doesNotMatch(route, /getAdminDb|collection\(/)
+  assert.match(fs.readFileSync('src/app/(app)/admin/page.tsx', 'utf8'), /<VisionCompare \/>/)
+})

@@ -103,7 +103,7 @@ function ProgressTable({ rows, now }: { rows: DashboardProject[]; now: number })
     </div>
     <p className="mt-1 text-xs text-[#444746]">● 확정 · ◐ 저장 · 빈칸 미작성 · – 개인 설계에서 숨긴 활동. 대화·자료 수는 최근 활동한 30개 방만 셉니다.</p>
     <div className="mt-3 overflow-x-auto">
-      <table className="min-w-max border-separate border-spacing-0 text-sm">
+      <table className="w-full min-w-max border-separate border-spacing-0 text-sm">
         <thead><tr>
           <th scope="col" className="sticky left-0 z-10 bg-white px-3 py-2 text-left">방</th>
           {STAGES.map(stage => <th key={stage.code} scope="colgroup" colSpan={stage.activities.length} className="px-1 py-2 text-center text-xs font-bold" style={{ color: STAGE_COLOR[stage.code].hex }}>{stage.label}</th>)}
@@ -122,7 +122,7 @@ function ProgressTable({ rows, now }: { rows: DashboardProject[]; now: number })
 function ProgressRow({ row }: { row: DashboardProject }) {
   const solo = isSoloRow(row)
   return <tr className="odd:bg-[#F8FAFD]">
-    <th scope="row" className="sticky left-0 z-10 max-w-[220px] bg-inherit px-3 py-2 text-left font-semibold">
+    <th scope="row" className="sticky left-0 z-10 min-w-[200px] max-w-[280px] bg-inherit px-3 py-2 text-left font-semibold">
       <Link href={`/admin/projects/${encodeURIComponent(row.id)}`} className="block truncate hover:underline">{row.title}</Link>
       <span className="block truncate text-xs font-normal text-[#444746]">{row.training ? '연수용 · ' : ''}{solo ? '개인' : `협력 ${row.memberCount}명`}{row.activity ? ` · 현재 ${displayActivityCode(row.activity)}` : ''}</span>
     </th>

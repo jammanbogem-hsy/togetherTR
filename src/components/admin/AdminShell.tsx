@@ -8,7 +8,7 @@ import { NoticeComposerDialog } from './NoticeComposer'
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const { ready, uid } = useAdminSession()
   return <main className="min-h-dvh bg-[#F8FAFD] p-4 pb-28 text-[#1F1F1F] sm:p-8 sm:pb-28">
-    <div className="mx-auto max-w-[1440px]">
+    <div className="mx-auto max-w-[2200px]">
       <Link href="/dashboard" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-semibold text-[#0842A0] hover:bg-[#D3E3FD]"><ArrowLeft size={18} /> 내 프로젝트</Link>
       <header className="my-5 flex flex-wrap items-center gap-4">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#D3E3FD] text-[#0842A0]"><ShieldCheck size={28} /></div>

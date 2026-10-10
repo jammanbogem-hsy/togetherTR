@@ -2,18 +2,19 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FolderOpen, Users, MessageSquare, RefreshCw, ArrowRight, Search, LayoutDashboard, Megaphone, Eye } from 'lucide-react'
+import { FolderOpen, Users, MessageSquare, RefreshCw, ArrowRight, Search, LayoutDashboard, Megaphone, Eye, FlaskConical } from 'lucide-react'
 import { AdminShell } from '@/components/admin/AdminShell'
 import { adminRead, adminButton, adminDate, openNoticeComposer } from '@/components/admin/adminClient'
 import { AdminDashboard } from '@/components/admin/AdminDashboard'
 import { NoticeHistory } from '@/components/admin/NoticeComposer'
+import { VisionCompare } from '@/components/admin/VisionCompare'
 import type { AdminMember, AdminProject, AdminPage } from '@/lib/admin/consoleModel'
 import { STAGES, displayActivityCode, type ActivityCode } from '@/types'
 
 export default function AdminConsolePage() { return <AdminShell><Console /></AdminShell> }
 
 function Console() {
-  const [view, setView] = useState<'dashboard' | 'projects' | 'members' | 'notices'>('dashboard')
+  const [view, setView] = useState<'dashboard' | 'projects' | 'members' | 'notices' | 'vision'>('dashboard')
   const tab = (key: typeof view, label: string, Icon: typeof FolderOpen) =>
     <button type="button" aria-pressed={view === key} onClick={() => setView(key)} className={`${adminButton} ${view === key ? '' : '!bg-white border border-[#C4C7C5]'}`}><Icon size={18} /> {label}</button>
   return <>
@@ -22,9 +23,10 @@ function Console() {
       {tab('projects', '전체 프로젝트', FolderOpen)}
       {tab('members', '회원 목록', Users)}
       {tab('notices', '알림 보내기', Megaphone)}
+      {tab('vision', '읽기 모델 비교', FlaskConical)}
       <Link href="/feedback" className={`${adminButton} !bg-white border border-[#C4C7C5]`}><MessageSquare size={18} /> 피드백함</Link>
     </nav>
-    {view === 'dashboard' ? <AdminDashboard /> : view === 'notices' ? <NoticeHistory /> : <Directory key={view} view={view} />}
+    {view === 'dashboard' ? <AdminDashboard /> : view === 'notices' ? <NoticeHistory /> : view === 'vision' ? <VisionCompare /> : <Directory key={view} view={view} />}
   </>
 }
 
