@@ -87,15 +87,20 @@ test('suggest route grounds 상·중·하 in official achievement levels', () =>
   assert.match(src, /isRubricActivity\(body\?\.activityCode\)/)
 })
 
-test('artifact panel shows the rubric in team, empty, training and preview views', () => {
-  const src = read('src/components/artifacts/ArtifactPanel.tsx')
-  assert.equal((src.match(/\{rubricSection\}/g) ?? []).length, 3)
-  assert.match(src, /\{rubricButton && <span className="ml-auto">\{rubricButton\}<\/span>\}/)
-  assert.match(src, /\n {12}\{rubricButton\}\n/)
-  assert.equal((src.match(/\{rubricEditor\}/g) ?? []).length, 2)
-  assert.match(src, /<RubricBlock rows=\{modalRubricRows\}/)
-  assert.match(src, /canEditRubric = rubricActivity && !!project && !observationOnly && !adminObserverView/)
-  assert.match(src, /setActivityRubric\(project\.id, viewingActivity, rows/)
+test('rubric button sits in the main chat header; the artifact panel shows the table and edit only', () => {
+  const chat = read('src/components/chat/ChatPanel.tsx')
+  assert.match(chat, /<ChatPanelHeader [^\n]*>\n[^\n]*\n {10}<ChatRubricButton activityCode=\{currentActivity\} \/>/)
+  const button = read('src/components/artifacts/rubric/ChatRubricButton.tsx')
+  assert.match(button, /if \(!rubric\.enabled \|\| !rubric\.canEdit\) return null/)
+  assert.match(button, /'루브릭 편집' : '평가 루브릭 작성'/)
+  const hook = read('src/components/artifacts/rubric/useRubricEditor.tsx')
+  assert.match(hook, /canEdit = enabled && !!project && !isDemoObservationOnly\(project\) && !adminObserver/)
+  assert.match(hook, /setActivityRubric\(project\.id, activityCode, next/)
+  const panel = read('src/components/artifacts/ArtifactPanel.tsx')
+  assert.doesNotMatch(panel, /rubricButton|평가 루브릭 작성/)
+  assert.equal((panel.match(/\{rubricSection\}/g) ?? []).length, 3)
+  assert.equal((panel.match(/\{rubricEditor\}/g) ?? []).length, 2)
+  assert.match(panel, /<RubricBlock rows=\{modalRubricRows\}/)
 })
 
 test('rubric is saved in its own member-writable field, not in artifacts', () => {

@@ -54,11 +54,9 @@ import { canOpenCoeditFromPanel } from '@/lib/artifacts/coeditEntry'
 import { MD3Button } from '@/components/ui/MD3Button'
 import { effectiveProjectMode, isSoloProject } from '@/lib/project/projectMode'
 import { displayArtifactContent, isInternalArtifactKey } from '@/lib/artifacts/internalKeys'
-import { isRubricActivity, normalizeRubricRows, rubricToMarkdown, type RubricRow } from '@/lib/rubric/rubric'
+import { isRubricActivity, normalizeRubricRows, rubricToMarkdown } from '@/lib/rubric/rubric'
 import { RubricBlock } from './rubric/RubricBlock'
-import { RubricEditorModal, type RubricSuggestContext } from './rubric/RubricEditorModal'
-import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
-import { setActivityRubric } from '@/lib/firebase/projects'
+import { useRubricEditor } from './rubric/useRubricEditor'
 
 const STATUS_CONFIG: Record<ArtifactStatus, { label: string; icon: Icon; className: string }> = {
   ai_draft:  { label: 'AI 초안', icon: Sparkle,      className: 'bg-[#E8F0FE] text-[#1A73E8]' },
@@ -1162,65 +1160,12 @@ function InteractiveArtifactPanel() {
   const observationOnly = isDemoObservationOnly(project)
   const adminObserverView = useAdminObserver()
   const isHost = !observationOnly && !adminObserverView && (project?.hostUid === userProfile?.uid || project?.createdBy === userProfile?.uid)
-  // ── 설계 단계 평가 루브릭 (Ds-1~Ds-5) — 팀원 누구나 작성, 산출물 아래에 붙여 보인다 ──
-  const rubricActivity = isRubricActivity(viewingActivity)
-  const canEditRubric = rubricActivity && !!project && !observationOnly && !adminObserverView
-  const [rubricEditorOpen, setRubricEditorOpen] = useState(false)
-  const storedRubricRows = project?.evaluationRubrics?.[viewingActivity]?.rows
-  const rubricRows = useMemo(() => normalizeRubricRows(storedRubricRows), [storedRubricRows])
-  const rubricTitle = `${displayActivityCode(viewingActivity)} ${activityMeta.label} 평가 루브릭`
-  const panelMessages = useProjectStore(s => s.messages)
-  const buildRubricSuggestContext = (): RubricSuggestContext => {
-    const artifactText = (code: ActivityCode) => {
-      const content = project?.artifacts?.[code]?.content as Record<string, unknown> | undefined
-      return content ? serializeArtifactForPrompt(content) : ''
-    }
-    // 성취기준 근거(A-3 분석표·시트) → 목표(A-4) → 설계 단계 산출물(Ds-1부터 이 활동까지)
-    const order: ActivityCode[] = ['A-2-1', 'A-2-2', 'Ds-1-1', 'Ds-1-2', 'Ds-1-3', 'Ds-2-1', 'Ds-2-2']
-    const upto = order.indexOf(viewingActivity)
-    const priorArtifacts = order.slice(0, upto + 1)
-      .map(code => ({ label: `${displayActivityCode(code)} ${ACTIVITY_META[code].label}`, text: artifactText(code) }))
-      .filter(a => a.text.trim())
-    const sheetStandards = (project?.curriculumSheet ?? []).map(row => row.standard).filter(Boolean).join('\n')
-    if (sheetStandards.trim()) priorArtifacts.unshift({ label: '교육과정 분석 시트 성취기준', text: sheetStandards })
-    return {
-      projectTitle: project?.title,
-      targetGradeGroup: project?.targetGradeGroup,
-      targetSubjects: project?.targetSubjects,
-      priorArtifacts,
-      chatContext: panelMessages
-        .filter(m => m.activityCode === viewingActivity)
-        .map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
-    }
-  }
-  const saveRubric = async (rows: RubricRow[]) => {
-    if (!project) return
-    await setActivityRubric(project.id, viewingActivity, rows, userProfile?.displayName)
-  }
-  const rubricSection = rubricActivity && rubricRows.length > 0 ? (
-    <RubricBlock rows={rubricRows} title={rubricTitle} compact onEdit={canEditRubric ? () => setRubricEditorOpen(true) : undefined} />
+  // ── 설계 단계 평가 루브릭 (Ds-1~Ds-5) — 작성 버튼은 채팅 위(ChatPanel)에 있고, 여기서는 표와 "편집"만 ──
+  const rubric = useRubricEditor(viewingActivity)
+  const rubricSection = rubric.enabled && rubric.rows.length > 0 ? (
+    <RubricBlock rows={rubric.rows} title={rubric.title} compact onEdit={rubric.canEdit ? rubric.openEditor : undefined} />
   ) : null
-  const rubricButton = canEditRubric ? (
-    <button
-      type="button"
-      onClick={() => setRubricEditorOpen(true)}
-      title="평가 루브릭을 작성해 산출물 아래에 붙입니다"
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F3E8FD] hover:bg-[#E9D2FB] text-[#7B1FA2] text-[11px] font-bold transition-colors flex-shrink-0"
-    >
-      <PencilSimple size={14} weight="bold" />
-      {rubricRows.length > 0 ? '루브릭 편집' : '평가 루브릭 작성'}
-    </button>
-  ) : null
-  const rubricEditor = rubricEditorOpen && project ? (
-    <RubricEditorModal
-      activityCode={viewingActivity}
-      activityLabel={rubricTitle}
-      initialRows={rubricRows}
-      suggestContext={buildRubricSuggestContext}
-      onSave={saveRubric}
-      onClose={() => setRubricEditorOpen(false)}
-    />
-  ) : null
+  const rubricEditor = rubric.editor
   const stageColor = STAGE_COLOR[observationOnly ? activityMeta.stage : project?.currentStage ?? 'T']
 
   // 부재 팀원 확인 상태(#28) — 확인 대기는 모두에게, 다시 논의 요청은 방장에게 표시
@@ -1666,7 +1611,6 @@ function InteractiveArtifactPanel() {
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#DADCE0] bg-[#E8F0FE] px-4 py-3">
           <span className="text-sm font-semibold text-[#0842A0]">연수 기록</span>
           {hasContent && <span className="inline-flex items-center gap-1 rounded-full bg-[#D7EBDD] px-2.5 py-1 text-xs font-semibold text-[#0D652D]"><CheckCircle size={14} weight="fill" aria-hidden="true" />저장됨</span>}
-          {rubricButton && <span className="ml-auto">{rubricButton}</span>}
           {hasContent && <MD3Button variant="text" size="xs" onClick={() => openArtifactPreview({ title: displayArtifact?.title ?? activityMeta.label, content: trainingContent, subtitle: '저장된 연수 기록', stageCode: activityMeta.stage, activityCode: viewingActivity })} aria-label="산출물 전체 보기" icon={<ArrowsOut size={16} />}>전체 보기</MD3Button>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -1842,7 +1786,6 @@ function InteractiveArtifactPanel() {
                 보고서 보기
               </button>
             ))}
-            {rubricButton}
             {hasContent && (
               <button
                 onClick={openCurrentArtifactPreview}

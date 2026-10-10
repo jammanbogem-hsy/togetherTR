@@ -109,6 +109,7 @@ import { gateArtifactSave, previousSectionText } from '@/lib/chat/artifactSaveGa
 import { CHECKLIST_ALL_DONE_NOTE, isChecklistChecked, checklistParticipants, checklistLegacyEntry, applyChecklistToggle, checklistProgress, parseChecklistMark, prepareChecklistMarkdown, type ChecklistState } from '@/lib/chat/checklist'
 import { buildAutofillContext, resolveAutofillTopic } from '@/lib/curriculum/autofillContext'
 import { readSheetOpenRequest, stripSheetOpenParams } from '@/lib/curriculum/sheetOpenLink'
+import { ChatRubricButton } from '@/components/artifacts/rubric/ChatRubricButton'
 import { buildLessonTeachingContext } from '@/lib/curriculum/lessonAudience'
 import { buildTrainingWelcome, displayedMessageContent, isTrainingActivity, isTrainingProject, shouldReplyTrainingQuietly, trainingMessageChip, trainingSaveNoticeChip, TRAINING_QUIET_REPLY, TRAINING_SEND_EVENT } from '@/lib/training/trainingMode'
 import { isMoveRequest, MOVE_NEEDS_RECORDER } from '@/lib/chat/moveRequest'
@@ -4979,6 +4980,8 @@ ${discussionSummary}
 
       {/* 헤더 */}
       <ChatPanelHeader activity={currentActivity} teamMode={isTeamMode} extraTopSpace={GRAPH_ACTIVITIES.includes(currentActivity) && !showWorkspace}>
+          {/* 설계 단계(Ds-1~Ds-5) 평가 루브릭 작성 — 산출물 아래에 붙는다 */}
+          <ChatRubricButton activityCode={currentActivity} />
           {/* 중요 노트 버튼 */}
           <MD3Button
             onClick={() => setShowKeyNotes(true)}
