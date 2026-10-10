@@ -32,6 +32,8 @@ export function observerBlocksRequest(url: string, method: string | undefined, o
   if (SAFE_METHODS.has((method ?? 'GET').toUpperCase())) return false
   let parsed: URL
   try { parsed = new URL(url, origin) } catch { return false }
+  // Confirming one's own admin notice is not a change to the observed room.
+  if (parsed.pathname === '/api/notices') return false
   return parsed.origin === origin && parsed.pathname.startsWith('/api/')
 }
 

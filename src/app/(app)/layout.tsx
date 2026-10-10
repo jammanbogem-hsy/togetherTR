@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useProjectStore } from '@/store/project'
 import { onProfileRestored } from '@/lib/auth'
 import { FeedbackButton } from '@/components/feedback/FeedbackButton'
+import { AdminNoticePopup } from '@/components/notices/AdminNoticePopup'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { userProfile, setUserProfile } = useProjectStore()
@@ -27,5 +28,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!userProfile) return null
 
   // 화면 오른쪽 아래 피드백 버튼 — 로그인한 모든 화면에서 오류·불편을 바로 보낸다
-  return <>{children}<FeedbackButton /></>
+  // 관리자 알림 팝업 — 본인 알림함을 실시간으로 지켜보다가 새 알림이 오면 띄운다
+  return <>{children}<FeedbackButton /><AdminNoticePopup /></>
 }

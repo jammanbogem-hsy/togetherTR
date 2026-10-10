@@ -2,23 +2,29 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FolderOpen, Users, MessageSquare, RefreshCw, ArrowRight, Search } from 'lucide-react'
+import { FolderOpen, Users, MessageSquare, RefreshCw, ArrowRight, Search, LayoutDashboard, Megaphone, Eye } from 'lucide-react'
 import { AdminShell } from '@/components/admin/AdminShell'
-import { adminRead, adminButton, adminDate } from '@/components/admin/adminClient'
+import { adminRead, adminButton, adminDate, openNoticeComposer } from '@/components/admin/adminClient'
+import { AdminDashboard } from '@/components/admin/AdminDashboard'
+import { NoticeHistory } from '@/components/admin/NoticeComposer'
 import type { AdminMember, AdminProject, AdminPage } from '@/lib/admin/consoleModel'
 import { STAGES, displayActivityCode, type ActivityCode } from '@/types'
 
 export default function AdminConsolePage() { return <AdminShell><Console /></AdminShell> }
 
 function Console() {
-  const [view, setView] = useState<'projects' | 'members'>('projects')
+  const [view, setView] = useState<'dashboard' | 'projects' | 'members' | 'notices'>('dashboard')
+  const tab = (key: typeof view, label: string, Icon: typeof FolderOpen) =>
+    <button type="button" aria-pressed={view === key} onClick={() => setView(key)} className={`${adminButton} ${view === key ? '' : '!bg-white border border-[#C4C7C5]'}`}><Icon size={18} /> {label}</button>
   return <>
     <nav aria-label="관리자 메뉴" className="mb-6 flex flex-wrap gap-2">
-      <button type="button" aria-pressed={view === 'projects'} onClick={() => setView('projects')} className={`${adminButton} ${view === 'projects' ? '' : '!bg-white border border-[#C4C7C5]'}`}><FolderOpen size={18} /> 전체 프로젝트</button>
-      <button type="button" aria-pressed={view === 'members'} onClick={() => setView('members')} className={`${adminButton} ${view === 'members' ? '' : '!bg-white border border-[#C4C7C5]'}`}><Users size={18} /> 회원 목록</button>
+      {tab('dashboard', '현황 대시보드', LayoutDashboard)}
+      {tab('projects', '전체 프로젝트', FolderOpen)}
+      {tab('members', '회원 목록', Users)}
+      {tab('notices', '알림 보내기', Megaphone)}
       <Link href="/feedback" className={`${adminButton} !bg-white border border-[#C4C7C5]`}><MessageSquare size={18} /> 피드백함</Link>
     </nav>
-    <Directory key={view} view={view} />
+    {view === 'dashboard' ? <AdminDashboard /> : view === 'notices' ? <NoticeHistory /> : <Directory key={view} view={view} />}
   </>
 }
 
@@ -72,15 +78,19 @@ function Directory({ view }: { view: 'projects' | 'members' }) {
 
 function ProjectCard({ item }: { item: AdminProject }) {
   const stage = STAGES.find(stage => stage.code === item.stage)?.label || item.stage
-  return <Link href={`/admin/projects/${encodeURIComponent(item.id)}`} className="flex min-w-0 flex-col rounded-[24px] border border-[#C4C7C5] bg-white p-5 transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-[#0B57D0]">
+  return <article className="flex min-w-0 flex-col rounded-[24px] border border-[#C4C7C5] bg-white p-5 transition-shadow hover:shadow-md">
     <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold text-[#0842A0]"><span className="rounded-full bg-[#D3E3FD] px-3 py-1">{stage || '시작 전'}</span><span className="rounded-full bg-[#F1F4F9] px-3 py-1">{item.training ? '연수용' : '일반'} · {item.cycle}주기</span></div>
     <h3 className="break-words text-lg font-bold">{item.title}</h3>
     <p className="mt-3 text-sm text-[#444746]">개설자 {item.ownerName || '이름 미등록'} · 참여 {item.memberCount}명</p>
     <p className="mt-1 text-sm text-[#444746]">{[item.schoolLevel, item.gradeBands.join(' · '), item.subjects.join(' · ')].filter(Boolean).join(' / ') || '수업 정보 미입력'}</p>
     <p className="mt-1 text-sm text-[#444746]">{item.activity ? `현재 ${displayActivityCode(item.activity as ActivityCode)} · ` : ''}{item.status === 'completed' ? '완료' : item.status === 'archived' ? '보관됨' : '진행 중'}</p>
     <p className="mt-4 text-xs text-[#444746]">최근 수정 {adminDate(item.updatedAt)}</p>
-    <span className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#0842A0]">프로젝트 살펴보기 <ArrowRight size={16} /></span>
-  </Link>
+    <div className="mt-4 flex flex-wrap gap-1">
+      <Link href={`/admin/projects/${encodeURIComponent(item.id)}`} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold text-[#0842A0] hover:bg-[#D3E3FD]">살펴보기 <ArrowRight size={16} /></Link>
+      <Link href={`/projects/${encodeURIComponent(item.id)}`} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold text-[#0842A0] hover:bg-[#D3E3FD]"><Eye size={16} /> 실제 화면</Link>
+      <button type="button" onClick={() => openNoticeComposer({ scope: 'project', target: item.id, label: item.title })} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold text-[#0842A0] hover:bg-[#D3E3FD]"><Megaphone size={16} /> 방에 알림</button>
+    </div>
+  </article>
 }
 
 function MemberCard({ item }: { item: AdminMember }) {
@@ -89,5 +99,6 @@ function MemberCard({ item }: { item: AdminMember }) {
     <p className="mt-3 text-sm text-[#444746]">{[item.schoolLevel, item.school, item.grade].filter(Boolean).join(' · ') || '교사 프로필 미입력'}</p>
     <dl className="mt-4 space-y-1 text-xs text-[#444746]"><div><dt className="inline">가입 </dt><dd className="inline">{adminDate(item.createdAt)}</dd></div><div><dt className="inline">최근 로그인 </dt><dd className="inline">{adminDate(item.lastSignInAt)}</dd></div></dl>
     <div className="mt-4 flex flex-wrap gap-2 text-xs"><span className="rounded-full bg-[#E3E3E3] px-3 py-1">{item.disabled ? '사용 중지' : '사용 가능'}</span><span className="rounded-full bg-[#E9F0FF] px-3 py-1">{item.verified ? '이메일 인증됨' : '이메일 미인증'}</span>{!item.hasProfile && <span className="rounded-full bg-[#FFF1C2] px-3 py-1">프로필 미완성</span>}</div>
+    <button type="button" onClick={() => openNoticeComposer({ scope: 'user', target: item.uid, label: item.name })} className="mt-4 inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold text-[#0842A0] hover:bg-[#D3E3FD]"><Megaphone size={16} /> 알림 보내기</button>
   </article>
 }

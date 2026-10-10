@@ -63,6 +63,11 @@ export function getFieldValue(): typeof FieldValueNS {
   return loadAdmin('firestore').FieldValue
 }
 
+/** FieldPath — for selecting nested fields whose keys contain '-' (activity codes). */
+export function getFieldPath(): typeof import('firebase-admin/firestore').FieldPath {
+  return loadAdmin('firestore').FieldPath
+}
+
 /** 첫 호출에서 자격증명 부재가 확인되면 이후 요청의 반복 시도·로그를 막는다. */
 export function disableAdminDb(reason: unknown): void {
   warnOnce(reason)

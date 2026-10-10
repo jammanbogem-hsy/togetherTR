@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { use, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Eye, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Eye, Megaphone, RefreshCw } from 'lucide-react'
 import { AdminShell } from '@/components/admin/AdminShell'
-import { adminRead, adminButton, adminDate } from '@/components/admin/adminClient'
+import { adminRead, adminButton, adminDate, openNoticeComposer } from '@/components/admin/adminClient'
 import { ArtifactMarkdown } from '@/components/artifacts/ArtifactMarkdown'
 import { ReportMarkdown } from '@/components/modals/ReportMarkdown'
 import { STAGES, ACTIVITY_META, displayActivityCode, type ActivityCode, type StageCode } from '@/types'
@@ -47,8 +47,10 @@ function ProjectContent({ project }: { project: AdminProjectDetail }) {
       <h2 className="break-words text-2xl font-bold">{project.title}</h2>
       <p className="mt-2 text-base text-[#444746]">{[project.schoolLevel, project.gradeBands.join(' · '), project.subjects.join(' · ')].filter(Boolean).join(' / ')}</p>
       <p className="mt-2 text-sm text-[#444746]">{project.training ? '연수용 모드' : '일반 모드'} · {project.cycle}주기 · 최근 수정 {adminDate(project.updatedAt)}</p>
+      <button type="button" onClick={() => openNoticeComposer({ scope: 'project', target: project.id, label: project.title })} className={`${adminButton} mt-4`}><Megaphone size={16} /> 이 방 전체에 알림</button>
       <h3 className="mt-5 font-bold">참여자 {project.members.length}명</h3>
-      <ul className="mt-2 flex flex-wrap gap-2">{project.members.map(member => <li key={member.uid} className="rounded-xl bg-[#F1F4F9] px-3 py-2 text-sm">{member.name} <span className="text-[#444746]">· {member.role}</span></li>)}</ul>
+      <ul className="mt-2 flex flex-wrap gap-2">{project.members.map(member => <li key={member.uid} className="flex items-center gap-1 rounded-xl bg-[#F1F4F9] py-1 pl-3 pr-1 text-sm">{member.name} <span className="text-[#444746]">· {member.role}</span>
+        <button type="button" aria-label={`${member.name}에게 알림 보내기`} title="알림 보내기" onClick={() => openNoticeComposer({ scope: 'user', target: member.uid, label: member.name })} className="flex h-9 w-9 items-center justify-center rounded-full text-[#0842A0] hover:bg-[#D3E3FD]"><Megaphone size={16} /></button></li>)}</ul>
     </section>
     <section aria-label="활동별 내용" className="rounded-[28px] border border-[#C4C7C5] bg-white p-5 sm:p-7">
       <h2 className="text-xl font-bold">활동별 산출물과 대화</h2>

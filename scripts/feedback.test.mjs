@@ -159,7 +159,7 @@ test('GET·PATCH: 관리자만 목록·상세(캡처)·처리 상태, 선생님�
 
 test('화면: 작은 말풍선 기본 자리는 오른쪽 아래(프로젝트 화면은 입력창 위·넓은 폭은 오른쪽 가운데로 패널 버튼을 피함), hover·focus 때 글자 펼침', () => {
   const layout = fs.readFileSync(new URL('../src/app/(app)/layout.tsx', import.meta.url), 'utf8')
-  assert.match(layout, /return <>\{children\}<FeedbackButton \/><\/>/)
+  assert.match(layout, /return <>\{children\}<FeedbackButton \/>(<AdminNoticePopup \/>)?<\/>/)
   const button = fs.readFileSync(new URL('../src/components/feedback/FeedbackButton.tsx', import.meta.url), 'utf8')
   assert.match(button, /!placed && \(inProject \? 'bottom-28 right-3 lg:bottom-auto lg:top-\[calc\(50%-22px\)\]' : 'bottom-3 right-3'\)/)
   assert.match(button, /h-\[44px\] w-\[44px\]/)

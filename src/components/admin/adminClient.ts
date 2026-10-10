@@ -26,3 +26,25 @@ export async function adminRead<T>(params: Record<string, string>, signal?: Abor
 
 export const adminButton = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-[#0842A0] bg-[#D3E3FD] hover:bg-[#C2D7FA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0B57D0] disabled:opacity-50'
 export const adminDate = (value: number | null) => value === null ? '기록 없음' : new Date(value).toLocaleString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+/** Authenticated call to any super admin API (dashboard, notices). */
+export async function adminFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  await auth.authStateReady()
+  const user = auth.currentUser
+  if (!user || !isSuperAdmin({ email: user.email, email_verified: user.emailVerified })) throw Error('최고관리자 계정으로 로그인해 주세요.')
+  const token = await user.getIdToken()
+  const response = await fetch(path, {
+    ...init, cache: 'no-store',
+    headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers, Authorization: `Bearer ${token}` },
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw Error(result.error || '요청을 처리하지 못했습니다.')
+  return result as T
+}
+
+/** Opens the notice composer from anywhere in the console (member card, project card, dashboard). */
+export type NoticeTarget = { scope: 'user' | 'project' | 'all'; target: string; label: string }
+export const ADMIN_COMPOSE_EVENT = 'tcid-admin-compose'
+export function openNoticeComposer(target: NoticeTarget) {
+  window.dispatchEvent(new CustomEvent<NoticeTarget>(ADMIN_COMPOSE_EVENT, { detail: target }))
+}

@@ -292,6 +292,12 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && request.auth.uid == uid;
     }
 
+    // ─── 관리자 알림함 — 본인 것만 읽기. 쓰기는 서버(관리자 SDK)만 ────────
+    match /noticeInbox/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     // ─── 그 외 모든 경로 차단 ────────────────────────────────────────────
     // 09.md spec의 standards_index/standards_by_grade 는 현재 미적재 상태.
     // 향후 적재 시 해당 컬렉션에 read-only rule을 명시적으로 추가할 것.
