@@ -44,6 +44,7 @@ import { prepareAttachment } from '@/lib/chat/uploadAttachment'
 import { MessageAttachments, PendingAttachmentTray } from './ChatAttachments'
 import { hasDeferredDecision, deferredResponse, discussionContributions } from '@/lib/activity/conversation-flow'
 import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
+import { BrowsingChat } from './BrowsingChat'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
 import { ACTIVITY_WELCOME, SOLO_ACTIVITY_WELCOME } from '@/lib/prompts/system'
 import { serializeArtifactForPrompt } from '@/lib/artifacts/serializeArtifactForPrompt'
@@ -1358,8 +1359,18 @@ export function ChatPanel() {
 
 function InteractiveChatPanel() {
   const project = useProjectStore(state => state.project)
+  const viewingActivity = useProjectStore(state => state.viewingActivity)
+  const currentActivity = useProjectStore(state => state.currentActivity)
+  const uid = useProjectStore(state => state.userProfile?.uid)
   if (!project) return null
-  return <ChatPanelContent />
+  // A member reading another activity sees that activity's conversation read-only. The live chat
+  // stays mounted (hidden) so drafts, queued sends and streaming state are not lost.
+  const isHost = project.hostUid === uid || project.createdBy === uid
+  const browsing = !isHost && viewingActivity !== currentActivity
+  return <>
+    {browsing && <BrowsingChat />}
+    <div className={browsing ? 'hidden' : 'contents'}><ChatPanelContent /></div>
+  </>
 }
 
 function ChatPanelContent() {

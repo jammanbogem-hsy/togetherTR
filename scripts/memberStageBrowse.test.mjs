@@ -27,3 +27,13 @@ test('wiring: sidebar stage chips for members only, stage bar browse for members
   const bar = fs.readFileSync('src/components/stage/StageBar.tsx', 'utf8')
   assert.match(bar, /else if \(isHost && stage\.code !== currentStage\) setPendingStageMove\(stage\.code\)\n\s+\/\/ .*\n\s+else if \(!isHost\) setViewingActivity\(browseActivityForStage/)
 })
+
+test('browsing members read that activity conversation; the live chat stays mounted underneath', () => {
+  const chat = fs.readFileSync('src/components/chat/ChatPanel.tsx', 'utf8')
+  assert.match(chat, /const browsing = !isHost && viewingActivity !== currentActivity/)
+  assert.match(chat, /\{browsing && <BrowsingChat \/>\}\n\s+<div className=\{browsing \? 'hidden' : 'contents'\}><ChatPanelContent \/><\/div>/)
+  const browse = fs.readFileSync('src/components/chat/BrowsingChat.tsx', 'utf8')
+  assert.match(browse, /watchMessages\(project\.id, viewingActivity,/)
+  assert.match(browse, /읽기 전용/)
+  assert.doesNotMatch(browse, /saveMessage|textarea/)
+})
