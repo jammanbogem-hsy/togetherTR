@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, SOLO_HIDDEN_ACTIVITIES, type ActivityCode, type StageStatus, displayActivityCode } from '@/types'
 import { setProjectActivity, setAnalysisOpen } from '@/lib/firebase/projects'
-import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
+import { isEffectivelyDone as checkEffectivelyDone, displayActivityStatus } from '@/lib/activity/completion'
 import { cn } from '@/lib/utils'
 import { STAGE_COLOR } from '@/lib/ui/stageColors'
 import {
@@ -235,16 +235,16 @@ const STATUS_BADGE: Record<StageStatus, { fg: string; bg: string; border: string
   active_return: { fg: '#6D4100', bg: '#FFDEB6', border: 'transparent', icon: ArrowBendUpLeft, label: '품질 개선 중' },
 }
 
-function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, hasArtifact, artifactConfirmed, index, connectorLabel, onClick }: {
+function ActivityItem({ code, isViewing, isHostCurrent, isHost, status, done, index, connectorLabel, onClick }: {
   code: ActivityCode; isViewing: boolean; isHostCurrent: boolean; isHost: boolean
-  status: StageStatus; hasArtifact: boolean; artifactConfirmed: boolean; index: number
+  status: StageStatus; done: boolean; index: number
   connectorLabel?: string
   onClick: () => void
 }) {
   const meta = ACTIVITY_META[code]
 
-  // 산출물 확정됐거나, 건너뜀(warning) + 산출물 있으면 완료로 간주
-  const effectiveStatus: StageStatus = artifactConfirmed || (status === 'warning' && hasArtifact) ? 'completed' : status
+  // '완료'는 진행 막대와 같은 기준(isEffectivelyDone)으로만 표시한다.
+  const effectiveStatus = displayActivityStatus(status, done, isHostCurrent)
   const badge = STATUS_BADGE[effectiveStatus]
   const color = STAGE_COLOR[meta.stage]
   const stageTonal = effectiveStatus === 'completed' || effectiveStatus === 'in_progress'
@@ -443,8 +443,7 @@ export function ActivitySidebar() {
                   isHostCurrent={code === currentActivity}
                   isHost={isHost}
                   status={activityStatus[code] ?? 'not_started'}
-                  hasArtifact={!!project?.artifacts?.[code]}
-                  artifactConfirmed={project?.artifacts?.[code]?.status === 'confirmed' || isEffectivelyDone(code)}
+                  done={project?.artifacts?.[code]?.status === 'confirmed' || isEffectivelyDone(code)}
                   connectorLabel={connectorLabel || undefined}
                   onClick={() => handleActivityClick(code)}
                 />

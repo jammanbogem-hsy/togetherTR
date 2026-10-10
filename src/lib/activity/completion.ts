@@ -62,6 +62,17 @@ export function isEffectivelyDone(
 }
 
 /**
+ * 사이드바 배지에 보일 상태. '완료'는 isEffectivelyDone과 같은 기준으로만 보인다 —
+ * 저장된 상태가 completed여도(다음 활동으로 넘어갔다 돌아옴, 산출물 삭제 등) 기록이 없으면
+ * 지금 활동은 '진행 중', 지나간 활동은 '미완성 — 복귀 필요'로 보인다.
+ */
+export function displayActivityStatus(status: StageStatus, done: boolean, isCurrent: boolean): StageStatus {
+  if (done) return 'completed'
+  if (status === 'completed') return isCurrent ? 'in_progress' : 'warning'
+  return status
+}
+
+/**
  * artifact.content(Record<string, unknown>)에 대해 requiredSections 검증.
  * content 키는 AI의 [ARTIFACT_UPDATE: <섹션명>=<값>] 신호에서 유래하므로
  * RequiredSection.key와 자연스럽게 매칭됨(한글 라벨 그대로).
