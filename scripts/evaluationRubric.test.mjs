@@ -44,7 +44,7 @@ test('markdown and TSV keep one row per rubric line and escape separators', () =
 
 test('clipboard HTML is a bordered table Hangul can paste, with escaped text', () => {
   const html = rubricToClipboardHtml([row({ element: '<b>x</b> & y', high: '첫 줄\n둘째 줄' })], '평가 루브릭')
-  assert.match(html, /<table style="border-collapse:collapse;/)
+  assert.match(html, /<table [^>]*border-collapse:collapse;/)
   assert.equal((html.match(/<th /g) ?? []).length, 7)
   assert.match(html, /border:1px solid #000000;/)
   assert.match(html, /&lt;b&gt;x&lt;\/b&gt; &amp; y/)
@@ -108,4 +108,16 @@ test('rubric is saved in its own member-writable field, not in artifacts', () =>
   assert.match(src, /const field = `evaluationRubrics\.\$\{activityCode\}`/)
   const rules = read('firestore.rules')
   assert.doesNotMatch(rules, /'evaluationRubrics'/)
+})
+
+test('clipboard table is fixed to the Hangul A4 body width so it does not run off the page', async () => {
+  const { rubricColumnWidthsPt, RUBRIC_PASTE_WIDTH_PT } = await import('../src/lib/rubric/rubric.ts')
+  const widths = rubricColumnWidthsPt()
+  assert.equal(widths.length, 7)
+  assert.ok(Math.abs(widths.reduce((a, b) => a + b, 0) - RUBRIC_PASTE_WIDTH_PT) < 1)
+  const html = rubricToClipboardHtml([row({ element: '요소', high: '상 서술' })])
+  assert.match(html, /table-layout:fixed/)
+  assert.match(html, new RegExp(`width:${RUBRIC_PASTE_WIDTH_PT}pt`))
+  assert.match(html, /<colgroup>(<col [^>]+>){7}<\/colgroup>/)
+  assert.match(html, /font-size:9pt/)
 })

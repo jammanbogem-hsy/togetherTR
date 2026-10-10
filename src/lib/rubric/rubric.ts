@@ -112,18 +112,39 @@ const escapeHtml = (value: string) => value
  * 한글(HWP)에 붙여 넣으면 표로 들어가는 HTML. 한글은 클립보드의 text/html 표를 표 개체로 바꾸며,
  * 선·배경은 인라인 style 만 읽으므로 클래스 대신 칸마다 style 을 단다.
  */
+/**
+ * 한글 기본 A4(좌우 여백 30mm)의 본문 폭 150mm ≈ 425pt.
+ * 표 폭과 열 폭을 이 안에 고정해 붙여넣은 표가 쪽 오른쪽 밖으로 나가지 않게 한다.
+ */
+export const RUBRIC_PASTE_WIDTH_PT = 425
+
+/** 열별 폭 비율(합 100) — 짧은 정보 열은 좁게, 상·중·하 서술 열은 넓게. */
+const RUBRIC_PASTE_WEIGHTS: Record<RubricField, number> = {
+  element: 14, standard: 12, method: 13, timing: 10, high: 17, mid: 17, low: 17,
+}
+
+export function rubricColumnWidthsPt(totalPt = RUBRIC_PASTE_WIDTH_PT): number[] {
+  const sum = RUBRIC_COLUMNS.reduce((acc, c) => acc + RUBRIC_PASTE_WEIGHTS[c.id], 0)
+  return RUBRIC_COLUMNS.map(c => Math.round((RUBRIC_PASTE_WEIGHTS[c.id] / sum) * totalPt * 10) / 10)
+}
+
 export function rubricToClipboardHtml(rows: readonly RubricRow[], title?: string): string {
   const filled = rows.filter(row => !isBlankRubricRow(row))
+  const widths = rubricColumnWidthsPt()
   const border = 'border:1px solid #000000;'
-  const cell = 'padding:4px 6px;vertical-align:middle;font-size:10pt;'
+  const cell = 'padding:2pt 3pt;vertical-align:middle;font-size:9pt;line-height:130%;word-break:keep-all;'
+  // width 속성은 단위 없는 px만 표준이라 pt×4/3 로 함께 적는다(속성만 읽는 편집기 대비).
+  const px = (pt: number) => Math.round((pt * 4) / 3)
+  const colgroup = `<colgroup>${widths.map(w => `<col width="${px(w)}" style="width:${w}pt;">`).join('')}</colgroup>`
   const head = RUBRIC_COLUMNS
-    .map(c => `<th style="${border}${cell}background:#E7E6E6;font-weight:bold;text-align:center;">${escapeHtml(c.label)}</th>`)
+    .map((c, i) => `<th width="${px(widths[i])}" style="${border}${cell}width:${widths[i]}pt;background:#E7E6E6;font-weight:bold;text-align:center;">${escapeHtml(c.label)}</th>`)
     .join('')
   const body = filled
-    .map(row => `<tr>${RUBRIC_COLUMNS.map(c => `<td style="${border}${cell}">${escapeHtml(row[c.id]).replace(/\n/g, '<br>')}</td>`).join('')}</tr>`)
+    .map(row => `<tr>${RUBRIC_COLUMNS.map((c, i) => `<td width="${px(widths[i])}" style="${border}${cell}width:${widths[i]}pt;">${escapeHtml(row[c.id]).replace(/\n/g, '<br>')}</td>`).join('')}</tr>`)
     .join('')
   const caption = title ? `<p style="font-weight:bold;font-size:11pt;">${escapeHtml(title)}</p>` : ''
-  return `<html><body>${caption}<table style="border-collapse:collapse;${border}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`
+  const table = `<table width="${px(RUBRIC_PASTE_WIDTH_PT)}" style="width:${RUBRIC_PASTE_WIDTH_PT}pt;table-layout:fixed;border-collapse:collapse;${border}">`
+  return `<html><body>${caption}${table}${colgroup}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`
 }
 
 /**
