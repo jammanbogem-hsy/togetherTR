@@ -39,6 +39,9 @@ import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { isDemoObservationOnly } from '@/lib/demo/observer'
 import { useAdminObserver } from '@/components/admin/useAdminObserver'
+import { ATTACHMENT_ACCEPT, ATTACHMENT_ONLY_TEXT, validateAttachment, withAttachmentContext, type ChatAttachment } from '@/lib/chat/attachments'
+import { prepareAttachment } from '@/lib/chat/uploadAttachment'
+import { MessageAttachments, PendingAttachmentTray } from './ChatAttachments'
 import { hasDeferredDecision, deferredResponse, discussionContributions } from '@/lib/activity/conversation-flow'
 import { DemoObserverChat } from '@/components/demo/DemoObserverPanels'
 import { ACTIVITY_META, STAGES, displayActivityCode, type ActivityType, type ActivityCode, type ActionCard, type SkippedActionCard, type Message } from '@/types'
@@ -123,7 +126,7 @@ import { REMARK_PLUGINS } from '@/lib/markdown/remarkPlugins'
 import { remarkShortColumns } from '@/lib/markdown/tableColumnWidth'
 import {
   ListChecks, CheckCircle, Shield, Star, ArrowBendUpLeft, ArrowDown, Chat,
-  Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler, PencilSimple,
+  Users, StopCircle, SpinnerGap, PaperPlaneRight, Warning, X, TreeStructure, PencilRuler, PencilSimple, Plus,
 } from '@phosphor-icons/react'
 import dynamic from 'next/dynamic'
 import {
@@ -1045,9 +1048,10 @@ function ContextMenuWrapper({ children, className, asArticle = false, ariaLabel 
 }
 
 // ─── 메시지 버블 ──────────────────────────────────────
-export function MessageBubble({ role, content, activityType, senderName, senderColor, senderAvatarId, isSelf, replyTo, onReply, stage, standardTextMap, simulated = false, checklist }: {
+export function MessageBubble({ role, content, activityType, senderName, senderColor, senderAvatarId, isSelf, replyTo, onReply, stage, standardTextMap, simulated = false, checklist, attachments }: {
   role: 'user' | 'assistant'
   content: string
+  attachments?: ChatAttachment[]
   activityType?: ActivityType
   senderName?: string
   senderColor?: string
@@ -1151,6 +1155,7 @@ export function MessageBubble({ role, content, activityType, senderName, senderC
             </p>
           )}
         </div>
+        {attachments && attachments.length > 0 && <MessageAttachments items={attachments} alignRight={alignRight} />}
       </div>
     </ContextMenuWrapper>
   )
@@ -1393,6 +1398,22 @@ function ChatPanelContent() {
   }, [project, currentActivity, userProfile?.uid, discussionMode, pendingTeamDiscussion, setDiscussionMode, setPendingTeamDiscussion])
 
   const chatDraft = useMemo(createChatDraft, [])
+  // Photos and files picked for the next message (uploaded and read when it is sent).
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [attaching, setAttaching] = useState(false)
+  const attachInputRef = useRef<HTMLInputElement>(null)
+  function addAttachmentFiles(files: File[]) {
+    if (!files.length) return
+    setPendingFiles(current => {
+      const next = [...current]
+      for (const file of files) {
+        const problem = validateAttachment(file, next.length)
+        if (problem) { setChatError(problem); continue }
+        next.push(file)
+      }
+      return next
+    })
+  }
   const { setInput, setSlashQuery, setSlashCmdIdx } = chatDraft
 
   // 외부(ArtifactPanel 등)에서 "이 문구 채팅에 채워 주세요" 요청하면 수신·소비
@@ -1427,7 +1448,7 @@ function ChatPanelContent() {
     activityCode: ActivityCode
     userId?: string
     assistantMessageId?: string
-    messages: Array<{ role: string; content: string; displayName?: string }>
+    messages: Array<{ role: string; content: string; displayName?: string; attachments?: ChatAttachment[] }>
   } | null>(null)
   const [showDiscussionConfirm, setShowDiscussionConfirm] = useState(false)
   const [showStandardsBrowser, setShowStandardsBrowser] = useState(false)
@@ -3006,7 +3027,7 @@ ${discussionSummary}
     if (userProfile?.uid) setStreamingState(proj.id, currentActivity, '', userProfile.uid, plannedAnalysisMessageId).catch(() => {})
     try {
       await streamFromAPI(
-        [...messages.map(m => ({ role: m.role, content: m.content, displayName: m.displayName })),
+        [...messages.map(m => ({ role: m.role, content: withAttachmentContext(m.content, m.attachments), displayName: m.displayName })),
          { role: 'user', content: analysisPrompt }],
         (text) => appendStreamingText(text),
         async (fullText) => {
@@ -4103,7 +4124,7 @@ ${discussionSummary}
     }, 800)
     try {
       await streamFromAPI(
-        requestMessages.map(m => ({ role: m.role, content: displayedMessageContent(proj, m, trainingUserTexts), displayName: m.displayName })),
+        requestMessages.map(m => ({ role: m.role, content: withAttachmentContext(displayedMessageContent(proj, m, trainingUserTexts), m.attachments), displayName: m.displayName })),
         (chunk) => { appendStreamingText(chunk); streamingAccumRef.current += chunk },
         async (fullText) => {
           if (await discardResponseAfterActivityChange(currentActivity)) return
@@ -4251,7 +4272,8 @@ ${discussionSummary}
 
   async function handleSend() {
     const { input } = chatDraft.getSnapshot()
-    if (!input.trim() || !project) return
+    const filesToSend = pendingFiles
+    if ((!input.trim() && !filesToSend.length) || !project || attaching) return
     // 준비 전에는 보내지 않고 입력을 그대로 둔다 — 조용히 버리지 않는다(#26).
     if (sendBlockReason) return
     // 팀원 내보내기 명령은 AI 를 부르지 않고 방장 화면의 확인 카드로만 처리한다(명령 문장·카드는 저장하지 않음).
@@ -4264,6 +4286,8 @@ ${discussionSummary}
     // AI 가 답하는 중이면 버리지 않고 대기열에 넣어 '보내는 중'으로 보여 주고, 답이 끝나면 보낸다(#T10).
     // 다른 선생님 질문에 답하는 중(remoteBusy)도 같다 — 바로 보내면 AI 가 두 번 불려 답이 2개 생겼다.
     if ((isLoading || remoteBusy) && !isTeamMode && !isWaitingForChoice) {
+      // The send queue carries text only — keep the files and the text until the AI is free.
+      if (filesToSend.length) { setFlowNotice('AI가 답하는 중이에요. 답이 끝나면 첨부와 함께 다시 보내 주세요.'); return }
       if (remoteBusy && !isLoading) setFlowNotice('다른 선생님 질문에 AI가 답하는 중이라, 답이 끝나면 이어서 보낼게요.')
       const queuedReply = replyTo
         ? `[답장: "${(replyTo.content.replace(/\[.*?\]/g, '').replace(/[#*_~`>]/g, '').trim().split(/[.!?\n]/)[0]?.trim() || replyTo.content.slice(0, 60)).slice(0, 80)}"]\n`
@@ -4282,7 +4306,25 @@ ${discussionSummary}
           return `[답장: "${firstSentence.slice(0, 80)}"]\n`
         })()
       : ''
-    const userMessage = replyPrefix + input.trim()
+    // Upload and read attachments first so the AI gets their content with this message.
+    let attachments: ChatAttachment[] | undefined
+    if (filesToSend.length) {
+      if (!userProfile?.uid) return
+      setAttaching(true)
+      setFlowNotice(`첨부 ${filesToSend.length}개를 올리고 읽는 중이에요…`)
+      try {
+        attachments = await Promise.all(filesToSend.map(file => prepareAttachment(proj.id, userProfile.uid, file)))
+      } catch (error) {
+        console.error('[handleSend] attachment upload failed:', error)
+        setChatError('첨부 파일을 올리지 못했어요. 파일은 그대로 두었으니 다시 보내 주세요.')
+        setFlowNotice(null)
+        setAttaching(false)
+        return
+      }
+      setAttaching(false)
+      setPendingFiles([])
+    }
+    const userMessage = replyPrefix + (input.trim() || (attachments?.length ? ATTACHMENT_ONLY_TEXT : ''))
     setFlowNotice(null)
     if (hasDeferredDecision([...messages, { role: 'user', content: userMessage }])) {
       setPendingAdvance(null)
@@ -4308,6 +4350,7 @@ ${discussionSummary}
       displayName: senderDisplayName,
       replyTo: replyTo ?? undefined,
       cycleNumber: proj.currentCycle ?? 1,
+      attachments,
       createdAt: Timestamp.now(),
     }
     addMessage(tempUserMsg)
@@ -4319,6 +4362,7 @@ ${discussionSummary}
       displayName: senderDisplayName,
       replyTo: replyTo ?? undefined,
       cycleNumber: proj.currentCycle ?? 1,
+      attachments,
     }, userMsgId).catch(error => {
       // 저장 실패를 조용히 넘기면 다음 스냅숏에서 메시지가 사라진다 — 알리고 입력한 글을 되돌려 둔다(#T10).
       console.error('[handleSend] save failed:', error)
@@ -4360,7 +4404,7 @@ ${discussionSummary}
     let responseMessageId: string | undefined
     try {
       await streamFromAPI(
-        [...messages, tempUserMsg].map(m => ({ role: m.role, content: displayedMessageContent(proj, m, trainingUserTexts), displayName: m.displayName })),
+        [...messages, tempUserMsg].map(m => ({ role: m.role, content: withAttachmentContext(displayedMessageContent(proj, m, trainingUserTexts), m.attachments), displayName: m.displayName })),
         (text) => {
           appendStreamingText(text)
           streamingAccumRef.current += text
@@ -4777,6 +4821,7 @@ ${discussionSummary}
               <MemoMessageBubble
                 role={msg.role as 'user' | 'assistant'}
                 content={displayedMessageContent(proj, msg, trainingUserTexts)}
+                attachments={msg.attachments}
                 activityType={msg.activityType}
                 senderName={senderName}
                 senderColor={senderColor}
@@ -6448,7 +6493,18 @@ ${discussionSummary}
           </button>
         )}
 
-        <div className="flex gap-2 items-end">
+        <PendingAttachmentTray files={pendingFiles} busy={attaching} onRemove={index => setPendingFiles(current => current.filter((_, i) => i !== index))} />
+        <div className="flex gap-2 items-end"
+          onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
+          onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); addAttachmentFiles([...event.dataTransfer.files]) }}>
+          {/* 사진·파일 첨부 — 팀이 오프라인에서 만든 메모·산출물을 AI 맥락에 더한다 */}
+          <input ref={attachInputRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden"
+            onChange={event => { addAttachmentFiles([...(event.target.files ?? [])]); event.target.value = '' }} />
+          <button type="button" aria-label="사진·파일 첨부" title="사진·파일 첨부 (붙여넣기·끌어놓기도 돼요)"
+            disabled={attaching} onClick={() => attachInputRef.current?.click()}
+            className="mb-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#0842A0] shadow-[0_1px_2px_rgba(0,0,0,0.15)] hover:bg-[#E8F0FE] focus-visible:outline-2 focus-visible:outline-[#0B57D0] disabled:opacity-40">
+            <Plus size={22} weight="bold" />
+          </button>
           <div className={cn('chat-input-wrap flex-1', isTeamMode && 'chat-input-wrap-team')}>
             <div className={cn('chat-input-inner relative', isTeamMode ? 'bg-[#E0F2F1]' : 'bg-white')}>
               <textarea
@@ -6469,6 +6525,12 @@ ${discussionSummary}
                   }
                 }}
                 onKeyDown={handleKeyDown}
+                onPaste={event => {
+                  const files = [...event.clipboardData.files]
+                  if (!files.length) return
+                  event.preventDefault()
+                  addAttachmentFiles(files)
+                }}
                 placeholder={sendBlockReason
                   ? `${sendBlockReason}… 입력은 해 두고 준비되면 보낼 수 있어요`
                   : isTeamMode
@@ -6523,7 +6585,7 @@ ${discussionSummary}
           {/* 전송 버튼 — morph-shape 일렁임 */}
           <button
             onClick={handleSend}
-            disabled={!input.trim() || (isLoading && !isTeamMode && !isWaitingForChoice) || !!sendBlockReason}
+            disabled={(!input.trim() && !pendingFiles.length) || attaching || (isLoading && !isTeamMode && !isWaitingForChoice) || !!sendBlockReason}
             title={sendBlockReason ?? undefined}
             className={cn(
               'chat-motion-decorative w-12 h-[70px] text-white flex items-center justify-center flex-shrink-0',

@@ -27,6 +27,24 @@ service firebase.storage {
       allow delete: if isProjectMember(projectId);
     }
 
+    // 최고관리자(개발자) 관찰 — 읽기 전용
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == 'jammanbogem@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    // 채팅 첨부(사진·PDF·텍스트): 팀원은 자기 폴더에만 올리고, 팀원 모두 읽는다
+    match /projects/{projectId}/chat/{uid}/{attachmentId}/{fileName} {
+      allow read: if isProjectMember(projectId) || isSuperAdmin();
+      allow create: if isProjectMember(projectId)
+                    && request.auth.uid == uid
+                    && request.resource.size < 20 * 1024 * 1024
+                    && request.resource.contentType.matches('image/(png|jpeg|webp|gif)|application/pdf|text/(plain|markdown|csv)');
+      allow update: if false;
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
     // 그 외 모든 경로는 기본 거부
     match /{allPaths=**} {
       allow read, write: if false;

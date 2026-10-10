@@ -68,6 +68,19 @@ export function getFieldPath(): typeof import('firebase-admin/firestore').FieldP
   return loadAdmin('firestore').FieldPath
 }
 
+/** Default Storage bucket via the admin SDK (bypasses storage.rules — callers must check access). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAdminBucket(): any | null {
+  if (!getAdminDb()) return null
+  try {
+    const name = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    return loadAdmin('storage').getStorage(cachedApp).bucket(name || undefined)
+  } catch (e) {
+    warnOnce(e)
+    return null
+  }
+}
+
 /** 첫 호출에서 자격증명 부재가 확인되면 이후 요청의 반복 시도·로그를 막는다. */
 export function disableAdminDb(reason: unknown): void {
   warnOnce(reason)

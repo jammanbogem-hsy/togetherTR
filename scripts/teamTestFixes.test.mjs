@@ -261,7 +261,7 @@ test('15b: 부분 답 재시도는 같은 ID의 Firestore 문서와 로컬 메�
     parseTeamGradeBandsSignal: () => null, parseDiscussionSignal: () => null, parseActivityAdvance: () => null,
     parseActivityReturn: () => null, parseArtifactConfirm: text => ({ codes: [], cleanText: text }),
     parseArtifactUpdates: text => ({ updates: [], cleanText: text }), gateArtifactUpdates: (updates, confirmCodes) => ({ updates, confirmCodes, notices: [] }), appendSaveGateNotice: text => text,
-    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [], shouldReplyTrainingQuietly: () => false,
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [], withAttachmentContext: content => content, shouldReplyTrainingQuietly: () => false,
     parseHelpCard: text => ({ cleanText: text }),
     parseOptions: () => null, parseActionCard: () => null, completeReviewAction: parsed => parsed, Timestamp: { now: () => 1 },
     generateMessageId: () => { throw new Error('재시도에 새 ID를 만들면 안 된다') },
@@ -440,7 +440,7 @@ test('B: 다른 팀원이 재시도해도 사용자 메시지는 추가·저장�
     addMessage: message => additions.push(message), saveMessage: async (...args) => saves.push(args),
     handleA21SheetArtifactRequest: () => false,
     shouldReplyTrainingQuietly: () => false, TRAINING_QUIET_REPLY: '저장했습니다.',
-    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [],
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [], withAttachmentContext: content => content,
     streamFromAPI: async request => { requests.push(request) }, console,
   })
   await send(original.content, true)
@@ -535,7 +535,7 @@ test('2: 실패 후 다른 팀원 메시지가 도착해도 재시도는 원래 
     setStreamingState: async () => {}, clearStreamingState: async () => {},
     setInterval: () => 1, clearInterval() {}, console: { error() {} },
     addMessage: value => additions.push(value), saveMessage: async value => saves.push(value),
-    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [],
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [], withAttachmentContext: content => content,
     streamFromAPI: async request => { requests.push(request); throw new Error('failed') },
   }
   await loadChatFunction('sendMessageDirectly', bindings)(original.content, true)
@@ -802,7 +802,7 @@ test('26: 준비 전(프로필·프로젝트·메시지 구독·활동 동기화
   // 준비 판정은 입력을 비우기(setInput('')) 전에 있어야 입력한 글이 사라지지 않는다.
   assert.ok(send.indexOf('if (sendBlockReason) return') > 0)
   assert.ok(send.indexOf('if (sendBlockReason) return') < send.indexOf("setInput('')"))
-  assert.match(chatSource, /disabled=\{!input\.trim\(\) \|\| \(isLoading && !isTeamMode && !isWaitingForChoice\) \|\| !!sendBlockReason\}/)
+  assert.match(chatSource, /disabled=\{\(!input\.trim\(\) && !pendingFiles\.length\) \|\| attaching \|\| \(isLoading && !isTeamMode && !isWaitingForChoice\) \|\| !!sendBlockReason\}/)
 })
 
 test('27: 응답 끝에 붙은 깨진 외국 문자 꼬리만 지운다', () => {
@@ -3908,7 +3908,7 @@ test('T19a: 연수용 약식 활동의 환영 메시지는 저장 내용과 무�
   const panel = fs.readFileSync(new URL('../src/components/chat/ChatPanel.tsx', import.meta.url), 'utf8')
   assert.match(panel, /content=\{displayedMessageContent\(proj, msg, trainingUserTexts\)\}/)
   // AI 에게 보내는 대화 기록도 같은 내용(일반 절차로 끌려가지 않게)
-  assert.equal((panel.match(/content: displayedMessageContent\(proj, m, trainingUserTexts\)/g) ?? []).length, 2)
+  assert.equal((panel.match(/content: withAttachmentContext\(displayedMessageContent\(proj, m, trainingUserTexts\), m\.attachments\)/g) ?? []).length, 2)
 })
 
 test('T19b: 생성 타이밍 — 환영 effect 는 프로젝트 스냅숏(started)을 받은 뒤에만 돌고, 그 스냅숏은 trainingMode 를 함께 담는다', () => {
@@ -3951,7 +3951,7 @@ function t10Bindings(overrides = {}) {
   const calls = { enqueued: [], inputs: [], added: [], saved: [], errors: [], streamed: 0 }
   const bindings = {
     input: '아 생각해 보니 모둠에서 기준을 정해 왔어요. 직접 적을게요.', project: { id: 'p' }, proj: { id: 'p', currentCycle: 1 },
-    sendBlockReason: null, isLoading: false, isTeamMode: false, isWaitingForChoice: false, replyTo: null,
+    sendBlockReason: null, pendingFiles: [], attaching: false, withAttachmentContext: content => content, isLoading: false, isTeamMode: false, isWaitingForChoice: false, replyTo: null,
     currentActivity: 'A-1-1', userProfile: { uid: 'host', displayName: '홍성용' }, messages: [], isHost: true, lastAIMsg: null,
     enqueueTrainingSend: text => calls.enqueued.push(text),
     setInput: value => calls.inputs.push(typeof value === 'function' ? value('') : value),
@@ -3963,7 +3963,7 @@ function t10Bindings(overrides = {}) {
     setIsLoading() {}, clearStreamingText() {}, streamingAccumRef: { current: '' }, streamingFlushRef: { current: null },
     setStreamingState: async () => {}, clearStreamingState: async () => {}, setInterval: () => 1, clearInterval() {},
     streamFromAPI: async () => { calls.streamed++ }, console: { error() {}, warn() {} },
-    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [],
+    displayedMessageContent: (_p, m) => m.content, trainingUserTexts: [], withAttachmentContext: content => content,
     ...overrides,
   }
   bindings.chatDraft = { getSnapshot: () => ({ input: bindings.input }) }

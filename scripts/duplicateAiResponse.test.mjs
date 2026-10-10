@@ -27,7 +27,7 @@ function sharedServer() { return { messages: [], streaming: new Map(), apiCalls:
 function client(server, uid, isHost, input, extra = {}) {
   const local = { isLoading: false, enqueued: [], notices: [], added: [], replaced: [] }
   const bindings = {
-    input, project: { id: 'p' }, proj: { id: 'p', currentCycle: 1 }, sendBlockReason: null,
+    input, project: { id: 'p' }, proj: { id: 'p', currentCycle: 1 }, sendBlockReason: null, pendingFiles: [], attaching: false, withAttachmentContext: content => content,
     get isLoading() { return local.isLoading }, isAnalyzing: false, isTeamMode: false, isWaitingForChoice: false, replyTo: null,
     currentActivity: 'A-2-2', userProfile: { uid, displayName: uid }, isHost, lastAIMsg: null,
     get messages() { return [...server.messages] },

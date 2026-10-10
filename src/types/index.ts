@@ -1079,6 +1079,8 @@ export interface Message {
   cycleNumber?: number
   /** AI 답변 체크리스트 — 순번 → uid별 상태, 기존 공동 기록 읽기 호환(lib/chat/checklist). */
   checklistState?: import('@/lib/chat/checklist').ChecklistState
+  /** 사진·파일 첨부 — AI가 읽은 내용(extract)은 다음 AI 요청 맥락에 함께 들어간다(lib/chat/attachments). */
+  attachments?: import('@/lib/chat/attachments').ChatAttachment[]
   /** 화면 전용: 레거시(단계) 경로에서 불러온 메시지 — 문서에는 저장하지 않는다 */
   legacyPath?: boolean
   createdAt: Timestamp
