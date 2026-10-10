@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useProjectStore } from '@/store/project'
 import { STAGES, ACTIVITY_META, type StageCode, type StageStatus, type ActivityCode } from '@/types'
 import { isEffectivelyDone as checkEffectivelyDone } from '@/lib/activity/completion'
@@ -23,29 +24,66 @@ const STAGE_ICONS: Record<StageCode, Icon> = {
 }
 
 // ─── 가드레일 뱃지 (Ds 노드 위에 표시) ──────────────────────
-function GuardrailBadge({ summary }: { summary: string | null }) {
+const GUARDRAIL_TIP_WIDTH = 288
+const VIEWPORT_GUTTER = 12
+
+/** 툴팁은 일반 글로 보인다 — 산출물의 **굵게**·# 제목 같은 마크다운 기호를 뺀다. */
+export function plainGuardrailSummary(summary: string): string {
+  return summary
+    .replace(/\*\*|__|`/g, '')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '· ')
+    .trim()
+}
+
+export function GuardrailBadge({ summary }: { summary: string | null }) {
+  // 단계 막대 카드가 넘친 부분을 잘라 내므로, 툴팁은 body 에 fixed 로 띄우고 화면 안쪽으로 붙인다.
+  const badgeRef = useRef<HTMLDivElement>(null)
+  const [tip, setTip] = useState<{ left: number; top: number; below: boolean } | null>(null)
+  const show = () => {
+    const rect = badgeRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const left = Math.max(VIEWPORT_GUTTER, Math.min(rect.right - GUARDRAIL_TIP_WIDTH, window.innerWidth - GUARDRAIL_TIP_WIDTH - VIEWPORT_GUTTER))
+    const below = rect.bottom + 240 < window.innerHeight || rect.top < 240
+    setTip({ left, top: below ? rect.bottom + 8 : rect.top - 8, below })
+  }
+  const hide = () => setTip(null)
   return (
-    <div className="absolute -top-1.5 -right-1.5 z-20 group/badge">
+    <div className="absolute -top-1.5 -right-1.5 z-20">
       <div
-        className="w-5 h-5 rounded-full bg-[#7B1FA2] flex items-center justify-center shadow-md ring-2 ring-white cursor-help"
+        ref={badgeRef}
+        tabIndex={0}
+        role="button"
+        aria-label="가드레일 (A-2-3 학습자·맥락 분석) 보기"
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        className="w-5 h-5 rounded-full bg-[#7B1FA2] flex items-center justify-center shadow-md ring-2 ring-white cursor-help focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7B1FA2]"
         style={{ animation: 'guardrail-pulse 2.4s ease-in-out infinite' }}
       >
         <Shield size={11} weight="fill" className="text-white" />
       </div>
-      {/* hover tooltip */}
-      <div className="pointer-events-none opacity-0 group-hover/badge:opacity-100 transition-opacity duration-150 absolute top-7 right-0 w-64 z-30">
-        <div className="bg-[#202124] text-white text-[11px] leading-relaxed rounded-md shadow-xl p-3">
-          <div className="font-bold text-[#CE93D8] mb-1 flex items-center gap-1.5">
-            <Shield size={12} weight="fill" />
-            가드레일 (A-2-3 학습자·맥락 분석)
+      {tip && typeof document !== 'undefined' && createPortal(
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-[300]"
+          style={{ left: tip.left, top: tip.top, width: GUARDRAIL_TIP_WIDTH, transform: tip.below ? undefined : 'translateY(-100%)' }}
+        >
+          <div className="bg-[#202124] text-white text-[12px] leading-relaxed rounded-lg shadow-xl p-3">
+            <div className="font-bold text-[#CE93D8] mb-1.5 flex items-start gap-1.5">
+              <Shield size={12} weight="fill" className="mt-[3px] flex-shrink-0" />
+              <span>가드레일 (A-2-3 학습자·맥락 분석)</span>
+            </div>
+            {summary ? (
+              <div className="whitespace-pre-wrap break-keep line-clamp-[12] text-white/90">{plainGuardrailSummary(summary)}</div>
+            ) : (
+              <div className="text-white/60 italic">A-2-3 산출물이 비어 있습니다</div>
+            )}
           </div>
-          {summary ? (
-            <div className="whitespace-pre-wrap line-clamp-6 text-white/90">{summary}</div>
-          ) : (
-            <div className="text-white/60 italic">A-2-3 산출물이 비어 있습니다</div>
-          )}
-        </div>
-      </div>
+        </div>,
+        document.body,
+      )}
       <style jsx>{`
         @keyframes guardrail-pulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(123,31,162,0.55); }
